@@ -2,41 +2,79 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+/* DairyChain Pro Design System - Agricultural Theme
 All colors MUST be HSL.
 */
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* Core Agricultural Color Palette */
+    --background: 48 20% 97%;
+    --foreground: 140 30% 15%;
 
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card: 48 25% 99%;
+    --card-foreground: 140 30% 15%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover: 48 25% 99%;
+    --popover-foreground: 140 30% 15%;
 
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
+    /* Primary - Deep Agricultural Green */
+    --primary: 140 45% 25%;
+    --primary-foreground: 48 50% 98%;
+    --primary-light: 140 35% 35%;
+    --primary-dark: 140 55% 18%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    /* Secondary - Cream/Milk White */
+    --secondary: 48 30% 95%;
+    --secondary-foreground: 140 30% 20%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    /* Muted tones */
+    --muted: 48 15% 90%;
+    --muted-foreground: 140 20% 45%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    /* Accent - Warm Agricultural Orange */
+    --accent: 25 85% 55%;
+    --accent-foreground: 48 50% 98%;
+    --accent-light: 25 75% 65%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    /* Success - Fresh Green */
+    --success: 120 50% 45%;
+    --success-foreground: 48 50% 98%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    /* Warning - Golden Harvest */
+    --warning: 45 90% 55%;
+    --warning-foreground: 140 30% 15%;
 
-    --radius: 0.5rem;
+    /* Destructive - Farm Red */
+    --destructive: 0 75% 55%;
+    --destructive-foreground: 48 50% 98%;
+
+    /* UI Elements */
+    --border: 48 20% 85%;
+    --input: 48 25% 92%;
+    --ring: 140 45% 25%;
+
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-light)));
+    --gradient-hero: linear-gradient(135deg, hsl(var(--primary-dark)), hsl(var(--primary)));
+    --gradient-card: linear-gradient(180deg, hsl(var(--card)), hsl(var(--secondary)));
+    --gradient-accent: linear-gradient(135deg, hsl(var(--accent)), hsl(var(--accent-light)));
+
+    /* Shadows */
+    --shadow-soft: 0 2px 8px hsl(var(--primary) / 0.08);
+    --shadow-medium: 0 4px 16px hsl(var(--primary) / 0.12);
+    --shadow-strong: 0 8px 32px hsl(var(--primary) / 0.16);
+    --shadow-glow: 0 0 24px hsl(var(--accent) / 0.3);
+
+    /* Typography */
+    --font-heading: 'Inter', system-ui, sans-serif;
+    --font-body: 'Inter', system-ui, sans-serif;
+
+    /* Animations */
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-bounce: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+
+    --radius: 0.75rem;
 
     --sidebar-background: 0 0% 98%;
 
@@ -56,41 +94,52 @@ All colors MUST be HSL.
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
+    /* Dark mode for agricultural theme */
+    --background: 140 25% 8%;
+    --foreground: 48 30% 95%;
 
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
+    --card: 140 20% 10%;
+    --card-foreground: 48 30% 95%;
 
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
+    --popover: 140 20% 10%;
+    --popover-foreground: 48 30% 95%;
 
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
+    --primary: 140 35% 65%;
+    --primary-foreground: 140 30% 15%;
+    --primary-light: 140 30% 70%;
+    --primary-dark: 140 40% 55%;
 
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
+    --secondary: 140 15% 15%;
+    --secondary-foreground: 48 25% 85%;
 
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
+    --muted: 140 10% 20%;
+    --muted-foreground: 140 15% 60%;
 
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
+    --accent: 25 85% 60%;
+    --accent-foreground: 140 30% 10%;
+    --accent-light: 25 75% 70%;
 
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
+    --success: 120 45% 55%;
+    --success-foreground: 140 30% 10%;
 
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --warning: 45 85% 60%;
+    --warning-foreground: 140 30% 10%;
+
+    --destructive: 0 70% 60%;
+    --destructive-foreground: 48 30% 95%;
+
+    --border: 140 15% 25%;
+    --input: 140 10% 18%;
+    --ring: 140 35% 65%;
+
+    --sidebar-background: 140 20% 8%;
+    --sidebar-foreground: 48 25% 85%;
+    --sidebar-primary: 140 35% 65%;
+    --sidebar-primary-foreground: 140 30% 15%;
+    --sidebar-accent: 140 15% 15%;
+    --sidebar-accent-foreground: 48 25% 85%;
+    --sidebar-border: 140 15% 25%;
+    --sidebar-ring: 140 35% 65%;
   }
 }
 
@@ -100,6 +149,98 @@ All colors MUST be HSL.
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-body;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-heading;
+  }
+}
+
+@layer components {
+  /* Gradient Utilities */
+  .gradient-primary {
+    background: var(--gradient-primary);
+  }
+  
+  .gradient-hero {
+    background: var(--gradient-hero);
+  }
+  
+  .gradient-card {
+    background: var(--gradient-card);
+  }
+  
+  .gradient-accent {
+    background: var(--gradient-accent);
+  }
+
+  /* Shadow Utilities */
+  .shadow-soft {
+    box-shadow: var(--shadow-soft);
+  }
+  
+  .shadow-medium {
+    box-shadow: var(--shadow-medium);
+  }
+  
+  .shadow-strong {
+    box-shadow: var(--shadow-strong);
+  }
+  
+  .shadow-glow {
+    box-shadow: var(--shadow-glow);
+  }
+
+  /* Animation Classes */
+  .transition-smooth {
+    transition: var(--transition-smooth);
+  }
+  
+  .transition-bounce {
+    transition: var(--transition-bounce);
+  }
+
+  /* Agricultural Component Styles */
+  .farm-card {
+    @apply bg-card border border-border rounded-xl shadow-soft transition-smooth;
+    @apply hover:shadow-medium hover:border-primary/20;
+  }
+
+  .stat-card {
+    @apply farm-card p-6 gradient-card;
+  }
+
+  .dashboard-grid {
+    @apply grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6;
+  }
+
+  .mobile-collection-card {
+    @apply farm-card p-4 space-y-4 hover:shadow-glow;
+  }
+
+  /* Custom scrollbar for agricultural theme */
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--accent)) hsl(var(--muted));
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: hsl(var(--muted));
+    border-radius: 4px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: hsl(var(--accent));
+    border-radius: 4px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--accent-light));
   }
 }
