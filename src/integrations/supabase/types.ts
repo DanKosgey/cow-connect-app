@@ -14,16 +14,236 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      collections: {
+        Row: {
+          collection_date: string | null
+          created_at: string | null
+          farmer_id: string
+          gps_latitude: number | null
+          gps_longitude: number | null
+          id: string
+          liters: number
+          quality_grade: string | null
+          staff_id: string
+          validation_code: string | null
+        }
+        Insert: {
+          collection_date?: string | null
+          created_at?: string | null
+          farmer_id: string
+          gps_latitude?: number | null
+          gps_longitude?: number | null
+          id?: string
+          liters: number
+          quality_grade?: string | null
+          staff_id: string
+          validation_code?: string | null
+        }
+        Update: {
+          collection_date?: string | null
+          created_at?: string | null
+          farmer_id?: string
+          gps_latitude?: number | null
+          gps_longitude?: number | null
+          id?: string
+          liters?: number
+          quality_grade?: string | null
+          staff_id?: string
+          validation_code?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "collections_farmer_id_fkey"
+            columns: ["farmer_id"]
+            isOneToOne: false
+            referencedRelation: "farmers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "collections_staff_id_fkey"
+            columns: ["staff_id"]
+            isOneToOne: false
+            referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      farmers: {
+        Row: {
+          address: string | null
+          created_at: string | null
+          farm_location: string | null
+          id: string
+          kyc_documents: Json | null
+          kyc_status: string | null
+          national_id: string | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          address?: string | null
+          created_at?: string | null
+          farm_location?: string | null
+          id?: string
+          kyc_documents?: Json | null
+          kyc_status?: string | null
+          national_id?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          address?: string | null
+          created_at?: string | null
+          farm_location?: string | null
+          id?: string
+          kyc_documents?: Json | null
+          kyc_status?: string | null
+          national_id?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      payments: {
+        Row: {
+          amount: number
+          created_at: string | null
+          farmer_id: string
+          id: string
+          paid_at: string | null
+          payment_method: string | null
+          period_end: string
+          period_start: string
+          status: string | null
+          transaction_id: string | null
+        }
+        Insert: {
+          amount: number
+          created_at?: string | null
+          farmer_id: string
+          id?: string
+          paid_at?: string | null
+          payment_method?: string | null
+          period_end: string
+          period_start: string
+          status?: string | null
+          transaction_id?: string | null
+        }
+        Update: {
+          amount?: number
+          created_at?: string | null
+          farmer_id?: string
+          id?: string
+          paid_at?: string | null
+          payment_method?: string | null
+          period_end?: string
+          period_start?: string
+          status?: string | null
+          transaction_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payments_farmer_id_fkey"
+            columns: ["farmer_id"]
+            isOneToOne: false
+            referencedRelation: "farmers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string | null
+          full_name: string | null
+          id: string
+          phone: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string | null
+          full_name?: string | null
+          id: string
+          phone?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string | null
+          full_name?: string | null
+          id?: string
+          phone?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      staff: {
+        Row: {
+          assigned_route: string | null
+          created_at: string | null
+          department: string | null
+          employee_id: string | null
+          id: string
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          assigned_route?: string | null
+          created_at?: string | null
+          department?: string | null
+          employee_id?: string | null
+          id?: string
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          assigned_route?: string | null
+          created_at?: string | null
+          department?: string | null
+          employee_id?: string | null
+          id?: string
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          created_at: string | null
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "staff" | "farmer"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +370,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "staff", "farmer"],
+    },
   },
 } as const
