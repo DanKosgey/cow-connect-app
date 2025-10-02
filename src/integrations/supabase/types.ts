@@ -24,6 +24,7 @@ export type Database = {
           id: string
           liters: number
           quality_grade: string | null
+          rate_per_liter: number | null
           staff_id: string
           validation_code: string | null
         }
@@ -36,6 +37,7 @@ export type Database = {
           id?: string
           liters: number
           quality_grade?: string | null
+          rate_per_liter?: number | null
           staff_id: string
           validation_code?: string | null
         }
@@ -48,6 +50,7 @@ export type Database = {
           id?: string
           liters?: number
           quality_grade?: string | null
+          rate_per_liter?: number | null
           staff_id?: string
           validation_code?: string | null
         }
@@ -64,6 +67,50 @@ export type Database = {
             columns: ["staff_id"]
             isOneToOne: false
             referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      farmer_analytics: {
+        Row: {
+          avg_quality_score: number | null
+          current_month_earnings: number | null
+          current_month_liters: number | null
+          farmer_id: string
+          id: string
+          last_collection_date: string | null
+          total_collections: number | null
+          total_liters: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          avg_quality_score?: number | null
+          current_month_earnings?: number | null
+          current_month_liters?: number | null
+          farmer_id: string
+          id?: string
+          last_collection_date?: string | null
+          total_collections?: number | null
+          total_liters?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          avg_quality_score?: number | null
+          current_month_earnings?: number | null
+          current_month_liters?: number | null
+          farmer_id?: string
+          id?: string
+          last_collection_date?: string | null
+          total_collections?: number | null
+          total_liters?: number | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "farmer_analytics_farmer_id_fkey"
+            columns: ["farmer_id"]
+            isOneToOne: true
+            referencedRelation: "farmers"
             referencedColumns: ["id"]
           },
         ]
@@ -101,6 +148,33 @@ export type Database = {
           national_id?: string | null
           updated_at?: string | null
           user_id?: string | null
+        }
+        Relationships: []
+      }
+      milk_rates: {
+        Row: {
+          created_at: string
+          end_date: string | null
+          id: string
+          is_active: boolean | null
+          rate_per_liter: number
+          start_date: string
+        }
+        Insert: {
+          created_at?: string
+          end_date?: string | null
+          id?: string
+          is_active?: boolean | null
+          rate_per_liter: number
+          start_date: string
+        }
+        Update: {
+          created_at?: string
+          end_date?: string | null
+          id?: string
+          is_active?: boolean | null
+          rate_per_liter?: number
+          start_date?: string
         }
         Relationships: []
       }
@@ -234,6 +308,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_current_milk_rate: {
+        Args: Record<PropertyKey, never>
+        Returns: number
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]

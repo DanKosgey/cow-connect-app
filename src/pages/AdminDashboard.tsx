@@ -1,251 +1,289 @@
-import { useState } from "react";
-import { Users, Milk, TrendingUp, MapPin, Bell, Settings, LogOut, BarChart3, Shield, Calendar } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { useNavigate } from "react-router-dom";
-import { useToast } from "@/hooks/use-toast";
+import { useEffect, useState } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { DashboardLayout } from '@/components/DashboardLayout';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Users, Milk, DollarSign, UserCog, AlertCircle } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+import { Button } from '@/components/ui/button';
+import { useNavigate } from 'react-router-dom';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
+
+interface SystemStats {
+  total_farmers: number;
+  total_staff: number;
+  today_collection: number;
+  monthly_collection: number;
+  pending_kyc: number;
+}
+
+interface PendingKYC {
+  id: string;
+  national_id: string;
+  created_at: string;
+  user_id: string;
+  profiles: {
+    full_name: string;
+    phone: string;
+  };
+}
 
 const AdminDashboard = () => {
-  const navigate = useNavigate();
   const { toast } = useToast();
-  const [user] = useState(() => {
-    const stored = localStorage.getItem('dairychain_user');
-    return stored ? JSON.parse(stored) : null;
+  const navigate = useNavigate();
+  const [stats, setStats] = useState<SystemStats>({
+    total_farmers: 0,
+    total_staff: 0,
+    today_collection: 0,
+    monthly_collection: 0,
+    pending_kyc: 0,
   });
+  const [pendingKYCs, setPendingKYCs] = useState<PendingKYC[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Mock data for dashboard
-  const stats = [
-    {
-      title: "Total Farmers",
-      value: "1,247",
-      change: "+12%",
-      icon: Users,
-      color: "text-success",
-      bgColor: "bg-success/10"
-    },
-    {
-      title: "Daily Collection",
-      value: "45,230L",
-      change: "+8%",
-      icon: Milk,
-      color: "text-accent",
-      bgColor: "bg-accent/10"
-    },
-    {
-      title: "Revenue (Month)",
-      value: "$324,567",
-      change: "+15%",
-      icon: TrendingUp,
-      color: "text-primary",
-      bgColor: "bg-primary/10"
-    },
-    {
-      title: "Active Staff",
-      value: "89",
-      change: "+2%",
-      icon: MapPin,
-      color: "text-warning",
-      bgColor: "bg-warning/10"
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
+
+  const fetchDashboardData = async () => {
+    try {
+      // Get total farmers
+      const { count: farmersCount } = await supabase
+        .from('farmers')
+        .select('*', { count: 'exact', head: true });
+
+      // Get total staff
+      const { count: staffCount } = await supabase
+        .from('staff')
+        .select('*', { count: 'exact', head: true });
+
+      // Get today's collection
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      const { data: todayCollections } = await supabase
+        .from('collections')
+        .select('liters')
+        .gte('collection_date', today.toISOString());
+
+      const todayTotal = todayCollections?.reduce((sum, c) => sum + Number(c.liters || 0), 0) || 0;
+
+      // Get monthly collection
+      const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+      
+      const { data: monthlyCollections } = await supabase
+        .from('collections')
+        .select('liters')
+        .gte('collection_date', firstDayOfMonth.toISOString());
+
+      const monthlyTotal = monthlyCollections?.reduce((sum, c) => sum + Number(c.liters || 0), 0) || 0;
+
+      // Get pending KYC
+      const { data: pendingKYC, count: pendingCount } = await supabase
+        .from('farmers')
+        .select('*, profiles!inner(full_name, phone)', { count: 'exact' })
+        .eq('kyc_status', 'pending')
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      setStats({
+        total_farmers: farmersCount || 0,
+        total_staff: staffCount || 0,
+        today_collection: todayTotal,
+        monthly_collection: monthlyTotal,
+        pending_kyc: pendingCount || 0,
+      });
+
+      setPendingKYCs((pendingKYC as any) || []);
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setLoading(false);
     }
-  ];
-
-  const recentCollections = [
-    { id: "1", farmer: "John Smith", amount: "125L", time: "2 mins ago", status: "completed", quality: "A" },
-    { id: "2", farmer: "Mary Johnson", amount: "89L", time: "5 mins ago", status: "completed", quality: "A" },
-    { id: "3", farmer: "Robert Brown", amount: "156L", time: "8 mins ago", status: "pending", quality: "B" },
-    { id: "4", farmer: "Sarah Davis", amount: "203L", time: "12 mins ago", status: "completed", quality: "A" },
-    { id: "5", farmer: "Michael Wilson", amount: "78L", time: "15 mins ago", status: "completed", quality: "B" },
-  ];
-
-  const pendingKYC = [
-    { id: "1", name: "Alice Cooper", submitted: "2 days ago", documents: 3 },
-    { id: "2", name: "Tom Anderson", submitted: "1 day ago", documents: 4 },
-    { id: "3", name: "Lisa Martinez", submitted: "3 hours ago", documents: 2 },
-  ];
-
-  const handleLogout = () => {
-    localStorage.removeItem('dairychain_user');
-    toast({
-      title: "Logged out successfully",
-      description: "You have been signed out of your account",
-    });
-    navigate('/');
   };
 
-  if (!user || user.role !== 'admin') {
-    navigate('/login');
-    return null;
+  if (loading) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center h-full">
+          <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+        </div>
+      </DashboardLayout>
+    );
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border bg-card/50 backdrop-blur-sm">
-        <div className="flex h-16 items-center justify-between px-6">
-          <div className="flex items-center space-x-4">
-            <div className="w-8 h-8 gradient-primary rounded-lg flex items-center justify-center">
-              <Milk className="w-5 h-5 text-primary-foreground" />
-            </div>
-            <div>
-              <h1 className="text-lg font-semibold">DairyChain Pro</h1>
-              <p className="text-xs text-muted-foreground">Administrator Dashboard</p>
-            </div>
-          </div>
-          
-          <div className="flex items-center space-x-4">
-            <Button variant="ghost" size="icon">
-              <Bell className="w-4 h-4" />
-            </Button>
-            <Button variant="ghost" size="icon">
-              <Settings className="w-4 h-4" />
-            </Button>
-            <div className="flex items-center space-x-2">
-              <span className="text-sm font-medium">{user?.name}</span>
-              <Badge variant="secondary">Admin</Badge>
-            </div>
-            <Button variant="ghost" size="icon" onClick={handleLogout}>
-              <LogOut className="w-4 h-4" />
-            </Button>
-          </div>
-        </div>
-      </header>
-
-      <div className="p-6 space-y-6">
-        {/* Welcome Section */}
-        <div className="space-y-2">
-          <h2 className="text-2xl font-heading font-bold">Welcome back, {user?.name}</h2>
-          <p className="text-muted-foreground">
-            Here's what's happening with your dairy operations today.
+    <DashboardLayout>
+      <div className="p-8 space-y-8">
+        {/* Header */}
+        <div>
+          <h1 className="text-4xl font-bold">Admin Dashboard</h1>
+          <p className="text-muted-foreground mt-2">
+            System overview and management
           </p>
         </div>
 
-        {/* Stats Grid */}
-        <div className="dashboard-grid">
-          {stats.map((stat, index) => {
-            const Icon = stat.icon;
-            return (
-              <Card key={index} className="stat-card">
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-muted-foreground">{stat.title}</p>
-                      <p className="text-2xl font-bold">{stat.value}</p>
-                      <p className={`text-sm ${stat.color} font-medium`}>
-                        {stat.change} from last month
-                      </p>
-                    </div>
-                    <div className={`w-12 h-12 ${stat.bgColor} rounded-lg flex items-center justify-center`}>
-                      <Icon className={`w-6 h-6 ${stat.color}`} />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-
-        <div className="grid lg:grid-cols-2 gap-6">
-          {/* Recent Collections */}
-          <Card className="farm-card">
-            <CardHeader>
-              <CardTitle className="flex items-center space-x-2">
-                <Milk className="w-5 h-5" />
-                <span>Recent Collections</span>
-              </CardTitle>
-              <CardDescription>
-                Latest milk collection activities
-              </CardDescription>
+        {/* Stats Cards */}
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-5">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Farmers</CardTitle>
+              <Users className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {recentCollections.map((collection) => (
-                  <div key={collection.id} className="flex items-center justify-between p-3 rounded-lg bg-secondary/30">
-                    <div className="flex-1">
-                      <p className="font-medium">{collection.farmer}</p>
-                      <p className="text-sm text-muted-foreground">{collection.time}</p>
-                    </div>
-                    <div className="text-right space-y-1">
-                      <p className="font-semibold">{collection.amount}</p>
-                      <div className="flex items-center space-x-2">
-                        <Badge variant={collection.status === 'completed' ? 'default' : 'secondary'}>
-                          {collection.status}
-                        </Badge>
-                        <Badge variant={collection.quality === 'A' ? 'default' : 'outline'}>
-                          Grade {collection.quality}
-                        </Badge>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <div className="text-2xl font-bold">{stats.total_farmers}</div>
+              <p className="text-xs text-muted-foreground">Registered farmers</p>
             </CardContent>
           </Card>
 
-          {/* Pending KYC Reviews */}
-          <Card className="farm-card">
-            <CardHeader>
-              <CardTitle className="flex items-center space-x-2">
-                <Shield className="w-5 h-5" />
-                <span>Pending KYC Reviews</span>
-              </CardTitle>
-              <CardDescription>
-                Farmers awaiting verification
-              </CardDescription>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Active Staff</CardTitle>
+              <UserCog className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {pendingKYC.map((farmer) => (
-                  <div key={farmer.id} className="flex items-center justify-between p-3 rounded-lg bg-warning/10 border border-warning/20">
-                    <div className="flex-1">
-                      <p className="font-medium">{farmer.name}</p>
-                      <p className="text-sm text-muted-foreground">
-                        Submitted {farmer.submitted} • {farmer.documents} documents
-                      </p>
-                    </div>
-                    <div className="flex space-x-2">
-                      <Button size="sm" variant="outline">
-                        Review
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <div className="text-2xl font-bold">{stats.total_staff}</div>
+              <p className="text-xs text-muted-foreground">Collection agents</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Today's Collection</CardTitle>
+              <Milk className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.today_collection.toFixed(1)} L</div>
+              <p className="text-xs text-muted-foreground">Collected today</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Monthly Total</CardTitle>
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.monthly_collection.toFixed(1)} L</div>
+              <p className="text-xs text-muted-foreground">This month</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Pending KYC</CardTitle>
+              <AlertCircle className="h-4 w-4 text-yellow-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.pending_kyc}</div>
+              <p className="text-xs text-muted-foreground">Awaiting approval</p>
             </CardContent>
           </Card>
         </div>
 
         {/* Quick Actions */}
-        <Card className="farm-card">
-          <CardHeader>
-            <CardTitle>Quick Actions</CardTitle>
-            <CardDescription>
-              Frequently used administrative functions
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <Button variant="outline" className="h-20 flex-col space-y-2">
-                <Users className="w-6 h-6" />
-                <span>Manage Farmers</span>
+        <div className="grid gap-6 md:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>Quick Actions</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Button 
+                className="w-full justify-start" 
+                variant="outline"
+                onClick={() => navigate('/admin/farmers')}
+              >
+                <Users className="h-4 w-4 mr-2" />
+                Manage Farmers
               </Button>
-              <Button variant="outline" className="h-20 flex-col space-y-2">
-                <BarChart3 className="w-6 h-6" />
-                <span>Analytics</span>
+              <Button 
+                className="w-full justify-start" 
+                variant="outline"
+                onClick={() => navigate('/admin/staff')}
+              >
+                <UserCog className="h-4 w-4 mr-2" />
+                Manage Staff
               </Button>
-              <Button variant="outline" className="h-20 flex-col space-y-2">
-                <Calendar className="w-6 h-6" />
-                <span>Schedules</span>
+              <Button 
+                className="w-full justify-start" 
+                variant="outline"
+                onClick={() => navigate('/admin/kyc')}
+              >
+                <AlertCircle className="h-4 w-4 mr-2" />
+                Review KYC Applications
               </Button>
-              <Button variant="outline" className="h-20 flex-col space-y-2">
-                <Settings className="w-6 h-6" />
-                <span>Settings</span>
+              <Button 
+                className="w-full justify-start" 
+                variant="outline"
+                onClick={() => navigate('/admin/analytics')}
+              >
+                <Milk className="h-4 w-4 mr-2" />
+                View Analytics
               </Button>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+
+          {/* Pending KYC Approvals */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>Pending KYC Approvals</CardTitle>
+                <Button 
+                  variant="ghost" 
+                  size="sm"
+                  onClick={() => navigate('/admin/kyc')}
+                >
+                  View All
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {pendingKYCs.length === 0 ? (
+                <p className="text-center text-muted-foreground py-8">
+                  No pending KYC approvals
+                </p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Farmer</TableHead>
+                      <TableHead>National ID</TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {pendingKYCs.map((farmer) => (
+                      <TableRow key={farmer.id}>
+                        <TableCell className="font-medium">
+                          {farmer.profiles?.full_name || 'Unknown'}
+                        </TableCell>
+                        <TableCell className="font-mono text-sm">
+                          {farmer.national_id}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="secondary">Pending</Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
-    </div>
+    </DashboardLayout>
   );
 };
 

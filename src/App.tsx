@@ -11,6 +11,7 @@ import AdminDashboard from "./pages/AdminDashboard";
 import StaffDashboard from "./pages/StaffDashboard";
 import FarmerDashboard from "./pages/FarmerDashboard";
 import NotFound from "./pages/NotFound";
+import NewCollection from "./pages/staff/NewCollection";
 
 const queryClient = new QueryClient();
 
@@ -32,6 +33,11 @@ const App = () => (
             <Route path="/staff" element={
               <ProtectedRoute allowedRoles={['staff']}>
                 <StaffDashboard />
+              </ProtectedRoute>
+            } />
+            <Route path="/staff/new-collection" element={
+              <ProtectedRoute allowedRoles={['staff']}>
+                <NewCollection />
               </ProtectedRoute>
             } />
             <Route path="/farmer" element={
