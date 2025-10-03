@@ -31,21 +31,21 @@ interface DashboardLayoutProps {
 
 const roleNavigation: Record<string, NavItem[]> = {
   farmer: [
-    { label: 'Dashboard', path: '/farmer', icon: <LayoutDashboard className="h-5 w-5" /> },
+    { label: 'Dashboard', path: '/farmer/dashboard', icon: <LayoutDashboard className="h-5 w-5" /> },
     { label: 'My Collections', path: '/farmer/collections', icon: <Milk className="h-5 w-5" /> },
     { label: 'Payments', path: '/farmer/payments', icon: <DollarSign className="h-5 w-5" /> },
     { label: 'Analytics', path: '/farmer/analytics', icon: <BarChart3 className="h-5 w-5" /> },
     { label: 'Profile', path: '/farmer/profile', icon: <UserCog className="h-5 w-5" /> },
   ],
   staff: [
-    { label: 'Dashboard', path: '/staff', icon: <LayoutDashboard className="h-5 w-5" /> },
+    { label: 'Dashboard', path: '/staff/dashboard', icon: <LayoutDashboard className="h-5 w-5" /> },
     { label: 'New Collection', path: '/staff/new-collection', icon: <Milk className="h-5 w-5" /> },
     { label: 'My Collections', path: '/staff/collections', icon: <FileText className="h-5 w-5" /> },
     { label: 'Farmers', path: '/staff/farmers', icon: <Users className="h-5 w-5" /> },
     { label: 'Profile', path: '/staff/profile', icon: <UserCog className="h-5 w-5" /> },
   ],
   admin: [
-    { label: 'Dashboard', path: '/admin', icon: <LayoutDashboard className="h-5 w-5" /> },
+    { label: 'Dashboard', path: '/admin/dashboard', icon: <LayoutDashboard className="h-5 w-5" /> },
     { label: 'Farmers', path: '/admin/farmers', icon: <Users className="h-5 w-5" /> },
     { label: 'Staff', path: '/admin/staff', icon: <UserCog className="h-5 w-5" /> },
     { label: 'KYC Approvals', path: '/admin/kyc', icon: <CheckCircle className="h-5 w-5" /> },

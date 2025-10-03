@@ -5,7 +5,7 @@ import { DashboardLayout } from '@/components/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Milk, DollarSign, TrendingUp, Award } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
+import useToastNotifications from '@/hooks/useToastNotifications';
 import {
   Table,
   TableBody,
@@ -41,7 +41,7 @@ interface Collection {
 
 const FarmerDashboard = () => {
   const { user } = useAuth();
-  const { toast } = useToast();
+  const toast = useToastNotifications();
   const [farmerData, setFarmerData] = useState<FarmerData | null>(null);
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [recentCollections, setRecentCollections] = useState<Collection[]>([]);
@@ -88,11 +88,7 @@ const FarmerDashboard = () => {
         setRecentCollections(collections);
       }
     } catch (error: any) {
-      toast({
-        title: 'Error',
-        description: error.message,
-        variant: 'destructive',
-      });
+      toast.error('Error', error.message);
     } finally {
       setLoading(false);
     }

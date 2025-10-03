@@ -1,0 +1,26 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.node.json" }
+  ],
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@/auth/*": ["./src/domains/auth/*"],
+      "@/farmers/*": ["./src/domains/farmers/*"],
+      "@/staff/*": ["./src/domains/staff/*"],
+      "@/admin/*": ["./src/domains/admin/*"],
+      "@/collections/*": ["./src/domains/collections/*"],
+      "@/shared/*": ["./src/domains/shared/*"],
+      "@/core/*": ["./src/core/*"]
+    },
+    "noImplicitAny": false,
+    "noUnusedParameters": false,
+    "skipLibCheck": true,
+    "allowJs": true,
+    "noUnusedLocals": false,
+    "strictNullChecks": false
+  }
+}

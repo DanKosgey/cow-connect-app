@@ -1,0 +1,97 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
+
+:root {
+  /* Futuristic Dark Green Theme */
+  --color-primary: #0A2F1F;
+  --color-secondary: #1A5F3F;
+  --color-accent: #00FF9D;
+  --color-background: #051510;
+  --color-surface: rgba(26, 95, 63, 0.1);
+  --color-text-primary: #E0FFF0;
+  --color-text-secondary: #A0DFC0;
+  --color-border: rgba(0, 255, 157, 0.2);
+  --color-success: #00FF9D;
+  --color-warning: #FFB800;
+  --color-error: #FF3366;
+  
+  /* Shadows and Glows */
+  --glow-primary: 0 0 20px rgba(0, 255, 157, 0.2);
+  --glow-accent: 0 0 30px rgba(0, 255, 157, 0.3);
+  
+  /* Gradients */
+  --gradient-surface: linear-gradient(
+    135deg,
+    rgba(26, 95, 63, 0.1) 0%,
+    rgba(10, 47, 31, 0.2) 100%
+  );
+  
+  /* Animations */
+  --transition-speed: 0.3s;
+  --transition-timing: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Global Styles */
+body {
+  font-family: 'Space Grotesk', 'Inter', sans-serif;
+  background-color: var(--color-background);
+  color: var(--color-text-primary);
+}
+
+/* Futuristic Card Styles */
+.card-futuristic {
+  background: var(--gradient-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  box-shadow: var(--glow-primary);
+  backdrop-filter: blur(10px);
+  transition: all var(--transition-speed) var(--transition-timing);
+}
+
+.card-futuristic:hover {
+  box-shadow: var(--glow-accent);
+  transform: translateY(-2px);
+}
+
+/* Futuristic Button Styles */
+.button-futuristic {
+  background: var(--color-secondary);
+  color: var(--color-accent);
+  border: 1px solid var(--color-accent);
+  border-radius: 24px;
+  padding: 0.75rem 1.5rem;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  transition: all var(--transition-speed) var(--transition-timing);
+}
+
+.button-futuristic:hover {
+  background: var(--color-accent);
+  color: var(--color-primary);
+  box-shadow: var(--glow-accent);
+}
+
+/* Futuristic Text Styles */
+.text-glow {
+  text-shadow: 0 0 10px rgba(0, 255, 157, 0.5);
+}
+
+/* Animation Classes */
+.hover-lift {
+  transition: transform var(--transition-speed) var(--transition-timing);
+}
+
+.hover-lift:hover {
+  transform: translateY(-4px);
+}
+
+/* Badge Styles */
+.badge-futuristic {
+  background: var(--color-surface);
+  border: 1px solid var(--color-accent);
+  color: var(--color-accent);
+  font-size: 0.75rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}

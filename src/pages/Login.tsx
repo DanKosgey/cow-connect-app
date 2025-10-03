@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import "@/styles/login.css";
 import { useNavigate } from "react-router-dom";
 import { Milk, Eye, EyeOff, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -7,13 +8,14 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useToast } from "@/hooks/use-toast";
+import useToastNotifications from "@/hooks/useToastNotifications";
 import { useAuth } from "@/contexts/AuthContext";
+import { AccountLockoutAlert } from "@/components/ui/account-lockout";
 
 const Login = () => {
   const navigate = useNavigate();
-  const { toast } = useToast();
-  const { signIn, signUp, user, userRole } = useAuth();
+  const toast = useToastNotifications();
+  const { login, signUp, user, userRole } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loginData, setLoginData] = useState({
@@ -27,6 +29,8 @@ const Login = () => {
     phone: "",
     role: "farmer"
   });
+  const [showLockoutAlert, setShowLockoutAlert] = useState(false);
+  const [lockoutMessage, setLockoutMessage] = useState("");
 
   useEffect(() => {
     // Redirect if already logged in
@@ -43,20 +47,25 @@ const Login = () => {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setShowLockoutAlert(false); // Reset lockout alert
 
-    const { error } = await signIn(loginData.email, loginData.password);
+    const { error } = await login({
+      email: loginData.email,
+      password: loginData.password,
+      role: signupData.role
+    });
 
     if (error) {
-      toast({
-        title: "Login Failed",
-        description: error.message,
-        variant: "destructive",
-      });
+      if (error.message?.includes('Account is locked') || error.message?.includes('Too many failed attempts')) {
+        // Show account lockout alert
+        setLockoutMessage(error.message);
+        setShowLockoutAlert(true);
+            toast.error('Account Locked', error.message);
+      } else {
+            toast.error('Login Failed', error.message);
+      }
     } else {
-      toast({
-        title: "Login Successful",
-        description: "Welcome back!",
-      });
+          toast.success('Login Successful', 'Welcome back!');
     }
     
     setLoading(false);
@@ -66,25 +75,18 @@ const Login = () => {
     e.preventDefault();
     setLoading(true);
 
-    const { error } = await signUp(
-      signupData.email,
-      signupData.password,
-      signupData.fullName,
-      signupData.phone,
-      signupData.role
-    );
+    const { error } = await signUp({
+      email: signupData.email,
+      password: signupData.password,
+      fullName: signupData.fullName,
+      phone: signupData.phone,
+      role: signupData.role
+    });
 
     if (error) {
-      toast({
-        title: "Sign Up Failed",
-        description: error.message,
-        variant: "destructive",
-      });
+          toast.error('Sign Up Failed', error.message);
     } else {
-      toast({
-        title: "Sign Up Successful",
-        description: "Please check your email to verify your account.",
-      });
+          toast.success('Sign Up Successful', 'Please check your email to verify your account.');
     }
     
     setLoading(false);
@@ -105,6 +107,14 @@ const Login = () => {
             <p className="text-muted-foreground">Sign in to manage your dairy operations</p>
           </div>
         </div>
+
+        {/* Show lockout alert if account is locked */}
+        {showLockoutAlert && lockoutMessage && (
+          <AccountLockoutAlert 
+            message={lockoutMessage}
+            onClose={() => setShowLockoutAlert(false)}
+          />
+        )}
 
         {/* Auth Form */}
         <Card className="farm-card">

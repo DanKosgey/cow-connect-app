@@ -1,0 +1,1 @@
+import{r as p,j as o}from"./index-C6fZJ48e.js";const t=p.forwardRef(({className:i,children:s,as:a="span",...e},r)=>o.jsx(a,{ref:r,className:"absolute w-px h-px p-0 -m-px overflow-hidden clip-rect(0,0,0,0) whitespace-nowrap border-0",...e,children:s}));t.displayName="VisuallyHidden";export{t as V};

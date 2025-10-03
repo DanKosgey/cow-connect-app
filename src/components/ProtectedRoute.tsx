@@ -1,13 +1,15 @@
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { UserRole } from '@/types/auth.types';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
-  allowedRoles?: string[];
+  requiredRole: UserRole;
 }
 
-export const ProtectedRoute = ({ children, allowedRoles }: ProtectedRouteProps) => {
+export const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) => {
   const { user, userRole, loading } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -20,12 +22,24 @@ export const ProtectedRoute = ({ children, allowedRoles }: ProtectedRouteProps) 
     );
   }
 
-  if (!user) {
-    return <Navigate to="/login" replace />;
+  if (!user || !userRole) {
+    // Redirect to the appropriate login page based on the required role
+    const loginRoutes = {
+      [UserRole.ADMIN]: '/admin/login',
+      [UserRole.STAFF]: '/staff/login',
+      [UserRole.FARMER]: '/farmer/portal'
+    };
+    return <Navigate to={loginRoutes[requiredRole]} state={{ from: location }} replace />;
   }
 
-  if (allowedRoles && userRole && !allowedRoles.includes(userRole)) {
-    return <Navigate to="/" replace />;
+  if (userRole !== requiredRole) {
+    // Redirect to the appropriate dashboard if logged in with wrong role
+    const dashboardRoutes = {
+      [UserRole.ADMIN]: '/admin/dashboard',
+      [UserRole.STAFF]: '/staff/dashboard',
+      [UserRole.FARMER]: '/farmer/dashboard'
+    };
+    return <Navigate to={dashboardRoutes[userRole as UserRole]} replace />;
   }
 
   return <>{children}</>;

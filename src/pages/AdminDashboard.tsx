@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Users, Milk, DollarSign, UserCog, AlertCircle } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
+import useToastNotifications from '@/hooks/useToastNotifications';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -36,7 +36,7 @@ interface PendingKYC {
 }
 
 const AdminDashboard = () => {
-  const { toast } = useToast();
+  const toast = useToastNotifications();
   const navigate = useNavigate();
   const [stats, setStats] = useState<SystemStats>({
     total_farmers: 0,
@@ -103,11 +103,7 @@ const AdminDashboard = () => {
 
       setPendingKYCs((pendingKYC as any) || []);
     } catch (error: any) {
-      toast({
-        title: 'Error',
-        description: error.message,
-        variant: 'destructive',
-      });
+      toast.error('Error', error.message);
     } finally {
       setLoading(false);
     }
