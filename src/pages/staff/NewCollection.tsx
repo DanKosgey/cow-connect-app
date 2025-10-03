@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useToast } from '@/hooks/use-toast';
+import useToastNotifications from '@/hooks/useToastNotifications';
 import { useNavigate } from 'react-router-dom';
 import {
   Select,
@@ -27,7 +27,7 @@ interface Farmer {
 
 const NewCollection = () => {
   const { user } = useAuth();
-  const { toast } = useToast();
+  const { show, error: showError } = useToastNotifications();
   const navigate = useNavigate();
   const [farmers, setFarmers] = useState<Farmer[]>([]);
   const [selectedFarmer, setSelectedFarmer] = useState('');
@@ -117,18 +117,11 @@ const NewCollection = () => {
 
       if (collectionError) throw collectionError;
 
-      toast({
-        title: 'Success',
-        description: `Collection recorded successfully! Validation code: ${validationCode}`,
-      });
+      show({ title: 'Success', description: `Collection recorded successfully! Validation code: ${validationCode}` });
 
       navigate('/staff');
     } catch (error: any) {
-      toast({
-        title: 'Error',
-        description: error.message,
-        variant: 'destructive',
-      });
+      showError('Error', String(error?.message || 'An error occurred'));
     } finally {
       setLoading(false);
     }
