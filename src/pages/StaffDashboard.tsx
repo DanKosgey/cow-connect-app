@@ -5,7 +5,7 @@ import { DashboardLayout } from '@/components/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Milk, Users, TrendingUp, Plus } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
+import useToastNotifications from '@/hooks/useToastNotifications';
 import { useNavigate } from 'react-router-dom';
 import {
   Table,
@@ -38,7 +38,7 @@ interface RecentCollection {
 
 const StaffDashboard = () => {
   const { user } = useAuth();
-  const { toast } = useToast();
+  const { show, error: showError } = useToastNotifications();
   const navigate = useNavigate();
   const [todayStats, setTodayStats] = useState<TodayStats>({
     total_collections: 0,
@@ -111,11 +111,7 @@ const StaffDashboard = () => {
         setRecentCollections(collectionsWithProfiles as any);
       }
     } catch (error: any) {
-      toast({
-        title: 'Error',
-        description: error.message,
-        variant: 'destructive',
-      });
+      showError('Error', String(error?.message || 'An error occurred'));
     } finally {
       setLoading(false);
     }
