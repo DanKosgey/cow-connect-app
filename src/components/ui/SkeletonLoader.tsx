@@ -1,12 +1,16 @@
-import React from 'react'
+import React from 'react';
 
 interface SkeletonLoaderProps {
-  type?: 'card' | 'list' | 'chart' | 'dashboard'
-  count?: number
-  className?: string
+  type?: 'card' | 'list' | 'chart' | 'dashboard';
+  count?: number;
+  className?: string;
 }
 
-const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({ type = 'card', count = 1, className = '' }) => {
+const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
+  type = 'card',
+  count = 1,
+  className = '',
+}) => {
   const renderSkeleton = () => {
     switch (type) {
       case 'card':
@@ -16,7 +20,7 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({ type = 'card', count = 
             <div className="h-4 bg-gray-200 rounded w-full mb-2"></div>
             <div className="h-4 bg-gray-200 rounded w-5/6"></div>
           </div>
-        )
+        );
       case 'list':
         return (
           <div className="space-y-4">
@@ -32,7 +36,7 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({ type = 'card', count = 
               </div>
             ))}
           </div>
-        )
+        );
       case 'chart':
         return (
           <div className="border border-gray-200 rounded-lg p-6 shadow-sm animate-pulse">
@@ -44,7 +48,7 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({ type = 'card', count = 
               <div className="h-4 bg-gray-200 rounded w-3/6"></div>
             </div>
           </div>
-        )
+        );
       case 'dashboard':
         return (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -56,7 +60,7 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({ type = 'card', count = 
               </div>
             ))}
           </div>
-        )
+        );
       default:
         return (
           <div className="border border-gray-200 rounded-lg p-6 shadow-sm animate-pulse">
@@ -64,11 +68,12 @@ const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({ type = 'card', count = 
             <div className="h-4 bg-gray-200 rounded w-full mb-2"></div>
             <div className="h-4 bg-gray-200 rounded w-5/6"></div>
           </div>
-        )
+        );
     }
-  }
+  };
 
-  return <div className={className}>{renderSkeleton()}</div>
-}
+  return <div className={className}>{renderSkeleton()}</div>;
+};
 
-export default SkeletonLoader
+export default SkeletonLoader;
+import React from 'react'
