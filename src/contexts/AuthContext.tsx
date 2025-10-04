@@ -8,7 +8,20 @@ interface AuthContextType {
   userRole: string | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: any }>;
-  signUp: (email: string, password: string, fullName: string, phone: string, role: string) => Promise<{ error: any }>;
+  signUp: (
+    email: string, 
+    password: string, 
+    fullName: string, 
+    phone: string, 
+    role: string,
+    additionalData?: { 
+      nationalId?: string; 
+      address?: string; 
+      farmLocation?: string;
+      department?: string;
+      assignedRoute?: string;
+    }
+  ) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
 }
 
@@ -75,7 +88,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return { error };
   };
 
-  const signUp = async (email: string, password: string, fullName: string, phone: string, role: string) => {
+  const signUp = async (
+    email: string, 
+    password: string, 
+    fullName: string, 
+    phone: string, 
+    role: string,
+    additionalData?: { 
+      nationalId?: string; 
+      address?: string; 
+      farmLocation?: string;
+      department?: string;
+      assignedRoute?: string;
+    }
+  ) => {
     const redirectUrl = `${window.location.origin}/`;
     
     const { data, error } = await supabase.auth.signUp({
@@ -90,28 +116,49 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
     });
 
-    if (!error && data.user) {
+    if (error) {
+      return { error };
+    }
+
+    if (!data.user) {
+      return { error: { message: 'Failed to create user' } };
+    }
+
+    try {
       // Insert user role
-      await supabase.from('user_roles').insert([{
+      const { error: roleError } = await supabase.from('user_roles').insert([{
         user_id: data.user.id,
         role: role as 'admin' | 'staff' | 'farmer'
       }]);
 
+      if (roleError) throw roleError;
+
       // Create role-specific record
       if (role === 'farmer') {
-        await supabase.from('farmers').insert([{
+        const { error: farmerError } = await supabase.from('farmers').insert([{
           user_id: data.user.id,
-          kyc_status: 'pending'
+          national_id: additionalData?.nationalId,
+          address: additionalData?.address,
+          farm_location: additionalData?.farmLocation,
+          kyc_status: 'pending',
+          registration_completed: true
         }]);
+        if (farmerError) throw farmerError;
       } else if (role === 'staff') {
-        await supabase.from('staff').insert([{
+        const { error: staffError } = await supabase.from('staff').insert([{
           user_id: data.user.id,
-          employee_id: `STAFF-${Date.now()}`
+          department: additionalData?.department,
+          assigned_route: additionalData?.assignedRoute
         }]);
+        if (staffError) throw staffError;
       }
-    }
 
-    return { error };
+      return { error: null };
+    } catch (err: any) {
+      // If role-specific creation fails, we should still allow login
+      console.error('Error creating role-specific record:', err);
+      return { error: err };
+    }
   };
 
   const signOut = async () => {
