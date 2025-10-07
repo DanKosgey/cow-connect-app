@@ -1,72 +1,39 @@
-import { useToast } from '@/hooks/use-toast';
-import { toast as sonnerToast } from '@/components/ui/sonner';
+type ToastPayload = {
+  title?: string
+  description?: string
+}
 
-type ToastOptions = {
-  title?: React.ReactNode;
-  description?: React.ReactNode;
-  action?: any;
-};
+// Minimal, synchronous hook that mirrors the project's existing API surface.
+// It currently logs to console and returns helpers so components can call it
+// without changing behavior. Later we'll wire it to a persistent toast store.
+
+import { addToast, removeToast } from '@/lib/toastStore'
 
 export default function useToastNotifications() {
-  const { toast: radixToast, dismiss } = useToast();
+  function show(payload: ToastPayload) {
+    const id = addToast({ title: payload.title, description: payload.description, variant: 'default' })
+    // auto-dismiss default toasts after 4s
+    setTimeout(() => removeToast(id), 4000)
+    return id
+  }
 
-  const show = (opts: ToastOptions) => {
-    // Radix toast expects title/description to be string-like in this project
-    const t = {
-      ...opts,
-      title: opts.title ? String(opts.title) : undefined,
-      description: opts.description ? String(opts.description) : undefined,
-    } as any;
+  function error(title: string, description?: string) {
+    const id = addToast({ title, description, variant: 'error' })
+    // longer visibility for errors
+    setTimeout(() => removeToast(id), 8000)
+    return id
+  }
 
-    return radixToast(t);
-  };
-
-  const success = (title: React.ReactNode, description?: React.ReactNode) => {
-    return radixToast({ title: title ? String(title) : undefined, description: description ? String(description) : undefined } as any);
-  };
-
-  const error = (title: React.ReactNode, description?: React.ReactNode) => {
-    return radixToast({ title: title ? String(title) : undefined, description: description ? String(description) : undefined } as any);
-  };
-
-  function promiseWrapper<T, R = unknown>(
-    p: Promise<T>,
-    messages: {
-      loading: string;
-      success: string | ((data: T) => string);
-      error: string | ((err: any) => string);
-    }
-  ) {
-    // Prefer sonner.promise if available (better UX for async flows)
-    if (sonnerToast && typeof (sonnerToast as any).promise === 'function') {
-      return (sonnerToast as any).promise(p, {
-        loading: messages.loading,
-        success: messages.success as any,
-        error: messages.error as any,
-      });
-    }
-
-    // Fallback: use radix-based toasts for loading/success/error transitions
-    radixToast({ title: messages.loading });
-
-    p
-      .then((res) => {
-        radixToast({ title: typeof messages.success === 'function' ? (messages.success as Function)(res) : (messages.success as string) });
-        return res;
-      })
-      .catch((err) => {
-        radixToast({ title: typeof messages.error === 'function' ? (messages.error as Function)(err) : (messages.error as string) });
-        throw err;
-      });
-
-    return p;
+  function success(title: string, description?: string) {
+    const id = addToast({ title, description, variant: 'success' })
+    setTimeout(() => removeToast(id), 4000)
+    return id
   }
 
   return {
     show,
-    success,
     error,
-    promise: promiseWrapper,
-    dismiss,
-  } as const;
+    success,
+  }
 }
+

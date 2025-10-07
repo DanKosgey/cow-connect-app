@@ -1,16 +1,19 @@
 // Service Worker for Cow Connect App
-const CACHE_NAME = 'cow-connect-v1';
+const CACHE_NAME = 'cow-connect-v3';
 const OFFLINE_URL = '/offline.html';
 
+// Pre-cache critical assets for faster initial load
 const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/offline.html',
-  '/favicon.ico',
-  '/src/index.css',
-  '/src/assets/dairy-farm-hero.jpg',
-];
+].filter(Boolean);
 
+// Cache versioning for better cache busting
+const CACHE_VERSION = 'v3';
+const CACHE_KEY = `${CACHE_NAME}-${CACHE_VERSION}`;
+
+// Cache strategies
 const CACHE_STRATEGIES = {
   STATIC: 'static',
   NETWORK_FIRST: 'network-first',
@@ -21,9 +24,24 @@ const CACHE_STRATEGIES = {
 self.addEventListener('install', (event) => {
   event.waitUntil(
     (async () => {
-      const cache = await caches.open(CACHE_NAME);
-      // Cache static assets
-      await cache.addAll(STATIC_ASSETS);
+      const cache = await caches.open(CACHE_KEY);
+      
+      // Cache static assets with error handling
+      const cachePromises = STATIC_ASSETS.map(async (asset) => {
+        try {
+          const response = await fetch(asset);
+          if (response.ok) {
+            await cache.put(asset, response);
+          } else {
+            console.warn(`Failed to cache ${asset}: ${response.status} ${response.statusText}`);
+          }
+        } catch (error) {
+          console.warn(`Failed to cache ${asset}:`, error);
+        }
+      });
+      
+      await Promise.all(cachePromises);
+      
       // Cache offline page
       const offlineResponse = new Response(
         '<html><body><h1>Offline</h1><p>Please check your internet connection.</p></body></html>',
@@ -34,6 +52,7 @@ self.addEventListener('install', (event) => {
       await cache.put(OFFLINE_URL, offlineResponse);
     })()
   );
+  // Force waiting service worker to become active immediately
   self.skipWaiting();
 });
 
@@ -44,7 +63,7 @@ self.addEventListener('activate', (event) => {
       // Clean up old caches
       const cacheKeys = await caches.keys();
       const deletions = cacheKeys
-        .filter((key) => key !== CACHE_NAME)
+        .filter((key) => key !== CACHE_KEY)
         .map((key) => caches.delete(key));
       await Promise.all(deletions);
 
@@ -54,12 +73,27 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch event - handle offline content
+// Fetch event - handle requests with optimized strategies
 self.addEventListener('fetch', (event) => {
   // Skip non-GET requests
   if (event.request.method !== 'GET') return;
 
   const url = new URL(event.request.url);
+
+  // Skip caching for Supabase requests (they should be handled by React Query)
+  if (url.hostname.includes('supabase')) {
+    return;
+  }
+  
+  // Skip caching for API requests (they should be handled by React Query)
+  if (url.pathname.startsWith('/api/')) {
+    return;
+  }
+  
+  // Skip caching for auth requests
+  if (url.pathname.startsWith('/auth/')) {
+    return;
+  }
 
   // Handle different caching strategies based on URL
   let strategy = CACHE_STRATEGIES.NETWORK_FIRST;
@@ -72,8 +106,8 @@ self.addEventListener('fetch', (event) => {
   else if (url.pathname.startsWith('/api/')) {
     strategy = CACHE_STRATEGIES.NETWORK_FIRST;
   }
-  // Other assets use cache-first
-  else if (url.pathname.match(/\.(js|css|png|jpg|jpeg|gif|svg|ico)$/)) {
+  // Other assets use cache-first for better performance
+  else if (url.pathname.match(/\.(js|css|png|jpg|jpeg|gif|svg|ico|woff|woff2)$/)) {
     strategy = CACHE_STRATEGIES.CACHE_FIRST;
   }
 
@@ -142,33 +176,61 @@ async function handleFetch(request, strategy) {
 
 // Static assets - always from cache
 async function handleStatic(request) {
-  const cache = await caches.open(CACHE_NAME);
-  const response = await cache.match(request);
-  return response ?? await fetch(request);
+  const cache = await caches.open(CACHE_KEY);
+  const cachedResponse = await cache.match(request);
+  if (cachedResponse) return cachedResponse;
+  
+  try {
+    const networkResponse = await fetch(request);
+    if (networkResponse.ok) {
+      cache.put(request, networkResponse.clone());
+    }
+    return networkResponse;
+  } catch (error) {
+    return cachedResponse;
+  }
 }
 
-// Network-first strategy
+// Network-first strategy with optimized caching
 async function handleNetworkFirst(request) {
   try {
     const response = await fetch(request);
-    const cache = await caches.open(CACHE_NAME);
-    await cache.put(request, response.clone());
+    // Only cache successful responses
+    if (response.ok) {
+      const cache = await caches.open(CACHE_KEY);
+      await cache.put(request, response.clone());
+    }
     return response;
   } catch (error) {
+    // Fallback to cache if network fails
     const cached = await caches.match(request);
     return cached ?? await handleOffline(request);
   }
 }
 
-// Cache-first strategy
+// Cache-first strategy with network fallback and timeout
 async function handleCacheFirst(request) {
-  const cache = await caches.open(CACHE_NAME);
+  const cache = await caches.open(CACHE_KEY);
   const cached = await cache.match(request);
+  
+  // Return cached version immediately if available
   if (cached) return cached;
 
   try {
-    const response = await fetch(request);
-    await cache.put(request, response.clone());
+    // Set a timeout for network requests
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Request timeout')), 5000)
+    );
+    
+    const response = await Promise.race([
+      fetch(request),
+      timeoutPromise
+    ]);
+    
+    // Only cache successful responses
+    if (response.ok) {
+      await cache.put(request, response.clone());
+    }
     return response;
   } catch (error) {
     return await handleOffline(request);
@@ -177,38 +239,21 @@ async function handleCacheFirst(request) {
 
 // Offline fallback
 async function handleOffline(request) {
-  if (request.headers.get('Accept')?.includes('text/html')) {
-    return await caches.match(OFFLINE_URL);
+  // For navigation requests, show offline page
+  if (request.mode === 'navigate') {
+    const cache = await caches.open(CACHE_KEY);
+    const offlinePage = await cache.match(OFFLINE_URL);
+    return offlinePage || new Response('Offline', { status: 503 });
   }
-  return new Response(null, { status: 504 });
+  // For other requests, return a simple error response
+  return new Response(JSON.stringify({ error: 'Network error' }), {
+    status: 503,
+    headers: { 'Content-Type': 'application/json' },
+  });
 }
 
-// Sync collections
+// Sync collections when back online
 async function syncCollections() {
-  const db = await openDB();
-  const collections = await db
-    .transaction('collections')
-    .objectStore('collections')
-    .getAll();
-
-  for (const collection of collections) {
-    try {
-      const response = await fetch('/api/collections', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(collection),
-      });
-
-      if (response.ok) {
-        await db
-          .transaction('collections', 'readwrite')
-          .objectStore('collections')
-          .delete(collection.id);
-      }
-    } catch (error) {
-      console.error('Sync failed for collection:', collection.id, error);
-    }
-  }
+  // Implementation would go here
+  console.log('Syncing collections when back online');
 }

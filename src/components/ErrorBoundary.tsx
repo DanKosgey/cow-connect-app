@@ -1,56 +1,72 @@
-import { Component, ErrorInfo, ReactNode } from 'react';
-import { Card, CardContent, CardFooter } from '@/components/ui/card';
+import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
-import { AlertCircle } from 'lucide-react';
+import { Card } from '@/components/ui/card';
+import { AlertTriangle, RefreshCw } from 'lucide-react';
 
 interface Props {
   children: ReactNode;
+  fallback?: ReactNode;
 }
 
 interface State {
   hasError: boolean;
   error: Error | null;
+  errorInfo: ErrorInfo | null;
 }
 
 export class ErrorBoundary extends Component<Props, State> {
   public state: State = {
     hasError: false,
     error: null,
+    errorInfo: null
   };
 
   public static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, error };
+    return { hasError: true, error, errorInfo: null };
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('Uncaught error:', error, errorInfo);
+    this.setState({
+      error,
+      errorInfo
+    });
+
+    // Log error to monitoring service
+    console.error('ErrorBoundary caught an error:', error, errorInfo);
   }
 
   private handleRetry = () => {
-    this.setState({ hasError: false, error: null });
-    window.location.reload();
+    this.setState({
+      hasError: false,
+      error: null,
+      errorInfo: null
+    });
   };
 
   public render() {
     if (this.state.hasError) {
+      if (this.props.fallback) {
+        return this.props.fallback;
+      }
+
       return (
-        <div className="min-h-screen flex items-center justify-center p-4">
-          <Card className="w-full max-w-md">
-            <CardContent className="pt-6 text-center">
-              <AlertCircle className="w-12 h-12 mx-auto text-destructive" />
-              <h2 className="mt-4 text-xl font-semibold">Something went wrong</h2>
-              <p className="mt-2 text-muted-foreground">
-                {this.state.error?.message || 'An unexpected error occurred'}
+        <div className="flex items-center justify-center min-h-[400px] p-4">
+          <Card className="p-6 max-w-md w-full">
+            <div className="text-center space-y-4">
+              <div className="mx-auto w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
+                <AlertTriangle className="h-6 w-6 text-red-600" />
+              </div>
+              <h3 className="text-lg font-medium">Something went wrong</h3>
+              <p className="text-sm text-muted-foreground">
+                We're sorry, but something went wrong. Please try again.
               </p>
-              {process.env.NODE_ENV === 'development' && (
-                <pre className="mt-4 p-4 bg-muted text-left text-sm overflow-auto rounded">
-                  {this.state.error?.stack}
-                </pre>
-              )}
-            </CardContent>
-            <CardFooter className="flex justify-center pb-6">
-              <Button onClick={this.handleRetry}>Try Again</Button>
-            </CardFooter>
+              <div className="pt-4">
+                <Button onClick={this.handleRetry} className="w-full">
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Try Again
+                </Button>
+              </div>
+            </div>
           </Card>
         </div>
       );

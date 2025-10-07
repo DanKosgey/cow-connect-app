@@ -1,4 +1,5 @@
 import { FC, ReactNode } from 'react';
+import { LoadingSkeleton } from '@/components/LoadingSkeleton';
 
 interface LoadingStateProps {
   isLoading: boolean;
@@ -29,8 +30,8 @@ export const LoadingState: FC<LoadingStateProps> = ({
   if (isLoading) {
     return (
       loadingComponent || (
-        <div className="flex items-center justify-center h-[50vh]">
-          <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+        <div className="p-4">
+          <LoadingSkeleton type="dashboard" />
         </div>
       )
     );

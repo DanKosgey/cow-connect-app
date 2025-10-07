@@ -3,11 +3,11 @@ import { Database } from './database.types';
 export type CollectionPoint = Database['public']['Tables']['collection_points']['Row'];
 export type Route = Database['public']['Tables']['routes']['Row'];
 export type StaffRoute = Database['public']['Tables']['staff_routes']['Row'];
-export type MilkCollection = Database['public']['Tables']['milk_collections']['Row'];
+export type MilkCollection = Database['public']['Tables']['collections']['Row'];
 export type StaffPerformance = Database['public']['Views']['staff_performance']['Row'];
 
-export type QualityGrade = 'A' | 'B' | 'C' | 'D';
-export type SyncStatus = 'pending' | 'synced' | 'error';
+export type QualityGrade = 'A+' | 'A' | 'B' | 'C';
+export type CollectionStatus = 'Collected' | 'Verified' | 'Paid' | 'Cancelled';
 
 export interface AssignedFarmer {
   farmer_id: string;
@@ -24,22 +24,14 @@ export interface AssignedFarmer {
 
 export interface CollectionFormData {
   farmer_id: string;
-  collection_point_id: string;
-  quantity: number;
+  liters: number;
   quality_grade: QualityGrade;
-  temperature?: number;
-  photo_url?: string;
-  latitude: number;
-  longitude: number;
-  local_id: string;
-  device_timestamp: string;
-}
-
-export interface OfflineCollection extends CollectionFormData {
-  id: string;
-  sync_status: SyncStatus;
-  sync_error?: string;
-  created_at: string;
+  rate_per_liter?: number;
+  total_amount?: number;
+  gps_latitude?: number;
+  gps_longitude?: number;
+  validation_code?: string;
+  verification_code?: string;
 }
 
 export interface RoutePoint {

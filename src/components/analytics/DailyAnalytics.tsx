@@ -332,7 +332,13 @@ const DailyAnalytics = () => {
             <option value="month">This Month</option>
           </select>
           <Button variant="outline" onClick={fetchAnalyticsData} disabled={loading}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+            {loading ? (
+              <span className="mr-2 w-4 h-4 inline-block align-middle">
+                <div className="bg-gray-200 rounded-full w-full h-full animate-pulse" />
+              </span>
+            ) : (
+              <RefreshCw className="h-4 w-4 mr-2" />
+            )}
             Refresh
           </Button>
           <Button variant="outline" onClick={exportAnalytics}>

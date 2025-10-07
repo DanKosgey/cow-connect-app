@@ -1,8 +1,6 @@
-# 🥛 DairyChain Pro - Comprehensive Dairy Management System
+# 🥛 DAIRY FARMERS OF TRANS-NZOIA - Comprehensive Dairy Management System
 
-<div align="center">
-
-![DairyChain Pro Logo](https://via.placeholder.com/300x100/1e40af/ffffff?text=DairyChain+Pro)
+![DAIRY FARMERS OF TRANS-NZOIA Logo](https://via.placeholder.com/300x100/1e40af/ffffff?text=DAIRY+FARMERS+OF+TRANS-NZOIA)
 
 **🏆 World-Class Dairy Management Platform**
 
@@ -10,17 +8,29 @@
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://reactjs.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Supabase](https://img.shields.io/badge/Supabase-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com/)
+[![Vite](https://img.shields.io/badge/Vite-B73BFE?style=for-the-badge&logo=vite&logoColor=FFD62E)](https://vitejs.dev/)
+[![TailwindCSS](https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
 
-</div>
+---
+
+## ⚠️ **IMPORTANT SECURITY NOTICE**
+
+**If you have exposed Supabase keys in your repository, they must be rotated immediately.**
+See [SECURITY_GUIDELINES.md](SECURITY_GUIDELINES.md) for detailed instructions.
 
 ---
 
 ## 🎯 **SYSTEM OVERVIEW**
 
-DairyChain Pro is a comprehensive, enterprise-grade dairy management system that streamlines the entire dairy supply chain from farmer registration to payment processing. Built with modern technologies and designed for scalability, reliability, and user experience.
+Dairy Farmers of Trans-Nzoia is a comprehensive, enterprise-grade dairy management system that streamlines the entire dairy supply chain from farmer registration to payment processing. Built with modern technologies and designed for scalability, reliability, and user experience.
+
+The system serves three primary user roles:
+- **Farmers**: Register, track collections, monitor payments
+- **Staff**: Record collections, manage routes, verify quality
+- **Admins**: Oversee operations, process payments, manage users
+
+---
 
 ## 🚀 **KEY FEATURES IMPLEMENTED**
 
@@ -60,6 +70,7 @@ DairyChain Pro is a comprehensive, enterprise-grade dairy management system that
 - **Farmer Notifications**: Real-time payment alerts
 
 ### ✅ **Real-time Analytics & Reporting**
+- **Dashboard Analytics**: Key metrics with trend analysis
 - **Daily Analytics**: Collection trends, quality metrics, revenue tracking
 - **Farmer Performance**: Rankings based on volume and quality
 - **Staff Productivity**: Route optimization, collection efficiency
@@ -67,13 +78,26 @@ DairyChain Pro is a comprehensive, enterprise-grade dairy management system that
 - **Automated Reports**: Daily, weekly, monthly summaries
 - **Data Export**: CSV, Excel, PDF format options
 
-### ✅ **Advanced API Architecture**
-- **FastAPI Backend**: High-performance Python API with automatic documentation
-- **Comprehensive Endpoints**: 25+ RESTful APIs covering all system functions
-- **Authentication**: JWT-based security with role-based access control
-- **Rate Limiting**: Protection against abuse and overload
-- **Input Validation**: Comprehensive data validation and sanitization
-- **Error Handling**: Standardized error responses with detailed logging
+### ✅ **Advanced Admin Portal**
+- **Multi-tab Dashboard**: Overview, daily analytics, farmers, staff, payments, quality, warehouses
+- **Warehouse Visualization**: Interactive map with collection points
+- **Performance Monitoring**: Real-time system metrics
+- **User Management**: Staff and farmer account management
+- **System Alerts**: Notifications for critical events
+
+### ✅ **Enhanced Staff Portal**
+- **Route Management**: Optimized collection routes with GPS tracking
+- **Collection Recording**: Enhanced forms with quality measurements
+- **Bulk Operations**: Efficient multi-farmer collection processing
+- **Productivity Tracking**: Performance metrics and analytics
+- **Quality Control**: Real-time quality assessment tools
+
+### ✅ **Farmer Portal**
+- **Dashboard**: Personal analytics and insights
+- **Collections**: History and tracking
+- **Payments**: Status and history
+- **Profile**: KYC status and farm details
+- **Notifications**: Real-time alerts
 
 ---
 
@@ -81,29 +105,26 @@ DairyChain Pro is a comprehensive, enterprise-grade dairy management system that
 
 ### **Frontend**
 - **React 18** with TypeScript for type safety
+- **Vite** for fast development and build tooling
 - **Tailwind CSS** for rapid, responsive UI development
 - **shadcn-ui** for consistent, accessible component library
 - **Recharts** for interactive data visualization
 - **React Hook Form** for efficient form management
 - **React Query** for server state management
+- **Framer Motion** for smooth animations and transitions
+- **React Router** for client-side routing
 
-### **Backend**
-- **FastAPI** for high-performance Python web framework
-- **Pydantic** for data validation and serialization
-- **Jose-Cryptography** for JWT token handling
-- **Celery** for background task processing
-- **Redis** for caching and session management
-
-### **Database**
-- **PostgreSQL** via Supabase for robust data storage
+### **Backend & Database**
+- **Supabase** for authentication, database, and real-time subscriptions
+- **PostgreSQL** for robust data storage
 - **Row Level Security** for data privacy and access control
 - **Database Triggers** for auto-ID generation and analytics
-- **Stored Functions** for complex calculations
+- **RPC Functions** for complex operations
+- **Storage** for document management
 
 ### **Infrastructure**
-- **Supabase** for authentication, database, and file storage
 - **Vercel** for frontend deployment and hosting
-- **Railway** for backend deployment and scaling
+- **Supabase Platform** for backend services
 - **GitHub Actions** for CI/CD automation
 
 ---
@@ -127,6 +148,7 @@ DairyChain Pro is a comprehensive, enterprise-grade dairy management system that
 2. **Payment Processing**: Batch payment creation and management
 3. **System Analytics**: Business intelligence and reporting
 4. **User Management**: Staff and farmer account management
+5. **Warehouse Monitoring**: Interactive map visualization
 
 ---
 
@@ -144,7 +166,6 @@ DairyChain Pro is a comprehensive, enterprise-grade dairy management system that
 
 ### **Prerequisites**
 - Node.js 18+ and npm
-- Python 3.9+
 - Supabase account
 - Git
 
@@ -154,59 +175,79 @@ git clone https://github.com/yourusername/dairychain-pro.git
 cd dairychain-pro
 ```
 
-### **2. Database Setup**
+### **2. Environment Setup**
 ```bash
-# Install Supabase CLI
-npm install -g supabase
-
-# Login and link project
-supabase login
-supabase link --project-ref YOUR_PROJECT_REF
-
-# Run migrations
-supabase migration up
-```
-
-### **3. Backend Setup**
-```bash
-cd backend
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-
-# Configure environment
-cp env.example .env
-# Edit .env with your Supabase credentials
-
-# Start development server
-uvicorn main:app --reload
-```
-
-### **4. Frontend Setup**
-```bash
-# Install dependencies
-npm install
-
-# Configure environment
+# Copy environment files
 cp .env.example .env.local
-# Edit .env.local with your configuration
+# Edit .env.local with your Supabase configuration
+```
 
-# Start development server
+### **3. Install Dependencies**
+```bash
+npm install
+```
+
+### **4. Database Setup**
+1. Create a Supabase project
+2. Set up database tables using provided migrations
+3. Configure authentication and storage
+4. Update environment variables with your Supabase credentials
+
+### **5. Start Development Server**
+```bash
 npm run dev
 ```
 
-### **5. Access Application**
-- **Frontend**: http://localhost:3000
-- **API Documentation**: http://localhost:8000/docs
-- **Admin Dashboard**: http://localhost:3000/admin
+### **6. Access Application**
+- **Frontend**: http://localhost:5173
+- **Admin Dashboard**: http://localhost:5173/admin/dashboard
+- **Staff Portal**: http://localhost:5173/staff/dashboard
+- **Farmer Portal**: http://localhost:5173/farmer/dashboard
+
+---
+
+## 🗃️ **PROJECT STRUCTURE**
+
+```
+src/
+├── components/          # Reusable UI components
+├── pages/               # Page components organized by role
+│   ├── admin/           # Admin-specific pages
+│   ├── auth/            # Authentication pages
+│   ├── farmer/          # Farmer-specific pages
+│   └── staff/           # Staff-specific pages
+├── routes/              # Route configurations by user role
+├── contexts/            # React context providers
+├── hooks/               # Custom React hooks
+├── services/            # Business logic and API services
+├── utils/               # Utility functions
+├── types/               # TypeScript type definitions
+├── integrations/        # Third-party service integrations
+└── lib/                 # Library and helper functions
+```
+
+---
+
+## 🔐 **AUTHENTICATION TROUBLESHOOTING**
+
+Having issues with logging in or out of the portals? Check our [Authentication Troubleshooting Guide](./AUTH_TROUBLESHOOTING.md) for:
+
+- Common login/logout issues and solutions
+- Diagnostic tools for identifying authentication problems
+- Database verification steps
+- Step-by-step fixes for session and role issues
+- Prevention tips to avoid future authentication problems
+
+You can also access the Auth Test Page at `/admin/auth-test` for interactive diagnostics.
 
 ---
 
 ## 📚 **DOCUMENTATION**
 
 - **[Deployment Guide](./DEPLOYMENT_GUIDE.md)** - Complete production setup
-- **[API Documentation](http://localhost:8000/docs)** - Interactive API explorer
-- **[Database Schema](./database/schema.md)** - Complete schema documentation
+- **[Authentication Troubleshooting](./AUTH_TROUBLESHOOTING.md)** - Login/logout issue resolution
+- **[API Documentation](https://supabase.com/docs)** - Supabase REST API documentation
+- **[Database Schema](./supabase/migrations/)** - Database migration files
 - **[User Guide](./USER_GUIDE.md)** - End-user manual
 - **[Admin Guide](./ADMIN_GUIDE.md)** - System administration
 
@@ -231,6 +272,22 @@ npm run dev
 - **Business Intelligence**: Farmer performance, seasonal patterns
 - **Automated Reports**: Daily, weekly, monthly analytics
 - **Alert System**: Proactive notifications for anomalies
+
+---
+
+## 🧪 **TESTING**
+
+- **Unit Tests**: Component and utility function testing with Vitest
+- **Integration Tests**: End-to-end workflow testing
+- **UI Tests**: Component rendering and interaction testing
+- **Performance Tests**: Load and stress testing
+
+Run tests with:
+```bash
+npm run test          # Run all tests
+npm run test:ui       # Run UI tests with interface
+npm run coverage      # Generate test coverage report
+```
 
 ---
 
@@ -266,8 +323,8 @@ Built with ❤️ for the dairy farming community. Special thanks to:
 
 - **Supabase** for providing excellent backend services
 - **Tailwind CSS** for beautiful, responsive design
-- **FastAPI** for high-performance API framework
 - **React** for modern frontend framework
+- **Vite** for lightning-fast development
 - **The Open Source Community** for amazing tools and libraries
 
 ---

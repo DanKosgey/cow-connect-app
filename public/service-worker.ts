@@ -1,5 +1,7 @@
 /// <reference lib="webworker" />
 
+declare const self: ServiceWorkerGlobalScope;
+
 const CACHE_NAME = 'cow-connect-v1';
 const OFFLINE_URL = '/offline.html';
 
@@ -22,7 +24,7 @@ const API_ROUTES = [
   '/api/routes',
 ];
 
-self.addEventListener('install', (event: ExtendableEvent) => {
+self.addEventListener('install', (event) => {
   event.waitUntil(
     (async () => {
       const cache = await caches.open(CACHE_NAME);
@@ -36,7 +38,7 @@ self.addEventListener('install', (event: ExtendableEvent) => {
   self.skipWaiting();
 });
 
-self.addEventListener('activate', (event: ExtendableEvent) => {
+self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
       // Clear old caches
@@ -49,12 +51,12 @@ self.addEventListener('activate', (event: ExtendableEvent) => {
         })
       );
       // Take control of all pages under this service worker's scope
-      await self.clients.claim();
+      clients.claim();
     })()
   );
 });
 
-self.addEventListener('fetch', (event: FetchEvent) => {
+self.addEventListener('fetch', (event) => {
   const { request } = event;
 
   // Handle API requests with network-first strategy
@@ -100,8 +102,17 @@ self.addEventListener('fetch', (event: FetchEvent) => {
         // Show offline page for navigation requests
         if (request.mode === 'navigate') {
           const cache = await caches.open(CACHE_NAME);
-          return cache.match(OFFLINE_URL);
+          const offlinePage = await cache.match(OFFLINE_URL);
+          if (offlinePage) return offlinePage;
         }
+        // For API requests, return a proper error response instead of throwing
+        if (request.url.includes('/api/') || request.url.includes('/rest/v1/') || request.url.includes('/functions/v1/')) {
+          return new Response(JSON.stringify({ error: 'Network error' }), {
+            status: 503,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+        // For other requests, re-throw the error
         throw error;
       }
     })()
@@ -109,7 +120,7 @@ self.addEventListener('fetch', (event: FetchEvent) => {
 });
 
 // Handle background sync for offline collections
-self.addEventListener('sync', (event: SyncEvent) => {
+self.addEventListener('sync', (event) => {
   if (event.tag === 'sync-collections') {
     event.waitUntil(syncCollections());
   }
@@ -130,6 +141,7 @@ async function syncCollections() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'application/json',
         },
         body: JSON.stringify(collection),
       });

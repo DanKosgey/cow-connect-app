@@ -24,13 +24,21 @@ export default function ProtectedRoute({ children, requiredRole = 'staff' }: Pro
         }
 
         // Check user role
-        const { data: profile, error: profileError } = await supabase
+        const { data: profiles, error: profileError } = await supabase
           .from('user_profiles')
           .select('role, status')
           .eq('user_id', user.id)
-          .single();
+          .limit(1);
 
         if (profileError) throw profileError;
+        
+        // Check if we have any profile data
+        if (!profiles || profiles.length === 0) {
+          setHasAccess(false);
+          return;
+        }
+        
+        const profile = profiles[0];
 
         const hasRequiredRole = profile?.role === requiredRole;
         const isActive = profile?.status === 'active';

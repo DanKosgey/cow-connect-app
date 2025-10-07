@@ -5,40 +5,24 @@ import { useNavigate } from 'react-router-dom';
 
 interface PageHeaderProps {
   title: string;
-  subtitle?: string;
+  description: string;
   actions?: ReactNode;
-  showBack?: boolean;
+  icon?: ReactNode;
 }
 
-export const PageHeader: FC<PageHeaderProps> = ({
-  title,
-  subtitle,
-  actions,
-  showBack = false,
-}) => {
-  const navigate = useNavigate();
-
+export const PageHeader = ({ title, description, actions, icon }: PageHeaderProps) => {
   return (
-    <div className="flex flex-col space-y-4 md:flex-row md:justify-between md:space-y-0">
-      <div className="space-y-2">
-        <div className="flex items-center space-x-4">
-          {showBack && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => navigate(-1)}
-              className="h-8 w-8"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-          )}
-          <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
+    <div className="mb-8">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
+            {icon && <span className="text-blue-500">{icon}</span>}
+            {title}
+          </h1>
+          <p className="text-gray-600 dark:text-gray-300 mt-2">{description}</p>
         </div>
-        {subtitle && (
-          <p className="text-sm text-muted-foreground">{subtitle}</p>
-        )}
+        {actions && <div className="mt-4 md:mt-0">{actions}</div>}
       </div>
-      {actions && <div className="flex items-center space-x-4">{actions}</div>}
     </div>
   );
 };

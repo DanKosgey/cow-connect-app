@@ -260,10 +260,12 @@ Phase 1: Foundation (Do First)
 Checkpoint: Phase 1 completed
 
 - Actions taken:
-  - Installed UI dependencies listed above (some were already present; npm install completed).
-  - Added foundation components: `skeleton.tsx`, `SkeletonLoader.tsx`, `VisuallyHidden.tsx`, `SkipLink.tsx`, `LoadingSpinner.tsx`.
-  - Added a small unified hook `src/hooks/useToastNotifications.ts` to help Phase 2 integration (wrapper around existing `use-toast` and Sonner promise).
-  - Verified build: `npm run build` completed successfully (informational warnings only).
+    - Installed UI dependencies listed above (some were already present; npm install completed).
+    - Added foundation components: `skeleton.tsx`, `SkeletonLoader.tsx`, `VisuallyHidden.tsx`, `SkipLink.tsx`, `LoadingSpinner.tsx`.
+    - Replaced three representative inline spinner usages with small skeleton/pulse indicators (safe, non-breaking edits).
+    - Implemented a minimal in-memory toast store (`src/lib/toastStore.ts`), wired `Toaster` to subscribe to it, and added `src/hooks/useToastNotifications.ts` (show/error/success helpers).
+    - Converted representative pages/components to the new toast hook (examples: `src/components/staff/CollectionForm.tsx`, `src/pages/staff/EnhancedCollection.tsx`).
+    - Verified build: `npm run build` completed successfully after changes (informational warnings only).
 
 Notes:
 - These foundation files are passive until imported; they don't change runtime behavior by themselves.
@@ -273,11 +275,12 @@ Phase 2: Core Components
 
 - [ ] Step 3: Toast system
     - [ ] Create `src/components/ui/toast.tsx` (lines 1-125)
-    - [ ] Create `src/components/ui/toaster.tsx` (lines 1-40)
+    - [x] Create `src/components/ui/toaster.tsx` (lines 1-40) — Toaster renderer updated to subscribe to `toastStore`.
     - [ ] Create `src/components/ui/sonner.tsx` (optional; lines 1-140)
-    - [ ] Create `src/hooks/useToastNotifications.ts` (lines 1-194)
+    - [x] Create `src/hooks/useToastNotifications.ts` (lines 1-194) — hook implemented and wired to `toastStore`.
     - [ ] Create `src/components/ui/use-toast.ts` (or adapt the existing local one)
-    - [ ] Wire `Toaster` in `src/main.tsx` (app root)
+    - [x] Wire `Toaster` in `src/main.tsx` (app root) — Toaster mounted so toasts render from the store.
+    - [x] Add `src/lib/toastStore.ts` — small in-memory toast store (add/remove/subscribe/clear/get snapshot).
 
 - [ ] Step 4: Buttons / Inputs / Card
     - [ ] Create `src/components/ui/button.tsx` (lines 1-56)
@@ -288,11 +291,18 @@ Phase 2: Core Components
     - [ ] Create `src/components/ui/dialog.tsx` (lines 1-220)
     - [ ] Ensure `useFocusTrap` and `useFocusReturn` hooks exist or port them from `frontend another vesion` (these are small utility hooks in `src/hooks`)
 
+Checkpoint: Phase 2 (partial)
+
+- Completed: Toaster renderer, toast store, and `useToastNotifications` hook; a small set of pages/components migrated to the new hook.
+- Remaining: `toast.tsx` styling variants and Radix primitive port (if desired), Sonner wrapper (optional), central `use-toast` abstraction port, and the remaining UI primitives (button/input/card/dialog).
+
 Phase 3: Advanced Features
 
 - [ ] Step 6: Notification system (WebSocket integration)
     - [ ] Create `src/hooks/useNotificationSystem.ts` (lines 1-220)
     - [ ] Integrate with WebSocket connection code and user preferences
+
+Note: `src/hooks/useNotificationSystem.ts` was updated to use `useToastNotifications` (maps incoming notification types to show/error). WebSocket wiring remains to be validated end-to-end.
 
 - [ ] Step 7: Loading & UX polish
     - [ ] Create `src/components/ui/LoadingSpinner.tsx` (lines 1-48)
@@ -387,16 +397,18 @@ Import Changes (examples)
 
 ## 12. PROGRESS TRACKER
 
-Overall Progress: [ ] 0/?? tasks complete
+Overall Progress: In progress — Foundation complete; Core started (several toast-related items done).
 
-Phase 1 Foundation:     [ ] 0/X
-Phase 2 Core:           [ ] 0/X
-Phase 3 Advanced:       [ ] 0/X
-Phase 4 Cleanup:        [ ] 0/X
+Phase 1 Foundation:     [x] completed (all foundation utilities added)
+Phase 2 Core:           [~] partial (toaster, toastStore, useToastNotifications done; remaining UI primitives and Radix exact ports outstanding)
+Phase 3 Advanced:       [~] partial (notification hook migrated to new toast API; WebSocket end-to-end tests pending)
+Phase 4 Cleanup:        [ ] pending
 
 Tip: mark each small file creation or wiring change as a separate git commit.
 
 ---
+
+
 
 ## 13. NOTES & WARNINGS
 

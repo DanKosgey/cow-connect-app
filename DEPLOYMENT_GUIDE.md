@@ -1,4 +1,4 @@
-# 🚀 DairyChain Pro - Complete Deployment Guide
+# 🚀 DAIRY FARMERS OF TRANS-NZOIA - Complete Deployment Guide
 
 ## 📋 Table of Contents
 1. [System Overview](#system-overview)
@@ -16,7 +16,7 @@
 
 ## 🎯 System Overview
 
-**DairyChain Pro** is a comprehensive dairy management system with:
+**DAIRY FARMERS OF TRANS-NZOIA** is a comprehensive dairy management system with:
 
 ### Architecture
 - **Frontend**: React/TypeScript with Tailwind CSS & shadcn-ui
@@ -384,10 +384,10 @@ from contextlib import asynccontextmanager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    logging.info("Starting DairyChain Pro API")
+    logging.info("Starting DAIRY FARMERS OF TRANS-NZOIA API")
     yield
     # Shutdown
-    logging.info("Shutting down DairyChain Pro API")
+    logging.info("Shutting down DAIRY FARMERS OF TRANS-NZOIA API")
 
 app = FastAPI(lifespan=lifespan)
 
@@ -576,7 +576,7 @@ npm install lodash-es  # Instead of full lodash
 
 ### Getting Help
 - 📧 Email: support@dairychain.com
-- 📱 Discord: DairyChain Pro Community
+- 📱 Discord: DAIRY FARMERS OF TRANS-NZOIA Community
 - 📖 Documentation: https://docs.dairychain.com
 - 🐛 Issues: GitHub Issues
 
@@ -591,7 +591,7 @@ npm install lodash-es  # Instead of full lodash
 
 ## 🎉 Success!
 
-Congratulations! You've successfully deployed **DairyChain Pro** - a world-class dairy management system that includes:
+Congratulations! You've successfully deployed **DAIRY FARMERS OF TRANS-NZOIA** - a world-class dairy management system that includes:
 
 ✅ **Complete Farmer Registration** with auto-ID generation
 ✅ **Comprehensive KYC Management** with document verification  
