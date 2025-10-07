@@ -66,8 +66,10 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
     
     const loadLeaflet = async () => {
       try {
-        // Dynamically import Leaflet only when needed
-        const L = await import('leaflet');
+        // Dynamically import Leaflet only when needed and attach to window for plugins
+        const leafletModule = await import('leaflet');
+        const leaflet = (leafletModule as any).default ?? leafletModule;
+        (window as any).L = leaflet;
         
         // Only proceed if component is still mounted
         if (!isMounted) return;
@@ -283,21 +285,11 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
     }
     
     try {
-      // Dynamically import leaflet.markercluster
-      const markerClusterModule = await import('leaflet.markercluster');
-      
-      // Get MarkerClusterGroup constructor (handle different module structures)
-      const MarkerClusterGroup = (markerClusterModule as any).default?.MarkerClusterGroup || 
-                                 (markerClusterModule as any).MarkerClusterGroup || 
-                                 (markerClusterModule as any).default ||
-                                 markerClusterModule;
-      
-      if (!MarkerClusterGroup) {
-        throw new Error('MarkerClusterGroup not found in imported module');
-      }
-      
-      // Create marker cluster group
-      clusterGroupRef.current = new (MarkerClusterGroup as any)({
+      // Dynamically import plugin; it augments the global L
+      await import('leaflet.markercluster');
+
+      // Create marker cluster group using Leaflet factory
+      clusterGroupRef.current = (window as any).L.markerClusterGroup({
         chunkedLoading: true,
         maxClusterRadius: 80,
         spiderfyOnMaxZoom: true,
