@@ -353,9 +353,6 @@ const FarmerSignup = () => {
           breeding_method: formData.breedingMethod,
           feeding_type: formData.feedingType,
           farm_location: formData.farmLocation,
-          id_front_url: null,
-          id_back_url: null,
-          selfie_url: null,
           status: 'pending',
           email_verified: false
         });

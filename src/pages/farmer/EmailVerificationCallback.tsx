@@ -130,23 +130,10 @@ const EmailVerificationCallback = () => {
               const idBackUrl = await uploadKYCDocument(idBackFile, `${userId}/id_back`);
               const selfieUrl = await uploadKYCDocument(selfieFile, `${userId}/selfie`);
               
-              // Update the pending_farmer record with the document URLs
-              const { error: updateError } = await supabase
-                .from('pending_farmers')
-                .update({
-                  id_front_url: idFrontUrl,
-                  id_back_url: idBackUrl,
-                  selfie_url: selfieUrl
-                })
-                .eq('user_id', userId);
-                
-              if (updateError) {
-                console.error('Error updating farmer record with document URLs:', updateError);
-                toast.error("Document Update Error", "There was an issue updating your document records. Please contact support.");
-              } else {
-                console.log('Successfully uploaded KYC documents and updated farmer record');
-                toast.success("Documents Uploaded", "Your KYC documents have been successfully uploaded and are under review.");
-              }
+              // Instead of updating non-existent columns, we'll rely on the kyc_documents table
+              // The view will automatically compute the URLs from the kyc_documents table
+              console.log('Successfully uploaded KYC documents');
+              toast.success("Documents Uploaded", "Your KYC documents have been successfully uploaded and are under review.");
             } catch (uploadError) {
               console.error('Error uploading KYC documents:', uploadError);
               toast.error("Upload Error", "There was an issue uploading your documents. Please contact support.");
