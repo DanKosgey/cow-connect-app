@@ -13,7 +13,8 @@ import {
   Award,
   Camera,
   Save,
-  Edit3
+  Edit3,
+  Loader2
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import useToastNotifications from "@/hooks/useToastNotifications";
@@ -34,6 +35,7 @@ const ProfilePage = () => {
   const toast = useToastNotifications();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [isGettingLocation, setIsGettingLocation] = useState(false);
   const [farmer, setFarmer] = useState<FarmerProfile | null>(null);
   const [editableFarmer, setEditableFarmer] = useState<FarmerProfile | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -118,6 +120,35 @@ const ProfilePage = () => {
       reader.readAsDataURL(file);
       toast.success('Image selected', 'Profile picture will be updated');
     }
+  };
+
+  const getLocation = () => {
+    if (!navigator.geolocation) {
+      toast.error("Geolocation Error", "Geolocation is not supported by your browser");
+      return;
+    }
+
+    setIsGettingLocation(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        const locationText = `Lat: ${latitude.toFixed(6)}, Lng: ${longitude.toFixed(6)}`;
+        
+        setEditableFarmer(prev => prev ? {...prev, farm_location: locationText} : null);
+        toast.success("Location Captured", "Your GPS coordinates have been captured");
+        setIsGettingLocation(false);
+      },
+      (error) => {
+        console.error("Geolocation error:", error);
+        toast.error("Location Error", "Could not get your location. Please enter manually.");
+        setIsGettingLocation(false);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 300000
+      }
+    );
   };
 
   if (loading) {
@@ -319,8 +350,28 @@ const ProfilePage = () => {
                           id="farmLocation"
                           value={editableFarmer.farm_location}
                           onChange={(e) => setEditableFarmer({...editableFarmer, farm_location: e.target.value})}
-                          className="pl-10"
+                          className="pl-10 pr-32"
                         />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={getLocation}
+                          disabled={isGettingLocation}
+                          className="absolute right-1 top-1 h-9"
+                        >
+                          {isGettingLocation ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Getting...
+                            </>
+                          ) : (
+                            <>
+                              <MapPin className="mr-2 h-4 w-4" />
+                              Use Current
+                            </>
+                          )}
+                        </Button>
                       </div>
                     ) : (
                       <div className="flex items-center space-x-2">

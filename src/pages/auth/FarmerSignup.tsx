@@ -33,7 +33,8 @@ const FarmerSignup = () => {
     
     // Step 2: Farm Details
     numberOfCows: "",
-    cowBreeds: [{ breedName: "", count: "" }],
+    primaryBreed: "",
+    breedCount: "",
     breedingMethod: "",
     feedingType: "",
     farmLocation: "",
@@ -70,27 +71,6 @@ const FarmerSignup = () => {
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
-  };
-
-  const handleCowBreedChange = (index: number, field: string, value: string) => {
-    const updatedCowBreeds = [...formData.cowBreeds];
-    updatedCowBreeds[index] = { ...updatedCowBreeds[index], [field]: value };
-    setFormData(prev => ({ ...prev, cowBreeds: updatedCowBreeds }));
-  };
-
-  const addCowBreed = () => {
-    setFormData(prev => ({
-      ...prev,
-      cowBreeds: [...prev.cowBreeds, { breedName: "", count: "" }]
-    }));
-  };
-
-  const removeCowBreed = (index: number) => {
-    if (formData.cowBreeds.length <= 1) return;
-    setFormData(prev => ({
-      ...prev,
-      cowBreeds: prev.cowBreeds.filter((_, i) => i !== index)
-    }));
   };
 
   // Handle file uploads for KYC
@@ -176,16 +156,15 @@ const FarmerSignup = () => {
         return false;
       }
       
-      // Validate cow breeds
-      if (formData.cowBreeds.length === 0 || formData.cowBreeds.some(breed => !breed.breedName || !breed.count || isNaN(Number(breed.count)) || Number(breed.count) <= 0)) {
-        toast.error("Please specify at least one breed with valid count");
+      // Validate cow breeds (single selection)
+      if (!formData.primaryBreed || !formData.breedCount || isNaN(Number(formData.breedCount)) || Number(formData.breedCount) <= 0) {
+        toast.error("Please specify the primary breed and count");
         return false;
       }
       
-      // Validate that total cows across breeds doesn't exceed total number of cows
-      const totalCowsInBreeds = formData.cowBreeds.reduce((sum, breed) => sum + Number(breed.count), 0);
-      if (totalCowsInBreeds > Number(formData.numberOfCows)) {
-        toast.error("Total cows across breeds cannot exceed total number of cows");
+      // Validate that breed count doesn't exceed total number of cows
+      if (Number(formData.breedCount) > Number(formData.numberOfCows)) {
+        toast.error("Breed count cannot exceed total number of cows");
         return false;
       }
     } else if (step === 3) {
@@ -330,34 +309,100 @@ const FarmerSignup = () => {
 
       console.log('FarmerSignup: Supabase signup response', { authData, authError });
 
-      if (authError) throw new Error(authError.message);
+      if (authError) throw new Error(`Auth Error: ${authError.message}`);
       if (!authData.user) throw new Error("Failed to create user account");
 
       const userId = authData.user.id;
       console.log('FarmerSignup: User created with ID', userId);
 
-      // Step 2: Create pending_farmer record (without document URLs for now)
-      // We'll update the document URLs after email verification
-      const { error: insertError } = await supabase
-        .from('pending_farmers')
-        .insert({
+      // Step 1.5: Ensure we have a valid session before proceeding
+      // Wait a moment for the session to be established
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Try to get current session
+      let { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      // If no session, try to refresh or get a new one
+      if (!session || sessionError) {
+        console.log('No active session, attempting to refresh...');
+        const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+        if (refreshError) {
+          console.error('Session refresh error:', refreshError);
+          // If refresh fails, try to sign in the user
+          const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+            email: formData.email,
+            password: formData.password
+          });
+          
+          if (signInError) {
+            console.error('Sign in error:', signInError);
+            throw new Error(`Authentication failed: ${signInError.message}`);
+          }
+          
+          session = signInData.session;
+        } else {
+          session = refreshData.session;
+        }
+      }
+
+      if (!session) {
+        throw new Error("Unable to establish user session");
+      }
+
+      console.log('FarmerSignup: Session established', session);
+
+      // Step 1.7: Set user role in user_roles table
+      const { error: roleError } = await supabase
+        .from('user_roles')
+        .upsert({
           user_id: userId,
-          full_name: formData.fullName,
-          email: formData.email,
-          phone: formData.phone,
-          gender: formData.gender,
-          age: parseInt(formData.age),
-          id_number: formData.idNumber,
-          number_of_cows: parseInt(formData.numberOfCows),
-          cow_breeds: formData.cowBreeds,
-          breeding_method: formData.breedingMethod,
-          feeding_type: formData.feedingType,
-          farm_location: formData.farmLocation,
-          status: 'pending',
-          email_verified: false
+          role: 'farmer',
+          active: true
+        }, {
+          onConflict: 'user_id'
         });
 
-      if (insertError) throw insertError;
+      if (roleError) {
+        console.error('FarmerSignup: Role assignment error', roleError);
+        throw new Error(`Failed to assign farmer role: ${roleError.message}`);
+      }
+
+      console.log('FarmerSignup: User role assigned successfully');
+
+      // Step 2: Create pending_farmer record (without document URLs for now)
+      // We'll update the document URLs after email verification
+      const pendingFarmerData = {
+        user_id: userId,
+        full_name: formData.fullName,
+        email: formData.email,
+        phone_number: formData.phone,
+        gender: formData.gender,
+        age: parseInt(formData.age),
+        id_number: formData.idNumber,
+        number_of_cows: parseInt(formData.numberOfCows),
+        cow_breeds: [{ breedName: formData.primaryBreed, count: parseInt(formData.breedCount) }],
+        breeding_method: formData.breedingMethod,
+        feeding_type: formData.feedingType,
+        farm_location: formData.farmLocation,
+        status: 'pending',
+        email_verified: false
+      };
+
+      console.log('FarmerSignup: Attempting to insert pending farmer data', pendingFarmerData);
+
+      const { error: insertError } = await supabase
+        .from('pending_farmers')
+        .insert(pendingFarmerData);
+
+      if (insertError) {
+        console.error('FarmerSignup: Insert error details', {
+          message: insertError.message,
+          code: insertError.code,
+          details: insertError.details,
+          hint: insertError.hint
+        });
+        throw new Error(`Database insert failed: ${insertError.message} (Code: ${insertError.code})`);
+      }
 
       console.log('FarmerSignup: Pending farmer record created successfully');
 
@@ -409,6 +454,7 @@ const FarmerSignup = () => {
       
     } catch (error: any) {
       console.error("Registration error:", error);
+      console.error("Registration error details:", JSON.stringify(error, null, 2));
       toast.error("Registration Error", error.message || "Failed to complete registration. Please check your internet connection and try again.");
     } finally {
       setLoading(false);
@@ -715,61 +761,67 @@ const FarmerSignup = () => {
                             placeholder="County, Sub-County, Ward"
                             value={formData.farmLocation}
                             onChange={(e) => handleInputChange('farmLocation', e.target.value)}
-                            className="pl-10 h-11"
+                            className="pl-10 h-11 pr-32"
                             required
                           />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={getLocation}
+                            disabled={isGettingLocation}
+                            className="absolute right-1 top-1 h-9"
+                          >
+                            {isGettingLocation ? (
+                              <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Getting...
+                              </>
+                            ) : (
+                              <>
+                                <MapPin className="mr-2 h-4 w-4" />
+                                Use Current
+                              </>
+                            )}
+                          </Button>
                         </div>
                       </div>
                     </div>
 
-                    {/* Cow Breeds Section */}
+                    {/* Cow Breeds Section - Changed to single selection */}
                     <div className="space-y-4">
-                      <div className="flex justify-between items-center">
-                        <Label>Cow Breeds *</Label>
-                        <Button type="button" variant="outline" size="sm" onClick={addCowBreed}>
-                          Add Breed
-                        </Button>
-                      </div>
-                      
-                      {formData.cowBreeds.map((breed, index) => (
-                        <div key={index} className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 border rounded-lg">
-                          <div className="md:col-span-2 space-y-2">
-                            <Label htmlFor={`breedName-${index}`}>Breed Name</Label>
-                            <Input
-                              id={`breedName-${index}`}
-                              placeholder="e.g., Friesian, Jersey, Ayrshire"
-                              value={breed.breedName}
-                              onChange={(e) => handleCowBreedChange(index, 'breedName', e.target.value)}
-                              className="h-11"
-                            />
-                          </div>
-                          
-                          <div className="space-y-2">
-                            <Label htmlFor={`breedCount-${index}`}>Number of Cows</Label>
-                            <div className="flex gap-2">
-                              <Input
-                                id={`breedCount-${index}`}
-                                type="number"
-                                placeholder="Count"
-                                value={breed.count}
-                                onChange={(e) => handleCowBreedChange(index, 'count', e.target.value)}
-                                className="h-11 flex-1"
-                                min="1"
-                              />
-                              {formData.cowBreeds.length > 1 && (
-                                <Button 
-                                  type="button" 
-                                  variant="outline" 
-                                  size="icon"
-                                  onClick={() => removeCowBreed(index)}
-                                >
-                                  <X className="h-4 w-4" />
-                                </Button>
-                              )}
-                            </div>
-                          </div>
+                      <Label>Cow Breeds *</Label>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="primaryBreed">Primary Breed</Label>
+                          <Select onValueChange={(value) => handleInputChange('primaryBreed', value)} value={formData.primaryBreed}>
+                            <SelectTrigger className="h-11">
+                              <SelectValue placeholder="Select primary breed" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="friesian">Friesian</SelectItem>
+                              <SelectItem value="jersey">Jersey</SelectItem>
+                              <SelectItem value="ayrshire">Ayrshire</SelectItem>
+                              <SelectItem value="guernsey">Guernsey</SelectItem>
+                              <SelectItem value="holstein">Holstein</SelectItem>
+                              <SelectItem value="other">Other</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </div>
-                      ))}
+                        
+                        <div className="space-y-2">
+                          <Label htmlFor="breedCount">Number of Cows of Primary Breed</Label>
+                          <Input
+                            id="breedCount"
+                            type="number"
+                            placeholder="Count"
+                            value={formData.breedCount}
+                            onChange={(e) => handleInputChange('breedCount', e.target.value)}
+                            className="h-11"
+                            min="1"
+                          />
+                        </div>
+                      </div>
                     </div>
 
                     <div className="flex justify-between pt-4">
