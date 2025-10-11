@@ -73,8 +73,10 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
     
     const loadLeaflet = async () => {
       try {
-        // Dynamically import Leaflet only when needed
-        const L = await import('leaflet');
+        // Dynamically import Leaflet only when needed and attach to window for plugins
+        const leafletModule = await import('leaflet');
+        const leaflet = (leafletModule as any).default ?? leafletModule;
+        (window as any).L = leaflet;
         
         // Only proceed if component is still mounted
         if (!isMounted) return;
@@ -296,15 +298,13 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
       // Dynamically import leaflet.markercluster
       await import('leaflet.markercluster');
       
-      // Get MarkerClusterGroup constructor from L
-      const MarkerClusterGroup = L.MarkerClusterGroup;
-      
-      if (!MarkerClusterGroup) {
-        throw new Error('MarkerClusterGroup not found in Leaflet');
+      // Create marker cluster group using Leaflet factory with error checking
+      if (!(window as any).L.markerClusterGroup) {
+        throw new Error('markerClusterGroup not found in Leaflet');
       }
       
-      // Create marker cluster group
-      clusterGroupRef.current = new MarkerClusterGroup({
+      // Create marker cluster group using Leaflet factory
+      clusterGroupRef.current = (window as any).L.markerClusterGroup({
         chunkedLoading: true,
         maxClusterRadius: 80,
         spiderfyOnMaxZoom: true,
@@ -324,12 +324,12 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
             size = 50;
           }
           
-          return new L.DivIcon({
+          return new (window as any).L.DivIcon({
             html: `<div class="flex items-center justify-center w-full h-full text-white font-bold text-sm">
               <span>${childCount}</span>
             </div>`,
             className: className,
-            iconSize: new L.Point(size, size)
+            iconSize: new (window as any).L.Point(size, size)
           });
         }
       });

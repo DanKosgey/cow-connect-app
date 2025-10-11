@@ -37,51 +37,16 @@ export default defineConfig(({ mode }) => ({
       output: {
         // Separate vendor and app code for better caching using function form
         manualChunks: (id) => {
-          // React core libraries
-          if (id.includes('node_modules/react') || id.includes('node_modules/react-dom') || id.includes('react-router-dom')) {
-            return 'react-vendor';
-          }
-          
-          // Radix UI components that are actually used
-          if (id.includes('@radix-ui')) {
-            return 'radix-ui-core';
-          }
-          
-          // Data fetching and state management
-          if (id.includes('@tanstack') || id.includes('@supabase')) {
-            return 'data-vendor';
-          }
-          
-          // Charts and visualizations
-          if (id.includes('recharts')) {
-            return 'chart-vendor';
-          }
-          
-          // Utility libraries
-          if (id.includes('date-fns') || id.includes('lucide-react') || id.includes('clsx') || 
-              id.includes('tailwind-merge') || id.includes('class-variance-authority')) {
-            return 'util-vendor';
-          }
-          
-          // Form handling
-          if (id.includes('react-hook-form') || id.includes('@hookform') || id.includes('zod')) {
-            return 'form-vendor';
-          }
-          
-          // UI components
-          if (id.includes('sonner') || id.includes('cmdk') || id.includes('input-otp') || 
-              id.includes('react-day-picker') || id.includes('react-resizable-panels') || 
-              id.includes('embla-carousel-react')) {
-            return 'ui-vendor';
-          }
-          
-          // Excel processing
-          if (id.includes('xlsx') || id.includes('exceljs')) {
-            return 'excel-vendor';
-          }
-          
-          // Other node_modules go to vendor chunk
           if (id.includes('node_modules')) {
+            if (id.match(/react|react-dom|react-router-dom/)) return 'react-vendor';
+            if (id.match(/@radix-ui\//)) return 'radix-ui-core';
+            if (id.match(/@tanstack\/react-query|@supabase\/supabase-js/)) return 'data-vendor';
+            if (id.match(/recharts/)) return 'chart-vendor';
+            if (id.match(/date-fns|lucide-react|clsx|tailwind-merge|class-variance-authority/)) return 'util-vendor';
+            if (id.match(/react-hook-form|@hookform\/resolvers|zod/)) return 'form-vendor';
+            if (id.match(/sonner|cmdk|input-otp|react-day-picker|react-resizable-panels|embla-carousel-react/)) return 'ui-vendor';
+            if (id.match(/xlsx|exceljs/)) return 'excel-vendor';
+            // Other node_modules go to vendor chunk
             return 'vendor';
           }
         },
