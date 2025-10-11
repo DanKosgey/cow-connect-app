@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { BarChart3, TrendingUp, TrendingDown, Users, DollarSign, Activity, Award } from 'lucide-react';
+import { BarChart3, TrendingUp, TrendingDown, Users, DollarSign, Activity, Award, ChevronUp, ChevronDown } from 'lucide-react';
 import { businessIntelligenceService } from '@/services/business-intelligence-service';
 import { trendService } from '@/services/trend-service';
 
@@ -85,7 +85,7 @@ const DetailedBusinessInsights = ({ metrics, timeRange = 'week' }: DetailedBusin
 
   if (loading || !detailedMetrics) {
     return (
-      <Card>
+      <Card className="shadow-xl">
         <CardHeader>
           <div className="flex flex-row items-center justify-between space-y-0 pb-2">
             <div className="h-6 bg-gray-200 rounded animate-pulse w-1/3"></div>
@@ -147,8 +147,28 @@ const DetailedBusinessInsights = ({ metrics, timeRange = 'week' }: DetailedBusin
                        qualityIndex >= 85 ? 'Good' : 
                        qualityIndex >= 70 ? 'Fair' : 'Needs Improvement';
 
+  // Determine rating colors
+  const getRatingColor = (rating: string) => {
+    switch (rating) {
+      case 'Excellent': return 'text-green-600';
+      case 'Good': return 'text-blue-600';
+      case 'Fair': return 'text-yellow-600';
+      case 'Needs Improvement':
+      case 'Needs Attention': return 'text-red-600';
+      default: return 'text-gray-600';
+    }
+  };
+
+  // Determine status colors
+  const getStatusColor = (value: number, thresholds: number[]) => {
+    if (value >= thresholds[0]) return 'bg-green-500';
+    if (value >= thresholds[1]) return 'bg-blue-500';
+    if (value >= thresholds[2]) return 'bg-yellow-500';
+    return 'bg-red-500';
+  };
+
   return (
-    <Card>
+    <Card className="shadow-xl hover:shadow-2xl transition-all duration-300">
       <CardHeader>
         <div className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-xl font-bold">Detailed Business Insights</CardTitle>
@@ -161,7 +181,7 @@ const DetailedBusinessInsights = ({ metrics, timeRange = 'week' }: DetailedBusin
       <CardContent>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Operational Efficiency Table */}
-          <Card>
+          <Card className="shadow-lg hover:shadow-xl transition-shadow">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Activity className="h-5 w-5 text-blue-500" />
@@ -179,45 +199,33 @@ const DetailedBusinessInsights = ({ metrics, timeRange = 'week' }: DetailedBusin
                     </tr>
                   </thead>
                   <tbody>
-                    <tr className="border-b">
+                    <tr className="border-b hover:bg-gray-50 transition-colors">
                       <td className="py-3 px-4 font-medium">Collection Efficiency</td>
                       <td className="py-3 px-4">{formatPercentage(collectionEfficiency)}</td>
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-2">
-                          <div className={`w-3 h-3 rounded-full ${
-                            collectionEfficiency >= 95 ? 'bg-green-500' : 
-                            collectionEfficiency >= 80 ? 'bg-blue-500' :
-                            collectionEfficiency >= 65 ? 'bg-yellow-500' : 'bg-red-500'
-                          }`}></div>
-                          <span className="text-sm">{efficiencyRating}</span>
+                          <div className={`w-3 h-3 rounded-full ${getStatusColor(collectionEfficiency, [95, 80, 65])}`}></div>
+                          <span className={`text-sm ${getRatingColor(efficiencyRating)}`}>{efficiencyRating}</span>
                         </div>
                       </td>
                     </tr>
-                    <tr className="border-b">
+                    <tr className="border-b hover:bg-gray-50 transition-colors">
                       <td className="py-3 px-4 font-medium">Farmer Retention</td>
                       <td className="py-3 px-4">{formatPercentage(farmerRetention)}</td>
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-2">
-                          <div className={`w-3 h-3 rounded-full ${
-                            farmerRetention >= 90 ? 'bg-green-500' : 
-                            farmerRetention >= 75 ? 'bg-blue-500' :
-                            farmerRetention >= 60 ? 'bg-yellow-500' : 'bg-red-500'
-                          }`}></div>
-                          <span className="text-sm">{retentionRating}</span>
+                          <div className={`w-3 h-3 rounded-full ${getStatusColor(farmerRetention, [90, 75, 60])}`}></div>
+                          <span className={`text-sm ${getRatingColor(retentionRating)}`}>{retentionRating}</span>
                         </div>
                       </td>
                     </tr>
-                    <tr className="border-b">
+                    <tr className="border-b hover:bg-gray-50 transition-colors">
                       <td className="py-3 px-4 font-medium">Quality Index</td>
                       <td className="py-3 px-4">{qualityIndex.toFixed(1)}/100</td>
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-2">
-                          <div className={`w-3 h-3 rounded-full ${
-                            qualityIndex >= 95 ? 'bg-green-500' : 
-                            qualityIndex >= 85 ? 'bg-blue-500' :
-                            qualityIndex >= 70 ? 'bg-yellow-500' : 'bg-red-500'
-                          }`}></div>
-                          <span className="text-sm">{qualityRating}</span>
+                          <div className={`w-3 h-3 rounded-full ${getStatusColor(qualityIndex, [95, 85, 70])}`}></div>
+                          <span className={`text-sm ${getRatingColor(qualityRating)}`}>{qualityRating}</span>
                         </div>
                       </td>
                     </tr>
@@ -228,7 +236,7 @@ const DetailedBusinessInsights = ({ metrics, timeRange = 'week' }: DetailedBusin
           </Card>
 
           {/* Financial Performance Table */}
-          <Card>
+          <Card className="shadow-lg hover:shadow-xl transition-shadow">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <DollarSign className="h-5 w-5 text-green-500" />
@@ -246,33 +254,33 @@ const DetailedBusinessInsights = ({ metrics, timeRange = 'week' }: DetailedBusin
                     </tr>
                   </thead>
                   <tbody>
-                    <tr className="border-b">
+                    <tr className="border-b hover:bg-gray-50 transition-colors">
                       <td className="py-3 px-4 font-medium">Cost per Liter</td>
                       <td className="py-3 px-4">{formatCurrency(detailedMetrics.costPerLiter)}</td>
                       <td className="py-3 px-4 text-muted-foreground">KES 45-55</td>
                     </tr>
-                    <tr className="border-b">
+                    <tr className="border-b hover:bg-gray-50 transition-colors">
                       <td className="py-3 px-4 font-medium">Revenue per Farmer</td>
                       <td className="py-3 px-4">{formatCurrency(detailedMetrics.revenuePerFarmer)}</td>
                       <td className="py-3 px-4 text-muted-foreground">KES 15,000</td>
                     </tr>
-                    <tr className="border-b">
+                    <tr className="border-b hover:bg-gray-50 transition-colors">
                       <td className="py-3 px-4 font-medium">Profit Margin</td>
-                      <td className={`py-3 px-4 ${
-                        profitMargin >= 25 ? 'text-green-600 font-medium' : 
-                        profitMargin >= 15 ? 'text-blue-600 font-medium' :
-                        profitMargin >= 8 ? 'text-yellow-600 font-medium' : 'text-red-600 font-medium'
+                      <td className={`py-3 px-4 font-medium ${
+                        profitMargin >= 25 ? 'text-green-600' : 
+                        profitMargin >= 15 ? 'text-blue-600' :
+                        profitMargin >= 8 ? 'text-yellow-600' : 'text-red-600'
                       }`}>
                         {formatPercentage(profitMargin)}
                       </td>
                       <td className="py-3 px-4 text-muted-foreground">15-25%</td>
                     </tr>
-                    <tr className="border-b">
+                    <tr className="border-b hover:bg-gray-50 transition-colors">
                       <td className="py-3 px-4 font-medium">ROI</td>
-                      <td className={`py-3 px-4 ${
-                        roi >= 30 ? 'text-green-600 font-medium' : 
-                        roi >= 20 ? 'text-blue-600 font-medium' :
-                        roi >= 10 ? 'text-yellow-600 font-medium' : 'text-red-600 font-medium'
+                      <td className={`py-3 px-4 font-medium ${
+                        roi >= 30 ? 'text-green-600' : 
+                        roi >= 20 ? 'text-blue-600' :
+                        roi >= 10 ? 'text-yellow-600' : 'text-red-600'
                       }`}>
                         {formatPercentage(roi)}
                       </td>
@@ -285,7 +293,7 @@ const DetailedBusinessInsights = ({ metrics, timeRange = 'week' }: DetailedBusin
           </Card>
 
           {/* Market Trends Table */}
-          <Card className="lg:col-span-2">
+          <Card className="lg:col-span-2 shadow-lg hover:shadow-xl transition-shadow">
             <CardHeader>
               <div className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="flex items-center gap-2 text-lg">
@@ -296,7 +304,7 @@ const DetailedBusinessInsights = ({ metrics, timeRange = 'week' }: DetailedBusin
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="border rounded-lg p-4">
+                <div className="border rounded-lg p-4 hover:shadow-md transition-shadow">
                   <div className="flex items-center justify-between">
                     <h3 className="font-semibold">Seasonal Trend</h3>
                     {seasonalTrend > 0 ? (
@@ -307,11 +315,12 @@ const DetailedBusinessInsights = ({ metrics, timeRange = 'week' }: DetailedBusin
                       <Activity className="h-5 w-5 text-gray-500" />
                     )}
                   </div>
-                  <div className={`text-2xl font-bold mt-2 ${
+                  <div className={`text-2xl font-bold mt-2 flex items-center ${
                     seasonalTrend > 0 ? 'text-green-600' : 
                     seasonalTrend < 0 ? 'text-red-600' : 'text-gray-600'
                   }`}>
-                    {seasonalTrend > 0 ? '+' : ''}{formatPercentage(seasonalTrend)}
+                    {seasonalTrend > 0 ? <ChevronUp className="h-5 w-5" /> : seasonalTrend < 0 ? <ChevronDown className="h-5 w-5" /> : null}
+                    {seasonalTrend > 0 ? '+' : ''}{formatPercentage(Math.abs(seasonalTrend))}
                   </div>
                   <p className="text-sm text-muted-foreground mt-1">
                     {seasonalTrend > 5 
@@ -326,7 +335,7 @@ const DetailedBusinessInsights = ({ metrics, timeRange = 'week' }: DetailedBusin
                   </p>
                 </div>
 
-                <div className="border rounded-lg p-4">
+                <div className="border rounded-lg p-4 hover:shadow-md transition-shadow">
                   <div className="flex items-center justify-between">
                     <h3 className="font-semibold">Operational Benchmark</h3>
                     <Award className="h-5 w-5 text-blue-500" />
@@ -345,7 +354,7 @@ const DetailedBusinessInsights = ({ metrics, timeRange = 'week' }: DetailedBusin
                   </p>
                 </div>
 
-                <div className="border rounded-lg p-4">
+                <div className="border rounded-lg p-4 hover:shadow-md transition-shadow">
                   <div className="flex items-center justify-between">
                     <h3 className="font-semibold">Farmer Satisfaction</h3>
                     <Users className="h-5 w-5 text-green-500" />
@@ -366,7 +375,7 @@ const DetailedBusinessInsights = ({ metrics, timeRange = 'week' }: DetailedBusin
               </div>
 
               <div className="mt-6">
-                <Button className="w-full">
+                <Button className="w-full gradient-primary text-primary-foreground hover:opacity-90">
                   <BarChart3 className="h-4 w-4 mr-2" />
                   View Detailed Financial Report
                 </Button>
@@ -376,32 +385,31 @@ const DetailedBusinessInsights = ({ metrics, timeRange = 'week' }: DetailedBusin
         </div>
 
         {/* Key Insights Summary */}
-        <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-          <h3 className="font-semibold text-blue-900 mb-2">Key Business Insights</h3>
+        <div className="mt-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200 shadow-sm">
+          <h3 className="font-semibold text-blue-900 mb-2 flex items-center">
+            <Award className="h-4 w-4 mr-2" />
+            Key Business Insights
+          </h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-            <div>
+            <div className="p-3 bg-white rounded border">
               <span className="font-medium">Operational Health:</span> 
-              <span className={
-                collectionEfficiency >= 95 ? ' text-green-600' : 
-                collectionEfficiency >= 80 ? ' text-blue-600' :
-                collectionEfficiency >= 65 ? ' text-yellow-600' : ' text-red-600'
-              }>
+              <span className={`font-semibold ${getRatingColor(efficiencyRating)}`}>
                 {' '}{efficiencyRating}
               </span>
             </div>
-            <div>
+            <div className="p-3 bg-white rounded border">
               <span className="font-medium">Financial Performance:</span> 
-              <span className={
-                profitMargin >= 25 ? ' text-green-600' : 
-                profitMargin >= 15 ? ' text-blue-600' :
-                profitMargin >= 8 ? ' text-yellow-600' : ' text-red-600'
-              }>
+              <span className={`font-semibold ${
+                profitMargin >= 25 ? 'text-green-600' : 
+                profitMargin >= 15 ? 'text-blue-600' :
+                profitMargin >= 8 ? 'text-yellow-600' : 'text-red-600'
+              }`}>
                 {' '}{formatPercentage(profitMargin)} margin
               </span>
             </div>
-            <div>
+            <div className="p-3 bg-white rounded border">
               <span className="font-medium">Market Position:</span> 
-              <span className={seasonalTrend > 0 ? ' text-green-600' : seasonalTrend < 0 ? ' text-red-600' : ' text-gray-600'}>
+              <span className={`font-semibold ${seasonalTrend > 0 ? 'text-green-600' : seasonalTrend < 0 ? 'text-red-600' : 'text-gray-600'}`}>
                 {' '}{seasonalTrend > 0 ? 'Growing' : seasonalTrend < 0 ? 'Declining' : 'Stable'}
               </span>
             </div>

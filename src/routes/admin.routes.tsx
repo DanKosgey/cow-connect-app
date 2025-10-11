@@ -25,6 +25,8 @@ const Staff = lazy(() => import("../pages/admin/Staff"));
 const PaymentSystem = lazy(() => import("../pages/admin/PaymentSystem"));
 const CollectionsAnalyticsDashboard = lazy(() => import("../pages/admin/CollectionsAnalyticsDashboard"));
 const KYCAdminDashboard = lazy(() => import("../pages/admin/KYCAdminDashboard"));
+const KYCPendingFarmersDashboard = lazy(() => import("../pages/admin/KYCPendingFarmersDashboard"));
+const KYCPendingFarmerDetails = lazy(() => import("../pages/admin/KYCPendingFarmerDetails"));
 const Settings = lazy(() => import("../pages/admin/Settings"));
 const AdminInvite = lazy(() => import("../pages/admin/AdminInvite"));
 const AnalyticsDashboard = lazy(() => import("../pages/admin/AnalyticsDashboard"));
@@ -110,6 +112,20 @@ export default function AdminRoutes() {
           <ProtectedRoute requiredRole={UserRole.ADMIN}>
             <PageTransition>
               <KYCAdminDashboard />
+            </PageTransition>
+          </ProtectedRoute>
+        } />
+        <Route path="kyc-pending-farmers" element={
+          <ProtectedRoute requiredRole={UserRole.ADMIN}>
+            <PageTransition>
+              <KYCPendingFarmersDashboard />
+            </PageTransition>
+          </ProtectedRoute>
+        } />
+        <Route path="kyc-pending-farmers/:id" element={
+          <ProtectedRoute requiredRole={UserRole.ADMIN}>
+            <PageTransition>
+              <KYCPendingFarmerDetails />
             </PageTransition>
           </ProtectedRoute>
         } />

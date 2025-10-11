@@ -15,12 +15,24 @@ import {
   Droplets,
   Leaf,
   Users,
-  MapPin
+  MapPin,
+  Bell,
+  Target,
+  Zap,
+  CalendarDays,
+  TrendingDown,
+  Star,
+  Package,
+  Truck,
+  Download
 } from "lucide-react";
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area } from 'recharts';
 import { milkRateService } from '@/services/milk-rate-service';
 import { supabase } from "@/integrations/supabase/client";
 import useToastNotifications from '@/hooks/useToastNotifications';
+import { format, subDays } from 'date-fns';
+import { MiniDataVisualization } from "@/components/FarmerDataVisualization";
+import { exportToCSV, exportToJSON } from "@/utils/exportUtils";
 
 interface Collection {
   id: string;
@@ -44,6 +56,18 @@ interface FarmerAnalytics {
   current_month_liters: number;
   current_month_earnings: number;
   avg_quality_score: number;
+  today_collections_trend?: { isPositive: boolean; value: number };
+  monthly_liters_trend?: { isPositive: boolean; value: number };
+  monthly_earnings_trend?: { isPositive: boolean; value: number };
+}
+
+interface Notification {
+  id: string;
+  title: string;
+  message: string;
+  read: boolean;
+  created_at: string;
+  type: 'info' | 'warning' | 'success';
 }
 
 const EnhancedFarmerDashboard = () => {
@@ -55,6 +79,8 @@ const EnhancedFarmerDashboard = () => {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [currentRate, setCurrentRate] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   // Fetch farmer data and analytics
   useEffect(() => {
@@ -72,17 +98,18 @@ const EnhancedFarmerDashboard = () => {
         const { data: farmerData, error: farmerError } = await supabase
           .from('farmers')
           .select('*')
-          .eq('user_id', user.id);
+          .eq('user_id', user.id)
+          .maybeSingle();
 
         if (farmerError) throw farmerError;
         
         // Check if farmer data exists
-        if (!farmerData || farmerData.length === 0) {
+        if (!farmerData) {
           setError("No farmer profile found. Please complete your registration.");
           return;
         }
         
-        const farmerRecord = farmerData[0];
+        const farmerRecord = farmerData;
         setFarmer(farmerRecord);
 
         // Fetch analytics
@@ -129,6 +156,21 @@ const EnhancedFarmerDashboard = () => {
         if (paymentsError) throw paymentsError;
         setPayments(paymentsData || []);
 
+        // Fetch notifications
+        const { data: notificationsData, error: notificationsError } = await supabase
+          .from('notifications')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(5);
+
+        if (notificationsError) throw notificationsError;
+        setNotifications(notificationsData || []);
+        
+        // Count unread notifications
+        const unread = notificationsData?.filter(n => !n.read).length || 0;
+        setUnreadCount(unread);
+
       } catch (err) {
         console.error('Error fetching farmer data:', err);
         setError('Failed to load dashboard data');
@@ -155,46 +197,122 @@ const EnhancedFarmerDashboard = () => {
     };
   }, []);
 
-  // Stats cards data
+  // Export collections data
+  const exportCollections = (format: 'csv' | 'json') => {
+    try {
+      const exportData = collections.map(collection => ({
+        date: new Date(collection.collection_date).toLocaleDateString(),
+        liters: collection.liters,
+        quality_grade: collection.quality_grade,
+        total_amount: collection.total_amount,
+        status: collection.status
+      }));
+      
+      if (format === 'csv') {
+        exportToCSV(exportData, 'collections-report');
+      } else {
+        exportToJSON(exportData, 'collections-report');
+      }
+      
+      toast.success('Success', `Collections exported as ${format.toUpperCase()}`);
+    } catch (err) {
+      console.error('Error exporting collections:', err);
+      toast.error('Error', 'Failed to export collections');
+    }
+  };
+
+  // Export payments data
+  const exportPayments = (format: 'csv' | 'json') => {
+    try {
+      const exportData = payments.map(payment => ({
+        date: new Date(payment.created_at).toLocaleDateString(),
+        amount: payment.amount,
+        status: payment.status
+      }));
+      
+      if (format === 'csv') {
+        exportToCSV(exportData, 'payments-report');
+      } else {
+        exportToJSON(exportData, 'payments-report');
+      }
+      
+      toast.success('Success', `Payments exported as ${format.toUpperCase()}`);
+    } catch (err) {
+      console.error('Error exporting payments:', err);
+      toast.error('Error', 'Failed to export payments');
+    }
+  };
+
+  // Prepare data for mini visualizations
+  const weeklyData = [];
+  for (let i = 6; i >= 0; i--) {
+    const date = subDays(new Date(), i);
+    const dateString = format(date, 'MMM dd');
+    const dayCollections = collections.filter(c => 
+      format(new Date(c.collection_date), 'MMM dd') === dateString
+    );
+    const totalLiters = dayCollections.reduce((sum, c) => sum + (c.liters || 0), 0);
+    const totalEarnings = dayCollections.reduce((sum, c) => sum + (c.total_amount || 0), 0);
+    
+    weeklyData.push({
+      date: dateString,
+      liters: totalLiters,
+      earnings: totalEarnings
+    });
+  }
+
+  // Stats cards data with mini visualizations
   const statsCards = [
     {
       title: "Today's Collection",
       value: collections.filter(c => new Date(c.collection_date).toDateString() === new Date().toDateString())
         .reduce((sum, c) => sum + parseFloat(c.liters?.toString() || '0'), 0).toFixed(1),
       unit: 'L',
-      icon: Droplets,
+      icon: <Droplets className="h-5 w-5" />,
       color: 'bg-blue-500',
       trend: analytics?.today_collections_trend ? 
         `${analytics.today_collections_trend.isPositive ? '+' : ''}${analytics.today_collections_trend.value.toFixed(1)}%` : 
-        'No data'
+        'No data',
+      trendIcon: analytics?.today_collections_trend?.isPositive ? TrendingUp : TrendingDown,
+      chartData: weeklyData,
+      dataKey: 'liters'
     },
     {
       title: 'Monthly Total',
       value: analytics?.current_month_liters?.toFixed(1) || '0',
       unit: 'L',
-      icon: TrendingUp,
+      icon: <TrendingUp className="h-5 w-5" />,
       color: 'bg-green-500',
       trend: analytics?.monthly_liters_trend ? 
         `${analytics.monthly_liters_trend.isPositive ? '+' : ''}${analytics.monthly_liters_trend.value.toFixed(1)}%` : 
-        'No data'
+        'No data',
+      trendIcon: analytics?.monthly_liters_trend?.isPositive ? TrendingUp : TrendingDown,
+      chartData: weeklyData,
+      dataKey: 'liters'
     },
     {
       title: 'Monthly Earnings',
       value: `KSh ${analytics?.current_month_earnings?.toFixed(0) || '0'}`,
       unit: '',
-      icon: DollarSign,
+      icon: <DollarSign className="h-5 w-5" />,
       color: 'bg-purple-500',
       trend: analytics?.monthly_earnings_trend ? 
         `${analytics.monthly_earnings_trend.isPositive ? '+' : ''}${analytics.monthly_earnings_trend.value.toFixed(1)}%` : 
-        'No data'
+        'No data',
+      trendIcon: analytics?.monthly_earnings_trend?.isPositive ? TrendingUp : TrendingDown,
+      chartData: weeklyData,
+      dataKey: 'earnings'
     },
     {
       title: 'Current Rate',
       value: `KSh ${currentRate.toFixed(2)}`,
       unit: '/L',
-      icon: Award,
+      icon: <Award className="h-5 w-5" />,
       color: 'bg-yellow-500',
-      trend: 'per liter'
+      trend: 'per liter',
+      trendIcon: Zap,
+      chartData: weeklyData,
+      dataKey: 'earnings'
     }
   ];
 
@@ -213,10 +331,39 @@ const EnhancedFarmerDashboard = () => {
   const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444'];
 
   // Weekly collection data
-  const weeklyData = collections.slice(0, 7).reverse().map(c => ({
-    day: new Date(c.collection_date).toLocaleDateString('en-US', { weekday: 'short' }),
-    liters: parseFloat(c.liters?.toString() || '0')
-  }));
+  const weeklyCollectionData = [];
+  for (let i = 6; i >= 0; i--) {
+    const date = subDays(new Date(), i);
+    const dateString = format(date, 'MMM dd');
+    const dayCollections = collections.filter(c => 
+      format(new Date(c.collection_date), 'MMM dd') === dateString
+    );
+    const totalLiters = dayCollections.reduce((sum, c) => sum + (c.liters || 0), 0);
+    
+    weeklyCollectionData.push({
+      date: dateString,
+      liters: totalLiters,
+      collections: dayCollections.length
+    });
+  }
+
+  // Monthly trend data
+  const monthlyTrendData = [];
+  for (let i = 5; i >= 0; i--) {
+    const date = subDays(new Date(), i * 7);
+    const monthString = format(date, 'MMM');
+    const monthCollections = collections.filter(c => 
+      format(new Date(c.collection_date), 'MMM') === monthString
+    );
+    const totalLiters = monthCollections.reduce((sum, c) => sum + (c.liters || 0), 0);
+    const totalEarnings = monthCollections.reduce((sum, c) => sum + (c.total_amount || 0), 0);
+    
+    monthlyTrendData.push({
+      month: monthString,
+      liters: totalLiters,
+      earnings: totalEarnings
+    });
+  }
 
   if (loading) {
     return (
@@ -260,7 +407,16 @@ const EnhancedFarmerDashboard = () => {
             <h1 className="text-3xl font-bold text-gray-900">Welcome back, {farmer?.full_name?.split(' ')[0] || 'Farmer'}!</h1>
             <p className="text-gray-600 mt-2">Here's what's happening with your dairy operations today.</p>
           </div>
-          <div className="mt-4 md:mt-0">
+          <div className="mt-4 md:mt-0 flex items-center space-x-3">
+            <Button variant="outline" className="flex items-center gap-2">
+              <Bell className="h-4 w-4" />
+              {unreadCount > 0 && (
+                <span className="absolute top-0 right-0 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white transform translate-x-1/2 -translate-y-1/2 bg-red-500 rounded-full">
+                  {unreadCount}
+                </span>
+              )}
+              Notifications
+            </Button>
             <Button className="flex items-center gap-2 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800">
               <Calendar className="h-4 w-4" />
               Schedule Collection
@@ -268,70 +424,121 @@ const EnhancedFarmerDashboard = () => {
           </div>
         </div>
 
-        {/* Stats Grid */}
+        {/* Stats Grid with Mini Visualizations - Responsive */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           {statsCards.map((stat, index) => (
-            <Card key={index} className="border border-border hover:shadow-md transition-all duration-300 hover:-translate-y-1">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600">{stat.title}</CardTitle>
-                <div className={`p-2 rounded-full ${stat.color} text-white`}>
-                  {stat.icon && <stat.icon className="h-5 w-5" />}
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-gray-900">{stat.value}{stat.unit}</div>
-                <p className="text-xs text-green-600 font-medium mt-1 flex items-center">
-                  <TrendingUp className="w-3 h-3 mr-1" />
-                  {stat.trend} from last period
-                </p>
-              </CardContent>
-            </Card>
+            <MiniDataVisualization
+              key={index}
+              title={stat.title}
+              value={`${stat.value}${stat.unit}`}
+              change={stat.trend}
+              icon={stat.icon}
+              chartData={stat.chartData}
+              dataKey={stat.dataKey}
+            />
           ))}
         </div>
 
-        {/* Charts Section */}
+        {/* Charts Section - Responsive */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          {/* Weekly Collection Trend */}
           <Card className="shadow-sm">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <BarChart3 className="h-5 w-5 text-primary" />
                 Weekly Collection Trend
+                <div className="ml-auto flex space-x-2">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => exportCollections('csv')}
+                    className="flex items-center gap-1"
+                  >
+                    <Download className="h-4 w-4" />
+                    CSV
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => exportCollections('json')}
+                    className="flex items-center gap-1"
+                  >
+                    <Download className="h-4 w-4" />
+                    JSON
+                  </Button>
+                </div>
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="h-80">
+              <div className="h-80 chart-container-responsive">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={weeklyData}>
+                  <AreaChart data={weeklyCollectionData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis dataKey="day" stroke="#6b7280" />
-                    <YAxis stroke="#6b7280" />
+                    <XAxis dataKey="date" stroke="#6b7280" />
+                    <YAxis yAxisId="left" stroke="#6b7280" />
+                    <YAxis yAxisId="right" orientation="right" stroke="#6b7280" />
                     <Tooltip 
                       contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }} 
-                      formatter={(value) => [`${value} L`, 'Liters']}
+                      formatter={(value, name) => {
+                        if (name === 'liters') return [`${value} L`, 'Liters'];
+                        if (name === 'collections') return [value, 'Collections'];
+                        return [value, name];
+                      }}
                     />
-                    <Line 
+                    <Area 
+                      yAxisId="left"
                       type="monotone" 
                       dataKey="liters" 
                       stroke="#10b981" 
-                      strokeWidth={3} 
-                      dot={{ fill: '#10b981', r: 5 }} 
-                      activeDot={{ r: 8 }} 
+                      fill="#10b981" 
+                      fillOpacity={0.2} 
+                      name="Liters"
                     />
-                  </LineChart>
+                    <Area 
+                      yAxisId="right"
+                      type="monotone" 
+                      dataKey="collections" 
+                      stroke="#3b82f6" 
+                      fill="#3b82f6" 
+                      fillOpacity={0.2} 
+                      name="Collections"
+                    />
+                  </AreaChart>
                 </ResponsiveContainer>
               </div>
             </CardContent>
           </Card>
 
+          {/* Quality Distribution */}
           <Card className="shadow-sm">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Award className="h-5 w-5 text-primary" />
                 Quality Distribution
+                <div className="ml-auto flex space-x-2">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => exportCollections('csv')}
+                    className="flex items-center gap-1"
+                  >
+                    <Download className="h-4 w-4" />
+                    CSV
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => exportCollections('json')}
+                    className="flex items-center gap-1"
+                  >
+                    <Download className="h-4 w-4" />
+                    JSON
+                  </Button>
+                </div>
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="h-80">
+              <div className="h-80 chart-container-responsive">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
@@ -356,7 +563,125 @@ const EnhancedFarmerDashboard = () => {
           </Card>
         </div>
 
-        {/* Recent Activities and Upcoming Tasks */}
+        {/* Monthly Performance and Recent Activities - Responsive */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+          {/* Monthly Performance */}
+          <div className="lg:col-span-2">
+            <Card className="shadow-sm">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Target className="h-5 w-5 text-primary" />
+                  Monthly Performance
+                  <div className="ml-auto flex space-x-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => exportCollections('csv')}
+                      className="flex items-center gap-1"
+                    >
+                      <Download className="h-4 w-4" />
+                      CSV
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => exportCollections('json')}
+                      className="flex items-center gap-1"
+                    >
+                      <Download className="h-4 w-4" />
+                      JSON
+                    </Button>
+                  </div>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="h-80 chart-container-responsive">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={monthlyTrendData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <XAxis dataKey="month" stroke="#6b7280" />
+                      <YAxis yAxisId="left" stroke="#6b7280" />
+                      <YAxis yAxisId="right" orientation="right" stroke="#6b7280" />
+                      <Tooltip 
+                        contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }} 
+                        formatter={(value, name) => {
+                          if (name === 'liters') return [`${value} L`, 'Liters'];
+                          if (name === 'earnings') return [`KSh ${value}`, 'Earnings'];
+                          return [value, name];
+                        }}
+                      />
+                      <Bar yAxisId="left" dataKey="liters" fill="#10b981" name="Liters" />
+                      <Bar yAxisId="right" dataKey="earnings" fill="#8b5cf6" name="Earnings (KSh)" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Recent Notifications */}
+          <div>
+            <Card className="shadow-sm">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Bell className="h-5 w-5 text-primary" />
+                  Recent Notifications
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {notifications.length > 0 ? (
+                    notifications.slice(0, 5).map((notification) => (
+                      <div 
+                        key={notification.id} 
+                        className={`p-3 rounded-lg border ${
+                          notification.read 
+                            ? 'bg-white border-border' 
+                            : 'bg-blue-50 border-blue-200'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-start space-x-2">
+                            <div className="mt-0.5">
+                              {notification.type === 'success' ? (
+                                <CheckCircle className="w-4 h-4 text-green-500" />
+                              ) : notification.type === 'warning' ? (
+                                <AlertCircle className="w-4 h-4 text-yellow-500" />
+                              ) : (
+                                <Bell className="w-4 h-4 text-blue-500" />
+                              )}
+                            </div>
+                            <div>
+                              <h4 className="text-sm font-medium text-gray-900">
+                                {notification.title}
+                              </h4>
+                              <p className="text-xs text-gray-600 mt-1">
+                                {notification.message}
+                              </p>
+                            </div>
+                          </div>
+                          {!notification.read && (
+                            <span className="inline-flex items-center justify-center w-2 h-2 rounded-full bg-blue-500"></span>
+                          )}
+                        </div>
+                        <p className="text-xs text-gray-500 mt-2">
+                          {format(new Date(notification.created_at), 'MMM d, h:mm a')}
+                        </p>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-6">
+                      <Bell className="mx-auto h-8 w-8 text-gray-400" />
+                      <p className="mt-2 text-sm text-gray-500">No recent notifications</p>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+
+        {/* Recent Collections and Payment Summary - Responsive */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
           {/* Recent Collections */}
           <div className="lg:col-span-2">
@@ -365,6 +690,26 @@ const EnhancedFarmerDashboard = () => {
                 <CardTitle className="flex items-center gap-2">
                   <Milk className="h-5 w-5 text-primary" />
                   Recent Collections
+                  <div className="ml-auto flex space-x-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => exportCollections('csv')}
+                      className="flex items-center gap-1"
+                    >
+                      <Download className="h-4 w-4" />
+                      CSV
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => exportCollections('json')}
+                      className="flex items-center gap-1"
+                    >
+                      <Download className="h-4 w-4" />
+                      JSON
+                    </Button>
+                  </div>
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -378,7 +723,7 @@ const EnhancedFarmerDashboard = () => {
                         <div>
                           <p className="font-medium text-gray-900">{collection.liters} Liters</p>
                           <p className="text-sm text-gray-500">
-                            {new Date(collection.collection_date).toLocaleDateString()}
+                            {format(new Date(collection.collection_date), 'MMM d, yyyy')}
                           </p>
                         </div>
                       </div>
@@ -407,6 +752,26 @@ const EnhancedFarmerDashboard = () => {
                 <CardTitle className="flex items-center gap-2">
                   <DollarSign className="h-5 w-5 text-primary" />
                   Payment Summary
+                  <div className="ml-auto flex space-x-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => exportPayments('csv')}
+                      className="flex items-center gap-1"
+                    >
+                      <Download className="h-4 w-4" />
+                      CSV
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => exportPayments('json')}
+                      className="flex items-center gap-1"
+                    >
+                      <Download className="h-4 w-4" />
+                      JSON
+                    </Button>
+                  </div>
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -442,7 +807,7 @@ const EnhancedFarmerDashboard = () => {
                               )}
                             </div>
                             <span className="text-sm text-gray-600">
-                              {new Date(payment.created_at).toLocaleDateString()}
+                              {format(new Date(payment.created_at), 'MMM d')}
                             </span>
                           </div>
                           <span className="font-medium">KSh {payment.amount}</span>
@@ -460,7 +825,7 @@ const EnhancedFarmerDashboard = () => {
           </div>
         </div>
 
-        {/* Quick Actions */}
+        {/* Quick Actions - Responsive */}
         <div className="mb-8">
           <Card className="shadow-sm">
             <CardHeader>
@@ -470,18 +835,22 @@ const EnhancedFarmerDashboard = () => {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <Button className="h-20 flex flex-col items-center justify-center gap-2 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700">
                   <Milk className="w-6 h-6" />
-                  <span>Record Collection</span>
+                  <span className="text-sm">Record Collection</span>
                 </Button>
                 <Button variant="outline" className="h-20 flex flex-col items-center justify-center gap-2">
-                  <MapPin className="w-6 h-6" />
-                  <span>Update Farm Location</span>
+                  <Package className="w-6 h-6" />
+                  <span className="text-sm">View Inventory</span>
+                </Button>
+                <Button variant="outline" className="h-20 flex flex-col items-center justify-center gap-2">
+                  <Truck className="w-6 h-6" />
+                  <span className="text-sm">Track Deliveries</span>
                 </Button>
                 <Button variant="outline" className="h-20 flex flex-col items-center justify-center gap-2">
                   <Users className="w-6 h-6" />
-                  <span>View Profile</span>
+                  <span className="text-sm">View Profile</span>
                 </Button>
               </div>
             </CardContent>

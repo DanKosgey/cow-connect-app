@@ -1,5 +1,5 @@
-// Service Worker for Cow Connect App
-const CACHE_NAME = 'cow-connect-v3';
+// Service Worker for DAIRY FARMERS OF TRANS-NZOIA App
+const CACHE_NAME = 'dairy-farmers-v3';
 const OFFLINE_URL = '/offline.html';
 
 // Pre-cache critical assets for faster initial load
@@ -10,7 +10,7 @@ const STATIC_ASSETS = [
 ].filter(Boolean);
 
 // Cache versioning for better cache busting
-const CACHE_VERSION = 'v3';
+const CACHE_VERSION = 'v4';
 const CACHE_KEY = `${CACHE_NAME}-${CACHE_VERSION}`;
 
 // Cache strategies
@@ -19,6 +19,33 @@ const CACHE_STRATEGIES = {
   NETWORK_FIRST: 'network-first',
   CACHE_FIRST: 'cache-first',
 };
+
+// URLs that should not be cached (development resources, Supabase requests, etc.)
+const EXCLUDE_FROM_CACHE = [
+  // Development resources
+  '@react-refresh',
+  'node_modules',
+  '__vite',
+  '@vite',
+  // Supabase resources
+  '.supabase.co',
+  // HMR (Hot Module Replacement)
+  'hot-update',
+  // WebSocket connections
+  'ws://',
+  'wss://',
+  // Vite development parameters
+  '?t=',
+  '&t=',
+  '?v=',
+  '&v=',
+  '__WB_REVISION__',
+  'type=',
+  'lang=',
+  'import',
+  // Chrome extensions
+  'chrome-extension:'
+];
 
 // Install event - cache static assets
 self.addEventListener('install', (event) => {
@@ -75,10 +102,29 @@ self.addEventListener('activate', (event) => {
 
 // Fetch event - handle requests with optimized strategies
 self.addEventListener('fetch', (event) => {
+  // Log all fetch events for debugging in development
+  if (typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'development') {
+    console.debug('Service Worker fetch event:', event.request.url);
+  }
   // Skip non-GET requests
   if (event.request.method !== 'GET') return;
 
   const url = new URL(event.request.url);
+
+  // Skip caching for excluded URLs
+  if (EXCLUDE_FROM_CACHE.some(exclude => event.request.url.includes(exclude))) {
+    // Log development resource requests for debugging
+    console.debug('Skipping cache for development resource:', url.pathname + url.search);
+    return;
+  }
+
+  // Skip caching for development environment requests
+  if (url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '0.0.0.0') {
+    // Additional checks for development resources
+    if (url.protocol === 'chrome-extension:') {
+      return;
+    }
+  }
 
   // Skip caching for Supabase requests (they should be handled by React Query)
   if (url.hostname.includes('supabase')) {
@@ -127,7 +173,7 @@ self.addEventListener('push', (event) => {
   
   event.waitUntil(
     self.registration.showNotification(data.title ?? 'New Update', {
-      body: data.body ?? 'You have a new update in Cow Connect',
+      body: data.body ?? 'You have a new update in DAIRY FARMERS OF TRANS-NZOIA',
       icon: '/favicon.ico',
       badge: '/favicon.ico',
       data: data.data,

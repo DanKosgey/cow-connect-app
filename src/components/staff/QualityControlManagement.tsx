@@ -35,6 +35,7 @@ import { format, subDays, startOfMonth, endOfMonth } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import useToastNotifications from '@/hooks/useToastNotifications';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { useStaffInfo, useApprovedFarmers } from '@/hooks/useStaffData';
 
 interface Collection {
   id: string;
@@ -51,6 +52,11 @@ interface Collection {
     full_name: string;
     id: string;
   } | null;
+}
+
+interface Farmer {
+  id: string;
+  full_name: string;
 }
 
 interface QualityTest {
@@ -70,24 +76,19 @@ interface QualityTest {
   } | null;
 }
 
-interface Farmer {
-  id: string;
-  full_name: string;
-}
-
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
 
 export default function QualityControlManagement() {
   const { user } = useAuth();
   const { show, error: showError } = useToastNotifications();
   const navigate = useNavigate();
+  const { staffInfo, loading: staffLoading } = useStaffInfo();
+  const { farmers, loading: farmersLoading } = useApprovedFarmers();
   
   const [collections, setCollections] = useState<Collection[]>([]);
   const [filteredCollections, setFilteredCollections] = useState<Collection[]>([]);
   const [qualityTests, setQualityTests] = useState<QualityTest[]>([]);
-  const [farmers, setFarmers] = useState<Farmer[]>([]);
   const [loading, setLoading] = useState(true);
-  const [staffId, setStaffId] = useState<string | null>(null);
   
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -109,28 +110,20 @@ export default function QualityControlManagement() {
   const itemsPerPage = 10;
 
   useEffect(() => {
-    fetchData();
-  }, [user?.id]);
+    if (staffInfo) {
+      fetchData();
+    }
+  }, [staffInfo]);
 
   useEffect(() => {
     applyFilters();
   }, [collections, searchTerm, selectedFarmer, selectedQuality, dateRange, startDate, endDate]);
 
   const fetchData = async () => {
+    if (!staffInfo?.id) return;
+
     setLoading(true);
     try {
-      // Get staff info
-      const { data: staffData, error: staffError } = await supabase
-        .from('staff')
-        .select('id')
-        .eq('user_id', user?.id)
-        .maybeSingle();
-
-      if (staffError) throw staffError;
-      if (!staffData) throw new Error('Staff record not found');
-      
-      setStaffId(staffData.id);
-
       // Fetch collections for this staff member
       const { data: collectionsData, error: collectionsError } = await supabase
         .from('collections')
@@ -150,7 +143,7 @@ export default function QualityControlManagement() {
             id
           )
         `)
-        .eq('staff_id', staffData.id)
+        .eq('staff_id', staffInfo.id)
         .order('collection_date', { ascending: false });
 
       if (collectionsError) throw collectionsError;
@@ -167,7 +160,7 @@ export default function QualityControlManagement() {
           test_date,
           performed_by,
           notes,
-          collection (
+          collection!collection_id (
             collection_id,
             farmers (
               full_name
@@ -175,31 +168,11 @@ export default function QualityControlManagement() {
             quality_grade
           )
         `)
-        .eq('performed_by', staffData.id)
+        .eq('performed_by', staffInfo.id)
         .order('test_date', { ascending: false });
 
       if (testsError) throw testsError;
       setQualityTests(testsData || []);
-
-      // Fetch farmers for filter dropdown
-      const { data: farmersData, error: farmersError } = await supabase
-        .from('farmers')
-        .select(`
-          id,
-          profiles (
-            full_name
-          )
-        `)
-        .eq('kyc_status', 'approved');
-
-      if (farmersError) throw farmersError;
-      
-      const formattedFarmers = farmersData?.map(farmer => ({
-        id: farmer.id,
-        full_name: farmer.profiles?.full_name || 'Unknown Farmer'
-      })) || [];
-      
-      setFarmers(formattedFarmers);
     } catch (error: any) {
       console.error('Error fetching data:', error);
       showError('Error', error.message || 'Failed to load quality control data');
@@ -221,12 +194,12 @@ export default function QualityControlManagement() {
     }
     
     // Apply farmer filter
-    if (selectedFarmer) {
+    if (selectedFarmer && selectedFarmer !== 'all') {
       filtered = filtered.filter(collection => collection.farmer_id === selectedFarmer);
     }
     
     // Apply quality filter
-    if (selectedQuality) {
+    if (selectedQuality && selectedQuality !== 'all') {
       filtered = filtered.filter(collection => collection.quality_grade === selectedQuality);
     }
     
@@ -302,7 +275,7 @@ export default function QualityControlManagement() {
       link.click();
       document.body.removeChild(link);
       
-      show('Success', 'Quality control report exported successfully');
+      show({ title: 'Success', description: 'Quality control report exported successfully' });
     } catch (error: any) {
       console.error('Error exporting report:', error);
       showError('Error', 'Failed to export quality control report');
@@ -315,7 +288,7 @@ export default function QualityControlManagement() {
   };
 
   const submitTest = async () => {
-    if (!selectedCollection || !testType || !testResult || !staffId) {
+    if (!selectedCollection || !testType || !testResult || !staffInfo?.id) {
       showError('Error', 'Please fill in all required fields');
       return;
     }
@@ -328,13 +301,13 @@ export default function QualityControlManagement() {
           test_type: testType,
           test_result: testResult,
           test_date: new Date().toISOString(),
-          performed_by: staffId,
+          performed_by: staffInfo.id,
           notes: testNotes
         });
 
       if (error) throw error;
       
-      show('Success', 'Quality test recorded successfully');
+      show({ title: 'Success', description: 'Quality test recorded successfully' });
       setShowTestForm(false);
       resetTestForm();
       fetchData(); // Refresh data
@@ -564,10 +537,10 @@ export default function QualityControlManagement() {
                 <SelectValue placeholder="Select farmer" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All Farmers</SelectItem>
-                {farmers.map(farmer => (
+                <SelectItem value="all">All Farmers</SelectItem>
+                {farmers.filter(farmer => farmer.id && farmer.id.trim() !== '').map(farmer => (
                   <SelectItem key={farmer.id} value={farmer.id}>
-                    {farmer.full_name}
+                    {farmer.profiles.full_name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -579,7 +552,7 @@ export default function QualityControlManagement() {
                 <SelectValue placeholder="Quality grade" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All Grades</SelectItem>
+                <SelectItem value="all">All Grades</SelectItem>
                 <SelectItem value="A+">A+</SelectItem>
                 <SelectItem value="A">A</SelectItem>
                 <SelectItem value="B">B</SelectItem>

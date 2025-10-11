@@ -21,7 +21,12 @@ import {
   ClipboardList,
   Bell,
   MapPin,
-  Wifi
+  Wifi,
+  TrendingUp,
+  MessageCircle,
+  ArrowLeft,
+  ArrowRight,
+  RotateCw
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState, useCallback, useEffect } from 'react';
@@ -42,6 +47,10 @@ const roleNavigation: Record<string, NavItem[]> = {
     { label: 'My Collections', path: '/farmer/collections', icon: <Milk className="h-5 w-5" /> },
     { label: 'Payments', path: '/farmer/payments', icon: <DollarSign className="h-5 w-5" /> },
     { label: 'Notifications', path: '/farmer/notifications', icon: <Bell className="h-5 w-5" /> },
+    { label: 'Performance', path: '/farmer/performance', icon: <Target className="h-5 w-5" /> },
+    { label: 'Quality Reports', path: '/farmer/quality', icon: <CheckCircle className="h-5 w-5" /> },
+    { label: 'Market Prices', path: '/farmer/prices', icon: <TrendingUp className="h-5 w-5" /> },
+    { label: 'Community Forum', path: '/farmer/forum', icon: <MessageCircle className="h-5 w-5" /> },
     { label: 'Profile', path: '/farmer/profile', icon: <UserCog className="h-5 w-5" /> },
   ],
   staff: [
@@ -101,6 +110,20 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
     setSidebarOpen(false);
   }, [location.pathname]);
 
+  // Navigation controls functions
+  const handleBack = () => {
+    navigate(-1);
+  };
+
+  const handleForward = () => {
+    navigate(1);
+  };
+
+  const handleRefresh = () => {
+    // Reload the current page
+    window.location.reload();
+  };
+
   return (
     <div className="min-h-screen bg-background flex w-full flex-col md:flex-row">
       {/* Mobile header with menu toggle */}
@@ -114,7 +137,7 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
         </Button>
         <div className="flex items-center gap-2">
           <Milk className="h-8 w-8 text-primary" />
-          <span className="font-bold text-xl">DairyChain</span>
+          <span className="font-bold text-xl">Dairy Farmers of Trans Nzoia</span>
         </div>
         <div className="w-10"></div> {/* Spacer for alignment */}
       </div>
@@ -134,16 +157,48 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
         <div className="hidden md:flex p-4 border-b border-border items-center justify-between" style={{ height: '72px' }}>
           <div className="flex items-center gap-2">
             <Milk className="h-8 w-8 text-primary" />
-            <span className="font-bold text-xl">DairyChain</span>
+            <span className="font-bold text-xl">Dairy Farmers of Trans Nzoia</span>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="ml-auto"
+          <div className="flex items-center gap-2">
+            {/* Navigation Controls */}
+            <div className="flex gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleBack}
+                title="Go back"
+                className="h-8 w-8"
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleForward}
+                title="Go forward"
+                className="h-8 w-8"
+              >
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleRefresh}
+                title="Refresh page"
+                className="h-8 w-8"
+              >
+                <RotateCw className="h-4 w-4" />
+              </Button>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="ml-2"
             >
-            {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </Button>
+              {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </Button>
+          </div>
         </div>
 
         {/* Navigation */}
@@ -218,6 +273,38 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
 
       {/* Main Content */}
       <main className="flex-1 overflow-auto">
+        {/* Desktop Navigation Controls */}
+        <div className="hidden md:flex items-center justify-end p-2 bg-card border-b border-border">
+          <div className="flex gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleBack}
+              title="Go back"
+              className="h-8 w-8"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleForward}
+              title="Go forward"
+              className="h-8 w-8"
+            >
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleRefresh}
+              title="Refresh page"
+              className="h-8 w-8"
+            >
+              <RotateCw className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
         <div className="p-4 md:p-6">
           {children}
         </div>

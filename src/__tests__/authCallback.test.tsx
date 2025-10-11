@@ -43,14 +43,14 @@ describe('AuthCallback', () => {
     localStorage.clear();
   });
 
-  it('redirects to complete registration when user is authenticated and has pending registration', async () => {
+  it('redirects to register when user is authenticated and has pending registration', async () => {
     // Mock authenticated user
     mockUseAuth.mockReturnValue({
       user: { id: 'test-user-id' },
     });
 
     // Set pending registration data
-    localStorage.setItem('pending_farmer_registration', JSON.stringify({
+    localStorage.setItem('pending_profile', JSON.stringify({
       formData: { fullName: 'Test User' },
       documents: []
     }));
@@ -65,7 +65,84 @@ describe('AuthCallback', () => {
 
     // Wait for the redirect
     await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith('/complete-registration');
+      expect(mockNavigate).toHaveBeenCalledWith('/register');
+    });
+  });
+
+  it('redirects to KYC document upload when user is authenticated and has pending registration', async () => {
+    // Mock authenticated user
+    mockUseAuth.mockReturnValue({
+      user: { id: 'test-user-id' },
+      userRole: 'farmer', // Farmer role
+    });
+
+    // Set pending registration data
+    localStorage.setItem('pending_profile', JSON.stringify({
+      formData: { fullName: 'Test User' },
+      documents: []
+    }));
+
+    render(
+      <BrowserRouter>
+        <AuthProvider>
+          <AuthCallback />
+        </AuthProvider>
+      </BrowserRouter>
+    );
+
+    // Wait for the redirect to the new KYC document upload page
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/farmer/kyc-upload');
+    });
+  });
+
+  it('redirects to farmer dashboard when user is authenticated and has no pending registration', async () => {
+    // Mock authenticated user
+    mockUseAuth.mockReturnValue({
+      user: { id: 'test-user-id' },
+    });
+
+    // No pending registration data
+    localStorage.removeItem('pending_profile');
+
+    render(
+      <BrowserRouter>
+        <AuthProvider>
+          <AuthCallback />
+        </AuthProvider>
+      </BrowserRouter>
+    );
+
+    // Wait for the redirect
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/farmer/dashboard');
+    });
+  });
+
+  it('redirects to KYC document upload when user is authenticated with pending registration but not a farmer', async () => {
+    // Mock authenticated user with non-farmer role
+    mockUseAuth.mockReturnValue({
+      user: { id: 'test-user-id' },
+      userRole: 'admin', // Non-farmer role
+    });
+
+    // Set pending registration data
+    localStorage.setItem('pending_profile', JSON.stringify({
+      formData: { fullName: 'Test User' },
+      documents: []
+    }));
+
+    render(
+      <BrowserRouter>
+        <AuthProvider>
+          <AuthCallback />
+        </AuthProvider>
+      </BrowserRouter>
+    );
+
+    // Wait for the redirect to the new KYC document upload page
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/farmer/kyc-upload');
     });
   });
 
@@ -76,7 +153,7 @@ describe('AuthCallback', () => {
     });
 
     // Set pending registration data
-    localStorage.setItem('pending_farmer_registration', JSON.stringify({
+    localStorage.setItem('pending_profile', JSON.stringify({
       formData: { fullName: 'Test User' },
       documents: []
     }));
@@ -95,29 +172,6 @@ describe('AuthCallback', () => {
     });
   });
 
-  it('redirects to farmer dashboard when user is authenticated and has no pending registration', async () => {
-    // Mock authenticated user
-    mockUseAuth.mockReturnValue({
-      user: { id: 'test-user-id' },
-    });
-
-    // No pending registration data
-    localStorage.removeItem('pending_farmer_registration');
-
-    render(
-      <BrowserRouter>
-        <AuthProvider>
-          <AuthCallback />
-        </AuthProvider>
-      </BrowserRouter>
-    );
-
-    // Wait for the redirect
-    await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith('/farmer/dashboard');
-    });
-  });
-
   it('redirects to login when user is not authenticated and has no pending registration', async () => {
     // Mock unauthenticated user
     mockUseAuth.mockReturnValue({
@@ -125,7 +179,7 @@ describe('AuthCallback', () => {
     });
 
     // No pending registration data
-    localStorage.removeItem('pending_farmer_registration');
+    localStorage.removeItem('pending_profile');
 
     render(
       <BrowserRouter>

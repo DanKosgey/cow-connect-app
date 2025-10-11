@@ -16,6 +16,8 @@ import {
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { supabase } from "@/integrations/supabase/client";
 import useToastNotifications from "@/hooks/useToastNotifications";
+import { useRealtimeFarmerCollections } from "@/hooks/useRealtimeCollections";
+import { exportToCSV, exportToJSON } from "@/utils/exportUtils";
 
 interface Collection {
   id: string;
@@ -36,6 +38,7 @@ const CollectionsPage = () => {
   const [dateFilter, setDateFilter] = useState("");
   const [qualityFilter, setQualityFilter] = useState("");
   const [farmer, setFarmer] = useState<any>(null);
+  const { collections: realtimeCollections, recentCollection } = useRealtimeFarmerCollections(farmer?.id);
 
   // Fetch collections data
   useEffect(() => {
@@ -46,38 +49,69 @@ const CollectionsPage = () => {
         
         if (!user) return;
 
-        // Fetch farmer profile
-        const { data: farmerData } = await supabase
+        // Fetch farmer profile with better error handling
+        const { data: farmerData, error: farmerError } = await supabase
           .from('farmers')
           .select('id')
           .eq('user_id', user.id)
-          .single();
+          .maybeSingle();
 
-        if (!farmerData) return;
+        if (farmerError) {
+          console.error('Error fetching farmer data:', farmerError);
+          toast.error('Error', 'Failed to load farmer profile');
+          setLoading(false);
+          return;
+        }
+
+        if (!farmerData) {
+          console.warn('No farmer data found for user:', user.id);
+          toast.error('Warning', 'Farmer profile not found. Please complete your registration.');
+          setLoading(false);
+          return;
+        }
+
         setFarmer(farmerData);
 
-        // Fetch collections
-        const { data: collectionsData, error } = await supabase
-          .from('collections')
-          .select('*')
-          .eq('farmer_id', farmerData.id)
-          .order('collection_date', { ascending: false });
+        // Use real-time collections if available, otherwise fetch from database
+        if (realtimeCollections.length > 0) {
+          setCollections(realtimeCollections.map(collection => ({
+            id: collection.id,
+            collection_date: collection.collection_date,
+            liters: collection.liters,
+            quality_grade: collection.quality_grade,
+            total_amount: collection.total_amount,
+            status: collection.status,
+            rate_per_liter: 0 // Default value, will be updated when fetched from DB
+          })));
+        } else {
+          // Fetch collections
+          const { data: collectionsData, error } = await supabase
+            .from('collections')
+            .select('*')
+            .eq('farmer_id', farmerData.id)
+            .order('collection_date', { ascending: false });
 
-        if (error) throw error;
-        setCollections(collectionsData || []);
-        setFilteredCollections(collectionsData || []);
+          if (error) {
+            console.error('Error fetching collections:', error);
+            toast.error('Error', 'Failed to load collections data');
+            setLoading(false);
+            return;
+          }
+          setCollections(collectionsData || []);
+        }
+        
+        setLoading(false);
       } catch (err) {
         console.error('Error fetching collections:', err);
         toast.error('Error', 'Failed to load collections data');
-      } finally {
         setLoading(false);
       }
     };
 
     fetchCollections();
-  }, []);
+  }, [realtimeCollections, toast]);
 
-  // Filter collections based on search and filters
+  // Update filtered collections when collections or filters change
   useEffect(() => {
     let result = [...collections];
     
@@ -115,31 +149,28 @@ const CollectionsPage = () => {
   // Get unique quality grades for filter
   const qualityGrades = Array.from(new Set(collections.map(c => c.quality_grade))).filter(Boolean);
 
-  const exportToCSV = () => {
-    const headers = ['Date', 'Liters', 'Quality Grade', 'Rate per Liter', 'Total Amount', 'Status'];
-    const csvContent = [
-      headers.join(','),
-      ...filteredCollections.map(collection => [
-        new Date(collection.collection_date).toLocaleDateString(),
-        collection.liters,
-        collection.quality_grade,
-        collection.rate_per_liter,
-        collection.total_amount,
-        collection.status
-      ].map(field => `"${field}"`).join(','))
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', 'collections.csv');
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
-    toast.success('Success', 'Collections exported successfully');
+  const exportCollections = (format: 'csv' | 'json') => {
+    try {
+      const exportData = filteredCollections.map(collection => ({
+        date: new Date(collection.collection_date).toLocaleDateString(),
+        liters: collection.liters,
+        quality_grade: collection.quality_grade,
+        rate_per_liter: collection.rate_per_liter,
+        total_amount: collection.total_amount,
+        status: collection.status
+      }));
+      
+      if (format === 'csv') {
+        exportToCSV(exportData, 'collections-report');
+        toast.success('Success', 'Collections exported as CSV');
+      } else {
+        exportToJSON(exportData, 'collections-report');
+        toast.success('Success', 'Collections exported as JSON');
+      }
+    } catch (err) {
+      console.error('Error exporting collections:', err);
+      toast.error('Error', 'Failed to export collections');
+    }
   };
 
   if (loading) {
@@ -167,9 +198,13 @@ const CollectionsPage = () => {
               <Plus className="h-4 w-4" />
               New Collection
             </Button>
-            <Button variant="outline" className="flex items-center gap-2" onClick={exportToCSV}>
+            <Button variant="outline" className="flex items-center gap-2" onClick={() => exportCollections('csv')}>
               <Download className="h-4 w-4" />
-              Export
+              CSV
+            </Button>
+            <Button variant="outline" className="flex items-center gap-2" onClick={() => exportCollections('json')}>
+              <Download className="h-4 w-4" />
+              JSON
             </Button>
           </div>
         </div>

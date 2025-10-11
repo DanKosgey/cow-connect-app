@@ -1,7 +1,6 @@
 -- Migration: 20240005_create_triggers.sql
 -- Description: Create triggers for updated_at, audit logging, and notifications
 BEGIN;
-
 -- Trigger function for audit logging
 CREATE OR REPLACE FUNCTION public.audit_log_trigger()
 RETURNS trigger LANGUAGE plpgsql AS $$
@@ -22,7 +21,6 @@ BEGIN
   RETURN NULL;
 END;
 $$;
-
 -- Attach update_updated_at trigger to many tables
 -- We'll attach to profiles, farmers, collections, payments, kyc_documents, farmer_analytics
 DO $$
@@ -57,7 +55,6 @@ BEGIN
     FOR EACH ROW EXECUTE FUNCTION public.audit_log_trigger();
   END IF;
 END$$;
-
 -- Notify admin when new farmer registers
 CREATE OR REPLACE FUNCTION public.notify_admin_new_registration()
 RETURNS trigger LANGUAGE plpgsql AS $$
@@ -71,7 +68,6 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'notify_admin_on_farmer_insert') THEN
@@ -81,5 +77,4 @@ BEGIN
     EXECUTE FUNCTION public.notify_admin_new_registration();
   END IF;
 END$$;
-
 COMMIT;

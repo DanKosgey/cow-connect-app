@@ -17,6 +17,13 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 
+// Declare global L for Leaflet
+declare global {
+  interface Window {
+    L: any;
+  }
+}
+
 interface Warehouse {
   id: string;
   name: string;
@@ -272,6 +279,9 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
   const addCollectionMarkers = async () => {
     if (!mapInstanceRef.current || !window.L || !layersRef.current) return;
     
+    // Get L reference
+    const L = window.L;
+    
     // Clear existing collection markers
     if (clusterGroupRef.current) {
       try {
@@ -284,20 +294,17 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
     
     try {
       // Dynamically import leaflet.markercluster
-      const markerClusterModule = await import('leaflet.markercluster');
+      await import('leaflet.markercluster');
       
-      // Get MarkerClusterGroup constructor (handle different module structures)
-      const MarkerClusterGroup = (markerClusterModule as any).default?.MarkerClusterGroup || 
-                                 (markerClusterModule as any).MarkerClusterGroup || 
-                                 (markerClusterModule as any).default ||
-                                 markerClusterModule;
+      // Get MarkerClusterGroup constructor from L
+      const MarkerClusterGroup = L.MarkerClusterGroup;
       
       if (!MarkerClusterGroup) {
-        throw new Error('MarkerClusterGroup not found in imported module');
+        throw new Error('MarkerClusterGroup not found in Leaflet');
       }
       
       // Create marker cluster group
-      clusterGroupRef.current = new (MarkerClusterGroup as any)({
+      clusterGroupRef.current = new MarkerClusterGroup({
         chunkedLoading: true,
         maxClusterRadius: 80,
         spiderfyOnMaxZoom: true,
@@ -317,12 +324,12 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
             size = 50;
           }
           
-          return new window.L.DivIcon({
+          return new L.DivIcon({
             html: `<div class="flex items-center justify-center w-full h-full text-white font-bold text-sm">
               <span>${childCount}</span>
             </div>`,
             className: className,
-            iconSize: new window.L.Point(size, size)
+            iconSize: new L.Point(size, size)
           });
         }
       });

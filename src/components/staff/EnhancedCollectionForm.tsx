@@ -36,15 +36,14 @@ import {
   Gauge
 } from 'lucide-react';
 import { WarehouseService } from '@/services/warehouse-service';
+import { useStaffInfo, useApprovedFarmers } from '@/hooks/useStaffData';
 
 interface Farmer {
   id: string;
-  national_id: string;
-  address: string;
   profiles: {
     full_name: string;
-    phone: string;
   };
+  kyc_status: string;
 }
 
 interface QualityParameters {
@@ -60,6 +59,8 @@ const EnhancedCollectionForm = () => {
   const { user } = useAuth();
   const toast = useToastNotifications();
   const navigate = useNavigate();
+  const { staffInfo, loading: staffLoading } = useStaffInfo();
+  const { farmers, loading: farmersLoading } = useApprovedFarmers();
   
   // Form state
   const [selectedFarmer, setSelectedFarmer] = useState('');
@@ -81,11 +82,9 @@ const EnhancedCollectionForm = () => {
   });
   
   // Data state
-  const [farmers, setFarmers] = useState<Farmer[]>([]);
   const [currentRate, setCurrentRate] = useState(0);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [staffId, setStaffId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -101,7 +100,7 @@ const EnhancedCollectionForm = () => {
     
     // Set up an interval to retry fetching data if staff record was not found initially
     const interval = setInterval(() => {
-      if (!staffId && user?.id) {
+      if (!staffInfo && user?.id) {
         fetchData();
       }
     }, 5000); // Retry every 5 seconds
@@ -111,69 +110,14 @@ const EnhancedCollectionForm = () => {
       clearInterval(interval);
       unsubscribe();
     };
-  }, [user?.id]);
+  }, [user?.id, staffInfo]);
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      // Fetch staff record to get the staff ID
-      const { data: staffData, error: staffError } = await supabase
-        .from('staff')
-        .select('id')
-        .eq('user_id', user?.id)
-        .limit(1);
-
-      if (staffError) {
-        console.error('Error fetching staff record:', staffError);
-        throw new Error('Failed to fetch staff record. Please try again or contact administrator.');
-      }
-      
-      if (!staffData || staffData.length === 0) {
-        // Try to create staff record if it doesn't exist
-        const { data: newStaffData, error: createError } = await supabase
-          .from('staff')
-          .insert({
-            user_id: user?.id,
-            employee_id: `STAFF-${user?.id.substring(0, 8)}`
-          })
-          .select('id');
-
-        if (createError) {
-          console.error('Error creating staff record:', createError);
-          throw new Error('Unable to access staff profile. Please contact administrator.');
-        }
-        
-        if (!newStaffData || newStaffData.length === 0) {
-          throw new Error('Failed to create staff record. Please contact administrator.');
-        }
-        
-        setStaffId(newStaffData[0].id);
-      } else {
-        setStaffId(staffData[0].id);
-      }
-
-      // Fetch approved farmers
-      const { data: farmersData, error: farmersError } = await supabase
-        .from('farmers')
-        .select(`
-          id,
-          national_id,
-          address,
-          profiles (
-            full_name,
-            phone
-          )
-        `)
-        .eq('kyc_status', 'approved')
-        .order('full_name', { foreignTable: 'profiles' });
-
-      if (farmersError) throw farmersError;
-      setFarmers(farmersData || []);
-
       // Fetch current milk rate using the service
       const rate = await milkRateService.getCurrentRate();
       setCurrentRate(rate);
-
     } catch (error: any) {
       console.error('Error fetching data:', error);
       toast.error('Error', String(error?.message || 'Failed to load data'));
@@ -195,7 +139,26 @@ const EnhancedCollectionForm = () => {
         },
         (error) => {
           console.error('Error getting location:', error);
-          toast.error('Location Error', 'Could not get GPS coordinates');
+          let errorMessage = 'Could not get GPS coordinates';
+          
+          switch (error.code) {
+            case error.PERMISSION_DENIED:
+              errorMessage = 'Location access denied. Please enable location permissions in your browser settings.';
+              break;
+            case error.POSITION_UNAVAILABLE:
+              errorMessage = 'Location information is unavailable. Please check your device settings.';
+              break;
+            case error.TIMEOUT:
+              errorMessage = 'Location request timed out. Please try again.';
+              break;
+            case 1: // PERMISSION_DENIED - specifically for secure context issues
+              if (error.message.includes('secure origin') || window.location.protocol !== 'https:') {
+                errorMessage = 'Location access requires HTTPS. Please access this application over a secure connection.';
+              }
+              break;
+          }
+          
+          toast.error('Location Error', errorMessage);
           setGettingLocation(false);
         }
       );
@@ -356,7 +319,7 @@ const EnhancedCollectionForm = () => {
       }
 
       const { error: qualityError } = await supabase
-        .from('milk_quality_parameters')
+        .from('quality_tests')
         .insert({
           collection_id: collectionRecord.id,
           ...qualityParameters,
@@ -424,7 +387,7 @@ const EnhancedCollectionForm = () => {
                         <SelectValue placeholder="Select a farmer" />
                       </SelectTrigger>
                       <SelectContent>
-                        {farmers.map((farmer) => (
+                        {farmers.filter(farmer => farmer.id && farmer.id.trim() !== '').map((farmer) => (
                           <SelectItem key={farmer.id} value={farmer.id}>
                             {farmer.profiles.full_name} ({farmer.id})
                           </SelectItem>
@@ -461,8 +424,7 @@ const EnhancedCollectionForm = () => {
                         <div>
                           <h3 className="font-medium">{selectedFarmerData.profiles.full_name}</h3>
                           <p className="text-sm text-muted-foreground">
-                            ID: {selectedFarmerData.id} | 
-                            Phone: {selectedFarmerData.profiles.phone}
+                            ID: {selectedFarmerData.id}
                           </p>
                         </div>
                       </div>

@@ -313,7 +313,7 @@ const PaymentSystem = () => {
               status,
               rate_per_liter,
               collection_date,
-              farmers!fk_collections_farmer_id (
+              farmers (
                 id,
                 user_id,
                 profiles!user_id (
@@ -328,7 +328,7 @@ const PaymentSystem = () => {
         // Extract payment data from the nested structure
         const paymentData = data?.map((item: any) => ({
           ...item,
-          ...(item.collections || {}), // Spread the collection data
+          ...(item['collections!collection_payments_collection_id_fkey'] || {}), // Spread the collection data
           payment_id: item.id, // Use collection_payment id
           collection_id: item.collection_id,
           rate_applied: item.rate_applied,

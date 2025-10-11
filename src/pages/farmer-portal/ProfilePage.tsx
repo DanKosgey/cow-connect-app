@@ -53,9 +53,13 @@ const ProfilePage = () => {
           .from('farmers')
           .select('*')
           .eq('user_id', user.id)
-          .single();
+          .maybeSingle();
 
         if (error) throw error;
+        if (!farmerData) {
+          toast.error('Error', 'Farmer profile not found. Please complete your registration.');
+          return;
+        }
         setFarmer(farmerData);
         setEditableFarmer(farmerData);
       } catch (err) {

@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { format } from 'date-fns';
-import { CalendarIcon, Download, FileText } from 'lucide-react';
+import { CalendarIcon, Download, FileText, FileSpreadsheet } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DataExportService, ExportData } from '@/utils/data-export';
 
@@ -52,20 +52,41 @@ const ReportGenerator = ({ data, onGenerateReport }: ReportGeneratorProps) => {
     }
   };
 
+  // Get icon based on export format
+  const getFormatIcon = () => {
+    switch (exportFormat) {
+      case 'xlsx': return <FileSpreadsheet className="h-4 w-4 mr-2" />;
+      case 'csv': return <FileText className="h-4 w-4 mr-2" />;
+      default: return <Download className="h-4 w-4 mr-2" />;
+    }
+  };
+
+  // Get icon based on report type
+  const getReportIcon = () => {
+    switch (reportType) {
+      case 'collections': return <FileText className="h-5 w-5 mr-2 text-blue-500" />;
+      case 'farmers': return <FileText className="h-5 w-5 mr-2 text-green-500" />;
+      case 'payments': return <FileText className="h-5 w-5 mr-2 text-purple-500" />;
+      case 'quality': return <FileText className="h-5 w-5 mr-2 text-amber-500" />;
+      case 'staff': return <FileText className="h-5 w-5 mr-2 text-indigo-500" />;
+      default: return <FileText className="h-5 w-5 mr-2" />;
+    }
+  };
+
   return (
-    <Card>
+    <Card className="shadow-lg hover:shadow-xl transition-shadow">
       <CardHeader>
         <CardTitle className="flex items-center">
-          <FileText className="h-5 w-5 mr-2" />
+          {getReportIcon()}
           Report Generator
         </CardTitle>
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           <div className="space-y-2">
-            <Label>Report Type</Label>
+            <Label className="font-medium">Report Type</Label>
             <Select value={reportType} onValueChange={setReportType}>
-              <SelectTrigger>
+              <SelectTrigger className="focus:ring-2 focus:ring-primary">
                 <SelectValue placeholder="Select report type" />
               </SelectTrigger>
               <SelectContent>
@@ -79,13 +100,13 @@ const ReportGenerator = ({ data, onGenerateReport }: ReportGeneratorProps) => {
           </div>
 
           <div className="space-y-2">
-            <Label>Start Date</Label>
+            <Label className="font-medium">Start Date</Label>
             <Popover>
               <PopoverTrigger asChild>
                 <Button
                   variant="outline"
                   className={cn(
-                    "w-full justify-start text-left font-normal",
+                    "w-full justify-start text-left font-normal hover:bg-gray-50 transition-colors",
                     !startDate && "text-muted-foreground"
                   )}
                 >
@@ -105,13 +126,13 @@ const ReportGenerator = ({ data, onGenerateReport }: ReportGeneratorProps) => {
           </div>
 
           <div className="space-y-2">
-            <Label>End Date</Label>
+            <Label className="font-medium">End Date</Label>
             <Popover>
               <PopoverTrigger asChild>
                 <Button
                   variant="outline"
                   className={cn(
-                    "w-full justify-start text-left font-normal",
+                    "w-full justify-start text-left font-normal hover:bg-gray-50 transition-colors",
                     !endDate && "text-muted-foreground"
                   )}
                 >
@@ -131,14 +152,24 @@ const ReportGenerator = ({ data, onGenerateReport }: ReportGeneratorProps) => {
           </div>
 
           <div className="space-y-2">
-            <Label>Export Format</Label>
+            <Label className="font-medium">Export Format</Label>
             <Select value={exportFormat} onValueChange={(value) => setExportFormat(value as 'xlsx' | 'csv')}>
-              <SelectTrigger>
+              <SelectTrigger className="focus:ring-2 focus:ring-primary">
                 <SelectValue placeholder="Select format" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="xlsx">Excel (.xlsx)</SelectItem>
-                <SelectItem value="csv">CSV (.csv)</SelectItem>
+                <SelectItem value="xlsx">
+                  <div className="flex items-center">
+                    <FileSpreadsheet className="h-4 w-4 mr-2 text-green-500" />
+                    Excel (.xlsx)
+                  </div>
+                </SelectItem>
+                <SelectItem value="csv">
+                  <div className="flex items-center">
+                    <FileText className="h-4 w-4 mr-2 text-blue-500" />
+                    CSV (.csv)
+                  </div>
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -147,12 +178,19 @@ const ReportGenerator = ({ data, onGenerateReport }: ReportGeneratorProps) => {
             <Button 
               onClick={handleGenerateReport} 
               disabled={isGenerating}
-              className="w-full"
+              className="w-full gradient-primary text-primary-foreground hover:opacity-90 transition-opacity"
             >
-              <Download className="h-4 w-4 mr-2" />
+              {getFormatIcon()}
               {isGenerating ? 'Generating...' : 'Generate Report'}
             </Button>
           </div>
+        </div>
+        
+        {/* Report generation tips */}
+        <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+          <p className="text-sm text-blue-800">
+            <span className="font-medium">Tip:</span> Select a date range and report type, then click "Generate Report" to export data in your preferred format.
+          </p>
         </div>
       </CardContent>
     </Card>

@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document explains how trend calculations are implemented in the Cow Connect application to replace hardcoded values with real data from the database.
+This document explains how trend calculations are implemented in the DAIRY FARMERS OF TRANS-NZOIA application to replace hardcoded values with real data from the database.
 
 ## Components
 

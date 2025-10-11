@@ -1,7 +1,6 @@
 -- Migration: 20240004_create_functions.sql
 -- Description: Create stored procedures and helper functions used by RPC calls
 BEGIN;
-
 -- Helper: update_updated_at_column
 CREATE OR REPLACE FUNCTION public.update_updated_at_column()
 RETURNS trigger LANGUAGE plpgsql AS $$
@@ -10,7 +9,6 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
 -- Trigger: attach to tables to auto-update timestamps
 -- (Triggers will be created in triggers.sql migration file for each table)
 
@@ -22,7 +20,6 @@ BEGIN
   VALUES (p_user_id, p_event_type, p_metadata);
 END;
 $$;
-
 -- RPC: check_account_lockout
 CREATE OR REPLACE FUNCTION public.check_account_lockout(p_email text)
 RETURNS TABLE(is_locked boolean, attempts_remaining integer, locked_until timestamptz) LANGUAGE plpgsql AS $$
@@ -42,7 +39,6 @@ BEGIN
   END IF;
 END;
 $$;
-
 -- RPC: reset_account_lockout
 CREATE OR REPLACE FUNCTION public.reset_account_lockout(p_email text)
 RETURNS void LANGUAGE plpgsql AS $$
@@ -52,7 +48,6 @@ BEGIN
   ON CONFLICT (email) DO UPDATE SET attempts = 0, locked_until = NULL;
 END;
 $$;
-
 -- RPC: check_permission (simple implementation using role_permissions)
 CREATE OR REPLACE FUNCTION public.check_permission(p_user_id uuid, p_permission text)
 RETURNS boolean LANGUAGE plpgsql AS $$
@@ -67,7 +62,6 @@ BEGIN
   RETURN false;
 END;
 $$;
-
 -- RPC: get_assigned_farmers (for staff) - returns farmer rows assigned to staff
 CREATE OR REPLACE FUNCTION public.get_assigned_farmers(p_staff_id uuid)
 RETURNS TABLE(farmer_id uuid, full_name text, registration_number text, collection_point_id uuid, phone text) LANGUAGE plpgsql AS $$
@@ -81,7 +75,6 @@ BEGIN
   ORDER BY f.full_name;
 END;
 $$;
-
 -- RPC: record_milk_collection - transactional insert with inventory adjustments and analytics update
 CREATE OR REPLACE FUNCTION public.record_milk_collection(
   farmer_id uuid,
@@ -129,7 +122,6 @@ BEGIN
   RETURN QUERY SELECT v_id, v_validation;
 END;
 $$;
-
 -- RPC: approve_kyc and reject_kyc
 CREATE OR REPLACE FUNCTION public.approve_kyc(farmer_id uuid, admin_id uuid)
 RETURNS void LANGUAGE plpgsql AS $$
@@ -139,7 +131,6 @@ BEGIN
   INSERT INTO public.notifications (user_id, title, message, type, category) SELECT user_id, 'KYC Approved', 'Your KYC application has been approved', 'info', 'kyc' FROM public.farmers WHERE id = farmer_id;
 END;
 $$;
-
 CREATE OR REPLACE FUNCTION public.reject_kyc(farmer_id uuid, reason text, admin_id uuid)
 RETURNS void LANGUAGE plpgsql AS $$
 BEGIN
@@ -148,5 +139,4 @@ BEGIN
   INSERT INTO public.notifications (user_id, title, message, type, category) SELECT user_id, 'KYC Rejected', reason, 'warning', 'kyc' FROM public.farmers WHERE id = farmer_id;
 END;
 $$;
-
 COMMIT;

@@ -36,8 +36,8 @@ const useTestInstance = typeof window !== 'undefined' && window.Cypress;
 const options = {
   auth: {
     storage: localStorage,
-    persistSession: true, // Enable session persistence to maintain connection
-    autoRefreshToken: true, // Enable automatic token refresh to prevent timeouts
+    persistSession: true,
+    autoRefreshToken: true,
     detectSessionInUrl: true,
     flowType: 'pkce' as const,
   },
@@ -45,18 +45,25 @@ const options = {
     schema: 'public' as const,
   },
   global: {
-    headers: {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    },
+    // Removed restrictive headers that might cause 406 errors
+    // Let the Supabase client handle headers automatically
+    headers: {},
     // Enhanced fetch with better error handling and retry logic
     fetch: (input: RequestInfo, init?: RequestInit) => {
       // Add retry logic for failed requests
       const fetchWithRetry = async (input: RequestInfo, init?: RequestInit, retries = 3): Promise<Response> => {
         try {
+          console.log('Supabase client: Making request', { input, retries });
+          
           const response = await fetch(input, { 
             ...init, 
             signal: AbortSignal.timeout(60000) // 60 second timeout
+          });
+          
+          console.log('Supabase client: Response received', { 
+            status: response.status, 
+            statusText: response.statusText,
+            url: typeof input === 'string' ? input : 'REQUEST_OBJECT'
           });
           
           // If we get a 400 error, it might be due to an expired session
@@ -77,6 +84,18 @@ const options = {
                 url: typeof input === 'string' ? input : 'REQUEST_OBJECT',
                 status: response.status,
                 statusText: response.statusText
+              });
+            }
+          }
+          
+          // If we get a 406 error, log it for debugging
+          if (response.status === 406) {
+            if (import.meta.env.DEV) {
+              console.warn('Received 406 Not Acceptable error from Supabase', {
+                url: typeof input === 'string' ? input : 'REQUEST_OBJECT',
+                status: response.status,
+                statusText: response.statusText,
+                headers: init?.headers
               });
             }
           }
@@ -131,6 +150,8 @@ const client = createClient<Database>(
 // Add connection state monitoring (only in development)
 if (import.meta.env.DEV) {
   client.auth.onAuthStateChange((event, session) => {
+    console.log('Supabase auth state change:', { event, session: session?.user?.id });
+    
     if (event === 'SIGNED_IN') {
       console.log('User signed in, session established');
     } else if (event === 'SIGNED_OUT') {

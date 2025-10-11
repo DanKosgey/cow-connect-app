@@ -30,6 +30,7 @@ import {
 import { format } from 'date-fns';
 import useToastNotifications from '@/hooks/useToastNotifications';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
+import { useStaffInfo, useInventoryData } from '@/hooks/useStaffData';
 
 interface InventoryItem {
   id: string;
@@ -68,17 +69,16 @@ interface InventoryTransaction {
 export default function InventoryManagement() {
   const { user } = useAuth();
   const { show, error: showError } = useToastNotifications();
+  const { staffInfo, loading: staffLoading } = useStaffInfo();
+  const { items, transactions, loading: inventoryLoading } = useInventoryData();
   
-  const [items, setItems] = useState<InventoryItem[]>([]);
   const [filteredItems, setFilteredItems] = useState<InventoryItem[]>([]);
-  const [transactions, setTransactions] = useState<InventoryTransaction[]>([]);
   const [loading, setLoading] = useState(true);
-  const [staffId, setStaffId] = useState<string | null>(null);
   
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('');
-  const [stockStatus, setStockStatus] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [stockStatus, setStockStatus] = useState('all');
   
   // Form state
   const [showItemForm, setShowItemForm] = useState(false);
@@ -104,57 +104,8 @@ export default function InventoryManagement() {
   const categories = ['Feed', 'Medicine', 'Equipment', 'Cleaning Supplies', 'Packaging', 'Other'];
 
   useEffect(() => {
-    fetchData();
-  }, [user?.id]);
-
-  useEffect(() => {
     applyFilters();
   }, [items, searchTerm, categoryFilter, stockStatus]);
-
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      // Get staff info
-      const { data: staffData, error: staffError } = await supabase
-        .from('staff')
-        .select('id')
-        .eq('user_id', user?.id)
-        .maybeSingle();
-
-      if (staffError) throw staffError;
-      if (!staffData) throw new Error('Staff record not found');
-      
-      setStaffId(staffData.id);
-
-      // Fetch inventory items
-      const { data: itemsData, error: itemsError } = await supabase
-        .from('inventory_items')
-        .select('*')
-        .order('name', { ascending: true });
-
-      if (itemsError) throw itemsError;
-      setItems(itemsData || []);
-
-      // Fetch recent transactions
-      const { data: transactionsData, error: transactionsError } = await supabase
-        .from('inventory_transactions')
-        .select(`
-          *,
-          inventory_items (name),
-          staff (profiles (full_name))
-        `)
-        .order('created_at', { ascending: false })
-        .limit(20);
-
-      if (transactionsError) throw transactionsError;
-      setTransactions(transactionsData || []);
-    } catch (error: any) {
-      console.error('Error fetching data:', error);
-      showError('Error', error.message || 'Failed to load inventory data');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const applyFilters = () => {
     let filtered = [...items];
@@ -168,7 +119,7 @@ export default function InventoryManagement() {
     }
     
     // Apply category filter
-    if (categoryFilter) {
+    if (categoryFilter && categoryFilter !== 'all') {
       filtered = filtered.filter(item => item.category === categoryFilter);
     }
     
@@ -217,7 +168,7 @@ export default function InventoryManagement() {
       link.click();
       document.body.removeChild(link);
       
-      show('Success', 'Inventory report exported successfully');
+      show({ title: 'Success', description: 'Inventory report exported successfully' });
     } catch (error: any) {
       console.error('Error exporting report:', error);
       showError('Error', 'Failed to export inventory report');
@@ -268,7 +219,7 @@ export default function InventoryManagement() {
           .eq('id', editingItem.id);
 
         if (error) throw error;
-        show('Success', 'Inventory item updated successfully');
+        show({ title: 'Success', description: 'Inventory item updated successfully' });
       } else {
         // Create new item
         const { error } = await supabase
@@ -285,7 +236,7 @@ export default function InventoryManagement() {
           });
 
         if (error) throw error;
-        show('Success', 'Inventory item added successfully');
+        show({ title: 'Success', description: 'Inventory item added successfully' });
       }
       
       setShowItemForm(false);
@@ -319,7 +270,7 @@ export default function InventoryManagement() {
   };
 
   const saveTransaction = async () => {
-    if (!selectedItem || !staffId || transactionQuantity <= 0) {
+    if (!selectedItem || !staffInfo?.id || transactionQuantity <= 0) {
       showError('Error', 'Please fill in all required fields');
       return;
     }
@@ -335,7 +286,7 @@ export default function InventoryManagement() {
           unit_cost: transactionCost,
           total_cost: transactionCost * transactionQuantity,
           reason: transactionReason,
-          performed_by: staffId
+          performed_by: staffInfo.id
         });
 
       if (transactionError) throw transactionError;
@@ -355,7 +306,7 @@ export default function InventoryManagement() {
 
       if (updateError) throw updateError;
       
-      show('Success', 'Inventory transaction recorded successfully');
+      show({ title: 'Success', description: 'Inventory transaction recorded successfully' });
       setShowTransactionForm(false);
       resetTransactionForm();
       fetchData(); // Refresh data
@@ -561,8 +512,8 @@ export default function InventoryManagement() {
                 <SelectValue placeholder="Select category" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All Categories</SelectItem>
-                {categories.map(category => (
+                <SelectItem value="all">All Categories</SelectItem>
+                {categories.filter(category => category && category.trim() !== '').map(category => (
                   <SelectItem key={category} value={category}>
                     {category}
                   </SelectItem>
@@ -576,7 +527,7 @@ export default function InventoryManagement() {
                 <SelectValue placeholder="Stock status" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All Statuses</SelectItem>
+                <SelectItem value="all">All Statuses</SelectItem>
                 <SelectItem value="low">Low Stock</SelectItem>
                 <SelectItem value="adequate">Adequate Stock</SelectItem>
               </SelectContent>
@@ -753,7 +704,7 @@ export default function InventoryManagement() {
                         <SelectValue placeholder="Select category" />
                       </SelectTrigger>
                       <SelectContent>
-                        {categories.map(category => (
+                        {categories.filter(category => category && category.trim() !== '').map(category => (
                           <SelectItem key={category} value={category}>
                             {category}
                           </SelectItem>
@@ -881,7 +832,7 @@ export default function InventoryManagement() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Transaction Type *</label>
-                      <Select value={transactionType} onValueChange={setTransactionType}>
+                      <Select value={transactionType} onValueChange={(value) => setTransactionType(value as 'in' | 'out')}>
                         <SelectTrigger>
                           <SelectValue placeholder="Select type" />
                         </SelectTrigger>

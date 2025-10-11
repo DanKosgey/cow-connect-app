@@ -5,22 +5,19 @@ import { PageTransition } from '@/components/PageTransition';
 import { preloadRouteWhenIdle } from '@/utils/routePreloader';
 
 // Lazy load public components
-const Landing = lazy(() => {
-  const promise = import("../pages/Landing");
-  // Preload commonly accessed pages
-  setTimeout(() => {
-    preloadRouteWhenIdle(() => import("../pages/auth/Login"));
-    preloadRouteWhenIdle(() => import("../pages/auth/FarmerSignup"));
-  }, 1000);
-  return promise;
-});
-
+const Landing = lazy(() => import("../pages/Landing"));
 const Login = lazy(() => import("../pages/auth/Login"));
 const AuthTestPage = lazy(() => import("../pages/auth/AuthTestPage"));
+const AuthFlowTest = lazy(() => import("../pages/auth/AuthFlowTest"));
 const FarmerSignup = lazy(() => import("../pages/auth/FarmerSignup"));
-const EmailConfirmation = lazy(() => import("../pages/EmailConfirmation"));
-const CompleteRegistration = lazy(() => import("../pages/CompleteRegistration"));
+const EmailVerificationWaiting = lazy(() => import("../pages/auth/EmailVerificationWaiting"));
+const ForgotPassword = lazy(() => import("../pages/auth/ForgotPassword"));
+const ResetPassword = lazy(() => import("../pages/auth/ResetPassword"));
+const PasswordResetTest = lazy(() => import("../pages/auth/PasswordResetTest"));
+const TestDBConnection = lazy(() => import("../pages/TestDBConnection"));
+const TestAuthFlow = lazy(() => import("../pages/TestAuthFlow"));
 const AuthCallback = lazy(() => import("../pages/AuthCallback"));
+const EmailVerificationCallback = lazy(() => import("../pages/farmer/EmailVerificationCallback"));
 const NotFound = lazy(() => import("../pages/NotFound"));
 
 export default function PublicRoutes() {
@@ -50,6 +47,11 @@ export default function PublicRoutes() {
             <AuthTestPage />
           </PageTransition>
         } />
+        <Route path="/auth-flow-test" element={
+          <PageTransition>
+            <AuthFlowTest />
+          </PageTransition>
+        } />
         <Route path="/register" element={
           <PageTransition>
             <FarmerSignup />
@@ -60,16 +62,42 @@ export default function PublicRoutes() {
             <AuthCallback />
           </PageTransition>
         } />
-        <Route path="/email-confirmation" element={
+        <Route path="/verify-email" element={
           <PageTransition>
-            <EmailConfirmation />
+            <EmailVerificationCallback />
           </PageTransition>
         } />
-        <Route path="/complete-registration" element={
+        <Route path="/auth/email-verification-waiting" element={
           <PageTransition>
-            <CompleteRegistration />
+            <EmailVerificationWaiting />
           </PageTransition>
         } />
+        <Route path="/auth/forgot-password" element={
+          <PageTransition>
+            <ForgotPassword />
+          </PageTransition>
+        } />
+        <Route path="/auth/reset-password" element={
+          <PageTransition>
+            <ResetPassword />
+          </PageTransition>
+        } />
+        <Route path="/auth/reset-test" element={
+          <PageTransition>
+            <PasswordResetTest />
+          </PageTransition>
+        } />
+        <Route path="/test-db" element={
+          <PageTransition>
+            <TestDBConnection />
+          </PageTransition>
+        } />
+        <Route path="/test-auth" element={
+          <PageTransition>
+            <TestAuthFlow />
+          </PageTransition>
+        } />
+        
         <Route path="*" element={
           <PageTransition>
             <NotFound />

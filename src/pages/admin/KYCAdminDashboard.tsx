@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Database } from '@/types/database.types';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import useToastNotifications from '@/hooks/useToastNotifications';
-import { CheckCircle, XCircle, Eye, FileText, Download, Search, Filter } from 'lucide-react';
+import { CheckCircle, XCircle, Eye, FileText, Download, Search, Filter, Camera } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -63,7 +63,7 @@ const KYCAdminDashboard = () => {
         },
         (payload) => {
           fetchFarmers();
-          toast.info('New Registration', 'A new farmer has completed registration');
+          toast.success('New Registration', 'A new farmer has completed registration');
         }
       )
       .on(
@@ -94,7 +94,7 @@ const KYCAdminDashboard = () => {
           if (selectedFarmer) {
             fetchDocuments(selectedFarmer.id);
           }
-          toast.info('New Document', 'A farmer has uploaded a new KYC document');
+          toast.success('New Document', 'A farmer has uploaded a new KYC document');
         }
       )
       .subscribe();
@@ -257,16 +257,11 @@ const KYCAdminDashboard = () => {
       }
 
       // Get the public URL for the document
-      const { data, error } = supabase
-        .storage
-        .from('kyc-documents')
-        .getPublicUrl(doc.file_path);
-
-      if (error) throw error;
+      const publicUrlData = supabase.storage.from('kyc-documents').getPublicUrl(doc.file_path);
 
       // Create a temporary link to download the file
       const link = document.createElement('a');
-      link.href = data.publicUrl;
+      link.href = publicUrlData.data.publicUrl;
       link.download = doc.file_name || 'document';
       document.body.appendChild(link);
       link.click();
@@ -275,6 +270,24 @@ const KYCAdminDashboard = () => {
       console.error('Error downloading document:', error);
       toast.error('Error', error.message);
     }
+  };
+
+  const getDocumentLabel = (docType: string) => {
+    const labels: Record<string, string> = {
+      'national_id_front': 'National ID (Front)',
+      'national_id_back': 'National ID (Back)',
+      'selfie_1': 'Selfie 1',
+      'selfie_2': 'Selfie 2',
+      'selfie_3': 'Selfie 3'
+    };
+    return labels[docType] || docType;
+  };
+
+  const getDocumentIcon = (docType: string) => {
+    if (docType.includes('selfie')) {
+      return <Camera className="w-5 h-5" />;
+    }
+    return <FileText className="w-5 h-5" />;
   };
 
   const exportToCSV = () => {
@@ -554,9 +567,12 @@ const KYCAdminDashboard = () => {
                       {documents.map((doc) => (
                         <div key={doc.id} className="border rounded-lg p-4">
                           <div className="flex items-center justify-between mb-2">
-                            <div>
-                              <p className="font-medium text-gray-900">{doc.document_type || 'Document'}</p>
-                              <p className="text-sm text-gray-500">{doc.file_name || 'Unnamed file'}</p>
+                            <div className="flex items-center gap-3">
+                              {getDocumentIcon(doc.document_type || '')}
+                              <div>
+                                <p className="font-medium text-gray-900">{getDocumentLabel(doc.document_type || '')}</p>
+                                <p className="text-sm text-gray-500">{doc.file_name || 'Unnamed file'}</p>
+                              </div>
                             </div>
                             <div className="flex items-center gap-2">
                               <Badge 
@@ -580,7 +596,7 @@ const KYCAdminDashboard = () => {
                           {doc.mime_type?.startsWith('image/') && doc.file_path && (
                             <img
                               src={supabase.storage.from('kyc-documents').getPublicUrl(doc.file_path).data.publicUrl}
-                              alt={doc.document_type || 'Document'}
+                              alt={getDocumentLabel(doc.document_type || '')}
                               className="mt-2 max-h-48 rounded border"
                               onError={(e) => {
                                 const target = e.target as HTMLImageElement;

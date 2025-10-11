@@ -51,8 +51,7 @@ interface BranchLocation {
 
 // Validation functions
 const validateMilkRate = (rate: number): string | null => {
-  if (rate < 0) return 'Milk rate cannot be negative';
-  if (rate > 1000) return 'Milk rate seems too high';
+  // Milk rate validation removed as it's no longer in settings
   return null;
 };
 
@@ -81,6 +80,7 @@ const AdminSettings = () => {
     system_message: '',
     default_role: 'farmer'
   });
+  
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
@@ -296,9 +296,7 @@ const AdminSettings = () => {
   const validateSettings = useCallback((): boolean => {
     const newErrors: Record<string, string> = {};
 
-    // Validate milk rate
-    const milkRateError = validateMilkRate(settings.milk_rate_per_liter);
-    if (milkRateError) newErrors.milk_rate_per_liter = milkRateError;
+    // Remove milk rate validation since it's no longer in settings
 
     // Validate data retention
     const dataRetentionError = validateDataRetention(settings.data_retention_days);
@@ -522,9 +520,28 @@ const AdminSettings = () => {
       },
       (error) => {
         console.error('Error getting location:', error);
+        let errorMessage = 'Unable to get your location. Please enter manually.';
+        
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            errorMessage = 'Location access denied. Please enable location permissions in your browser settings.';
+            break;
+          case error.POSITION_UNAVAILABLE:
+            errorMessage = 'Location information is unavailable. Please check your device settings.';
+            break;
+          case error.TIMEOUT:
+            errorMessage = 'Location request timed out. Please try again.';
+            break;
+          case 1: // PERMISSION_DENIED - specifically for secure context issues
+            if (error.message.includes('secure origin') || window.location.protocol !== 'https:') {
+              errorMessage = 'Location access requires HTTPS. Please access this application over a secure connection.';
+            }
+            break;
+        }
+        
         toast({
           title: 'Error',
-          description: 'Unable to get your location. Please enter manually.',
+          description: errorMessage,
           variant: 'error',
         });
       },
@@ -593,19 +610,12 @@ const AdminSettings = () => {
               <CardDescription>Configure core system parameters</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="milk_rate">Milk Rate per Liter (KSh)</Label>
-                <Input
-                  id="milk_rate"
-                  type="number"
-                  value={settings.milk_rate_per_liter}
-                  onChange={(e) => handleInputChange('milk_rate_per_liter', parseFloat(e.target.value) || 0)}
-                  placeholder="Enter rate per liter"
-                />
-                {errors.milk_rate_per_liter && (
-                  <p className="text-sm text-red-500">{errors.milk_rate_per_liter}</p>
-                )}
-              </div>
+              {/* Hidden milk rate field - kept in state but not displayed per user request */}
+              <input
+                type="hidden"
+                value={settings.milk_rate_per_liter}
+                onChange={(e) => handleInputChange('milk_rate_per_liter', parseFloat(e.target.value) || 0)}
+              />
 
               <div className="space-y-2">
                 <Label htmlFor="collection_time">Collection Time Window</Label>
@@ -649,6 +659,20 @@ const AdminSettings = () => {
 
               <Separator />
 
+              {/* New Settings */}
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <Label>Enable SMS Notifications</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Send SMS notifications to farmers
+                  </p>
+                </div>
+                <Switch
+                  checked={settings.notifications_enabled}
+                  onCheckedChange={(checked) => handleInputChange('notifications_enabled', checked)}
+                />
+              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="default_role">Default User Role</Label>
                 <Select 
@@ -665,6 +689,9 @@ const AdminSettings = () => {
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* Additional Settings Placeholder */}
+              {/* Additional settings can be added here as needed */}
             </CardContent>
           </Card>
 

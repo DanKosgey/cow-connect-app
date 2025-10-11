@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import useToastNotifications from '@/hooks/useToastNotifications';
+import { useStaffInfo, useFarmerRelationshipData } from '@/hooks/useStaffData';
 
 interface Farmer {
   id: string;
@@ -44,8 +45,10 @@ interface Farmer {
     email: string;
   } | null;
   farmer_analytics: {
-    total_liters: number;
     total_collections: number;
+    total_liters: number;
+    avg_quality_score: number;
+    current_month_liters: number;
     current_month_earnings: number;
   } | null;
 }
@@ -75,13 +78,12 @@ interface Note {
 const FarmerRelationshipManagement = () => {
   const { user } = useAuth();
   const { show, error: showError } = useToastNotifications();
+  const { staffInfo, loading: staffLoading } = useStaffInfo();
+  const { communications, notes, loading: relationshipLoading } = useFarmerRelationshipData(staffInfo?.id || null);
   
   const [farmers, setFarmers] = useState<Farmer[]>([]);
   const [filteredFarmers, setFilteredFarmers] = useState<Farmer[]>([]);
-  const [communications, setCommunications] = useState<Communication[]>([]);
-  const [notes, setNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState(true);
-  const [staffId, setStaffId] = useState<string | null>(null);
   
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -96,8 +98,10 @@ const FarmerRelationshipManagement = () => {
   const [activeTab, setActiveTab] = useState<'farmers' | 'communications' | 'notes'>('farmers');
 
   useEffect(() => {
-    fetchData();
-  }, [user?.id]);
+    if (staffInfo) {
+      fetchData();
+    }
+  }, [staffInfo]);
 
   useEffect(() => {
     applyFilters();
@@ -106,18 +110,6 @@ const FarmerRelationshipManagement = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      // Get staff info
-      const { data: staffData, error: staffError } = await supabase
-        .from('staff')
-        .select('id')
-        .eq('user_id', user?.id)
-        .maybeSingle();
-
-      if (staffError) throw staffError;
-      if (!staffData) throw new Error('Staff record not found');
-      
-      setStaffId(staffData.id);
-
       // Fetch approved farmers
       const { data: farmersData, error: farmersError } = await supabase
         .from('farmers')
@@ -133,56 +125,18 @@ const FarmerRelationshipManagement = () => {
             phone,
             email
           ),
-          farmer_analytics (
-            total_liters,
+          farmer_analytics!farmer_analytics_farmer_id_fkey (
             total_collections,
+            total_liters,
+            avg_quality_score,
+            current_month_liters,
             current_month_earnings
           )
         `)
-        .order('profiles.full_name', { foreignTable: 'profiles' });
+        .order('full_name', { referencedTable: 'profiles', ascending: true });
 
       if (farmersError) throw farmersError;
       setFarmers(farmersData || []);
-
-      // Fetch recent communications
-      const { data: communicationsData, error: communicationsError } = await supabase
-        .from('farmer_communications')
-        .select(`
-          id,
-          farmer_id,
-          staff_id,
-          message,
-          direction,
-          created_at,
-          farmer (
-            profiles (
-              full_name
-            )
-          )
-        `)
-        .eq('staff_id', staffData.id)
-        .order('created_at', { ascending: false })
-        .limit(20);
-
-      if (communicationsError) throw communicationsError;
-      setCommunications(communicationsData || []);
-
-      // Fetch recent notes
-      const { data: notesData, error: notesError } = await supabase
-        .from('farmer_notes')
-        .select(`
-          id,
-          farmer_id,
-          staff_id,
-          note,
-          created_at
-        `)
-        .eq('staff_id', staffData.id)
-        .order('created_at', { ascending: false })
-        .limit(20);
-
-      if (notesError) throw notesError;
-      setNotes(notesData || []);
     } catch (error: any) {
       console.error('Error fetching data:', error);
       showError('Error', error.message || 'Failed to load farmer relationship data');
@@ -205,7 +159,7 @@ const FarmerRelationshipManagement = () => {
     }
     
     // Apply KYC status filter
-    if (kycStatus) {
+    if (kycStatus && kycStatus !== 'all') {
       filtered = filtered.filter(farmer => farmer.kyc_status === kycStatus);
     }
     
@@ -213,14 +167,14 @@ const FarmerRelationshipManagement = () => {
   };
 
   const sendMessage = async () => {
-    if (!selectedFarmer || !newMessage.trim() || !staffId) return;
+    if (!selectedFarmer || !newMessage.trim() || !staffInfo?.id) return;
     
     try {
       const { error } = await supabase
         .from('farmer_communications')
         .insert({
           farmer_id: selectedFarmer.id,
-          staff_id: staffId,
+          staff_id: staffInfo.id,
           message: newMessage,
           direction: 'sent'
         });
@@ -231,7 +185,7 @@ const FarmerRelationshipManagement = () => {
       const newCommunication: Communication = {
         id: Date.now().toString(),
         farmer_id: selectedFarmer.id,
-        staff_id: staffId,
+        staff_id: staffInfo.id,
         message: newMessage,
         direction: 'sent',
         created_at: new Date().toISOString(),
@@ -244,7 +198,7 @@ const FarmerRelationshipManagement = () => {
       
       setCommunications(prev => [newCommunication, ...prev]);
       setNewMessage('');
-      show('Success', 'Message sent successfully');
+      show({ title: 'Success', description: 'Message sent successfully' });
     } catch (error: any) {
       console.error('Error sending message:', error);
       showError('Error', error.message || 'Failed to send message');
@@ -252,14 +206,14 @@ const FarmerRelationshipManagement = () => {
   };
 
   const addNote = async () => {
-    if (!selectedFarmer || !newNote.trim() || !staffId) return;
+    if (!selectedFarmer || !newNote.trim() || !staffInfo?.id) return;
     
     try {
       const { error } = await supabase
         .from('farmer_notes')
         .insert({
           farmer_id: selectedFarmer.id,
-          staff_id: staffId,
+          staff_id: staffInfo.id,
           note: newNote
         });
 
@@ -269,14 +223,14 @@ const FarmerRelationshipManagement = () => {
       const newNoteItem: Note = {
         id: Date.now().toString(),
         farmer_id: selectedFarmer.id,
-        staff_id: staffId,
+        staff_id: staffInfo.id,
         note: newNote,
         created_at: new Date().toISOString()
       };
       
       setNotes(prev => [newNoteItem, ...prev]);
       setNewNote('');
-      show('Success', 'Note added successfully');
+      show({ title: 'Success', description: 'Note added successfully' });
     } catch (error: any) {
       console.error('Error adding note:', error);
       showError('Error', error.message || 'Failed to add note');
@@ -389,7 +343,7 @@ const FarmerRelationshipManagement = () => {
                     <SelectValue placeholder="KYC Status" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Statuses</SelectItem>
+                    <SelectItem value="all">All Statuses</SelectItem>
                     <SelectItem value="approved">Approved</SelectItem>
                     <SelectItem value="pending">Pending</SelectItem>
                     <SelectItem value="rejected">Rejected</SelectItem>

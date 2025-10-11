@@ -3,10 +3,8 @@
 -- Rollback: DROP TABLE IF EXISTS ... CASCADE
 
 BEGIN;
-
 -- Enable pgcrypto for uuid generation
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-
 -- ENUM types
 DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role_enum') THEN
@@ -31,7 +29,6 @@ DO $$ BEGIN
         CREATE TYPE batch_status_enum AS ENUM ('Generated','Processing','Completed','Failed');
     END IF;
 END$$;
-
 -- Profiles (extends auth.users)
 CREATE TABLE IF NOT EXISTS public.profiles (
   id uuid PRIMARY KEY,
@@ -45,7 +42,6 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   created_by uuid,
   updated_by uuid
 );
-
 -- User roles
 CREATE TABLE IF NOT EXISTS public.user_roles (
   id bigserial PRIMARY KEY,
@@ -54,7 +50,6 @@ CREATE TABLE IF NOT EXISTS public.user_roles (
   active boolean DEFAULT true,
   created_at timestamptz DEFAULT now()
 );
-
 -- Farmers
 CREATE TABLE IF NOT EXISTS public.farmers (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -73,7 +68,6 @@ CREATE TABLE IF NOT EXISTS public.farmers (
   created_by uuid,
   updated_by uuid
 );
-
 -- Staff
 CREATE TABLE IF NOT EXISTS public.staff (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -82,7 +76,6 @@ CREATE TABLE IF NOT EXISTS public.staff (
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
-
 -- Collections (milk collections)
 CREATE TABLE IF NOT EXISTS public.collections (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -102,7 +95,6 @@ CREATE TABLE IF NOT EXISTS public.collections (
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
-
 -- Milk quality parameters
 CREATE TABLE IF NOT EXISTS public.milk_quality_parameters (
   id bigserial PRIMARY KEY,
@@ -116,7 +108,6 @@ CREATE TABLE IF NOT EXISTS public.milk_quality_parameters (
   measured_by uuid,
   created_at timestamptz DEFAULT now()
 );
-
 -- Milk rates
 CREATE TABLE IF NOT EXISTS public.milk_rates (
   id bigserial PRIMARY KEY,
@@ -125,7 +116,6 @@ CREATE TABLE IF NOT EXISTS public.milk_rates (
   effective_from timestamptz DEFAULT now(),
   created_at timestamptz DEFAULT now()
 );
-
 -- KYC documents
 CREATE TABLE IF NOT EXISTS public.kyc_documents (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -139,7 +129,6 @@ CREATE TABLE IF NOT EXISTS public.kyc_documents (
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
-
 -- Farmer analytics
 CREATE TABLE IF NOT EXISTS public.farmer_analytics (
   id bigserial PRIMARY KEY,
@@ -151,7 +140,6 @@ CREATE TABLE IF NOT EXISTS public.farmer_analytics (
   avg_quality_score numeric DEFAULT 0,
   updated_at timestamptz DEFAULT now()
 );
-
 -- Payments
 CREATE TABLE IF NOT EXISTS public.payments (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -164,7 +152,6 @@ CREATE TABLE IF NOT EXISTS public.payments (
   created_at timestamptz DEFAULT now(),
   processed_at timestamptz
 );
-
 -- Payment batches
 CREATE TABLE IF NOT EXISTS public.payment_batches (
   batch_id text PRIMARY KEY,
@@ -179,7 +166,6 @@ CREATE TABLE IF NOT EXISTS public.payment_batches (
   processed_at timestamptz,
   completed_at timestamptz
 );
-
 -- Collection payments (link collections to payments/batches)
 CREATE TABLE IF NOT EXISTS public.collection_payments (
   id bigserial PRIMARY KEY,
@@ -190,7 +176,6 @@ CREATE TABLE IF NOT EXISTS public.collection_payments (
   rate_applied numeric,
   created_at timestamptz DEFAULT now()
 );
-
 -- Notifications
 CREATE TABLE IF NOT EXISTS public.notifications (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -202,7 +187,6 @@ CREATE TABLE IF NOT EXISTS public.notifications (
   read boolean DEFAULT false,
   created_at timestamptz DEFAULT now()
 );
-
 -- Auth events
 CREATE TABLE IF NOT EXISTS public.auth_events (
   id bigserial PRIMARY KEY,
@@ -211,7 +195,6 @@ CREATE TABLE IF NOT EXISTS public.auth_events (
   metadata jsonb DEFAULT '{}'::jsonb,
   created_at timestamptz DEFAULT now()
 );
-
 -- User sessions (for invalidation tracking)
 CREATE TABLE IF NOT EXISTS public.user_sessions (
   id bigserial PRIMARY KEY,
@@ -221,7 +204,6 @@ CREATE TABLE IF NOT EXISTS public.user_sessions (
   created_at timestamptz DEFAULT now(),
   last_active timestamptz
 );
-
 -- Audit logs
 CREATE TABLE IF NOT EXISTS public.audit_logs (
   id bigserial PRIMARY KEY,
@@ -233,14 +215,12 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
   old_data jsonb,
   new_data jsonb
 );
-
 -- System settings
 CREATE TABLE IF NOT EXISTS public.system_settings (
   key text PRIMARY KEY,
   value jsonb,
   updated_at timestamptz DEFAULT now()
 );
-
 -- File uploads (metadata)
 CREATE TABLE IF NOT EXISTS public.file_uploads (
   id bigserial PRIMARY KEY,
@@ -250,14 +230,12 @@ CREATE TABLE IF NOT EXISTS public.file_uploads (
   uploaded_by uuid REFERENCES public.profiles(id),
   created_at timestamptz DEFAULT now()
 );
-
 -- Account lockout (used by auth RPCs)
 CREATE TABLE IF NOT EXISTS public.account_lockouts (
   email text PRIMARY KEY,
   attempts integer DEFAULT 0,
   locked_until timestamptz
 );
-
 -- Role permissions (optional fine-grained permissions)
 CREATE TABLE IF NOT EXISTS public.role_permissions (
   id bigserial PRIMARY KEY,
@@ -265,12 +243,10 @@ CREATE TABLE IF NOT EXISTS public.role_permissions (
   permission text NOT NULL,
   UNIQUE(role, permission)
 );
-
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_collections_farmer_date ON public.collections (farmer_id, collection_date DESC);
 CREATE INDEX IF NOT EXISTS idx_collections_staff_date ON public.collections (staff_id, collection_date DESC);
 CREATE INDEX IF NOT EXISTS idx_payments_status ON public.payments (status);
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON public.notifications (user_id);
 CREATE INDEX IF NOT EXISTS idx_kyc_status ON public.farmers (kyc_status);
-
 COMMIT;

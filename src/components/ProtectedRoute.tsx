@@ -15,6 +15,18 @@ export const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) 
   const location = useLocation();
   const [showLoader, setShowLoader] = useState(false);
 
+  // Log authentication state changes for debugging
+  useEffect(() => {
+    if (import.meta.env.DEV) {
+      logger.debug('ProtectedRoute auth state changed', { 
+        user: user?.id, 
+        userRole, 
+        loading,
+        requiredRole 
+      });
+    }
+  }, [user, userRole, loading, requiredRole]);
+
   // Debounce loader to prevent flickering
   useEffect(() => {
     if (loading) {

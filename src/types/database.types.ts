@@ -250,6 +250,211 @@ export interface Database {
           verified_at?: string | null;
         };
       };
+      payments: {
+        Row: {
+          id: string;
+          farmer_id: string;
+          amount: number;
+          period_start: string;
+          period_end: string;
+          paid_at: string | null;
+          payment_method: string | null;
+          transaction_id: string | null;
+          status: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          farmer_id: string;
+          amount: number;
+          period_start: string;
+          period_end: string;
+          paid_at?: string | null;
+          payment_method?: string | null;
+          transaction_id?: string | null;
+          status?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          farmer_id?: string;
+          amount?: number;
+          period_start?: string;
+          period_end?: string;
+          paid_at?: string | null;
+          payment_method?: string | null;
+          transaction_id?: string | null;
+          status?: string | null;
+          created_at?: string;
+        };
+      };
+      profiles: {
+        Row: {
+          id: string;
+          full_name: string | null;
+          phone: string | null;
+          avatar_url: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id: string;
+          full_name?: string | null;
+          phone?: string | null;
+          avatar_url?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          full_name?: string | null;
+          phone?: string | null;
+          avatar_url?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      milk_rates: {
+        Row: {
+          id: string;
+          rate_per_liter: number;
+          start_date: string;
+          end_date: string | null;
+          is_active: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          rate_per_liter: number;
+          start_date: string;
+          end_date?: string | null;
+          is_active?: boolean;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          rate_per_liter?: number;
+          start_date?: string;
+          end_date?: string | null;
+          is_active?: boolean;
+          created_at?: string;
+        };
+      };
+      farmer_analytics: {
+        Row: {
+          id: string;
+          farmer_id: string;
+          total_collections: number;
+          total_liters: number;
+          avg_quality_score: number;
+          current_month_liters: number;
+          current_month_earnings: number;
+          last_collection_date: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          farmer_id: string;
+          total_collections?: number;
+          total_liters?: number;
+          avg_quality_score?: number;
+          current_month_liters?: number;
+          current_month_earnings?: number;
+          last_collection_date?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          farmer_id?: string;
+          total_collections?: number;
+          total_liters?: number;
+          avg_quality_score?: number;
+          current_month_liters?: number;
+          current_month_earnings?: number;
+          last_collection_date?: string;
+          updated_at?: string;
+        };
+      };
+      pending_farmers: {
+        Row: {
+          id: string;
+          user_id: string;
+          full_name: string;
+          email: string;
+          phone_number: string | null;
+          gender: string | null;
+          national_id: string | null;
+          address: string | null;
+          farm_location: string | null;
+          number_of_cows: number | null;
+          feeding_type: string | null;
+          status: string;
+          email_verified: boolean;
+          registration_number: string | null;
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+          created_by: string | null;
+          updated_by: string | null;
+          // NEW FIELDS ADDED FOR FARMER REGISTRATION SPECIFICATION
+          age: number | null;
+          id_number: string | null;
+          breeding_method: string | null;
+          cow_breeds: Json | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          full_name: string;
+          email: string;
+          phone_number?: string | null;
+          gender?: string | null;
+          national_id?: string | null;
+          address?: string | null;
+          farm_location?: string | null;
+          number_of_cows?: number | null;
+          feeding_type?: string | null;
+          status?: string;
+          email_verified?: boolean;
+          registration_number?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+          created_by?: string | null;
+          updated_by?: string | null;
+          // NEW FIELDS ADDED FOR FARMER REGISTRATION SPECIFICATION
+          age?: number | null;
+          id_number?: string | null;
+          breeding_method?: string | null;
+          cow_breeds?: Json | null;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          full_name?: string;
+          email?: string;
+          phone_number?: string | null;
+          gender?: string | null;
+          national_id?: string | null;
+          address?: string | null;
+          farm_location?: string | null;
+          number_of_cows?: number | null;
+          feeding_type?: string | null;
+          status?: string;
+          email_verified?: boolean;
+          registration_number?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+          created_by?: string | null;
+          updated_by?: string | null;
+          // NEW FIELDS ADDED FOR FARMER REGISTRATION SPECIFICATION
+          age?: number | null;
+          id_number?: string | null;
+          breeding_method?: string | null;
+          cow_breeds?: Json | null;
+        };
+      };
       // Tables that will be created with the new migration
       routes: {
         Row: {
@@ -361,6 +566,32 @@ export interface Database {
           created_at?: string;
         };
       };
+      user_permissions: {
+        Row: {
+          id: string;
+          role: 'admin' | 'staff' | 'farmer';
+          permission: string;
+          description: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          role: 'admin' | 'staff' | 'farmer';
+          permission: string;
+          description?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          role?: 'admin' | 'staff' | 'farmer';
+          permission?: string;
+          description?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
       quality_tests: {
         Row: {
           id: string;
@@ -391,6 +622,47 @@ export interface Database {
           performed_by?: string;
           notes?: string | null;
           created_at?: string;
+        };
+      };
+      farmer_payments: {
+        Row: {
+          id: string;
+          farmer_id: string;
+          collection_ids: string[];
+          total_amount: number;
+          approval_status: string;
+          approved_at: string | null;
+          paid_at: string | null;
+          notes: string | null;
+          processed_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          farmer_id: string;
+          collection_ids: string[];
+          total_amount: number;
+          approval_status?: string;
+          approved_at?: string | null;
+          paid_at?: string | null;
+          notes?: string | null;
+          processed_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          farmer_id?: string;
+          collection_ids?: string[];
+          total_amount?: number;
+          approval_status?: string;
+          approved_at?: string | null;
+          paid_at?: string | null;
+          notes?: string | null;
+          processed_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
         };
       };
       inventory_items: {
@@ -435,6 +707,41 @@ export interface Database {
         };
       };
       inventory_transactions: {
+        Row: {
+          id: string;
+          item_id: string;
+          transaction_type: 'in' | 'out';
+          quantity: number;
+          unit_cost: number | null;
+          total_cost: number | null;
+          reason: string | null;
+          performed_by: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          item_id: string;
+          transaction_type: 'in' | 'out';
+          quantity: number;
+          unit_cost?: number | null;
+          total_cost?: number | null;
+          reason?: string | null;
+          performed_by: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          item_id?: string;
+          transaction_type?: 'in' | 'out';
+          quantity?: number;
+          unit_cost?: number | null;
+          total_cost?: number | null;
+          reason?: string | null;
+          performed_by?: string;
+          created_at?: string;
+        };
+      };
+      notifications: {
         Row: {
           id: string;
           item_id: string;
@@ -540,6 +847,85 @@ export interface Database {
           last_collection_quantity: number | null;
           avg_daily_quantity: number | null;
         }>;
+      };
+      get_admin_dashboard_metrics: {
+        Args: {
+          start_date: string;
+          end_date: string;
+        };
+        Returns: {
+          total_farmers: number;
+          active_farmers: number;
+          total_collections: number;
+          total_liters: number;
+          total_revenue: number;
+          pending_payments: number;
+          avg_quality_score: number;
+          staff_count: number;
+        };
+      };
+      get_admin_collection_trends: {
+        Args: {
+          start_date: string;
+          end_date: string;
+        };
+        Returns: Array<{
+          date: string;
+          collections: number;
+          liters: number;
+          revenue: number;
+          farmers: number;
+        }>;
+      };
+      get_admin_quality_distribution: {
+        Args: {
+          start_date: string;
+          end_date: string;
+        };
+        Returns: Array<{
+          quality_grade: string;
+          count: number;
+          percentage: number;
+        }>;
+      };
+      get_admin_revenue_trends: {
+        Args: {
+          start_date: string;
+          end_date: string;
+        };
+        Returns: Array<{
+          date: string;
+          revenue: number;
+          collections: number;
+          avg_amount: number;
+        }>;
+      };
+      get_admin_farmer_analytics_summary: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          total_farmers: number;
+          kyc_approved: number;
+          kyc_pending: number;
+          kyc_rejected: number;
+          avg_collections_per_farmer: number;
+          avg_liters_per_farmer: number;
+        };
+      };
+      get_admin_payment_summary: {
+        Args: {
+          start_date: string;
+          end_date: string;
+        };
+        Returns: {
+          total_payments: number;
+          total_amount: number;
+          pending_payments: number;
+          pending_amount: number;
+          completed_payments: number;
+          completed_amount: number;
+          failed_payments: number;
+          failed_amount: number;
+        };
       };
     };
   };

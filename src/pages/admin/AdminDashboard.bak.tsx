@@ -343,8 +343,50 @@ const AdminDashboard = () => {
               email
             )
           ),
-          staff!collections_staff_id_fkey (
+          staff (
+            full_name,
+            id
+          )
+        `)
+        .gte('collection_date', startDate)
+        .lte('collection_date', endDate);
+
+      if (collectionsError) {
+        throw collectionsError;
+      }
+
+      return {
+        collections: prevCollectionsData,
+      };
+    } catch (error) {
+      console.error('Error fetching previous period data:', error);
+      return null;
+    }
+  }, [timeRange]);
+
+  // Fetch all data for the current period
+  const fetchData = useCallback(async () => {
+    try {
+      const { startDate, endDate } = getDateFilter();
+
+      // Fetch collections
+      const { data: collectionsData, error: collectionsError } = await supabase
+        .from('collections')
+        .select(`
+          *,
+          farmers!fk_collections_farmer_id (
             id,
+            user_id,
+            kyc_status,
+            profiles!user_id (
+              full_name,
+              email
+            )
+          ),
+          staff!collections_staff_id_fkey (
+            full_name,
+            id
+          )
             user_id,
             profiles!user_id (
               full_name

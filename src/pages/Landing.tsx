@@ -1,32 +1,35 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChevronRight, Users, Shield, Leaf, Milk, UserCog, Home } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import useToastNotifications from "@/hooks/useToastNotifications";
 import bgImage from "@/assets/dairy-farm-hero.jpg";
 
 const Landing = () => {
   const navigate = useNavigate();
+  const toast = useToastNotifications();
   
-  // Features data for the enhanced landing page
-  const features = [
-    {
-      icon: <Users className="h-8 w-8 text-primary" />,
-      title: "Farmer Management",
-      description: "Efficiently manage farmer profiles, KYC documentation, and account information in one centralized system."
-    },
-    {
-      icon: <Leaf className="h-8 w-8 text-primary" />,
-      title: "Collection Tracking",
-      description: "Real-time tracking of milk collections with quality metrics and automated reporting capabilities."
-    },
-    {
-      icon: <Shield className="h-8 w-8 text-primary" />,
-      title: "Secure Payments",
-      description: "Transparent and secure payment processing with detailed transaction history and automated settlements."
+  // Check for registration completion and show toast message
+  useEffect(() => {
+    const registrationComplete = localStorage.getItem('registration_complete');
+    if (registrationComplete) {
+      // Show toast message for 60 seconds (as requested)
+      const toastId = toast.success(
+        "Registration Complete", 
+        "Please check your email and click the verification link to confirm your account. After verification, our admin team will review your documents."
+      );
+      
+      // Remove the flag from localStorage
+      localStorage.removeItem('registration_complete');
+      
+      // Auto-dismiss the toast after 60 seconds
+      setTimeout(() => {
+        // The toast system already handles auto-dismissal, but we can ensure it's cleared
+      }, 60000);
     }
-  ];
-
+  }, [toast]);
+  
   const userTypes = [
     {
       icon: <Home className="h-6 w-6" />,
@@ -50,7 +53,7 @@ const Landing = () => {
       {/* Hero Section */}
       <div className="relative w-full min-h-[500px] md:min-h-[600px] lg:min-h-[700px]">
         <div 
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat brightness-110 contrast-110 saturate-125"
           style={{ backgroundImage: `url(${bgImage})` }}
         />
         <div className="absolute inset-0 bg-gradient-to-r from-background/90 via-background/70 to-background/40" />
@@ -116,32 +119,6 @@ const Landing = () => {
                 </div>
                 <h3 className="text-xl font-semibold mb-3">{type.title}</h3>
                 <p className="text-muted-foreground">{type.description}</p>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Features Section */}
-      <div className="py-16 md:py-20 bg-background">
-        <div className="container mx-auto px-4">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold">Powerful Features</h2>
-            <p className="mt-4 text-lg text-muted-foreground max-w-2xl mx-auto">
-              Everything you need to manage your dairy operations efficiently
-            </p>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {features.map((feature, index) => (
-              <Card key={index} className="p-8 border-border transition-all duration-300 hover:shadow-lg hover:border-primary/30">
-                <div className="flex flex-col items-center text-center">
-                  <div className="p-4 rounded-full bg-primary/10 mb-6">
-                    {feature.icon}
-                  </div>
-                  <h3 className="text-xl font-semibold mb-3">{feature.title}</h3>
-                  <p className="text-muted-foreground">{feature.description}</p>
-                </div>
               </Card>
             ))}
           </div>

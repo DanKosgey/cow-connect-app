@@ -1,156 +1,201 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { useAuth } from '@/contexts/SimplifiedAuthContext';
-import { supabase } from '@/integrations/supabase/client';
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useAuth } from "@/contexts/SimplifiedAuthContext";
+import { UserRole } from "@/types/auth.types";
 
 const AuthTestPage = () => {
-  const { user, session, userRole, loading, resetAuthState, refreshSession } = useAuth();
   const navigate = useNavigate();
-  const [testResults, setTestResults] = useState<any>({});
-  const [testing, setTesting] = useState(false);
+  const { user, userRole, session, loading, signOut, refreshSession } = useAuth();
+  const [testResult, setTestResult] = useState<string | null>(null);
+  const [isTesting, setIsTesting] = useState(false);
 
-  const runAuthTests = async () => {
-    setTesting(true);
+  const runAuthTest = async () => {
+    setIsTesting(true);
+    setTestResult(null);
+    
     try {
-      // Test 1: Current auth state
-      const authState = {
-        user: user ? 'Present' : 'None',
-        userId: user?.id || 'N/A',
-        userEmail: user?.email || 'N/A',
-        userRole: userRole || 'None',
-        session: session ? 'Present' : 'None',
-        loading: loading
-      };
-
-      // Test 2: Supabase session
-      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      // Test session refresh
+      const refreshResult = await refreshSession();
       
-      // Test 3: Current user
-      const { data: userData, error: userError } = await supabase.auth.getUser();
-      
-      // Test 4: User roles
-      let roleData = null;
-      let roleError = null;
-      if (userData?.user?.id) {
-        const { data, error } = await supabase
-          .from('user_roles')
-          .select('role')
-          .eq('user_id', userData.user.id)
-          .maybeSingle();
-        roleData = data;
-        roleError = error;
+      if (refreshResult.success) {
+        setTestResult("Authentication test passed! Session refreshed successfully.");
+      } else {
+        setTestResult(`Authentication test completed with warnings: ${refreshResult.error?.message || 'Unknown issue'}`);
       }
-      
-      // Test 5: Local storage items
-      const localStorageItems = {
-        cached_user: localStorage.getItem('cached_user'),
-        cached_role: localStorage.getItem('cached_role'),
-        auth_cache_timestamp: localStorage.getItem('auth_cache_timestamp'),
-        pending_profile: localStorage.getItem('pending_profile')
-      };
-      
-      // Test 6: Supabase-specific items
-      const supabaseItems: Record<string, string> = {};
-      Object.keys(localStorage).forEach(key => {
-        if (key.startsWith('sb-') || key.startsWith('supabase-')) {
-          supabaseItems[key] = localStorage.getItem(key) || '';
-        }
-      });
-      
-      setTestResults({
-        authState,
-        session: {
-          data: sessionData?.session ? 'Present' : 'None',
-          error: sessionError?.message || 'None'
-        },
-        user: {
-          data: userData?.user ? 'Present' : 'None',
-          error: userError?.message || 'None'
-        },
-        role: {
-          data: roleData,
-          error: roleError?.message || 'None'
-        },
-        localStorage: localStorageItems,
-        supabaseItems,
-        timestamp: new Date().toISOString()
-      });
-    } catch (error) {
-      console.error('Error running auth tests:', error);
-      setTestResults({
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
+    } catch (error: any) {
+      setTestResult(`Authentication test failed: ${error.message || 'Unknown error'}`);
     } finally {
-      setTesting(false);
+      setIsTesting(false);
     }
   };
-
-  useEffect(() => {
-    runAuthTests();
-  }, [user, session, userRole, loading]);
 
   return (
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-4xl mx-auto space-y-6">
-        <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-heading font-bold">Authentication Test</h1>
-          <Button onClick={() => navigate(-1)}>Back</Button>
+        <div className="text-center">
+          <h1 className="text-3xl font-bold">Authentication Diagnostics</h1>
+          <p className="text-muted-foreground mt-2">
+            Test and verify authentication functionality
+          </p>
         </div>
-        
+
         <Card>
           <CardHeader>
-            <CardTitle>Authentication Status</CardTitle>
+            <CardTitle>Current Authentication Status</CardTitle>
+            <CardDescription>
+              View your current authentication state and session information
+            </CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
+          <CardContent className="space-y-4">
+            {loading ? (
+              <p>Loading authentication state...</p>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="p-4 bg-secondary/50 rounded-lg">
+                    <h3 className="font-medium">User Status</h3>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {user ? `Authenticated as ${user.email}` : "Not authenticated"}
+                    </p>
+                  </div>
+                  
+                  <div className="p-4 bg-secondary/50 rounded-lg">
+                    <h3 className="font-medium">User Role</h3>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {userRole || "No role assigned"}
+                    </p>
+                  </div>
+                  
+                  <div className="p-4 bg-secondary/50 rounded-lg">
+                    <h3 className="font-medium">Session Status</h3>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {session ? "Active session" : "No active session"}
+                    </p>
+                  </div>
+                  
+                  <div className="p-4 bg-secondary/50 rounded-lg">
+                    <h3 className="font-medium">Loading State</h3>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {loading ? "Loading..." : "Ready"}
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="flex flex-wrap gap-3 pt-4">
+                  <Button onClick={runAuthTest} disabled={isTesting}>
+                    {isTesting ? "Testing..." : "Run Authentication Test"}
+                  </Button>
+                  
+                  <Button 
+                    variant="outline" 
+                    onClick={() => navigate('/auth/forgot-password')}
+                  >
+                    Test Password Reset
+                  </Button>
+                  
+                  <Button 
+                    variant="outline" 
+                    onClick={() => navigate('/auth/reset-test')}
+                  >
+                    Password Reset Test Page
+                  </Button>
+                  
+                  {user && (
+                    <Button variant="destructive" onClick={signOut}>
+                      Sign Out
+                    </Button>
+                  )}
+                  
+                  <Button variant="ghost" onClick={() => navigate(-1)}>
+                    Back
+                  </Button>
+                </div>
+                
+                {testResult && (
+                  <div className="p-4 bg-secondary/50 rounded-lg mt-4">
+                    <h3 className="font-medium">Test Result</h3>
+                    <p className="text-sm mt-1">{testResult}</p>
+                  </div>
+                )}
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Authentication Flow Testing</CardTitle>
+            <CardDescription>
+              Test different authentication scenarios
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Button 
-                onClick={runAuthTests} 
-                disabled={testing}
-                className="w-full"
+                variant="outline" 
+                onClick={() => navigate('/register')}
+                className="h-20 flex flex-col items-center justify-center gap-2"
               >
-                {testing ? 'Testing...' : 'Run Authentication Tests'}
+                <span>Farmer Registration</span>
+                <span className="text-xs text-muted-foreground">Test signup flow</span>
               </Button>
               
               <Button 
-                onClick={async () => {
-                  await resetAuthState();
-                  window.location.reload();
-                }}
-                variant="destructive"
-                className="w-full"
+                variant="outline" 
+                onClick={() => navigate('/farmer/login')}
+                className="h-20 flex flex-col items-center justify-center gap-2"
               >
-                Reset Authentication State
+                <span>Farmer Login</span>
+                <span className="text-xs text-muted-foreground">Test farmer login</span>
               </Button>
               
               <Button 
-                onClick={async () => {
-                  const result = await refreshSession();
-                  console.log('Session refresh result:', result);
-                  runAuthTests();
-                }}
-                variant="outline"
-                className="w-full"
+                variant="outline" 
+                onClick={() => navigate('/login')}
+                className="h-20 flex flex-col items-center justify-center gap-2"
               >
-                Refresh Session
+                <span>Role Selection</span>
+                <span className="text-xs text-muted-foreground">Test role-based login</span>
               </Button>
+            </div>
+            
+            <div className="pt-4">
+              <h3 className="font-medium mb-2">Quick Navigation</h3>
+              <div className="flex flex-wrap gap-2">
+                <Button 
+                  variant="secondary" 
+                  size="sm"
+                  onClick={() => navigate('/auth/forgot-password')}
+                >
+                  Forgot Password
+                </Button>
+                <Button 
+                  variant="secondary" 
+                  size="sm"
+                  onClick={() => navigate('/auth/reset-password')}
+                >
+                  Reset Password
+                </Button>
+                <Button 
+                  variant="secondary" 
+                  size="sm"
+                  onClick={() => navigate('/auth/reset-test')}
+                >
+                  Reset Test Page
+                </Button>
+                <Button 
+                  variant="secondary" 
+                  size="sm"
+                  onClick={() => navigate('/auth/callback')}
+                >
+                  Auth Callback
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>
-        
-        {testResults && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Test Results</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <pre className="bg-muted p-4 rounded-lg overflow-auto max-h-96 text-sm">
-                {JSON.stringify(testResults, null, 2)}
-              </pre>
-            </CardContent>
-          </Card>
-        )}
       </div>
     </div>
   );

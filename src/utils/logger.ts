@@ -10,7 +10,7 @@ export enum LogLevel {
 class Logger {
   private static instance: Logger;
   private level: LogLevel = LogLevel.INFO;
-  private appName: string = 'DairyChain';
+  private appName: string = 'Dairy Farmers of Trans Nzoia';
 
   private constructor() {
     // Set log level based on environment

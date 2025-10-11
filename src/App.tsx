@@ -99,7 +99,10 @@ const App = () => {
       <QueryClientProvider client={queryClient}>
       <TooltipProvider>
       <SkipLink targetId="main-content">Skip to main content</SkipLink>
-          <BrowserRouter>
+          <BrowserRouter future={{
+            v7_startTransition: true,
+            v7_relativeSplatPath: true
+          }}>
             <NotificationProvider>
               <AuthProvider>
                 <main id="main-content">

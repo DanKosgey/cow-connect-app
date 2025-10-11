@@ -50,6 +50,7 @@ const Staff = () => {
           setTotalCount(count || 0);
           
           // Then fetch the paginated data with user roles in a single query
+          // Fixed the query to properly fetch user roles without incorrect foreign key syntax
           const { data, error } = await supabase
             .from('staff')
             .select(`
@@ -57,19 +58,40 @@ const Staff = () => {
               employee_id, 
               user_id,
               profiles:user_id(full_name, email),
-              user_roles:user_id(role)
+              user_roles:user_id(
+                role
+              )
             `)
             .order('created_at', { ascending: false })
             .range((currentPage - 1) * pageSize, currentPage * pageSize - 1);
           
           if (!error && data) {
             // Transform the data to match the expected structure
-            const staffWithRoles = data.map(staffMember => ({
-              ...staffMember,
-              roles: staffMember.user_roles?.map((r: any) => r.role) || []
-            }));
+            // Filter out only staff and admin roles, not farmer roles
+            const staffWithRoles = data.map(staffMember => {
+              let roles = [];
+              if (Array.isArray(staffMember.user_roles)) {
+                roles = staffMember.user_roles
+                  .filter((r: any) => r.role === 'staff' || r.role === 'admin')
+                  .map((r: any) => r.role);
+              } else if (staffMember.user_roles && (staffMember.user_roles.role === 'staff' || staffMember.user_roles.role === 'admin')) {
+                roles = [staffMember.user_roles.role];
+              }
+              
+              return {
+                ...staffMember,
+                roles: roles
+              };
+            });
             
             setStaff(staffWithRoles);
+          } else if (error) {
+            console.error('Error fetching staff data:', error);
+            // Handle 400/401 errors by potentially refreshing the session
+            if (error.status === 400 || error.status === 401) {
+              console.warn('Authentication issue detected, may need to refresh session');
+              // The app should handle session refresh automatically through the auth context
+            }
           }
         } catch (error) {
           console.error('Error fetching staff:', error);
@@ -116,9 +138,25 @@ const Staff = () => {
   const getStats = () => {
     return {
       total: totalCount,
-      admins: staff.filter(s => s.roles?.includes('admin')).length,
-      staff: staff.filter(s => s.roles?.includes('staff')).length,
-      active: staff.filter(s => s.roles?.length > 0).length
+      admins: staff.filter(s => {
+        if (Array.isArray(s.roles)) {
+          return s.roles.includes('admin');
+        }
+        return s.roles === 'admin';
+      }).length,
+      staff: staff.filter(s => {
+        if (Array.isArray(s.roles)) {
+          return s.roles.includes('staff');
+        }
+        return s.roles === 'staff';
+      }).length,
+      active: staff.filter(s => {
+        if (Array.isArray(s.roles)) {
+          // Only count as active if they have staff or admin roles, not farmer roles
+          return s.roles.some(role => role === 'staff' || role === 'admin');
+        }
+        return s.roles !== undefined && s.roles !== null && (s.roles === 'staff' || s.roles === 'admin');
+      }).length
     };
   };
 
@@ -249,7 +287,7 @@ const Staff = () => {
                           <TableCell>{staffMember.profiles?.email || 'N/A'}</TableCell>
                           <TableCell>
                             <div className="flex flex-wrap gap-1">
-                              {staffMember.roles?.map((role: string) => (
+                              {Array.isArray(staffMember.roles) && staffMember.roles.map((role: string) => (
                                 <Badge key={role} variant="secondary">
                                   {role}
                                 </Badge>

@@ -24,7 +24,7 @@ export default function RouteManagement() {
         if (!user.data.user?.id) throw new Error('Not authenticated');
 
         interface RouteData {
-          route: {
+          routes: {
             id: string;
             name: string;
             route_points: Array<{
@@ -53,10 +53,18 @@ export default function RouteManagement() {
         }
 
         // Load route points with collection status
-        const { data: staffRoutes, error: routeError } = await supabase
+        // Try different approaches to resolve the ambiguous relationship issue
+        let staffRoutes: any = null;
+        let routeError: any = null;
+        
+        // For debugging - you can uncomment this in development
+        // console.log('Attempting to load route data for staff ID:', user.data.user.id);
+        
+        // Try approach 1: Using the constraint name explicitly
+        const result1 = await supabase
           .from('staff_routes')
           .select(`
-            route:routes (
+            routes!staff_routes_route_id_fkey (
               id,
               name,
               route_points (
@@ -73,17 +81,103 @@ export default function RouteManagement() {
           .eq('staff_id', user.data.user.id)
           .eq('is_active', true)
           .limit(1);
+          
+        // For debugging - you can uncomment this in development
+        // console.log('Result from approach 1:', result1);
+          
+        if (result1.error && result1.error.code === 'PGRST201') {
+          // For debugging - you can uncomment this in development
+          // console.log('First approach failed with PGRST201, trying alternative approach');
+          // Try approach 2: Fetch staff_routes first, then fetch routes separately
+          const staffRoutesResult = await supabase
+            .from('staff_routes')
+            .select('route_id')
+            .eq('staff_id', user.data.user.id)
+            .eq('is_active', true)
+            .limit(1);
+            
+          // For debugging - you can uncomment this in development
+          // console.log('Staff routes result:', staffRoutesResult);
+            
+          if (staffRoutesResult.error) {
+            throw staffRoutesResult.error;
+          }
+          
+          if (!staffRoutesResult.data || staffRoutesResult.data.length === 0) {
+            setNoRouteFound(true);
+            setRoute([]);
+            setLoading(false);
+            return;
+          }
+          
+          const routeId = staffRoutesResult.data[0].route_id;
+          // For debugging - you can uncomment this in development
+          // console.log('Found route ID:', routeId);
+          
+          if (!routeId) {
+            setNoRouteFound(true);
+            setRoute([]);
+            setLoading(false);
+            return;
+          }
+          
+          // Now fetch the route details
+          const routeResult = await supabase
+            .from('routes')
+            .select(`
+              id,
+              name,
+              route_points (
+                id,
+                sequence_number,
+                collection_point:collection_points (
+                  id,
+                  name,
+                  location
+                )
+              )
+            `)
+            .eq('id', routeId)
+            .single();
+            
+          // For debugging - you can uncomment this in development
+          // console.log('Route result:', routeResult);
+            
+          if (routeResult.error) {
+            throw routeResult.error;
+          }
+          
+          // Structure the data to match what we expect
+          staffRoutes = [{
+            routes: routeResult.data
+          }];
+        } else {
+          staffRoutes = result1.data;
+          routeError = result1.error;
+        }
 
         if (routeError) throw routeError;
+        
+        // For debugging - you can uncomment this in development
+        // console.log('Final staffRoutes data:', staffRoutes);
         
         // Check if we have any routes
         if (!staffRoutes || staffRoutes.length === 0) {
           setNoRouteFound(true);
           setRoute([]);
+          setLoading(false);
           return;
         }
         
         const staffRoute = staffRoutes[0];
+        
+        // Additional safety check for route data structure
+        if (!staffRoute || !staffRoute.routes || !staffRoute.routes.route_points) {
+          setNoRouteFound(true);
+          setRoute([]);
+          setLoading(false);
+          return;
+        }
 
         // Load today's collections for status
         const today = new Date();
@@ -107,7 +201,7 @@ export default function RouteManagement() {
         if (farmersError) throw farmersError;
 
         // Transform data into RoutePoint[] structure
-        const routePoints: RoutePoint[] = (staffRoute as RouteData).route.route_points
+        const routePoints: RoutePoint[] = (staffRoute as RouteData).routes.route_points
           .sort((a, b) => a.sequence_number - b.sequence_number)
           .map(point => {
             // Get farmers assigned to this collection point
@@ -127,8 +221,8 @@ export default function RouteManagement() {
               id: point.id,
               name: point.collection_point.name,
               sequence: point.sequence_number,
-              latitude: point.collection_point.location.coordinates[1],
-              longitude: point.collection_point.location.coordinates[0],
+              latitude: point.collection_point.location?.coordinates ? point.collection_point.location.coordinates[1] : 0,
+              longitude: point.collection_point.location?.coordinates ? point.collection_point.location.coordinates[0] : 0,
               status: collectedFarmers.length === pointFarmers.length
                 ? 'completed'
                 : collectedFarmers.length > 0
@@ -147,7 +241,15 @@ export default function RouteManagement() {
         setRoute(routePoints);
       } catch (error: any) {
         console.error('Error loading route:', error);
-        showError('Error', String(error?.message || 'Failed to load route'));
+        // Check if this is a relationship embedding error
+        if (error?.code === 'PGRST201') {
+          // For debugging - you can remove this in production
+          // const possibleRelationships = error?.details || [];
+          // console.error('Possible relationships:', possibleRelationships);
+          showError('Error', `Error loading route. ${error?.message}`);
+        } else {
+          showError('Error', String(error?.message || 'Failed to load route'));
+        }
       } finally {
         setLoading(false);
       }

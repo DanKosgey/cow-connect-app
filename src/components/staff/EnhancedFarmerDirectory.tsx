@@ -22,156 +22,23 @@ import useToastNotifications from '@/hooks/useToastNotifications';
 import { supabase } from '@/integrations/supabase/client';
 import { LoadingSkeleton } from '@/components/LoadingSkeleton';
 import { format } from 'date-fns';
-
-interface Farmer {
-  id: string;
-  registration_number: string;
-  national_id: string;
-  full_name: string;
-  phone_number: string;
-  address: string;
-  farm_location: string;
-  kyc_status: 'pending' | 'approved' | 'rejected';
-  created_at: string;
-}
-
-interface Collection {
-  id: string;
-  collection_id: string;
-  farmer_id: string;
-  liters: number;
-  quality_grade: string;
-  total_amount: number;
-  collection_date: string;
-  status: string;
-}
-
-interface FarmerStats {
-  total_collections: number;
-  total_liters: number;
-  current_month_liters: number;
-  current_month_earnings: number;
-  avg_quality_score: number;
-  last_collection_date: string | null;
-  last_collection_quantity: number | null;
-}
-
-interface FarmerWithStats extends Farmer {
-  stats: FarmerStats;
-}
+import { useFarmerDirectory, useFarmerCollectionHistory } from '@/hooks/useStaffData';
 
 export default function EnhancedFarmerDirectory() {
   const { show, error: showError } = useToastNotifications();
-  const [loading, setLoading] = useState(true);
-  const [farmers, setFarmers] = useState<FarmerWithStats[]>([]);
+  const { farmers, loading: farmersLoading } = useFarmerDirectory();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFarmer, setSelectedFarmer] = useState<string | null>(null);
-  const [collectionHistory, setCollectionHistory] = useState<Collection[]>([]);
-  const [farmerStats, setFarmerStats] = useState<FarmerStats | null>(null);
+  const { collections: collectionHistory, loading: collectionHistoryLoading } = useFarmerCollectionHistory(selectedFarmer);
 
   useEffect(() => {
-    loadFarmers();
+    // Data is now loaded through the useFarmerDirectory hook
   }, []);
 
-  const loadFarmers = async () => {
-    try {
-      // Load approved farmers with their analytics
-      const { data: farmersData, error: farmersError } = await supabase
-        .from('farmers')
-        .select(`
-          id,
-          registration_number,
-          national_id,
-          full_name,
-          phone_number,
-          address,
-          farm_location,
-          kyc_status,
-          created_at,
-          farmer_analytics(
-            total_collections,
-            total_liters,
-            current_month_liters,
-            current_month_earnings,
-            avg_quality_score,
-            updated_at
-          )
-        `)
-        .eq('kyc_status', 'approved')
-        .order('full_name', { ascending: true });
-
-      if (farmersError) throw farmersError;
-
-      // Format farmers with stats
-      const formattedFarmers: FarmerWithStats[] = (farmersData || []).map(farmer => {
-        const analytics = farmer.farmer_analytics?.[0] || null;
-        
-        return {
-          ...farmer,
-          stats: {
-            total_collections: analytics?.total_collections || 0,
-            total_liters: analytics?.total_liters || 0,
-            current_month_liters: analytics?.current_month_liters || 0,
-            current_month_earnings: analytics?.current_month_earnings || 0,
-            avg_quality_score: analytics?.avg_quality_score || 0,
-            last_collection_date: null, // Will be populated when loading collection history
-            last_collection_quantity: null
-          }
-        };
-      });
-
-      setFarmers(formattedFarmers);
-    } catch (error: any) {
-      console.error('Error loading farmers:', error);
-      showError('Error', String(error?.message || 'Failed to load farmers'));
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const loadCollectionHistory = async (farmerId: string) => {
-    try {
-      // Load recent collections for the farmer
-      const { data: collectionsData, error: collectionsError } = await supabase
-        .from('collections')
-        .select(`
-          id,
-          collection_id,
-          farmer_id,
-          liters,
-          quality_grade,
-          total_amount,
-          collection_date,
-          status
-        `)
-        .eq('farmer_id', farmerId) // This is correct - farmer_id in collections table references farmers.id
-        .order('collection_date', { ascending: false })
-        .limit(10);
-
-      if (collectionsError) throw collectionsError;
-      
-      setCollectionHistory(collectionsData || []);
-      
-      // Update last collection info in stats
-      if (collectionsData && collectionsData.length > 0) {
-        const latestCollection = collectionsData[0];
-        setFarmers(prev => prev.map(farmer => 
-          farmer.id === farmerId
-            ? {
-                ...farmer,
-                stats: {
-                  ...farmer.stats,
-                  last_collection_date: latestCollection.collection_date,
-                  last_collection_quantity: latestCollection.liters
-                }
-              }
-            : farmer
-        ));
-      }
-    } catch (error: any) {
-      console.error('Error loading collection history:', error);
-      showError('Error', String(error?.message || 'Failed to load history'));
-    }
+    // This is now handled by the useFarmerCollectionHistory hook
+    // The collection history will automatically update when selectedFarmer changes
+    console.log('Collection history will be loaded by the hook for farmer:', farmerId);
   };
 
   const handleContact = (type: 'call' | 'sms', phoneNumber: string) => {
@@ -205,7 +72,7 @@ export default function EnhancedFarmerDirectory() {
     farmer.phone_number.includes(searchTerm)
   );
 
-  if (loading) {
+  if (farmersLoading) {
     return <LoadingSkeleton type="list" />;
   }
 
@@ -278,15 +145,15 @@ export default function EnhancedFarmerDirectory() {
                     {/* Stats Overview */}
                     <div className="grid grid-cols-3 gap-2 mb-2">
                       <div className="text-center p-2 bg-muted rounded">
-                        <div className="text-lg font-bold">{farmer.stats.total_collections}</div>
+                        <div className="text-lg font-bold">{farmer.stats?.total_collections || 0}</div>
                         <div className="text-xs text-muted-foreground">Collections</div>
                       </div>
                       <div className="text-center p-2 bg-muted rounded">
-                        <div className="text-lg font-bold">{farmer.stats.total_liters.toFixed(0)}L</div>
+                        <div className="text-lg font-bold">{(farmer.stats?.total_liters || 0).toFixed(0)}L</div>
                         <div className="text-xs text-muted-foreground">Total</div>
                       </div>
                       <div className="text-center p-2 bg-muted rounded">
-                        <div className="text-lg font-bold">{farmer.stats.avg_quality_score.toFixed(1)}</div>
+                        <div className="text-lg font-bold">{(farmer.stats?.avg_quality_score || 0).toFixed(1)}</div>
                         <div className="text-xs text-muted-foreground">Avg Quality</div>
                       </div>
                     </div>
@@ -322,11 +189,11 @@ export default function EnhancedFarmerDirectory() {
                   <div className="flex flex-col items-end gap-1">
                     <Badge variant="outline">
                       <DollarSign className="w-3 h-3 mr-1" />
-                      KSh {farmer.stats.current_month_earnings.toFixed(0)}
+                      KSh {(farmer.stats?.current_month_earnings || 0).toFixed(0)}
                     </Badge>
                     <Badge variant="outline">
                       <Milk className="w-3 h-3 mr-1" />
-                      {farmer.stats.current_month_liters.toFixed(0)}L
+                      {(farmer.stats?.current_month_liters || 0).toFixed(0)}L
                     </Badge>
                   </div>
                 </div>
@@ -351,15 +218,15 @@ export default function EnhancedFarmerDirectory() {
                               <div className="space-y-2">
                                 <div className="flex justify-between">
                                   <span className="text-muted-foreground">Total Collections</span>
-                                  <span className="font-medium">{farmer.stats.total_collections}</span>
+                                  <span className="font-medium">{farmer.stats?.total_collections || 0}</span>
                                 </div>
                                 <div className="flex justify-between">
                                   <span className="text-muted-foreground">Total Volume</span>
-                                  <span className="font-medium">{farmer.stats.total_liters.toFixed(1)}L</span>
+                                  <span className="font-medium">{(farmer.stats?.total_liters || 0).toFixed(1)}L</span>
                                 </div>
                                 <div className="flex justify-between">
                                   <span className="text-muted-foreground">This Month</span>
-                                  <span className="font-medium">{farmer.stats.current_month_liters.toFixed(1)}L</span>
+                                  <span className="font-medium">{(farmer.stats?.current_month_liters || 0).toFixed(1)}L</span>
                                 </div>
                               </div>
                             </CardContent>
@@ -374,16 +241,16 @@ export default function EnhancedFarmerDirectory() {
                               <div className="space-y-2">
                                 <div className="flex justify-between">
                                   <span className="text-muted-foreground">Avg Quality Score</span>
-                                  <span className="font-medium">{farmer.stats.avg_quality_score.toFixed(1)}/10</span>
+                                  <span className="font-medium">{(farmer.stats?.avg_quality_score || 0).toFixed(1)}/10</span>
                                 </div>
                                 <div className="flex justify-between">
                                   <span className="text-muted-foreground">This Month Earnings</span>
-                                  <span className="font-medium">KSh {farmer.stats.current_month_earnings.toFixed(0)}</span>
+                                  <span className="font-medium">KSh {(farmer.stats?.current_month_earnings || 0).toFixed(0)}</span>
                                 </div>
                                 <div className="flex justify-between">
                                   <span className="text-muted-foreground">Last Collection</span>
                                   <span className="font-medium">
-                                    {farmer.stats.last_collection_date
+                                    {farmer.stats?.last_collection_date
                                       ? format(new Date(farmer.stats.last_collection_date), 'MMM dd')
                                       : 'None'}
                                   </span>
@@ -396,7 +263,12 @@ export default function EnhancedFarmerDirectory() {
                       
                       <TabsContent value="history" className="mt-4">
                         <div className="space-y-2">
-                          {collectionHistory.length > 0 ? (
+                          {collectionHistoryLoading ? (
+                            <div className="text-center py-4">
+                              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto"></div>
+                              <p className="text-muted-foreground mt-2">Loading collection history...</p>
+                            </div>
+                          ) : collectionHistory.length > 0 ? (
                             collectionHistory.map((collection) => (
                               <div
                                 key={collection.id}

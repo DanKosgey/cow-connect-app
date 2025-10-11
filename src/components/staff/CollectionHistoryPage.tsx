@@ -27,6 +27,8 @@ import {
 import { format, subDays, startOfMonth, endOfMonth } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import useToastNotifications from '@/hooks/useToastNotifications';
+import { useStaffInfo, useApprovedFarmers } from '@/hooks/useStaffData';
+import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
 
 interface Collection {
   id: string;
@@ -45,19 +47,15 @@ interface Collection {
   } | null;
 }
 
-interface Farmer {
-  id: string;
-  full_name: string;
-}
-
 const CollectionHistoryPage = () => {
   const { user } = useAuth();
   const { show, error: showError } = useToastNotifications();
   const navigate = useNavigate();
+  const { staffInfo, loading: staffLoading } = useStaffInfo();
+  const { farmers, loading: farmersLoading } = useApprovedFarmers();
   
   const [collections, setCollections] = useState<Collection[]>([]);
   const [filteredCollections, setFilteredCollections] = useState<Collection[]>([]);
-  const [farmers, setFarmers] = useState<Farmer[]>([]);
   const [loading, setLoading] = useState(true);
   const [staffId, setStaffId] = useState<string | null>(null);
   
@@ -72,32 +70,73 @@ const CollectionHistoryPage = () => {
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+  const [totalCollections, setTotalCollections] = useState(0);
 
   useEffect(() => {
-    fetchData();
-  }, [user?.id]);
+    if (staffInfo) {
+      fetchData();
+    }
+  }, [staffInfo, currentPage]);
 
   useEffect(() => {
     applyFilters();
   }, [collections, searchTerm, selectedFarmer, selectedQuality, dateRange, startDate, endDate]);
 
   const fetchData = async () => {
+    if (!staffInfo?.id) return;
+
     setLoading(true);
     try {
-      // Get staff info
-      const { data: staffData, error: staffError } = await supabase
-        .from('staff')
-        .select('id')
-        .eq('user_id', user?.id)
-        .maybeSingle();
+      // Calculate date ranges
+      const now = new Date();
+      let from_date: string | undefined;
+      let to_date: string | undefined = now.toISOString();
 
-      if (staffError) throw staffError;
-      if (!staffData) throw new Error('Staff record not found');
-      
-      setStaffId(staffData.id);
+      switch (dateRange) {
+        case 'today':
+          from_date = new Date(now.setHours(0, 0, 0, 0)).toISOString();
+          break;
+        case 'week':
+          from_date = subDays(now, 7).toISOString();
+          break;
+        case 'month':
+          from_date = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+          break;
+        case 'custom':
+          from_date = startDate ? new Date(startDate).toISOString() : undefined;
+          const toDateObj = endDate ? new Date(endDate) : new Date(now);
+          toDateObj.setHours(23, 59, 59, 999);
+          to_date = toDateObj.toISOString();
+          break;
+        case 'all':
+          from_date = undefined;
+          to_date = undefined;
+          break;
+        default:
+          from_date = subDays(now, 30).toISOString();
+      }
 
-      // Fetch collections for this staff member
-      const { data: collectionsData, error: collectionsError } = await supabase
+      // First get total count
+      let countQuery = supabase
+        .from('collections')
+        .select('*', { count: 'exact', head: true })
+        .eq('staff_id', staffInfo.id);
+        
+      // Only add date filters if they are defined
+      if (from_date) {
+        countQuery = countQuery.gte('collection_date', from_date);
+      }
+      if (to_date) {
+        countQuery = countQuery.lte('collection_date', to_date);
+      }
+
+      const { count, error: countError } = await countQuery;
+
+      if (countError) throw countError;
+      setTotalCollections(count || 0);
+
+      // Then fetch paginated data
+      let dataQuery = supabase
         .from('collections')
         .select(`
           id,
@@ -115,34 +154,41 @@ const CollectionHistoryPage = () => {
             id
           )
         `)
-        .eq('staff_id', staffData.id)
-        .order('collection_date', { ascending: false });
+        .eq('staff_id', staffInfo.id);
+        
+      // Only add date filters if they are defined
+      if (from_date) {
+        dataQuery = dataQuery.gte('collection_date', from_date);
+      }
+      if (to_date) {
+        dataQuery = dataQuery.lte('collection_date', to_date);
+      }
+
+      const { data: collectionsData, error: collectionsError } = await dataQuery
+        .order('collection_date', { ascending: false })
+        .range((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage - 1);
 
       if (collectionsError) throw collectionsError;
       setCollections(collectionsData || []);
-
-      // Fetch farmers for filter dropdown
-      const { data: farmersData, error: farmersError } = await supabase
-        .from('farmers')
-        .select(`
-          id,
-          profiles (
-            full_name
-          )
-        `)
-        .eq('kyc_status', 'approved');
-
-      if (farmersError) throw farmersError;
-      
-      const formattedFarmers = farmersData?.map(farmer => ({
-        id: farmer.id,
-        full_name: farmer.profiles?.full_name || 'Unknown Farmer'
-      })) || [];
-      
-      setFarmers(formattedFarmers);
     } catch (error: any) {
       console.error('Error fetching data:', error);
-      showError('Error', error.message || 'Failed to load collection history');
+      // Log the full error object for better debugging
+      console.error('Full error details:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
+      
+      // Provide a more informative error message
+      let errorMessage = 'Failed to load collection history';
+      if (error.message) {
+        errorMessage = error.message;
+      } else if (error.error_description) {
+        errorMessage = error.error_description;
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      } else if (Object.keys(error).length > 0) {
+        // If we have an error object with keys but no message, show its string representation
+        errorMessage = `Data fetch error: ${JSON.stringify(error)}`;
+      }
+      
+      showError('Error', errorMessage);
     } finally {
       setLoading(false);
     }
@@ -161,12 +207,12 @@ const CollectionHistoryPage = () => {
     }
     
     // Apply farmer filter
-    if (selectedFarmer) {
+    if (selectedFarmer && selectedFarmer !== 'all') {
       filtered = filtered.filter(collection => collection.farmer_id === selectedFarmer);
     }
     
     // Apply quality filter
-    if (selectedQuality) {
+    if (selectedQuality && selectedQuality !== 'all') {
       filtered = filtered.filter(collection => collection.quality_grade === selectedQuality);
     }
     
@@ -260,14 +306,11 @@ const CollectionHistoryPage = () => {
     link.click();
     document.body.removeChild(link);
     
-    show('Success', 'Collection history exported successfully');
+    show({ title: 'Success', description: 'Collection history exported successfully' });
   };
 
   // Pagination
-  const totalPages = Math.ceil(filteredCollections.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const currentCollections = filteredCollections.slice(startIndex, endIndex);
+  const totalPages = Math.ceil(totalCollections / itemsPerPage);
 
   if (loading) {
     return (
@@ -325,10 +368,10 @@ const CollectionHistoryPage = () => {
                 <SelectValue placeholder="Select farmer" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All Farmers</SelectItem>
-                {farmers.map(farmer => (
+                <SelectItem value="all">All Farmers</SelectItem>
+                {farmers.filter(farmer => farmer.id && farmer.id.trim() !== '').map(farmer => (
                   <SelectItem key={farmer.id} value={farmer.id}>
-                    {farmer.full_name}
+                    {farmer.profiles.full_name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -340,7 +383,7 @@ const CollectionHistoryPage = () => {
                 <SelectValue placeholder="Quality grade" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All Grades</SelectItem>
+                <SelectItem value="all">All Grades</SelectItem>
                 <SelectItem value="A+">A+</SelectItem>
                 <SelectItem value="A">A</SelectItem>
                 <SelectItem value="B">B</SelectItem>
@@ -446,129 +489,140 @@ const CollectionHistoryPage = () => {
       </div>
 
       {/* Collections Table */}
-      <Card className="border-0 shadow-sm">
+      <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Calendar className="h-5 w-5" />
-            Collection Records
+            <Droplets className="h-5 w-5 text-primary" />
+            Collection History
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {currentCollections.length > 0 ? (
-            <div className="space-y-4">
-              {currentCollections.map((collection) => (
-                <div 
-                  key={collection.id} 
-                  className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  <div className="flex items-center gap-4 mb-3 sm:mb-0">
-                    <div className="p-2 rounded-full bg-blue-100">
-                      <Milk className="h-5 w-5 text-blue-500" />
-                    </div>
-                    <div>
-                      <div className="font-medium">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-muted">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Date</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Collection ID</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Farmer</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Quantity</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Quality</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Rate</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Amount</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Status</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {filteredCollections.length > 0 ? (
+                  filteredCollections.map((collection) => (
+                    <tr key={collection.id} className="hover:bg-muted/50">
+                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {format(new Date(collection.collection_date), 'MMM d, yyyy h:mm a')}
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        {collection.collection_id}
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
                         {collection.farmers?.full_name || 'Unknown Farmer'}
-                      </div>
-                      <div className="text-sm text-gray-500">
-                        {collection.collection_id} • {format(new Date(collection.collection_date), 'MMM d, yyyy h:mm a')}
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="flex flex-wrap items-center gap-4">
-                    <div className="text-center">
-                      <div className="font-medium">{collection.liters}L</div>
-                      <div className="text-xs text-gray-500">Quantity</div>
-                    </div>
-                    
-                    <div className="text-center">
-                      <Badge className={getQualityGradeColor(collection.quality_grade || '')}>
-                        {collection.quality_grade || 'N/A'}
-                      </Badge>
-                      <div className="text-xs text-gray-500 mt-1">Quality</div>
-                    </div>
-                    
-                    <div className="text-center">
-                      <div className="font-medium">KSh {collection.total_amount?.toFixed(2)}</div>
-                      <div className="text-xs text-gray-500">Amount</div>
-                    </div>
-                    
-                    <div className="text-center">
-                      <Badge className={getStatusColor(collection.status || '')}>
-                        {collection.status || 'N/A'}
-                      </Badge>
-                      <div className="text-xs text-gray-500 mt-1">Status</div>
-                    </div>
-                    
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      className="flex items-center gap-1"
-                      onClick={() => navigate(`/staff/collections/${collection.id}`)}
-                    >
-                      <Eye className="h-4 w-4" />
-                      View
-                    </Button>
-                  </div>
-                </div>
-              ))}
-              
-              {/* Pagination */}
-              {totalPages > 1 && (
-                <div className="flex items-center justify-between border-t pt-4">
-                  <div className="text-sm text-gray-500">
-                    Showing {startIndex + 1} to {Math.min(endIndex, filteredCollections.length)} of {filteredCollections.length} collections
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                      disabled={currentPage === 1}
-                    >
-                      Previous
-                    </Button>
-                    <div className="text-sm">
-                      Page {currentPage} of {totalPages}
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                      disabled={currentPage === totalPages}
-                    >
-                      Next
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="text-center py-12">
-              <Milk className="h-12 w-12 mx-auto text-gray-300 mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-1">No collections found</h3>
-              <p className="text-gray-500">
-                {collections.length === 0 
-                  ? "You haven't recorded any collections yet." 
-                  : "No collections match your current filters."}
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        {collection.liters} L
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                          collection.quality_grade === 'A+' ? 'bg-green-100 text-green-800' :
+                          collection.quality_grade === 'A' ? 'bg-blue-100 text-blue-800' :
+                          collection.quality_grade === 'B' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-red-100 text-red-800'
+                        }`}>
+                          Grade {collection.quality_grade}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                        KSh {collection.rate_per_liter?.toFixed(2)}
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
+                        KSh {collection.total_amount?.toFixed(2)}
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 text-xs font-medium rounded-full ${
+                          collection.status === 'Paid' ? 'bg-green-100 text-green-800' :
+                          collection.status === 'Verified' ? 'bg-blue-100 text-blue-800' :
+                          'bg-yellow-100 text-yellow-800'
+                        }`}>
+                          {collection.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => navigate(`/staff/collections/${collection.id}`)}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">
+                      No collections found matching your criteria
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          
+          {filteredCollections.length > 0 && (
+            <div className="mt-4 flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">
+                Showing {filteredCollections.length} of {totalCollections} collections
               </p>
-              <Button 
-                className="mt-4"
-                onClick={() => {
-                  setSearchTerm('');
-                  setSelectedFarmer('');
-                  setSelectedQuality('');
-                  setDateRange('all');
-                  setStartDate('');
-                  setEndDate('');
-                }}
-              >
-                Clear Filters
-              </Button>
+              {/* Pagination will be added here */}
             </div>
           )}
         </CardContent>
       </Card>
+      
+      {/* Pagination */}
+      {totalCollections > itemsPerPage && (
+        <div className="mt-6 flex justify-center">
+          <Pagination>
+            <PaginationContent>
+              <PaginationItem>
+                <PaginationPrevious 
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                />
+              </PaginationItem>
+              
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                const startPage = Math.max(1, Math.min(currentPage - 2, totalPages - 4));
+                const page = startPage + i;
+                return (
+                  <PaginationItem key={page}>
+                    <PaginationLink
+                      onClick={() => setCurrentPage(page)}
+                      className={currentPage === page ? 'bg-primary text-primary-foreground' : 'cursor-pointer'}
+                    >
+                      {page}
+                    </PaginationLink>
+                  </PaginationItem>
+                );
+              })}
+              
+              <PaginationItem>
+                <PaginationNext 
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                />
+              </PaginationItem>
+            </PaginationContent>
+          </Pagination>
+        </div>
+      )}
     </div>
   );
 };

@@ -39,7 +39,7 @@ This document outlines the comprehensive testing plan for the enhanced staff por
 - GPS location capture works correctly
 - Quality sliders update values properly
 - Quality score calculates correctly based on parameters
-- Form submits data to collections and milk_quality_parameters tables
+- Form submits data to collections and quality_tests tables
 - Success message displays on successful submission
 - Error message displays on submission failure
 

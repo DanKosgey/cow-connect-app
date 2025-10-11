@@ -30,3 +30,17 @@ if (typeof window === 'undefined') {
   global.Node = dom.window.Node;
   global.Text = dom.window.Text;
 }
+
+// Mock import.meta.env for Supabase client
+Object.defineProperty(global, 'import', {
+  value: {
+    meta: {
+      env: {
+        DEV: true,
+        VITE_SUPABASE_URL: 'https://test.supabase.co',
+        VITE_SUPABASE_PUBLISHABLE_KEY: 'test-key'
+      }
+    }
+  },
+  writable: true
+});

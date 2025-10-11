@@ -171,8 +171,8 @@ The system serves three primary user roles:
 
 ### **1. Clone Repository**
 ```bash
-git clone https://github.com/yourusername/dairychain-pro.git
-cd dairychain-pro
+git clone https://github.com/yourusername/dairy-farmers-of-trans-nzoia.git
+cd dairy-farmers-of-trans-nzoia
 ```
 
 ### **2. Environment Setup**
@@ -199,160 +199,98 @@ npm run dev
 ```
 
 ### **6. Access Application**
-- **Frontend**: http://localhost:5173
-- **Admin Dashboard**: http://localhost:5173/admin/dashboard
-- **Staff Portal**: http://localhost:5173/staff/dashboard
-- **Farmer Portal**: http://localhost:5173/farmer/dashboard
+- **Development**: http://localhost:5173
+- **Admin Portal**: http://localhost:5173/admin
+- **Staff Portal**: http://localhost:5173/staff
+- **Farmer Portal**: http://localhost:5173/farmer
 
 ---
 
-## 🗃️ **PROJECT STRUCTURE**
+## 🛠️ **DEVELOPMENT WORKFLOW**
 
-```
-src/
-├── components/          # Reusable UI components
-├── pages/               # Page components organized by role
-│   ├── admin/           # Admin-specific pages
-│   ├── auth/            # Authentication pages
-│   ├── farmer/          # Farmer-specific pages
-│   └── staff/           # Staff-specific pages
-├── routes/              # Route configurations by user role
-├── contexts/            # React context providers
-├── hooks/               # Custom React hooks
-├── services/            # Business logic and API services
-├── utils/               # Utility functions
-├── types/               # TypeScript type definitions
-├── integrations/        # Third-party service integrations
-└── lib/                 # Library and helper functions
-```
+### **Branching Strategy**
+- **main**: Production-ready code
+- **develop**: Development branch with latest features
+- **feature/*: Individual feature branches
+- **hotfix/*: Critical bug fixes
 
----
+### **Code Quality**
+- **ESLint**: Code linting and formatting
+- **Prettier**: Consistent code style
+- **TypeScript**: Type safety and error prevention
+- **Unit Tests**: Component and service testing with Vitest
+- **Integration Tests**: End-to-end testing with Playwright
 
-## 🔐 **AUTHENTICATION TROUBLESHOOTING**
-
-Having issues with logging in or out of the portals? Check our [Authentication Troubleshooting Guide](./AUTH_TROUBLESHOOTING.md) for:
-
-- Common login/logout issues and solutions
-- Diagnostic tools for identifying authentication problems
-- Database verification steps
-- Step-by-step fixes for session and role issues
-- Prevention tips to avoid future authentication problems
-
-You can also access the Auth Test Page at `/admin/auth-test` for interactive diagnostics.
+### **CI/CD Pipeline**
+- **GitHub Actions**: Automated testing and deployment
+- **Linting**: Code quality checks on every push
+- **Testing**: Unit and integration tests for all changes
+- **Deployment**: Automatic deployment to staging and production
 
 ---
 
 ## 📚 **DOCUMENTATION**
 
-- **[Deployment Guide](./DEPLOYMENT_GUIDE.md)** - Complete production setup
-- **[Authentication Troubleshooting](./AUTH_TROUBLESHOOTING.md)** - Login/logout issue resolution
-- **[API Documentation](https://supabase.com/docs)** - Supabase REST API documentation
-- **[Database Schema](./supabase/migrations/)** - Database migration files
-- **[User Guide](./USER_GUIDE.md)** - End-user manual
-- **[Admin Guide](./ADMIN_GUIDE.md)** - System administration
+### **Core Documentation**
+- [System Architecture](docs/ARCHITECTURE.md)
+- [Database Schema](docs/DATABASE_SCHEMA.md)
+- [API Documentation](docs/API.md)
+- [Security Guidelines](SECURITY_GUIDELINES.md)
+- [Deployment Guide](DEPLOYMENT_GUIDE.md)
+
+### **User Guides**
+- [Admin Manual](docs/ADMIN_MANUAL.md)
+- [Staff Manual](docs/STAFF_MANUAL.md)
+- [Farmer Manual](docs/FARMER_MANUAL.md)
+
+### **Development Resources**
+- [Component Library](docs/COMPONENTS.md)
+- [Testing Strategy](docs/TESTING.md)
+- [Performance Optimization](docs/PERFORMANCE.md)
+- [Troubleshooting Guide](docs/TROUBLESHOOTING.md)
 
 ---
 
-## 🔒 **SECURITY FEATURES**
+## 🤝 **COMMUNITY & SUPPORT**
 
-- **Authentication**: JWT-based with configurable expiration
-- **Authorization**: Role-based access control (RBAC)
-- **Data Protection**: Row-level security and encryption at rest
-- **Input Validation**: Comprehensive sanitization and validation
-- **Rate Limiting**: API protection against abuse
-- **Audit Logging**: Complete activity tracking
-- **HTTPS**: TLS encryption for all communications
+- **💬 Discord**: [Dairy Farmers of Trans-Nzoia Community](https://discord.gg/dairyfarmers)
+- **📧 Email**: support@dairyfarmers.org
+- **🐛 Issues**: [GitHub Issues](https://github.com/yourusername/dairy-farmers-of-trans-nzoia/issues)
+- **💡 Feature Requests**: [GitHub Discussions](https://github.com/yourusername/dairy-farmers-of-trans-nzoia/discussions)
 
 ---
 
-## 📈 **MONITORING & ANALYTICS**
+## 📈 **CONTRIBUTING**
 
-- **Real-time Metrics**: Collection trends, quality trends, revenue tracking
-- **Performance Monitoring**: API latency, error rates, throughput
-- **Business Intelligence**: Farmer performance, seasonal patterns
-- **Automated Reports**: Daily, weekly, monthly analytics
-- **Alert System**: Proactive notifications for anomalies
+We welcome contributions from the community! Please read our [Contributing Guidelines](CONTRIBUTING.md) before submitting pull requests.
 
----
+### **How to Contribute**
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
 
-## 🧪 **TESTING**
-
-- **Unit Tests**: Component and utility function testing with Vitest
-- **Integration Tests**: End-to-end workflow testing
-- **UI Tests**: Component rendering and interaction testing
-- **Performance Tests**: Load and stress testing
-
-Run tests with:
-```bash
-npm run test          # Run all tests
-npm run test:ui       # Run UI tests with interface
-npm run coverage      # Generate test coverage report
-```
-
----
-
-## 🤝 **CONTRIBUTING**
-
-We welcome contributions from the community! Please see our [Contributing Guide](./CONTRIBUTING.md) for details on:
-
-- Code style and standards
-- Pull request process
-- Issue reporting
-- Development setup
-
----
-
-## 📞 **SUPPORT**
-
-- **📧 Email**: support@dairychain.com
-- **💬 Discord**: [DairyChain Pro Community](https://discord.gg/dairychain)
-- **📖 Documentation**: [docs.dairychain.com](https://docs.dairychain.com)
-- **🐛 Issues**: [GitHub Issues](https://github.com/yourusername/dairychain-pro/issues)
+### **Code of Conduct**
+Please follow our [Code of Conduct](CODE_OF_CONDUCT.md) in all interactions.
 
 ---
 
 ## 📄 **LICENSE**
 
-This project is licensed under the MIT License - see the [LICENSE](./LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ---
 
-## 🎉 **ACKNOWLEDGMENTS**
+## 🙏 **ACKNOWLEDGMENTS**
 
-Built with ❤️ for the dairy farming community. Special thanks to:
-
-- **Supabase** for providing excellent backend services
-- **Tailwind CSS** for beautiful, responsive design
-- **React** for modern frontend framework
-- **Vite** for lightning-fast development
-- **The Open Source Community** for amazing tools and libraries
+- **Supabase Team** for the amazing backend-as-a-service platform
+- **React Community** for the incredible frontend framework
+- **Open Source Contributors** for the libraries and tools that make this project possible
+- **Dairy Farmers of Trans-Nzoia** for their trust and collaboration
 
 ---
 
-## 🔮 **ROADMAP**
+## 🔗 **RESOURCES**
 
-### **Version 2.0** (Coming Soon)
-- [ ] Mobile app (React Native)
-- [ ] IoT sensor integration
-- [ ] Machine learning predictions
-- [ ] Advanced route optimization
-- [ ] Multi-language support
-
-### **Version 3.0** (Future)
-- [ ] Blockchain traceability
-- [ ] Carbon footprint tracking
-- [ ] Market price integration
-- [ ] Advanced analytics with AI
-- [ ] Export to international markets
-
----
-
-<div align="center">
-
-**⭐ Star this repository if you find it helpful!**
-
-**🥛 Transforming dairy operations worldwide with technology**
-
-[🌐 Website](https://dairychain.com) • [📖 Documentation](https://docs.dairychain.com) • [🐛 Report Bug](https://github.com/yourusername/dairychain-pro/issues) • [💡 Request Feature](https://github.com/yourusername/dairychain-pro/issues)
-
-</div>
+[🌐 Website](https://dairyfarmers.org) • [📖 Documentation](https://docs.dairyfarmers.org) • [🐛 Report Bug](https://github.com/yourusername/dairy-farmers-of-trans-nzoia/issues) • [💡 Request Feature](https://github.com/yourusername/dairy-farmers-of-trans-nzoia/issues)

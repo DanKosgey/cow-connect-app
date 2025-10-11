@@ -16,6 +16,8 @@ import {
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { supabase } from "@/integrations/supabase/client";
 import useToastNotifications from "@/hooks/useToastNotifications";
+import { useRealtimePayments } from "@/hooks/use-realtime";
+import { exportToCSV, exportToJSON } from "@/utils/exportUtils";
 
 interface Payment {
   id: string;
@@ -36,6 +38,7 @@ const PaymentsPage = () => {
   const [statusFilter, setStatusFilter] = useState("");
   const [dateFilter, setDateFilter] = useState("");
   const [farmer, setFarmer] = useState<any>(null);
+  const realtimePayments = useRealtimePayments();
 
   // Fetch payments data
   useEffect(() => {
@@ -46,26 +49,56 @@ const PaymentsPage = () => {
         
         if (!user) return;
 
-        // Fetch farmer profile
-        const { data: farmerData } = await supabase
+        // Fetch farmer profile with better error handling
+        const { data: farmerData, error: farmerError } = await supabase
           .from('farmers')
           .select('id')
           .eq('user_id', user.id)
-          .single();
+          .maybeSingle();
 
-        if (!farmerData) return;
+        if (farmerError) {
+          console.error('Error fetching farmer data:', farmerError);
+          toast.error('Error', 'Failed to load farmer profile');
+          setLoading(false);
+          return;
+        }
+
+        if (!farmerData) {
+          console.warn('No farmer data found for user:', user.id);
+          toast.error('Warning', 'Farmer profile not found. Please complete your registration.');
+          setLoading(false);
+          return;
+        }
+
         setFarmer(farmerData);
 
-        // Fetch payments
-        const { data: paymentsData, error } = await supabase
-          .from('payments')
-          .select('*')
-          .eq('farmer_id', farmerData.id)
-          .order('created_at', { ascending: false });
+        // Use real-time payments if available, otherwise fetch from database
+        if (realtimePayments.length > 0) {
+          setPayments(realtimePayments.map(payment => ({
+            id: payment.id,
+            amount: payment.amount,
+            status: payment.status,
+            created_at: payment.created_at,
+            processed_at: payment.processed_at,
+            payment_method: payment.payment_method,
+            transaction_id: payment.transaction_id
+          })));
+        } else {
+          // Fetch payments
+          const { data: paymentsData, error } = await supabase
+            .from('payments')
+            .select('*')
+            .eq('farmer_id', farmerData.id)
+            .order('created_at', { ascending: false });
 
-        if (error) throw error;
-        setPayments(paymentsData || []);
-        setFilteredPayments(paymentsData || []);
+          if (error) {
+            console.error('Error fetching payments:', error);
+            toast.error('Error', 'Failed to load payments data');
+            setLoading(false);
+            return;
+          }
+          setPayments(paymentsData || []);
+        }
       } catch (err) {
         console.error('Error fetching payments:', err);
         toast.error('Error', 'Failed to load payments data');
@@ -75,7 +108,7 @@ const PaymentsPage = () => {
     };
 
     fetchPayments();
-  }, []);
+  }, [realtimePayments, toast]);
 
   // Filter payments based on search and filters
   useEffect(() => {
@@ -117,30 +150,28 @@ const PaymentsPage = () => {
   const completedPayments = payments.filter(p => p.status === 'completed').reduce((sum, payment) => sum + payment.amount, 0);
   const pendingPayments = payments.filter(p => p.status === 'processing').reduce((sum, payment) => sum + payment.amount, 0);
 
-  const exportToCSV = () => {
-    const headers = ['Date', 'Amount', 'Status', 'Payment Method', 'Transaction ID'];
-    const csvContent = [
-      headers.join(','),
-      ...filteredPayments.map(payment => [
-        new Date(payment.created_at).toLocaleDateString(),
-        payment.amount,
-        payment.status,
-        payment.payment_method || 'N/A',
-        payment.transaction_id || 'N/A'
-      ].map(field => `"${field}"`).join(','))
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', 'payments.csv');
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
-    toast.success('Success', 'Payments exported successfully');
+  const exportPayments = (format: 'csv' | 'json') => {
+    try {
+      const exportData = filteredPayments.map(payment => ({
+        date: new Date(payment.created_at).toLocaleDateString(),
+        amount: payment.amount,
+        status: payment.status,
+        payment_method: payment.payment_method || 'N/A',
+        transaction_id: payment.transaction_id || 'N/A',
+        processed_at: payment.processed_at ? new Date(payment.processed_at).toLocaleDateString() : 'N/A'
+      }));
+      
+      if (format === 'csv') {
+        exportToCSV(exportData, 'payments-report');
+        toast.success('Success', 'Payments exported as CSV');
+      } else {
+        exportToJSON(exportData, 'payments-report');
+        toast.success('Success', 'Payments exported as JSON');
+      }
+    } catch (err) {
+      console.error('Error exporting payments:', err);
+      toast.error('Error', 'Failed to export payments');
+    }
   };
 
   if (loading) {
@@ -164,9 +195,13 @@ const PaymentsPage = () => {
             <p className="text-gray-600 mt-2">Track all your payments and disbursements</p>
           </div>
           <div className="mt-4 md:mt-0 flex space-x-3">
-            <Button variant="outline" className="flex items-center gap-2" onClick={exportToCSV}>
+            <Button variant="outline" className="flex items-center gap-2" onClick={() => exportPayments('csv')}>
               <Download className="h-4 w-4" />
-              Export
+              CSV
+            </Button>
+            <Button variant="outline" className="flex items-center gap-2" onClick={() => exportPayments('json')}>
+              <Download className="h-4 w-4" />
+              JSON
             </Button>
           </div>
         </div>

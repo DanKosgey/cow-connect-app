@@ -1,430 +1,345 @@
-/* Responsive utilities for the staff portal */
+/* Responsive utility classes for farmer portal pages */
 
-/* Extra small devices (phones, less than 480px) */
-@media (max-width: 479px) {
-  .responsive-card {
-    padding: 0.75rem;
-    margin: 0.5rem;
-  }
-  
-  .responsive-grid-cols-2 {
-    grid-template-columns: repeat(1, minmax(0, 1fr));
-  }
-  
-  .responsive-grid-cols-3 {
-    grid-template-columns: repeat(1, minmax(0, 1fr));
-  }
-  
-  .responsive-grid-cols-4 {
-    grid-template-columns: repeat(1, minmax(0, 1fr));
-  }
-  
-  .responsive-grid-cols-5 {
-    grid-template-columns: repeat(1, minmax(0, 1fr));
-  }
-  
-  .responsive-text-sm {
-    font-size: 0.75rem;
-    line-height: 1rem;
-  }
-  
-  .responsive-text-base {
-    font-size: 0.875rem;
-    line-height: 1.25rem;
-  }
-  
-  .responsive-text-lg {
-    font-size: 1rem;
-    line-height: 1.5rem;
-  }
-  
-  .responsive-btn-sm {
-    padding: 0.25rem 0.5rem;
-    font-size: 0.75rem;
-  }
-  
-  .responsive-btn-base {
-    padding: 0.5rem 0.75rem;
-    font-size: 0.875rem;
-  }
-  
-  .responsive-table-cell {
-    padding: 0.25rem;
-    font-size: 0.75rem;
-  }
-  
-  .responsive-hidden-xs {
-    display: none;
-  }
-  
-  .responsive-visible-xs {
-    display: block;
+/* Hide on mobile */
+@media (max-width: 639px) {
+  .hide-xs {
+    display: none !important;
   }
 }
 
-/* Small devices (phones, 480px and up) */
-@media (min-width: 480px) {
-  .responsive-grid-cols-2 {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  
-  .responsive-grid-cols-3 {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  
-  .responsive-grid-cols-4 {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  
-  .responsive-grid-cols-5 {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  
-  .responsive-text-sm {
-    font-size: 0.875rem;
-    line-height: 1.25rem;
-  }
-  
-  .responsive-text-base {
-    font-size: 1rem;
-    line-height: 1.5rem;
-  }
-  
-  .responsive-text-lg {
-    font-size: 1.125rem;
-    line-height: 1.75rem;
-  }
-  
-  .responsive-btn-sm {
-    padding: 0.5rem 0.75rem;
-    font-size: 0.875rem;
-  }
-  
-  .responsive-btn-base {
-    padding: 0.5rem 1rem;
-    font-size: 1rem;
-  }
-  
-  .responsive-table-cell {
-    padding: 0.5rem;
-    font-size: 0.875rem;
-  }
-  
-  .responsive-hidden-xs {
-    display: inline;
-  }
-  
-  .responsive-visible-xs {
-    display: none;
+@media (max-width: 767px) {
+  .hide-sm {
+    display: none !important;
   }
 }
 
-/* Medium devices (tablets, 768px and up) */
-@media (min-width: 768px) {
-  .responsive-card {
-    padding: 1rem;
-    margin: 0.75rem;
-  }
-  
-  .responsive-grid-cols-2 {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  
-  .responsive-grid-cols-3 {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-  
-  .responsive-grid-cols-4 {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-  
-  .responsive-grid-cols-5 {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-  
-  .responsive-text-sm {
-    font-size: 0.875rem;
-    line-height: 1.25rem;
-  }
-  
-  .responsive-text-base {
-    font-size: 1rem;
-    line-height: 1.5rem;
-  }
-  
-  .responsive-text-lg {
-    font-size: 1.25rem;
-    line-height: 1.75rem;
-  }
-  
-  .responsive-btn-sm {
-    padding: 0.5rem 0.75rem;
-    font-size: 0.875rem;
-  }
-  
-  .responsive-btn-base {
-    padding: 0.75rem 1rem;
-    font-size: 1rem;
-  }
-  
-  .responsive-table-cell {
-    padding: 0.75rem;
-    font-size: 1rem;
+/* Hide on tablet */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .hide-md {
+    display: none !important;
   }
 }
 
-/* Large devices (desktops, 1024px and up) */
+/* Hide on desktop */
 @media (min-width: 1024px) {
-  .responsive-card {
-    padding: 1.25rem;
-    margin: 1rem;
-  }
-  
-  .responsive-grid-cols-2 {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  
-  .responsive-grid-cols-3 {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-  
-  .responsive-grid-cols-4 {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-  
-  .responsive-grid-cols-5 {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-  }
-  
-  .responsive-text-sm {
-    font-size: 0.875rem;
-    line-height: 1.25rem;
-  }
-  
-  .responsive-text-base {
-    font-size: 1rem;
-    line-height: 1.5rem;
-  }
-  
-  .responsive-text-lg {
-    font-size: 1.5rem;
-    line-height: 2rem;
-  }
-  
-  .responsive-btn-sm {
-    padding: 0.5rem 1rem;
-    font-size: 0.875rem;
-  }
-  
-  .responsive-btn-base {
-    padding: 0.75rem 1.5rem;
-    font-size: 1rem;
-  }
-  
-  .responsive-table-cell {
-    padding: 1rem;
-    font-size: 1rem;
+  .hide-lg {
+    display: none !important;
   }
 }
 
-/* Extra large devices (large desktops, 1280px and up) */
-@media (min-width: 1280px) {
-  .responsive-card {
-    padding: 1.5rem;
-    margin: 1.25rem;
-  }
-  
-  .responsive-grid-cols-2 {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  
-  .responsive-grid-cols-3 {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-  
-  .responsive-grid-cols-4 {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-  
-  .responsive-grid-cols-5 {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-  }
-  
-  .responsive-text-sm {
-    font-size: 1rem;
-    line-height: 1.5rem;
-  }
-  
-  .responsive-text-base {
-    font-size: 1.125rem;
-    line-height: 1.75rem;
-  }
-  
-  .responsive-text-lg {
-    font-size: 1.875rem;
-    line-height: 2.25rem;
-  }
-  
-  .responsive-btn-sm {
-    padding: 0.75rem 1.25rem;
-    font-size: 1rem;
-  }
-  
-  .responsive-btn-base {
-    padding: 1rem 2rem;
-    font-size: 1.125rem;
-  }
-  
-  .responsive-table-cell {
-    padding: 1.25rem;
-    font-size: 1.125rem;
+/* Show only on mobile */
+@media (min-width: 640px) {
+  .show-xs-only {
+    display: none !important;
   }
 }
 
-/* Utility classes for responsive design */
-.responsive-flex-col {
-  flex-direction: column;
+/* Show only on tablet */
+@media (max-width: 767px), (min-width: 1024px) {
+  .show-md-only {
+    display: none !important;
+  }
 }
 
-.responsive-flex-row {
-  flex-direction: row;
+/* Show only on desktop */
+@media (max-width: 1023px) {
+  .show-lg-only {
+    display: none !important;
+  }
 }
 
-.responsive-items-center {
-  align-items: center;
-}
-
-.responsive-justify-between {
-  justify-content: space-between;
-}
-
-.responsive-gap-2 {
-  gap: 0.5rem;
-}
-
-.responsive-gap-4 {
+/* Responsive grid adjustments */
+.grid-responsive {
+  display: grid;
   gap: 1rem;
 }
 
-.responsive-gap-6 {
-  gap: 1.5rem;
+@media (max-width: 639px) {
+  .grid-responsive {
+    grid-template-columns: 1fr;
+  }
+  
+  .grid-responsive-2 {
+    grid-template-columns: 1fr;
+  }
+  
+  .grid-responsive-3 {
+    grid-template-columns: 1fr;
+  }
+  
+  .grid-responsive-4 {
+    grid-template-columns: 1fr;
+  }
 }
 
-.responsive-p-2 {
-  padding: 0.5rem;
+@media (min-width: 640px) and (max-width: 767px) {
+  .grid-responsive {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .grid-responsive-2 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .grid-responsive-3 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .grid-responsive-4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
-.responsive-p-4 {
+@media (min-width: 768px) and (max-width: 1023px) {
+  .grid-responsive {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .grid-responsive-2 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .grid-responsive-3 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  
+  .grid-responsive-4 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .grid-responsive {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  
+  .grid-responsive-2 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .grid-responsive-3 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  
+  .grid-responsive-4 {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* Responsive card adjustments */
+.card-responsive {
   padding: 1rem;
 }
 
-.responsive-p-6 {
-  padding: 1.5rem;
-}
-
-.responsive-m-2 {
-  margin: 0.5rem;
-}
-
-.responsive-m-4 {
-  margin: 1rem;
-}
-
-.responsive-m-6 {
-  margin: 1.5rem;
-}
-
-/* Responsive chart containers */
-.responsive-chart-container {
-  height: 16rem;
+@media (max-width: 639px) {
+  .card-responsive {
+    padding: 0.75rem;
+  }
+  
+  .card-header-responsive {
+    padding: 0.75rem 0.75rem 0.5rem;
+  }
+  
+  .card-content-responsive {
+    padding: 0.75rem;
+  }
 }
 
 @media (min-width: 640px) {
-  .responsive-chart-container {
-    height: 18rem;
+  .card-responsive {
+    padding: 1.25rem;
+  }
+  
+  .card-header-responsive {
+    padding: 1.25rem 1.25rem 1rem;
+  }
+  
+  .card-content-responsive {
+    padding: 1.25rem;
   }
 }
 
-@media (min-width: 768px) {
-  .responsive-chart-container {
-    height: 20rem;
+/* Responsive typography */
+.text-responsive {
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 639px) {
+  .text-responsive-heading {
+    font-size: 1.5rem;
+    line-height: 1.3;
+  }
+  
+  .text-responsive-subheading {
+    font-size: 1.125rem;
+    line-height: 1.4;
+  }
+  
+  .text-responsive-body {
+    font-size: 0.875rem;
+    line-height: 1.5;
   }
 }
 
-/* Responsive table utilities */
-.responsive-table-container {
+@media (min-width: 640px) {
+  .text-responsive-heading {
+    font-size: 1.875rem;
+    line-height: 1.2;
+  }
+  
+  .text-responsive-subheading {
+    font-size: 1.25rem;
+    line-height: 1.4;
+  }
+  
+  .text-responsive-body {
+    font-size: 1rem;
+    line-height: 1.5;
+  }
+}
+
+/* Responsive button adjustments */
+.btn-responsive {
+  padding: 0.5rem 1rem;
+  font-size: 1rem;
+}
+
+@media (max-width: 639px) {
+  .btn-responsive {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.875rem;
+  }
+  
+  .btn-icon-responsive {
+    padding: 0.375rem;
+  }
+}
+
+@media (min-width: 640px) {
+  .btn-responsive {
+    padding: 0.5rem 1rem;
+    font-size: 1rem;
+  }
+  
+  .btn-icon-responsive {
+    padding: 0.5rem;
+  }
+}
+
+/* Responsive table adjustments */
+.table-responsive {
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
-.responsive-table {
+.table-responsive table {
   min-width: 100%;
   border-collapse: collapse;
 }
 
-.responsive-table-header {
-  text-align: left;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+@media (max-width: 767px) {
+  .table-responsive {
+    font-size: 0.875rem;
+  }
+  
+  .table-responsive th,
+  .table-responsive td {
+    padding: 0.5rem;
+  }
 }
 
-/* Responsive card utilities */
-.responsive-card-shadow {
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+@media (min-width: 768px) {
+  .table-responsive th,
+  .table-responsive td {
+    padding: 0.75rem 1rem;
+  }
 }
 
-.responsive-card-shadow:hover {
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+/* Responsive chart containers */
+.chart-container-responsive {
+  height: 300px;
+  width: 100%;
 }
 
-/* Responsive button utilities */
-.responsive-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 0.375rem;
-  font-weight: 500;
-  transition: all 0.2s;
+@media (max-width: 639px) {
+  .chart-container-responsive {
+    height: 250px;
+  }
 }
 
-.responsive-btn:focus {
-  outline: 2px solid transparent;
-  outline-offset: 2px;
+@media (min-width: 1024px) {
+  .chart-container-responsive {
+    height: 400px;
+  }
 }
 
-.responsive-btn:hover {
-  transform: translateY(-1px);
+/* Responsive form adjustments */
+.form-grid-responsive {
+  display: grid;
+  gap: 1rem;
 }
 
-/* Responsive icon utilities */
-.responsive-icon-sm {
-  width: 1rem;
-  height: 1rem;
-}
-
-.responsive-icon-md {
-  width: 1.25rem;
-  height: 1.25rem;
-}
-
-.responsive-icon-lg {
-  width: 1.5rem;
-  height: 1.5rem;
+@media (max-width: 639px) {
+  .form-grid-responsive {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (min-width: 640px) {
-  .responsive-icon-sm {
-    width: 1.25rem;
-    height: 1.25rem;
+  .form-grid-responsive {
+    grid-template-columns: repeat(2, 1fr);
   }
   
-  .responsive-icon-md {
-    width: 1.5rem;
-    height: 1.5rem;
+  .form-grid-responsive .form-full-width {
+    grid-column: span 2;
+  }
+}
+
+/* Responsive spacing adjustments */
+@media (max-width: 639px) {
+  .p-responsive {
+    padding: 1rem;
   }
   
-  .responsive-icon-lg {
-    width: 2rem;
-    height: 2rem;
+  .m-responsive {
+    margin: 1rem;
+  }
+  
+  .gap-responsive {
+    gap: 0.75rem;
+  }
+}
+
+@media (min-width: 640px) {
+  .p-responsive {
+    padding: 1.5rem;
+  }
+  
+  .m-responsive {
+    margin: 1.5rem;
+  }
+  
+  .gap-responsive {
+    gap: 1rem;
+  }
+}
+
+/* Responsive navigation adjustments */
+.nav-responsive {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+@media (max-width: 639px) {
+  .nav-responsive {
+    flex-direction: column;
+  }
+}
+
+@media (min-width: 640px) {
+  .nav-responsive {
+    flex-direction: row;
   }
 }

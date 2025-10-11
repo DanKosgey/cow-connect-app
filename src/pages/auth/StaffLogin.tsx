@@ -156,6 +156,17 @@ const StaffLogin = () => {
               </Button>
             </form>
 
+            {/* Forgot Password Link */}
+            <div className="mt-4 text-center">
+              <Button
+                variant="link"
+                className="text-sm text-muted-foreground hover:text-foreground p-0 h-auto"
+                onClick={() => navigate('/auth/forgot-password')}
+              >
+                Forgot Password?
+              </Button>
+            </div>
+
             <div className="mt-6 text-center">
               <Button
                 variant="ghost"

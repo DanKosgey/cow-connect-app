@@ -31,7 +31,7 @@ interface FarmerPayment {
   paid_at: string | null;
   notes: string | null;
   created_at: string;
-  farmer: {
+  farmers: {
     full_name: string;
     id: string;
     phone_number: string;
@@ -64,7 +64,7 @@ const PaymentHistory: React.FC = () => {
           paid_at,
           notes,
           created_at,
-          farmer:farmers (
+          farmers!farmer_payments_farmer_id_fkey (
             full_name,
             id,
             phone_number
@@ -158,10 +158,10 @@ const PaymentHistory: React.FC = () => {
                       <TableCell>
                         <div>
                           <div className="font-medium">
-                            {payment.farmer?.full_name || 'Unknown Farmer'}
+                            {payment.farmers?.full_name || 'Unknown Farmer'}
                           </div>
                           <div className="text-sm text-muted-foreground">
-                            {payment.farmer?.id || 'No ID'}
+                            {payment.farmers?.id || 'No ID'}
                           </div>
                         </div>
                       </TableCell>

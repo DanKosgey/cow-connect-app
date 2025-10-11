@@ -136,7 +136,7 @@ export class PaymentService {
           paid_at,
           notes,
           created_at,
-          farmer:farmers (
+          farmers!farmer_payments_farmer_id_fkey (
             full_name,
             id,
             phone_number
@@ -168,7 +168,7 @@ export class PaymentService {
           paid_at,
           notes,
           created_at,
-          farmer:farmers (
+          farmers!farmer_payments_farmer_id_fkey (
             full_name,
             id,
             phone_number

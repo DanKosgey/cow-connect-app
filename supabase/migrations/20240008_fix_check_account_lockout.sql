@@ -1,7 +1,6 @@
 -- Migration: 20240008_fix_check_account_lockout.sql
 -- Make check_account_lockout a SECURITY DEFINER function and grant execute to public
 BEGIN;
-
 -- Replace function with SECURITY DEFINER so it can be executed without an authenticated session
 CREATE OR REPLACE FUNCTION public.check_account_lockout(p_email text)
 RETURNS TABLE(is_locked boolean, attempts_remaining integer, locked_until timestamptz)
@@ -24,8 +23,6 @@ BEGIN
   END IF;
 END;
 $$;
-
 -- Allow anyone to execute this helper RPC (it only reads from account_lockouts)
 GRANT EXECUTE ON FUNCTION public.check_account_lockout(text) TO public;
-
 COMMIT;

@@ -1,4 +1,26 @@
-import 'jsdom-global/register';
+// Mock localStorage for testing
+const mockLocalStorage = (() => {
+  let store: Record<string, string> = {};
+  
+  return {
+    getItem: (key: string) => store[key] || null,
+    setItem: (key: string, value: string) => {
+      store[key] = value.toString();
+    },
+    removeItem: (key: string) => {
+      delete store[key];
+    },
+    clear: () => {
+      store = {};
+    }
+  };
+})();
+
+// Mock the global localStorage
+Object.defineProperty(global, 'localStorage', {
+  value: mockLocalStorage,
+  writable: true
+});
 
 describe('pending_profile expiry', () => {
   const key = 'pending_profile';

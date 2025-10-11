@@ -38,10 +38,14 @@ import {
   Target,
   BarChart3,
   LineChart,
-  Download
+  Download,
+  Milk,
+  Droplets,
+  Wallet
 } from 'lucide-react';
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 import useToastNotifications from '@/hooks/useToastNotifications';
+import { useStaffInfo } from '@/hooks/useStaffData';
 
 interface DailyStats {
   date: string;
@@ -78,35 +82,23 @@ const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
 const DetailedAnalyticsDashboard = () => {
   const { user } = useAuth();
   const { show, error: showError } = useToastNotifications();
+  const { staffInfo, loading: staffLoading } = useStaffInfo();
+  
   const [loading, setLoading] = useState(true);
   const [metrics, setMetrics] = useState<PerformanceMetrics | null>(null);
   const [timeRange, setTimeRange] = useState<'week' | 'month' | 'quarter'>('week');
-  const [staffId, setStaffId] = useState<string | null>(null);
 
   useEffect(() => {
-    loadData();
-  }, [timeRange]);
+    if (staffInfo) {
+      loadData();
+    }
+  }, [staffInfo, timeRange]);
 
   const loadData = async () => {
+    if (!staffInfo?.id) return;
+    
     setLoading(true);
     try {
-      // Get staff info
-      const { data: staffDataArray, error: staffError } = await supabase
-        .from('staff')
-        .select('id')
-        .eq('user_id', user?.id)
-        .limit(1);
-
-      if (staffError) throw staffError;
-      
-      // Check if we have any staff data
-      if (!staffDataArray || staffDataArray.length === 0) {
-        throw new Error('Staff record not found');
-      }
-      
-      const staffData = staffDataArray[0];
-      setStaffId(staffData.id);
-
       // Calculate date ranges based on selected time range
       const today = new Date();
       let startDate: Date;
@@ -139,7 +131,7 @@ const DetailedAnalyticsDashboard = () => {
           farmer_id,
           total_amount
         `)
-        .eq('staff_id', staffData.id)
+        .eq('staff_id', staffInfo.id)
         .gte('collection_date', startDate.toISOString())
         .lte('collection_date', endDate.toISOString())
         .order('collection_date', { ascending: true });
@@ -148,6 +140,8 @@ const DetailedAnalyticsDashboard = () => {
 
       // Process data based on time range
       let dailyStats: DailyStats[] = [];
+      let totalQualityScore = 0;
+      let qualityCount = 0;
       
       if (timeRange === 'week') {
         // Process daily stats for the week
@@ -168,8 +162,6 @@ const DetailedAnalyticsDashboard = () => {
 
         // Process collections
         const farmersSet = new Set<string>();
-        let totalQualityScore = 0;
-        let qualityCount = 0;
 
         collectionsData?.forEach(collection => {
           const date = format(new Date(collection.collection_date), 'yyyy-MM-dd');
@@ -215,8 +207,6 @@ const DetailedAnalyticsDashboard = () => {
 
         // Process collections
         const farmersSet = new Set<string>();
-        let totalQualityScore = 0;
-        let qualityCount = 0;
 
         collectionsData?.forEach(collection => {
           const date = format(new Date(collection.collection_date), 'yyyy-MM-dd');
@@ -259,8 +249,6 @@ const DetailedAnalyticsDashboard = () => {
 
         // Process collections
         const farmersSet = new Set<string>();
-        let totalQualityScore = 0;
-        let qualityCount = 0;
 
         collectionsData?.forEach(collection => {
           const collectionDate = new Date(collection.collection_date);
@@ -371,7 +359,7 @@ const DetailedAnalyticsDashboard = () => {
     link.click();
     document.body.removeChild(link);
     
-    show('Success', 'Analytics data exported successfully');
+    show({ title: 'Success', description: 'Analytics data exported successfully' });
   };
 
   const getTrendIcon = (trend: 'up' | 'down' | 'stable') => {
@@ -383,7 +371,7 @@ const DetailedAnalyticsDashboard = () => {
     }
   };
 
-  if (loading) {
+  if (loading || staffLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
@@ -392,6 +380,7 @@ const DetailedAnalyticsDashboard = () => {
   }
 
   return (
+    // ... rest of the JSX remains the same ...
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -402,7 +391,7 @@ const DetailedAnalyticsDashboard = () => {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Select value={timeRange} onValueChange={setTimeRange}>
+          <Select value={timeRange} onValueChange={(value: any) => setTimeRange(value as 'week' | 'month' | 'quarter')}>
             <SelectTrigger className="w-[180px]">
               <SelectValue placeholder="Select time range" />
             </SelectTrigger>

@@ -1,29 +1,13 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { FarmerRegistrationService } from '../services/farmerRegistrationService';
 
-// Mock Supabase client
-const mockSupabase = {
-  auth: {
-    signUp: vi.fn()
-  },
-  from: vi.fn(),
-  rpc: vi.fn()
-};
-
-// Mock the supabase client
-vi.mock('../integrations/supabase/client', () => ({
-  supabase: mockSupabase
-}));
-
 // Mock localStorage
-const mockLocalStorage = {
-  setItem: vi.fn(),
-  getItem: vi.fn(),
-  removeItem: vi.fn()
-};
-
 Object.defineProperty(window, 'localStorage', {
-  value: mockLocalStorage
+  value: {
+    setItem: vi.fn(),
+    getItem: vi.fn(),
+    removeItem: vi.fn()
+  }
 });
 
 // Mock logger
@@ -34,6 +18,24 @@ vi.mock('../utils/logger', () => ({
     warn: vi.fn()
   }
 }));
+
+// Mock the entire supabase client module
+vi.mock('../integrations/supabase/client.ts', async () => {
+  const mockSupabase = {
+    auth: {
+      signUp: vi.fn()
+    },
+    from: vi.fn(),
+    rpc: vi.fn(),
+    storage: {
+      from: vi.fn()
+    }
+  };
+  
+  return {
+    supabase: mockSupabase
+  };
+});
 
 describe('FarmerRegistrationService', () => {
   const mockFarmerData = {
@@ -46,73 +48,89 @@ describe('FarmerRegistrationService', () => {
     
     // Personal information
     nationalId: '12345678',
-    dob: '1990-01-01',
-    gender: 'male',
     address: '123 Farm Road, Nairobi',
-    
-    // Farm details
-    farmName: 'Test Farm',
-    farmLocation: 'Nairobi',
-    farmSize: 10,
-    experience: 5,
-    numCows: 20,
-    numDairyCows: 15,
-    primaryBreed: 'Friesian',
-    avgProduction: 100,
-    farmingType: 'dairy',
-    additionalInfo: 'Test farm additional info',
-    
-    // Bank details
-    bankName: 'Test Bank',
-    accountNumber: '1234567890',
-    accountName: 'Test Farmer Account'
+    farmLocation: 'Nairobi'
   };
 
   beforeEach(() => {
     // Clear all mocks before each test
     vi.clearAllMocks();
     
+    // Get the mocked supabase client
+    const { supabase } = require('../integrations/supabase/client.ts');
+    
     // Setup default mock responses
-    mockSupabase.auth.signUp.mockResolvedValue({
+    supabase.auth.signUp.mockResolvedValue({
       data: { user: { id: 'test-user-id' } },
       error: null
     });
     
-    mockSupabase.from.mockReturnValue({
-      insert: vi.fn().mockImplementation((data) => {
-        // Check if this is inserting into farmers table with kyc_status
-        if (data && data[0] && data[0].kyc_status) {
+    supabase.from.mockImplementation((table: string) => {
+      if (table === 'profiles') {
+        return {
+          upsert: vi.fn().mockResolvedValue({ error: null })
+        };
+      } else if (table === 'user_roles') {
+        return {
+          upsert: vi.fn().mockResolvedValue({ error: null })
+        };
+      } else if (table === 'farmers') {
+        return {
+          upsert: vi.fn().mockImplementation(() => ({
+            select: vi.fn().mockReturnThis(),
+            single: vi.fn().mockResolvedValue({ 
+              error: null, 
+              data: { id: 'test-farmer-id', kyc_status: 'pending' } 
+            })
+          })),
+          select: vi.fn().mockReturnValue({
+            single: vi.fn().mockResolvedValue({ error: null, data: { id: 'test-farmer-id', full_name: 'Test Farmer' } })
+          }),
+          eq: vi.fn().mockReturnThis()
+        };
+      } else if (table === 'farmer_analytics') {
+        return {
+          upsert: vi.fn().mockResolvedValue({ error: null })
+        };
+      } else if (table === 'kyc_documents') {
+        return {
+          insert: vi.fn().mockImplementation(() => ({
+            select: vi.fn().mockReturnThis(),
+            single: vi.fn().mockResolvedValue({ error: null, data: { id: 'test-doc-id' } })
+          }))
+        };
+      }
+      return {
+        select: vi.fn().mockReturnValue({
+          single: vi.fn().mockResolvedValue({ error: null, data: null }),
+          maybeSingle: vi.fn().mockResolvedValue({ error: null, data: null })
+        }),
+        upsert: vi.fn().mockImplementation((data) => {
           return {
             select: vi.fn().mockReturnValue({
-              single: vi.fn().mockResolvedValue({ 
-                error: null, 
-                data: { id: 'test-farmer-id', kyc_status: 'pending' } 
-              })
-            })
+              single: vi.fn().mockResolvedValue({ error: null, data: { id: 'test-farmer-id' } })
+            }),
+            onConflict: vi.fn().mockReturnThis()
           };
-        }
-        return {
-          select: vi.fn().mockReturnValue({
-            single: vi.fn().mockResolvedValue({ error: null, data: { id: 'test-farmer-id' } })
-          })
-        };
-      }),
-      update: vi.fn().mockResolvedValue({ error: null }),
-      eq: vi.fn().mockReturnThis(),
-      select: vi.fn().mockReturnValue({
-        single: vi.fn().mockResolvedValue({ error: null, data: null }),
-        maybeSingle: vi.fn().mockResolvedValue({ error: null, data: null })
-      })
+        })
+      };
     });
     
-    mockSupabase.rpc.mockResolvedValue({ error: null });
+    supabase.rpc.mockResolvedValue({ error: null });
+    
+    supabase.storage.from.mockReturnValue({
+      upload: vi.fn().mockResolvedValue({ error: null }),
+      getPublicUrl: vi.fn().mockReturnValue({ data: { publicUrl: 'https://example.com/test.jpg' } })
+    });
   });
 
   describe('startRegistration', () => {
     it('should create user account successfully', async () => {
+      const { supabase } = require('../integrations/supabase/client.ts');
+      
       await FarmerRegistrationService.startRegistration(mockFarmerData);
       
-      expect(mockSupabase.auth.signUp).toHaveBeenCalledWith({
+      expect(supabase.auth.signUp).toHaveBeenCalledWith({
         email: mockFarmerData.email,
         password: mockFarmerData.password,
         options: {
@@ -127,15 +145,17 @@ describe('FarmerRegistrationService', () => {
     });
 
     it('should store pending registration data in localStorage with correct structure', async () => {
+      const { localStorage } = window;
+      
       await FarmerRegistrationService.startRegistration(mockFarmerData);
       
-      expect(mockLocalStorage.setItem).toHaveBeenCalledWith(
+      expect(localStorage.setItem).toHaveBeenCalledWith(
         'pending_profile',
         expect.stringContaining('Test Farmer')
       );
       
       // Check that the stored data has the correct structure
-      const storedData = JSON.parse(mockLocalStorage.setItem.mock.calls[0][1]);
+      const storedData = JSON.parse((localStorage.setItem as any).mock.calls[0][1]);
       expect(storedData).toHaveProperty('userId');
       expect(storedData).toHaveProperty('fullName', 'Test Farmer');
       expect(storedData).toHaveProperty('farmerData');
@@ -143,7 +163,9 @@ describe('FarmerRegistrationService', () => {
     });
 
     it('should throw error when user account creation fails', async () => {
-      mockSupabase.auth.signUp.mockResolvedValue({
+      const { supabase } = require('../integrations/supabase/client.ts');
+      
+      supabase.auth.signUp.mockResolvedValue({
         data: { user: null },
         error: { message: 'Auth failed' }
       });

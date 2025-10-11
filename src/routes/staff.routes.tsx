@@ -33,6 +33,14 @@ const QualityControlManagement = lazy(() => import("../components/staff/QualityC
 const InventoryManagement = lazy(() => import("../components/staff/InventoryManagement"));
 const ComprehensiveReporting = lazy(() => import("../components/staff/ComprehensiveReporting"));
 
+// New components
+const StaffNotifications = lazy(() => import("../components/staff/StaffNotifications"));
+const StaffQuickActions = lazy(() => import("../components/staff/StaffQuickActions"));
+const FarmerVisitsTracker = lazy(() => import("../components/staff/FarmerVisitsTracker"));
+const QualityReports = lazy(() => import("../components/staff/QualityReports"));
+const RouteOptimization = lazy(() => import("../components/staff/RouteOptimization"));
+const PerformanceInsights = lazy(() => import("../components/staff/PerformanceInsights"));
+
 export default function StaffRoutes() {
   const location = useLocation();
   
@@ -149,6 +157,48 @@ export default function StaffRoutes() {
           <ProtectedRoute requiredRole={UserRole.STAFF}>
             <PageTransition>
               <RouteManagement />
+            </PageTransition>
+          </ProtectedRoute>
+        } />
+        <Route path="notifications" element={
+          <ProtectedRoute requiredRole={UserRole.STAFF}>
+            <PageTransition>
+              <StaffNotifications />
+            </PageTransition>
+          </ProtectedRoute>
+        } />
+        <Route path="quick-actions" element={
+          <ProtectedRoute requiredRole={UserRole.STAFF}>
+            <PageTransition>
+              <StaffQuickActions />
+            </PageTransition>
+          </ProtectedRoute>
+        } />
+        <Route path="farmer-visits" element={
+          <ProtectedRoute requiredRole={UserRole.STAFF}>
+            <PageTransition>
+              <FarmerVisitsTracker />
+            </PageTransition>
+          </ProtectedRoute>
+        } />
+        <Route path="quality-reports" element={
+          <ProtectedRoute requiredRole={UserRole.STAFF}>
+            <PageTransition>
+              <QualityReports />
+            </PageTransition>
+          </ProtectedRoute>
+        } />
+        <Route path="route-optimization" element={
+          <ProtectedRoute requiredRole={UserRole.STAFF}>
+            <PageTransition>
+              <RouteOptimization />
+            </PageTransition>
+          </ProtectedRoute>
+        } />
+        <Route path="performance-insights" element={
+          <ProtectedRoute requiredRole={UserRole.STAFF}>
+            <PageTransition>
+              <PerformanceInsights />
             </PageTransition>
           </ProtectedRoute>
         } />

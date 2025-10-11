@@ -6,6 +6,7 @@ import useToastNotifications from '../hooks/useToastNotifications';
 // Mock the Supabase client
 const mockRpc = vi.fn().mockResolvedValue({ data: null, error: null });
 const mockGetPublicUrl = vi.fn().mockReturnValue({ data: { publicUrl: 'https://example.com/document.pdf' } });
+const mockRemoveChannel = vi.fn();
 
 const mockSupabase = {
   from: vi.fn().mockReturnThis(),
@@ -20,7 +21,12 @@ const mockSupabase = {
   },
   auth: {
     getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'test-admin-id' } }, error: null })
-  }
+  },
+  channel: vi.fn().mockReturnValue({
+    on: vi.fn().mockReturnThis(),
+    subscribe: vi.fn().mockReturnThis()
+  }),
+  removeChannel: mockRemoveChannel
 };
 
 // Mock the DashboardLayout component
@@ -147,7 +153,8 @@ describe('KYCAdminDashboard', () => {
         id: 'farmer-1',
         full_name: 'John Doe',
         kyc_status: 'pending',
-        profiles: { email: 'john@example.com' }
+        profiles: { email: 'john@example.com'
+}
       }
     ];
 

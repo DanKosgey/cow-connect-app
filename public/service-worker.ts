@@ -1,7 +1,5 @@
 /// <reference lib="webworker" />
 
-declare const self: ServiceWorkerGlobalScope;
-
 const CACHE_NAME = 'cow-connect-v1';
 const OFFLINE_URL = '/offline.html';
 
@@ -22,6 +20,21 @@ const API_ROUTES = [
   '/api/farmers',
   '/api/collections',
   '/api/routes',
+];
+
+// URLs that should not be cached (development resources, Supabase requests, etc.)
+const EXCLUDE_FROM_CACHE = [
+  // Development resources
+  '@react-refresh',
+  'node_modules',
+  '__vite',
+  // Supabase resources
+  '.supabase.co',
+  // HMR (Hot Module Replacement)
+  '/@vite',
+  // WebSocket connections
+  'ws://',
+  'wss://'
 ];
 
 self.addEventListener('install', (event) => {
@@ -51,13 +64,20 @@ self.addEventListener('activate', (event) => {
         })
       );
       // Take control of all pages under this service worker's scope
-      clients.claim();
+      (self as any).clients.claim();
     })()
   );
 });
 
 self.addEventListener('fetch', (event) => {
   const { request } = event;
+  const url = new URL(request.url);
+
+  // Skip caching for development resources, Supabase requests, and other excluded URLs
+  if (EXCLUDE_FROM_CACHE.some(exclude => request.url.includes(exclude))) {
+    // For development resources, bypass cache entirely
+    return;
+  }
 
   // Handle API requests with network-first strategy
   if (API_ROUTES.some(route => request.url.includes(route))) {
@@ -149,7 +169,7 @@ async function syncCollections() {
       if (!response.ok) throw new Error('Failed to sync collection');
       
       // Remove synced collection from cache
-      const updatedCollections = collections.filter(c => c.id !== collection.id);
+      const updatedCollections = collections.filter((c: any) => c.id !== collection.id);
       await cache.put(
         'offline-collections',
         new Response(JSON.stringify(updatedCollections))

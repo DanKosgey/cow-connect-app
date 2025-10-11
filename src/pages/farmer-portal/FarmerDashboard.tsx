@@ -42,11 +42,11 @@ const FarmerDashboard = () => {
         .from('farmers')
         .select('id')
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle();
 
       if (farmerError) throw farmerError;
       if (!farmer) {
-        toast.error('Error', 'Farmer profile not found');
+        toast.error('Error', 'Farmer profile not found. Please complete your registration.');
         return;
       }
 

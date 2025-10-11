@@ -182,7 +182,7 @@ const CollectionsAnalyticsDashboard = () => {
       
       // Fetch collections
       const dateFilter = getDateFilter();
-      const { data: collectionsData, error: collectionsError } = await supabase
+      let collectionsQuery = supabase
         .from('collections')
         .select(`
           *,
@@ -201,9 +201,16 @@ const CollectionsAnalyticsDashboard = () => {
               full_name
             )
           )
-        `)
-        .gte('collection_date', dateFilter)
-        .order('collection_date', { ascending: false });
+        `);
+        
+      // Only add date filter if it's valid
+      if (dateFilter) {
+        collectionsQuery = collectionsQuery.gte('collection_date', dateFilter);
+      }
+
+      collectionsQuery = collectionsQuery.order('collection_date', { ascending: false });
+
+      const { data: collectionsData, error: collectionsError } = await collectionsQuery;
 
       if (collectionsError) throw collectionsError;
 
@@ -270,14 +277,14 @@ const CollectionsAnalyticsDashboard = () => {
 
   const getDateFilter = () => {
     const now = new Date();
-    const ranges = {
-      '7days': new Date(now.setDate(now.getDate() - 7)),
-      '30days': new Date(now.setDate(now.getDate() - 30)),
-      '90days': new Date(now.setDate(now.getDate() - 90)),
-      '180days': new Date(now.setDate(now.getDate() - 180)),
+    const ranges: Record<string, Date> = {
+      '7days': new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7),
+      '30days': new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30),
+      '90days': new Date(now.getFullYear(), now.getMonth(), now.getDate() - 90),
+      '180days': new Date(now.getFullYear(), now.getMonth(), now.getDate() - 180),
       'all': new Date('2020-01-01')
     };
-    return ranges[dateRange as keyof typeof ranges].toISOString();
+    return ranges[dateRange]?.toISOString() || ranges['7days'].toISOString();
   };
 
   const filterCollections = () => {

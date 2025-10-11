@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useMemo, ReactNode, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useMemo, ReactNode, useCallback, useRef } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { UserRole } from '@/types/auth.types';
@@ -36,13 +36,23 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Add a global flag to prevent multiple AuthProvider instances from initializing simultaneously
+let globalAuthInitializing = false;
+let globalUser: User | null = null;
+let globalUserRole: UserRole | null = null;
+
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(globalUser);
   const [session, setSession] = useState<Session | null>(null);
-  const [userRole, setUserRole] = useState<UserRole | null>(null);
+  const [userRole, setUserRole] = useState<UserRole | null>(globalUserRole);
   const [loading, setLoading] = useState(true);
   const [lastActivity, setLastActivity] = useState<number>(Date.now());
   const [initializing, setInitializing] = useState(true);
+  const [initTimeout, setInitTimeout] = useState(false);
+  const initAttempted = useRef(false);
+
+  // Global flag to track if auth initialization is in progress
+  const isAuthInitializing = useRef(false);
 
   // Handle app close event
   useEffect(() => {
@@ -101,6 +111,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const getUserRole = useCallback(async (userId: string): Promise<UserRole | null> => {
     const id = performanceMonitor.startTiming('getUserRole');
     try {
+      logger.debug('Getting user role for user', { userId });
+      
       // First check if we have a cached role that's still valid
       const cachedRole = localStorage.getItem('cached_role');
       const cacheTimestamp = localStorage.getItem('auth_cache_timestamp');
@@ -115,6 +127,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
       
       // Use retry logic with timeout for better reliability
+      logger.debug('Fetching user role from database');
       const roleData = await executeWithRetry(async () => {
         const { data, error } = await supabase
           .from('user_roles')
@@ -123,12 +136,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           .maybeSingle();
           
         if (error) throw error;
+        logger.debug('Got role data from database', { data });
         return data;
-      }, 3, 30000, 2000); // 3 retries, 30s timeout, 2s initial delay
+      }, 2, 15000, 1000); // 2 retries, 15s timeout, 1s initial delay
 
       if (!roleData) {
         // Try a simpler query as fallback
         try {
+          logger.debug('Trying fallback query for user role');
           const fallbackData = await executeWithRetry(async () => {
             const { data, error } = await supabase
               .from('user_roles')
@@ -136,8 +151,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
               .eq('user_id', userId);
               
             if (error) throw error;
+            logger.debug('Got fallback role data from database', { length: data?.length });
             return data;
-          }, 2, 30000, 2000);
+          }, 1, 10000, 500);
           
           if (fallbackData && fallbackData.length > 0) {
             const role = fallbackData[0].role as UserRole;
@@ -161,6 +177,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // Cache the role
       localStorage.setItem('cached_role', role);
       localStorage.setItem('auth_cache_timestamp', Date.now().toString());
+      logger.debug('Successfully fetched and cached user role', { role });
       return role;
     } catch (error) {
       logger.errorWithContext('getUserRole exception', error);
@@ -174,6 +191,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       
       // Try one more time with a simpler approach
       try {
+        logger.debug('Trying retry query for user role');
         const retryData = await executeWithRetry(async () => {
           const { data, error } = await supabase
             .from('user_roles')
@@ -181,8 +199,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             .eq('user_id', userId);
             
           if (error) throw error;
+          logger.debug('Got retry role data from database', { length: data?.length });
           return data;
-        }, 2, 30000, 2000);
+        }, 1, 15000, 1000);
         
         if (retryData && retryData.length > 0) {
           const role = retryData[0].role as UserRole;
@@ -205,69 +224,103 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const validateSession = useCallback(async (): Promise<boolean> => {
     const id = performanceMonitor.startTiming('validateSession');
     try {
+      logger.debug('Starting session validation');
+      
       // Get the current session
+      logger.debug('Getting session from Supabase');
       const { data: { session }, error } = await supabase.auth.getSession();
+      logger.debug('Got session response', { session: !!session, error: !!error });
       
       if (error) {
         logger.errorWithContext('validateSession - getSession', error);
+        // Even if there's an error getting the session, check if we have a cached session
+        const cachedUser = localStorage.getItem('cached_user');
+        if (cachedUser) {
+          logger.info('Using cached session due to getSession error');
+          return true;
+        }
         return false;
       }
 
       // If no session exists, it's not valid
       if (!session) {
+        logger.debug('No session found during validation');
         return false;
       }
 
       // Check if session has expired
       if (session.expires_at && new Date(session.expires_at * 1000) < new Date()) {
+        logger.debug('Session has expired');
         return false;
       }
 
       // Validate the user still exists and is active
+      logger.debug('Getting user data from Supabase');
       const { data: userData, error: userError } = await supabase.auth.getUser();
+      logger.debug('Got user data response', { userData: !!userData, userError: !!userError });
       
       if (userError || !userData?.user) {
+        // Even if there's an error getting the user, check if we have a cached user
+        const cachedUser = localStorage.getItem('cached_user');
+        if (cachedUser) {
+          logger.info('Using cached user due to getUser error');
+          return true;
+        }
+        logger.debug('No user data found during validation');
         return false;
       }
 
-      // Check if user role still exists with timeout
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Role validation timeout')), 15000) // Increased timeout
-      );
-      
-      const rolePromise = getUserRole(userData.user.id);
-      
-      const role = await Promise.race([
-        rolePromise,
-        timeoutPromise
-      ]).catch(error => {
-        logger.errorWithContext('Role validation timeout', error);
-        // Even if role validation fails, we might still have a valid session
-        // Let's check if we have cached role data
-        const cachedRole = localStorage.getItem('cached_role');
-        if (cachedRole) {
-          logger.info('Using cached role due to timeout', { cachedRole });
-          return cachedRole as UserRole;
+      // Check if user role still exists with timeout and better error handling
+      try {
+        logger.debug('Validating user role');
+        const roleTimeout = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Role validation timeout')), 10000) // Reduced timeout to 10s
+        );
+        
+        const rolePromise = getUserRole(userData.user.id);
+        
+        const roleResult = await Promise.race([
+          rolePromise,
+          roleTimeout
+        ]).catch(error => {
+          logger.errorWithContext('Role validation timeout', error);
+          // Even if role validation fails, we might still have a valid session
+          // Let's check if we have cached role data
+          const cachedRole = localStorage.getItem('cached_role');
+          if (cachedRole) {
+            logger.info('Using cached role due to timeout', { cachedRole });
+            return cachedRole as UserRole;
+          }
+          // Even without a cached role, we might still have a valid session
+          // Return a placeholder to indicate the session is valid but role is unknown
+          return 'session_valid_no_role';
+        });
+        
+        // If we got a special placeholder, it means session is valid but role is unknown
+        if (roleResult === 'session_valid_no_role') {
+          logger.warn('Session valid but role unknown, allowing access');
+          return true;
         }
-        // Even without a cached role, we might still have a valid session
-        // Return a placeholder to indicate the session is valid but role is unknown
-        return 'session_valid_no_role';
-      });
-      
-      // If we got a special placeholder, it means session is valid but role is unknown
-      if (role === 'session_valid_no_role') {
-        logger.warn('Session valid but role unknown, allowing access');
-        return true;
-      }
-      
-      // If we don't have a role but have a valid session, we'll still allow it
-      if (!role) {
-        logger.warn('No role found for user, but session may be valid');
-        // Still allow access - the ProtectedRoute will handle role checking
-        return true;
-      }
+        
+        // If we don't have a role but have a valid session, we'll still allow it
+        if (!roleResult) {
+          logger.warn('No role found for user, but session may be valid');
+          // Still allow access - the ProtectedRoute will handle role checking
+          return true;
+        }
 
-      return true;
+        logger.debug('Session validation successful', { role: roleResult });
+        return true;
+      } catch (roleError) {
+        logger.errorWithContext('validateSession - role validation', roleError);
+        // Even if role validation fails, if we have a cached session, we might still be valid
+        const cachedUser = localStorage.getItem('cached_user');
+        if (cachedUser) {
+          logger.info('Using cached session due to role validation error');
+          return true;
+        }
+        return false;
+      }
     } catch (error) {
       logger.errorWithContext('validateSession exception', error);
       // Even if validation fails, if we have a cached session, we might still be valid
@@ -283,35 +336,162 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [getUserRole]);
 
   useEffect(() => {
+    // Prevent multiple initialization attempts across different AuthProvider instances
+    if (globalAuthInitializing) {
+      logger.debug('Global auth initialization already in progress, waiting');
+      // Wait a bit and then check if initialization completed
+      const checkInterval = setInterval(() => {
+        if (!globalAuthInitializing) {
+          clearInterval(checkInterval);
+          // Use the global state if it's now available
+          if (globalUser && globalUserRole) {
+            setUser(globalUser);
+            setUserRole(globalUserRole);
+            setSession({ user: globalUser } as Session);
+            setLoading(false);
+            setInitializing(false);
+          }
+        }
+      }, 100);
+      
+      // Clean up the interval after 5 seconds
+      setTimeout(() => {
+        clearInterval(checkInterval);
+      }, 5000);
+      
+      return;
+    }
+    
+    // Prevent multiple initialization attempts within this instance
+    if (initAttempted.current) {
+      logger.debug('Auth initialization already attempted in this instance, skipping');
+      if (user && userRole) {
+        // If we already have user data, we're ready
+        setLoading(false);
+        setInitializing(false);
+      }
+      return;
+    }
+    
+    initAttempted.current = true;
+    globalAuthInitializing = true;
+    
+    // Check if we already have a valid session from localStorage cache
+    const cachedUser = localStorage.getItem('cached_user');
+    const cachedRole = localStorage.getItem('cached_role');
+    const cacheTimestamp = localStorage.getItem('auth_cache_timestamp');
+    
+    // If we have recent cached data, use it immediately
+    if (cachedUser && cachedRole && cacheTimestamp) {
+      const cacheAge = Date.now() - parseInt(cacheTimestamp);
+      // If cache is less than 2 hours old, use it immediately
+      if (cacheAge < 2 * 60 * 60 * 1000) {
+        try {
+          const user = JSON.parse(cachedUser);
+          logger.debug('Using cached auth data immediately', { cacheAge: Math.round(cacheAge/1000) + 's' });
+          setUser(user);
+          setSession({ user } as Session); // Create a minimal session object
+          setUserRole(cachedRole as UserRole);
+          globalUser = user;
+          globalUserRole = cachedRole as UserRole;
+          setLoading(false);
+          setInitializing(false);
+          globalAuthInitializing = false;
+          // Return early since we have valid cached data
+          return;
+        } catch (parseError) {
+          logger.errorWithContext('Error parsing cached user', parseError);
+        }
+      }
+    }
+    
+    // Add a counter to track how many times this useEffect runs
+    const initCount = parseInt(localStorage.getItem('auth_init_count') || '0') + 1;
+    localStorage.setItem('auth_init_count', initCount.toString());
+    logger.debug('Auth context useEffect running', { initCount });
+    
     logger.debug('Setting up auth state listener...');
     
     let isMounted = true;
     
+    // Set timeout to prevent infinite loading (increased from 25s to 60s)
+    const initTimeoutId = setTimeout(() => {
+      if (isMounted && initializing) {
+        // Check if we already have a user before showing timeout warning
+        supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
+          if (currentSession?.user) {
+            logger.debug('User already authenticated, clearing initialization timeout early');
+            setLoading(false);
+            setInitializing(false);
+            globalAuthInitializing = false;
+            return;
+          }
+          
+          logger.warn('Auth initialization timeout reached');
+          logger.debug('Auth state at timeout', { 
+            user: user?.id, 
+            userRole, 
+            loading, 
+            initializing 
+          });
+          setInitTimeout(true);
+          setLoading(false);
+          setInitializing(false);
+          globalAuthInitializing = false;
+        }).catch(error => {
+          logger.errorWithContext('Error checking session during timeout', error);
+          logger.warn('Auth initialization timeout reached');
+          logger.debug('Auth state at timeout', { 
+            user: user?.id, 
+            userRole, 
+            loading, 
+            initializing 
+          });
+          setInitTimeout(true);
+          setLoading(false);
+          setInitializing(false);
+          globalAuthInitializing = false;
+        });
+      }
+    }, 60000); // 60 second timeout (increased from 45s)
+    logger.debug('Auth initialization timeout set', { timeoutId: initTimeoutId });
+    
     // Clear any potentially corrupted auth data on app start
     const clearCorruptedAuthData = () => {
       try {
+        // Clear stale auth cache on app start
         const lastClearTime = localStorage.getItem('last_auth_clear_time');
+        const now = Date.now();
+        
+        // Always clear stale Supabase items on startup
+        Object.keys(localStorage).forEach(key => {
+          if (key.startsWith('sb-') || key.startsWith('supabase-')) {
+            localStorage.removeItem(key);
+          }
+        });
+        
         if (lastClearTime) {
-          const timeSinceLastClear = Date.now() - parseInt(lastClearTime);
+          const timeSinceLastClear = now - parseInt(lastClearTime);
           // If it's been more than 1 hour since last clear, do a full clear
           if (timeSinceLastClear > 60 * 60 * 1000) {
-            // Clear specific Supabase items
-            Object.keys(localStorage).forEach(key => {
-              if (key.startsWith('sb-') || key.startsWith('supabase-')) {
-                localStorage.removeItem(key);
-              }
-            });
             localStorage.removeItem('last_auth_clear_time');
-            logger.debug('Cleared old Supabase auth items');
+            logger.debug('Cleared old auth clear timestamp');
           }
         }
+        
+        // Set current time as last clear time
+        localStorage.setItem('last_auth_clear_time', now.toString());
       } catch (error) {
         logger.errorWithContext('Error clearing corrupted auth data', error);
       }
     };
     
-    // Run the cleanup
-    clearCorruptedAuthData();
+    // Run the cleanup only if it's been more than 5 minutes since last clear
+    const lastClearTime = localStorage.getItem('last_auth_clear_time');
+    const now = Date.now();
+    if (!lastClearTime || (now - parseInt(lastClearTime)) > 5 * 60 * 1000) {
+      clearCorruptedAuthData();
+    }
     
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
@@ -411,8 +591,63 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
     );
 
-    // Initial session check with improved caching
+    // Initial session check with improved caching and error handling
     const initializeAuth = async () => {
+      // If we already have user data, skip full initialization
+      if (user && userRole) {
+        logger.debug('Already have user and role data, skipping full initialization');
+        setLoading(false);
+        setInitializing(false);
+        globalAuthInitializing = false;
+        return;
+      }
+      
+      // Check if we're already signed in by checking the current session
+      try {
+        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        if (currentSession?.user && !user) {
+          logger.debug('User already signed in, setting session data immediately');
+          setSession(currentSession);
+          setUser(currentSession.user);
+          globalUser = currentSession.user;
+          
+          // Try to get user role quickly
+          try {
+            const role = await getUserRole(currentSession.user.id);
+            if (role) {
+              setUserRole(role);
+              globalUserRole = role;
+              // Cache the auth data
+              localStorage.setItem('cached_user', JSON.stringify(currentSession.user));
+              localStorage.setItem('cached_role', role);
+              localStorage.setItem('auth_cache_timestamp', Date.now().toString());
+            }
+          } catch (error) {
+            logger.errorWithContext('getUserRole during immediate session setup', error);
+            // Use cached role if available
+            const cachedRole = localStorage.getItem('cached_role');
+            if (cachedRole) {
+              setUserRole(cachedRole as UserRole);
+              globalUserRole = cachedRole as UserRole;
+            }
+          }
+          
+          // If we have user data now, we can skip full initialization
+          if (currentSession.user) {
+            setLoading(false);
+            setInitializing(false);
+            globalAuthInitializing = false;
+            return;
+          }
+        }
+      } catch (error) {
+        logger.errorWithContext('Error checking current session', error);
+      }
+      
+      const initCallCount = parseInt(localStorage.getItem('auth_init_call_count') || '0') + 1;
+      localStorage.setItem('auth_init_call_count', initCallCount.toString());
+      logger.debug('initializeAuth called', { initCallCount });
+      
       const id = performanceMonitor.startTiming('initializeAuth');
       try {
         // Log initial state for debugging
@@ -420,13 +655,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         
         // First validate that any existing session is still valid
         // But don't fail completely if role validation times out
+        logger.debug('Calling validateSession');
         const isSessionValid = await validateSession();
+        logger.debug('validateSession returned', { isSessionValid });
         
         if (!isSessionValid) {
           if (!isMounted) return;
           setUser(null);
           setSession(null);
           setUserRole(null);
+          globalUser = null;
+          globalUserRole = null;
           // Clear cache
           localStorage.removeItem('cached_user');
           localStorage.removeItem('cached_role');
@@ -434,10 +673,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           setLoading(false);
           setInitializing(false);
           logger.debug('No valid session found, cleared auth state');
+          globalAuthInitializing = false;
           return;
         }
         
+        logger.debug('Getting session from Supabase in initializeAuth');
         const { data: { session }, error } = await supabase.auth.getSession();
+        logger.debug('Got session in initializeAuth', { session: !!session, error: !!error });
         
         if (error) {
           logger.errorWithContext('initializeAuth - getSession', error);
@@ -447,23 +689,48 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           if (!isMounted) return;
           setSession(session);
           setUser(session.user);
+          globalUser = session.user;
           logger.debug('Found existing session for user', { userId: session.user.id });
           
           // Try to get user role, but don't fail completely if it times out
           try {
-            const role = await getUserRole(session.user.id);
-            if (role) {
-              setUserRole(role);
+            // Add timeout to role fetching
+            const roleTimeout = new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Role fetch timeout during initialization')), 15000) // Reduced timeout to 15s for faster failover
+            );
+            
+            logger.debug('Getting user role in initializeAuth');
+            const rolePromise = getUserRole(session.user.id);
+            
+            const roleResult = await Promise.race([
+              rolePromise,
+              roleTimeout
+            ]).catch(error => {
+              logger.errorWithContext('Role fetch timeout during initialization', error);
+              // Return cached role if available
+              const cachedRole = localStorage.getItem('cached_role');
+              if (cachedRole) {
+                logger.info('Using cached role due to initialization timeout', { cachedRole });
+                return cachedRole as UserRole;
+              }
+              return null;
+            });
+            logger.debug('Got user role in initializeAuth', { roleResult });
+            
+            if (roleResult && typeof roleResult === 'string') {
+              setUserRole(roleResult as UserRole);
+              globalUserRole = roleResult as UserRole;
               // Cache the auth data
               localStorage.setItem('cached_user', JSON.stringify(session.user));
-              localStorage.setItem('cached_role', role || '');
+              localStorage.setItem('cached_role', roleResult);
               localStorage.setItem('auth_cache_timestamp', Date.now().toString());
-              logger.debug('Set user role from database', { role });
+              logger.debug('Set user role from database', { role: roleResult });
             } else {
               // If we can't get the role, check if we have cached data
               const cachedRole = localStorage.getItem('cached_role');
               if (cachedRole) {
                 setUserRole(cachedRole as UserRole);
+                globalUserRole = cachedRole as UserRole;
                 logger.debug('Using cached role', { cachedRole });
               } else {
                 // Clear cache
@@ -473,6 +740,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 // But still set the user and session so they can login
                 setUser(session.user);
                 setSession(session);
+                globalUser = session.user;
                 logger.debug('No role found, cleared cache but keeping session');
               }
             }
@@ -482,6 +750,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             const cachedRole = localStorage.getItem('cached_role');
             if (cachedRole) {
               setUserRole(cachedRole as UserRole);
+              globalUserRole = cachedRole as UserRole;
               logger.debug('Using cached role due to error', { cachedRole });
             } else {
               // Clear cache on error
@@ -491,6 +760,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
               // But still set the user and session so they can login
               setUser(session.user);
               setSession(session);
+              globalUser = session.user;
               logger.debug('Error getting role, cleared cache but keeping session');
             }
           }
@@ -499,21 +769,52 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           localStorage.removeItem('cached_user');
           localStorage.removeItem('cached_role');
           localStorage.removeItem('auth_cache_timestamp');
+          globalUser = null;
+          globalUserRole = null;
           logger.debug('No session found, cleared cache');
         }
       } catch (error) {
         logger.errorWithContext('Auth initialization', error);
-        // Clear cache on error
-        localStorage.removeItem('cached_user');
-        localStorage.removeItem('cached_role');
-        localStorage.removeItem('auth_cache_timestamp');
-        logger.debug('Auth initialization error, cleared cache');
+        // Even if initialization fails, try to use cached data
+        const cachedUser = localStorage.getItem('cached_user');
+        const cachedRole = localStorage.getItem('cached_role');
+        
+        if (cachedUser) {
+          try {
+            const user = JSON.parse(cachedUser);
+            setUser(user);
+            setSession({ user } as Session); // Create a minimal session object
+            globalUser = user;
+            if (cachedRole) {
+              setUserRole(cachedRole as UserRole);
+              globalUserRole = cachedRole as UserRole;
+            }
+            logger.info('Using cached auth data due to initialization error');
+          } catch (parseError) {
+            logger.errorWithContext('Error parsing cached user', parseError);
+            // Clear cache on parse error
+            localStorage.removeItem('cached_user');
+            localStorage.removeItem('cached_role');
+            localStorage.removeItem('auth_cache_timestamp');
+            globalUser = null;
+            globalUserRole = null;
+          }
+        } else {
+          // Clear cache on error
+          localStorage.removeItem('cached_user');
+          localStorage.removeItem('cached_role');
+          localStorage.removeItem('auth_cache_timestamp');
+          globalUser = null;
+          globalUserRole = null;
+          logger.debug('Auth initialization error, cleared cache');
+        }
       } finally {
         if (isMounted) {
           setLoading(false);
           setInitializing(false);
           logger.debug('Auth initialization complete');
         }
+        globalAuthInitializing = false;
         performanceMonitor.endTiming(id, 'initializeAuth');
       }
     };
@@ -521,10 +822,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     initializeAuth();
 
     return () => {
+      logger.debug('Auth context cleanup running');
       isMounted = false;
-      subscription.unsubscribe();
+      clearTimeout(initTimeoutId);
+      logger.debug('Auth initialization timeout cleared', { timeoutId: initTimeoutId });
+      // Don't unsubscribe from auth state changes as this can cause issues
+      // subscription.unsubscribe();
+      logger.debug('Auth context component unmounted');
     };
-  }, [getUserRole, validateSession]); // Empty dependency array to prevent infinite loop
+  }, []); // Empty dependency array to prevent infinite loop - we only want this to run once
 
   const login = useCallback(async ({ email, password, role }: LoginData) => {
     const id = performanceMonitor.startTiming('login');
@@ -995,14 +1301,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                   additional_info: pendingProfile.farmerData.additionalInfo,
                   // Personal details
                   date_of_birth: pendingProfile.farmerData.dob,
-                  gender: pendingProfile.farmerData.gender,
-                  // Bank details
-                  bank_name: pendingProfile.farmerData.bankName,
-                  bank_account_number: pendingProfile.farmerData.accountNumber,
-                  bank_account_name: pendingProfile.farmerData.accountName
+                  gender: pendingProfile.farmerData.gender
                 })
                 .eq('id', farmerId);
-
+              
               if (updateError) {
                 logger.warn('Failed to update additional farmer details', { error: updateError });
               }
@@ -1118,6 +1420,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           logger.warn('Invalid refresh token detected, signing out user');
           await signOut();
         }
+        // If there's no session to refresh, this is expected for unconfirmed users
+        if (error.name === 'AuthSessionMissingError' || error.message === 'Auth session missing!') {
+          logger.debug('No session to refresh - user likely not confirmed yet');
+          return { success: false, error };
+        }
         return { success: false, error };
       }
       
@@ -1129,7 +1436,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         try {
           // Add timeout to role fetching
           const roleTimeout = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Role fetch timeout during session refresh')), 15000)
+            setTimeout(() => reject(new Error('Role fetch timeout during session refresh')), 10000)
           );
           
           const rolePromise = getUserRole(data.session.user.id);
@@ -1165,6 +1472,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         logger.warn('Network error or invalid refresh token during refresh, signing out user');
         await signOut();
       }
+      // If there's no session to refresh, this is expected for unconfirmed users
+      if (error instanceof Error && (error.name === 'AuthSessionMissingError' || error.message === 'Auth session missing!')) {
+        logger.debug('No session to refresh - user likely not confirmed yet');
+        return { success: false, error };
+      }
       return { success: false, error };
     } finally {
       setIsRefreshingToken(false);
@@ -1177,7 +1489,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     user,
     session,
     userRole,
-    loading: initializing, // Use initializing state for initial load, loading for auth checks
+    loading: initializing || initTimeout, // Use initializing state for initial load, loading for auth checks
     login,
     signUp,
     signOut,
@@ -1185,7 +1497,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     clearAllAuthData,
     refreshSession,
     resetAuthState // Add the new function to the context
-  }), [user, session, userRole, initializing, login, signUp, signOut, processPendingProfile, clearAllAuthData, refreshSession, resetAuthState]);
+  }), [user, session, userRole, initializing, initTimeout, login, signUp, signOut, processPendingProfile, clearAllAuthData, refreshSession, resetAuthState]);
 
   return (
     <AuthContext.Provider value={contextValue}>

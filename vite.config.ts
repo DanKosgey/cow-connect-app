@@ -1,5 +1,5 @@
 /// <reference types="vitest" />
-import { defineConfig, splitVendorChunkPlugin } from "vite";
+import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
@@ -13,8 +13,7 @@ export default defineConfig(({ mode }) => ({
   plugins: [
     react(), 
     mode === "development" && componentTagger(),
-    // Split vendor chunks for better caching
-    splitVendorChunkPlugin()
+    // Note: splitVendorChunkPlugin() removed as it conflicts with manualChunks
   ].filter(Boolean),
   resolve: {
     alias: {
@@ -36,55 +35,55 @@ export default defineConfig(({ mode }) => ({
       // External dependencies that shouldn't be bundled
       external: [],
       output: {
-        // Separate vendor and app code for better caching
-        manualChunks: {
+        // Separate vendor and app code for better caching using function form
+        manualChunks: (id) => {
           // React core libraries
-          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          if (id.includes('node_modules/react') || id.includes('node_modules/react-dom') || id.includes('react-router-dom')) {
+            return 'react-vendor';
+          }
           
           // Radix UI components that are actually used
-          'radix-ui-core': [
-            '@radix-ui/react-dialog',
-            '@radix-ui/react-dropdown-menu',
-            '@radix-ui/react-select',
-            '@radix-ui/react-tooltip',
-            '@radix-ui/react-popover',
-            '@radix-ui/react-slot'
-          ],
+          if (id.includes('@radix-ui')) {
+            return 'radix-ui-core';
+          }
           
           // Data fetching and state management
-          'data-vendor': ['@tanstack/react-query', '@supabase/supabase-js'],
+          if (id.includes('@tanstack') || id.includes('@supabase')) {
+            return 'data-vendor';
+          }
           
           // Charts and visualizations
-          'chart-vendor': ['recharts'],
+          if (id.includes('recharts')) {
+            return 'chart-vendor';
+          }
           
           // Utility libraries
-          'util-vendor': [
-            'date-fns', 
-            'lucide-react',
-            'clsx',
-            'tailwind-merge',
-            'class-variance-authority'
-          ],
+          if (id.includes('date-fns') || id.includes('lucide-react') || id.includes('clsx') || 
+              id.includes('tailwind-merge') || id.includes('class-variance-authority')) {
+            return 'util-vendor';
+          }
           
           // Form handling
-          'form-vendor': [
-            'react-hook-form',
-            '@hookform/resolvers',
-            'zod'
-          ],
+          if (id.includes('react-hook-form') || id.includes('@hookform') || id.includes('zod')) {
+            return 'form-vendor';
+          }
           
           // UI components
-          'ui-vendor': [
-            'sonner',
-            'cmdk',
-            'input-otp',
-            'react-day-picker',
-            'react-resizable-panels',
-            'embla-carousel-react'
-          ],
+          if (id.includes('sonner') || id.includes('cmdk') || id.includes('input-otp') || 
+              id.includes('react-day-picker') || id.includes('react-resizable-panels') || 
+              id.includes('embla-carousel-react')) {
+            return 'ui-vendor';
+          }
           
           // Excel processing
-          'excel-vendor': ['xlsx', 'exceljs']
+          if (id.includes('xlsx') || id.includes('exceljs')) {
+            return 'excel-vendor';
+          }
+          
+          // Other node_modules go to vendor chunk
+          if (id.includes('node_modules')) {
+            return 'vendor';
+          }
         },
         
         // Optimize chunk naming
@@ -152,7 +151,22 @@ export default defineConfig(({ mode }) => ({
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     alias: {
-      '@': path.resolve(__dirname, './src')
+      '@': path.resolve(__dirname, './src'),
+      '@/lib': path.resolve(__dirname, './src/lib'),
+      '@/integrations': path.resolve(__dirname, './src/integrations'),
+      '@/components': path.resolve(__dirname, './src/components'),
+      '@/pages': path.resolve(__dirname, './src/pages'),
+      '@/services': path.resolve(__dirname, './src/services'),
+      '@/contexts': path.resolve(__dirname, './src/contexts'),
+      '@/hooks': path.resolve(__dirname, './src/hooks'),
+      '@/types': path.resolve(__dirname, './src/types'),
+      '@/assets': path.resolve(__dirname, './src/assets'),
+      '@/utils': path.resolve(__dirname, './src/utils'),
+      '@/test': path.resolve(__dirname, './src/test'),
+      '@/routes': path.resolve(__dirname, './src/routes'),
+      '@/schemas': path.resolve(__dirname, './src/schemas'),
+      '@/styles': path.resolve(__dirname, './src/styles'),
+      '@/config': path.resolve(__dirname, './src/config')
     }
   },
 }));

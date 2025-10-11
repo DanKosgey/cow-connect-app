@@ -27,6 +27,7 @@ import {
 import { format, subDays, startOfMonth, endOfMonth } from 'date-fns';
 import useToastNotifications from '@/hooks/useToastNotifications';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart as RechartsPieChart, Pie, Cell, LineChart, Line } from 'recharts';
+import { useStaffInfo } from '@/hooks/useStaffData';
 
 interface CollectionReport {
   id: string;
@@ -80,9 +81,9 @@ interface PerformanceReport {
 export default function ComprehensiveReporting() {
   const { user } = useAuth();
   const { show, error: showError } = useToastNotifications();
+  const { staffInfo, loading: staffLoading } = useStaffInfo();
   
   const [loading, setLoading] = useState(true);
-  const [staffId, setStaffId] = useState<string | null>(null);
   const [reportType, setReportType] = useState('collections');
   const [dateRange, setDateRange] = useState('month');
   const [startDate, setStartDate] = useState('');
@@ -110,24 +111,16 @@ export default function ComprehensiveReporting() {
   });
 
   useEffect(() => {
-    fetchData();
-  }, [user?.id]);
+    if (staffInfo) {
+      fetchData();
+    }
+  }, [staffInfo, dateRange, startDate, endDate]);
 
   const fetchData = async () => {
+    if (!staffInfo?.id) return;
+
     setLoading(true);
     try {
-      // Get staff info
-      const { data: staffData, error: staffError } = await supabase
-        .from('staff')
-        .select('id')
-        .eq('user_id', user?.id)
-        .maybeSingle();
-
-      if (staffError) throw staffError;
-      if (!staffData) throw new Error('Staff record not found');
-      
-      setStaffId(staffData.id);
-
       // Calculate date ranges
       const now = new Date();
       let from_date: Date;
@@ -164,11 +157,11 @@ export default function ComprehensiveReporting() {
           total_amount,
           collection_date,
           status,
-          farmers (
+          farmers!farmer_id (
             full_name
           )
         `)
-        .eq('staff_id', staffData.id)
+        .eq('staff_id', staffInfo.id)
         .gte('collection_date', from_date.toISOString())
         .lte('collection_date', to_date.toISOString())
         .order('collection_date', { ascending: false });
@@ -206,22 +199,23 @@ export default function ComprehensiveReporting() {
       });
 
       // Fetch payments report data
+      // Fixed the ambiguous relationship by specifying the foreign key constraint name
       const { data: paymentsData, error: paymentsError } = await supabase
         .from('payments')
         .select(`
           id,
           amount,
-          payment_date,
+          created_at,
           status,
           payment_method,
-          farmers (
+          farmers!payments_farmer_id_fkey (
             full_name
           )
         `)
-        .eq('processed_by', staffData.id)
-        .gte('payment_date', from_date.toISOString())
-        .lte('payment_date', to_date.toISOString())
-        .order('payment_date', { ascending: false });
+        .eq('farmer_id', staffInfo.id)
+        .gte('created_at', from_date.toISOString())
+        .lte('created_at', to_date.toISOString())
+        .order('created_at', { ascending: false });
 
       if (paymentsError) throw paymentsError;
       
@@ -229,7 +223,7 @@ export default function ComprehensiveReporting() {
         id: payment.id,
         farmer_name: payment.farmers?.full_name || 'Unknown Farmer',
         amount: payment.amount,
-        payment_date: payment.payment_date,
+        payment_date: payment.created_at,
         status: payment.status,
         payment_method: payment.payment_method
       })) || [];
@@ -255,14 +249,14 @@ export default function ComprehensiveReporting() {
           test_type,
           test_result,
           test_date,
-          collections (
+          collection!collection_id (
             collection_id,
             farmers (
               full_name
             )
           )
         `)
-        .eq('performed_by', staffData.id)
+        .eq('performed_by', staffInfo.id)
         .gte('test_date', from_date.toISOString())
         .lte('test_date', to_date.toISOString())
         .order('test_date', { ascending: false });
@@ -271,8 +265,8 @@ export default function ComprehensiveReporting() {
       
       const formattedQuality = qualityData?.map(test => ({
         id: test.id,
-        collection_id: test.collections?.collection_id || 'N/A',
-        farmer_name: test.collections?.farmers?.full_name || 'Unknown Farmer',
+        collection_id: test.collection?.collection_id || 'N/A',
+        farmer_name: test.collection?.farmers?.full_name || 'Unknown Farmer',
         test_type: test.test_type,
         test_result: test.test_result,
         test_date: test.test_date
@@ -329,7 +323,7 @@ export default function ComprehensiveReporting() {
           farmers: new Set(dailyCollections.map(c => c.farmer_name)).size,
           avg_quality_score: dailyCollections.length > 0 
             ? dailyCollections.reduce((sum, c) => {
-                const score = c.quality_grade === 'A+' ? 10 : 
+                const score = c.quality_grade === 'A+' ? 100 : 
                              c.quality_grade === 'A' ? 8 : 
                              c.quality_grade === 'B' ? 6 : 4;
                 return sum + score;
@@ -342,7 +336,13 @@ export default function ComprehensiveReporting() {
       setPerformanceData(performanceData);
     } catch (error: any) {
       console.error('Error fetching report data:', error);
-      showError('Error', error.message || 'Failed to load report data');
+      // Handle the specific PGRST201 error
+      if (error.code === 'PGRST201') {
+        const hint = error.hint || 'Failed to load report data. Check network tab for more details.';
+        showError('Error', `Failed to load report data: ${error.message}. ${hint}`);
+      } else {
+        showError('Error', error.message || 'Failed to load report data');
+      }
     } finally {
       setLoading(false);
     }
@@ -470,7 +470,7 @@ export default function ComprehensiveReporting() {
       link.click();
       document.body.removeChild(link);
       
-      show('Success', 'Report exported successfully');
+      show({ title: 'Success', description: 'Report exported successfully' });
     } catch (error: any) {
       console.error('Error exporting report:', error);
       showError('Error', 'Failed to export report');
@@ -478,7 +478,7 @@ export default function ComprehensiveReporting() {
   };
 
   const exportToPDF = () => {
-    show('Info', 'PDF export functionality would be implemented here. For now, please use CSV export.');
+    show({ title: 'Info', description: 'PDF export functionality would be implemented here. For now, please use CSV export.' });
   };
 
   // Chart data

@@ -165,7 +165,7 @@ const CollectionsAnalyticsDashboard = () => {
               phone
             )
           ),
-          staff!collections_staff_id_fkey (
+          staff (
             id,
             user_id,
             profiles!user_id (

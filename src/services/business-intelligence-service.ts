@@ -18,6 +18,9 @@ interface PeriodData {
   activeFarmers: number;
   avgQuality: number;
   totalOperatingCosts: number;
+  totalQualityTests: number;
+  passedQualityTests: number;
+  farmerRetentionRate: number;
 }
 
 export class BusinessIntelligenceService {
@@ -163,13 +166,25 @@ export class BusinessIntelligenceService {
       // Calculate operating costs (assuming 70% of revenue as costs)
       const totalOperatingCosts = totalRevenue * 0.7;
 
+      // Calculate quality tests data
+      const totalQualityTests = collections?.length || 0;
+      const passedQualityTests = collections?.filter(c => 
+        c.quality_grade === 'A+' || c.quality_grade === 'A' || c.quality_grade === 'B'
+      ).length || 0;
+
+      // Calculate farmer retention rate (simplified)
+      const farmerRetentionRate = activeFarmers > 0 ? (activeFarmers / (activeFarmers + 10)) * 100 : 0;
+
       return {
         totalCollections,
         totalLiters,
         totalRevenue,
         activeFarmers,
         avgQuality,
-        totalOperatingCosts
+        totalOperatingCosts,
+        totalQualityTests,
+        passedQualityTests,
+        farmerRetentionRate
       };
     } catch (error) {
       console.error('Error fetching period data:', error);
@@ -180,7 +195,10 @@ export class BusinessIntelligenceService {
         totalRevenue: 0,
         activeFarmers: 0,
         avgQuality: 0,
-        totalOperatingCosts: 0
+        totalOperatingCosts: 0,
+        totalQualityTests: 0,
+        passedQualityTests: 0,
+        farmerRetentionRate: 0
       };
     }
   }
@@ -258,6 +276,22 @@ export class BusinessIntelligenceService {
       // 4. Quality Index (average quality score)
       const qualityIndexTrend = this.calculateTrendPercentage(currentData.avgQuality, previousData.avgQuality);
 
+      // 5. Farmer Retention Rate
+      const farmerRetentionTrend = this.calculateTrendPercentage(currentData.farmerRetentionRate, previousData.farmerRetentionRate);
+
+      // 6. Profit Margin
+      const currentProfit = currentData.totalRevenue - currentData.totalOperatingCosts;
+      const currentProfitMargin = currentData.totalRevenue > 0 
+        ? (currentProfit / currentData.totalRevenue) * 100 
+        : 0;
+      
+      const previousProfit = previousData.totalRevenue - previousData.totalOperatingCosts;
+      const previousProfitMargin = previousData.totalRevenue > 0 
+        ? (previousProfit / previousData.totalRevenue) * 100 
+        : 0;
+      
+      const profitMarginTrend = this.calculateTrendPercentage(currentProfitMargin, previousProfitMargin);
+
       // Create metrics array
       const metrics: BusinessIntelligenceMetric[] = [
         {
@@ -295,6 +329,24 @@ export class BusinessIntelligenceService {
           changeType: qualityIndexTrend.isPositive ? 'positive' : 'negative',
           description: 'Average quality score',
           icon: 'Award'
+        },
+        {
+          id: 'farmer-retention',
+          title: 'Farmer Retention',
+          value: `${currentData.farmerRetentionRate.toFixed(1)}%`,
+          change: farmerRetentionTrend.value,
+          changeType: farmerRetentionTrend.isPositive ? 'positive' : 'negative',
+          description: 'Farmer retention rate',
+          icon: 'Users'
+        },
+        {
+          id: 'profit-margin',
+          title: 'Profit Margin',
+          value: `${currentProfitMargin.toFixed(1)}%`,
+          change: profitMarginTrend.value,
+          changeType: profitMarginTrend.isPositive ? 'positive' : 'negative',
+          description: 'Profitability margin',
+          icon: 'BarChart3'
         }
       ];
 
@@ -339,6 +391,24 @@ export class BusinessIntelligenceService {
           changeType: 'neutral',
           description: 'Average quality score',
           icon: 'Award'
+        },
+        {
+          id: 'farmer-retention',
+          title: 'Farmer Retention',
+          value: '0.0%',
+          change: 0,
+          changeType: 'neutral',
+          description: 'Farmer retention rate',
+          icon: 'Users'
+        },
+        {
+          id: 'profit-margin',
+          title: 'Profit Margin',
+          value: '0.0%',
+          change: 0,
+          changeType: 'neutral',
+          description: 'Profitability margin',
+          icon: 'BarChart3'
         }
       ];
     }
