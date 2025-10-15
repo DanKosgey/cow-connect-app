@@ -19,6 +19,41 @@ export default defineConfig(({ mode }) => ({
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
+    // Ensure a single React instance across the app and dependencies
+    dedupe: ["react", "react-dom"],
+  },
+  // Optimize dependencies used in dev to avoid duplicate React instances
+  optimizeDeps: {
+    include: [
+      'react',
+      'react-dom',
+      'react-router-dom',
+      '@radix-ui/react-dialog',
+      '@radix-ui/react-dropdown-menu',
+      '@radix-ui/react-select',
+      '@radix-ui/react-tooltip',
+      '@radix-ui/react-popover',
+      '@radix-ui/react-slot',
+      '@tanstack/react-query',
+      '@supabase/supabase-js',
+      'recharts',
+      'date-fns',
+      'lucide-react',
+      'clsx',
+      'tailwind-merge',
+      'class-variance-authority',
+      'react-hook-form',
+      '@hookform/resolvers',
+      'zod',
+      'sonner',
+      'cmdk',
+      'input-otp',
+      'react-day-picker',
+      'react-resizable-panels',
+      'embla-carousel-react',
+      'xlsx',
+      'exceljs'
+    ]
   },
   // Build optimizations
   build: {
@@ -31,6 +66,10 @@ export default defineConfig(({ mode }) => ({
     // Reduce chunk size warnings
     chunkSizeWarningLimit: 500,
     // Enable tree shaking
+    commonjsOptions: {
+      include: [/node_modules/],
+      transformMixedEsModules: true,
+    },
     rollupOptions: {
       // External dependencies that shouldn't be bundled
       external: [],
@@ -57,46 +96,10 @@ export default defineConfig(({ mode }) => ({
         assetFileNames: 'assets/[name]-[hash].[ext]',
       }
     },
-    
     // Enable minification
     minify: 'esbuild',
-    
     // Enable brotli compression
     brotliSize: true,
-    
-    // Optimize dependencies
-    optimizeDeps: {
-      include: [
-        'react',
-        'react-dom',
-        'react-router-dom',
-        '@radix-ui/react-dialog',
-        '@radix-ui/react-dropdown-menu',
-        '@radix-ui/react-select',
-        '@radix-ui/react-tooltip',
-        '@radix-ui/react-popover',
-        '@radix-ui/react-slot',
-        '@tanstack/react-query',
-        '@supabase/supabase-js',
-        'recharts',
-        'date-fns',
-        'lucide-react',
-        'clsx',
-        'tailwind-merge',
-        'class-variance-authority',
-        'react-hook-form',
-        '@hookform/resolvers',
-        'zod',
-        'sonner',
-        'cmdk',
-        'input-otp',
-        'react-day-picker',
-        'react-resizable-panels',
-        'embla-carousel-react',
-        'xlsx',
-        'exceljs'
-      ]
-    }
   },
   
   // Enable CSS optimization
