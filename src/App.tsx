@@ -1,4 +1,5 @@
 // Toast providers are mounted at app root (src/main.tsx)
+import React from 'react';
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SkipLink } from '@/components/ui/SkipLink';
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -8,6 +9,11 @@ import { NotificationProvider } from '@/contexts/NotificationContext';
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { lazy, Suspense, useEffect } from 'react';
 import { PageLoader } from '@/components/PageLoader';
+
+// Ensure React is properly imported
+if (typeof React === 'undefined') {
+  throw new Error('React is not properly imported in App');
+}
 
 // Lazy load route components
 const PublicRoutes = lazy(() => import("./routes/public.routes"));

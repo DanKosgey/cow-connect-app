@@ -18,6 +18,8 @@ export default defineConfig(({ mode }) => ({
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
+    // Dedupe React to prevent multiple instances
+    dedupe: ['react', 'react-dom']
   },
   // Build optimizations
   build: {
@@ -34,48 +36,67 @@ export default defineConfig(({ mode }) => ({
       // External dependencies that shouldn't be bundled
       external: [],
       output: {
-        // Simplified manualChunks to ensure proper loading order
+        // Ensure proper loading order by putting React first
         manualChunks: {
-          // React and React DOM in separate chunk to ensure proper loading
-          'react': ['react', 'react-dom'],
-          // Keep critical vendor libraries together
-          'vendor': [
+          // React core must be loaded first
+          'react': ['react'],
+          'react-dom': ['react-dom'],
+          // React Router (often needed early)
+          'react-router': ['react-router', 'react-router-dom'],
+          // Critical UI libraries
+          'radix-ui': [
             '@radix-ui/react-dialog',
             '@radix-ui/react-dropdown-menu',
             '@radix-ui/react-select',
             '@radix-ui/react-tooltip',
             '@radix-ui/react-popover',
-            '@radix-ui/react-slot',
+            '@radix-ui/react-slot'
+          ],
+          // Data management
+          'data': [
             '@tanstack/react-query',
-            '@supabase/supabase-js',
-            'recharts',
+            '@supabase/supabase-js'
+          ],
+          // Charts and visualization
+          'charts': ['recharts'],
+          // Form handling
+          'forms': [
+            'react-hook-form',
+            '@hookform/resolvers',
+            'zod'
+          ],
+          // Utilities
+          'utils': [
             'date-fns',
             'lucide-react',
             'clsx',
             'tailwind-merge',
-            'class-variance-authority',
-            'react-hook-form',
-            '@hookform/resolvers',
-            'zod',
+            'class-variance-authority'
+          ],
+          // UI components
+          'ui': [
             'sonner',
             'cmdk',
             'input-otp',
             'react-day-picker',
             'react-resizable-panels',
-            'embla-carousel-react',
-            'xlsx',
-            'exceljs'
-          ]
+            'embla-carousel-react'
+          ],
+          // File handling
+          'files': ['xlsx', 'exceljs']
         },
         
-        // Optimize chunk naming
+        // Optimize chunk naming and loading order
         chunkFileNames: 'assets/[name]-[hash].js',
         entryFileNames: 'assets/[name]-[hash].js',
         assetFileNames: 'assets/[name]-[hash].[ext]',
+        
+        // Ensure proper loading order
+        hoistTransitiveImports: false
       }
     },
     
-    // Ensure React is loaded first by specifying it in optimizeDeps
+    // Optimize dependencies with explicit inclusion
     optimizeDeps: {
       include: [
         'react',

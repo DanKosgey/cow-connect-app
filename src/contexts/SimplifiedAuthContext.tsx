@@ -6,6 +6,11 @@ import { performanceMonitor } from '@/utils/performanceMonitor';
 import { logger } from '@/utils/logger';
 import { executeWithTimeout, executeWithRetry } from '@/utils/supabaseUtils';
 
+// Ensure React is properly imported and available
+if (typeof React === 'undefined') {
+  throw new Error('React is not properly imported in SimplifiedAuthContext');
+}
+
 interface LoginData {
   email: string;
   password: string;
@@ -34,7 +39,8 @@ interface AuthContextType {
   resetAuthState: () => Promise<void>; // Add the new function to the interface
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+// Explicitly use React.createContext to ensure it's available
+const AuthContext = React.createContext<AuthContextType | undefined>(undefined);
 
 // Add a global flag to prevent multiple AuthProvider instances from initializing simultaneously
 let globalAuthInitializing = false;

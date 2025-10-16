@@ -1,6 +1,11 @@
 import React, { createContext, useContext, useReducer, ReactNode } from 'react';
 import useToastNotifications from '@/hooks/useToastNotifications';
 
+// Ensure React is properly imported and available
+if (typeof React === 'undefined') {
+  throw new Error('React is not properly imported in NotificationContext');
+}
+
 type NotificationType = 'success' | 'error' | 'warning' | 'info';
 
 interface Notification {
@@ -22,7 +27,8 @@ interface NotificationContextType {
   removeNotification: (id: string) => void;
 }
 
-const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
+// Explicitly use React.createContext to ensure it's available
+const NotificationContext = React.createContext<NotificationContextType | undefined>(undefined);
 
 function notificationReducer(state: Notification[], action: NotificationAction): Notification[] {
   switch (action.type) {
