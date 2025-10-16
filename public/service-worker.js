@@ -44,7 +44,10 @@ const EXCLUDE_FROM_CACHE = [
   'lang=',
   'import',
   // Chrome extensions
-  'chrome-extension:'
+  'chrome-extension:',
+  // Bundle files that should be handled by the browser
+  '.js',
+  '.css'
 ];
 
 // Install event - cache static assets
@@ -102,10 +105,6 @@ self.addEventListener('activate', (event) => {
 
 // Fetch event - handle requests with optimized strategies
 self.addEventListener('fetch', (event) => {
-  // Log all fetch events for debugging in development
-  if (typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'development') {
-    console.debug('Service Worker fetch event:', event.request.url);
-  }
   // Skip non-GET requests
   if (event.request.method !== 'GET') return;
 
@@ -113,17 +112,12 @@ self.addEventListener('fetch', (event) => {
 
   // Skip caching for excluded URLs
   if (EXCLUDE_FROM_CACHE.some(exclude => event.request.url.includes(exclude))) {
-    // Log development resource requests for debugging
-    console.debug('Skipping cache for development resource:', url.pathname + url.search);
     return;
   }
 
   // Skip caching for development environment requests
   if (url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '0.0.0.0') {
-    // Additional checks for development resources
-    if (url.protocol === 'chrome-extension:') {
-      return;
-    }
+    return;
   }
 
   // Skip caching for Supabase requests (they should be handled by React Query)

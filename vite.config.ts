@@ -13,7 +13,6 @@ export default defineConfig(({ mode }) => ({
   plugins: [
     react(), 
     mode === "development" && componentTagger(),
-    // Note: splitVendorChunkPlugin() removed as it conflicts with manualChunks
   ].filter(Boolean),
   resolve: {
     alias: {
@@ -35,18 +34,38 @@ export default defineConfig(({ mode }) => ({
       // External dependencies that shouldn't be bundled
       external: [],
       output: {
-        // Simplified manualChunks to ensure React is properly bundled
-        manualChunks: (id) => {
-          if (id.includes('node_modules')) {
-            // Ensure React and related packages are in the same chunk
-            if (id.includes('react') || id.includes('react-dom')) return 'react';
-            if (id.includes('@radix-ui')) return 'radix-ui';
-            if (id.includes('@tanstack') || id.includes('@supabase')) return 'data';
-            if (id.includes('recharts')) return 'charts';
-            if (id.includes('date-fns') || id.includes('lucide-react')) return 'utils';
-            // Other node_modules go to vendor chunk
-            return 'vendor';
-          }
+        // Simplified manualChunks to ensure proper loading order
+        manualChunks: {
+          // React and React DOM in separate chunk to ensure proper loading
+          'react': ['react', 'react-dom'],
+          // Keep critical vendor libraries together
+          'vendor': [
+            '@radix-ui/react-dialog',
+            '@radix-ui/react-dropdown-menu',
+            '@radix-ui/react-select',
+            '@radix-ui/react-tooltip',
+            '@radix-ui/react-popover',
+            '@radix-ui/react-slot',
+            '@tanstack/react-query',
+            '@supabase/supabase-js',
+            'recharts',
+            'date-fns',
+            'lucide-react',
+            'clsx',
+            'tailwind-merge',
+            'class-variance-authority',
+            'react-hook-form',
+            '@hookform/resolvers',
+            'zod',
+            'sonner',
+            'cmdk',
+            'input-otp',
+            'react-day-picker',
+            'react-resizable-panels',
+            'embla-carousel-react',
+            'xlsx',
+            'exceljs'
+          ]
         },
         
         // Optimize chunk naming
@@ -56,7 +75,7 @@ export default defineConfig(({ mode }) => ({
       }
     },
     
-    // Optimize dependencies
+    // Ensure React is loaded first by specifying it in optimizeDeps
     optimizeDeps: {
       include: [
         'react',
