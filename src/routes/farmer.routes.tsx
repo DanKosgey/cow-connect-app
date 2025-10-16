@@ -12,7 +12,7 @@ const FarmerDashboard = lazy(() => import("../pages/farmer-portal/FarmerDashboar
 const EnhancedFarmerDashboard = lazy(() => import("../pages/farmer-portal/EnhancedFarmerDashboard"));
 const CollectionsPage = lazy(() => import("../pages/farmer-portal/CollectionsPage"));
 const PaymentsPage = lazy(() => import("../pages/farmer-portal/PaymentsPage"));
-const MarketPricesPage = lazy(() => import("../pages/farmer-portal/MarketPricesPage"));
+// MarketPricesPage removed as requested
 const CommunityForumPage = lazy(() => import("../pages/farmer-portal/CommunityForumPage"));
 const AnalyticsPage = lazy(() => import("../pages/farmer-portal/AnalyticsPage"));
 const QualityReportsPage = lazy(() => import("../pages/farmer-portal/QualityReportsPage"));
@@ -121,15 +121,7 @@ const FarmerRoutes = () => {
             </DashboardLayout>
           </ProtectedRoute>
         } />
-        <Route path="market-prices" element={
-          <ProtectedRoute requiredRole={UserRole.FARMER}>
-            <DashboardLayout>
-              <PageTransition>
-                <MarketPricesPage />
-              </PageTransition>
-            </DashboardLayout>
-          </ProtectedRoute>
-        } />
+        {/* Market Prices route removed as requested */}
         <Route path="community" element={
           <ProtectedRoute requiredRole={UserRole.FARMER}>
             <DashboardLayout>

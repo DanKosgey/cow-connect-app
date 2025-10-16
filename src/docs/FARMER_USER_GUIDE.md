@@ -116,7 +116,6 @@ You must upload clear images of the following documents:
 - **Dashboard**: Overview of your account
 - **Collections**: View and record milk collections
 - **Payments**: View payment history and status
-- **Market Prices**: Current milk pricing information
 - **Analytics**: Your production and payment analytics
 - **Profile**: Update your personal information
 

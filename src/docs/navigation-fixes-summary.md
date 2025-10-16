@@ -19,7 +19,7 @@ This document summarizes the fixes made to resolve the navigation blocking issue
 
 ### 2. Fixed Farmer Navigation Paths in DashboardLayout
 **File**: `src/components/DashboardLayout.tsx`
-- Changed `/farmer/prices` to `/farmer/market-prices`
+- Removed Market Prices page navigation (page removed from farmer portal)
 - Changed `/farmer/performance` to `/farmer/insights`
 
 ### 3. Fixed Staff Navigation Paths in DashboardLayout

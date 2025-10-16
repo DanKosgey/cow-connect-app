@@ -1,0 +1,296 @@
+/* Responsive styles for the Community Forum page */
+
+/* Mobile First Styles */
+.forum-container {
+  padding: 1rem;
+}
+
+.forum-header {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.forum-title {
+  font-size: 1.5rem;
+  line-height: 1.2;
+}
+
+.forum-description {
+  font-size: 0.875rem;
+}
+
+/* Notification Center */
+.notification-center {
+  position: fixed;
+  top: 0;
+  right: 0;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  max-width: none;
+  z-index: 1000;
+}
+
+/* AI Chat Center */
+.ai-chat-card {
+  height: 500px;
+}
+
+/* Discussion Forum */
+.discussion-card {
+  margin-bottom: 1rem;
+}
+
+.post-content {
+  font-size: 0.875rem;
+}
+
+.comment-input-container {
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.comment-input {
+  width: 100%;
+}
+
+.comment-button {
+  width: 100%;
+}
+
+/* Filter Controls */
+.filter-controls {
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.filter-select {
+  width: 100%;
+}
+
+/* Medium Screens (Tablets) */
+@media (min-width: 768px) {
+  .forum-container {
+    padding: 1.5rem;
+  }
+  
+  .forum-header {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+  
+  .forum-title {
+    font-size: 2rem;
+  }
+  
+  .forum-description {
+    font-size: 1rem;
+  }
+  
+  /* Notification Center */
+  .notification-center {
+    position: absolute;
+    top: 4rem;
+    right: 1rem;
+    left: auto;
+    bottom: auto;
+    width: 24rem;
+    height: auto;
+    max-height: 31.25rem;
+  }
+  
+  /* AI Chat Center */
+  .ai-chat-card {
+    height: 600px;
+  }
+  
+  /* Discussion Forum */
+  .discussion-card {
+    margin-bottom: 1.5rem;
+  }
+  
+  .post-content {
+    font-size: 1rem;
+  }
+  
+  .comment-input-container {
+    flex-direction: row;
+    gap: 0.5rem;
+  }
+  
+  .comment-input {
+    width: auto;
+    flex: 1;
+  }
+  
+  .comment-button {
+    width: auto;
+  }
+  
+  /* Filter Controls */
+  .filter-controls {
+    flex-direction: row;
+    gap: 1rem;
+  }
+  
+  .filter-select {
+    width: auto;
+  }
+}
+
+/* Large Screens (Desktops) */
+@media (min-width: 1024px) {
+  .forum-container {
+    padding: 2rem;
+  }
+  
+  .forum-title {
+    font-size: 2.25rem;
+  }
+  
+  /* AI Chat Center */
+  .ai-chat-card {
+    height: 600px;
+  }
+  
+  /* Discussion Forum */
+  .discussion-card {
+    margin-bottom: 2rem;
+  }
+}
+
+/* Extra Large Screens */
+@media (min-width: 1280px) {
+  .forum-container {
+    padding: 2rem;
+    max-width: 80rem;
+    margin: 0 auto;
+  }
+  
+  .forum-title {
+    font-size: 2.5rem;
+  }
+}
+
+/* Utility Classes for Mobile Responsiveness */
+.mobile-hidden {
+  display: none;
+}
+
+.desktop-only {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .mobile-hidden {
+    display: block;
+  }
+  
+  .desktop-only {
+    display: block;
+  }
+}
+
+@media (min-width: 1024px) {
+  .desktop-only {
+    display: block;
+  }
+}
+
+/* Touch-friendly controls */
+.touch-friendly {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0.5rem;
+}
+
+/* Improved spacing for mobile */
+.mobile-spacing {
+  margin-bottom: 1rem;
+}
+
+@media (min-width: 768px) {
+  .mobile-spacing {
+    margin-bottom: 1.5rem;
+  }
+}
+
+/* Responsive text sizes */
+.responsive-text-sm {
+  font-size: 0.75rem;
+}
+
+.responsive-text-base {
+  font-size: 0.875rem;
+}
+
+.responsive-text-lg {
+  font-size: 1rem;
+}
+
+.responsive-text-xl {
+  font-size: 1.125rem;
+}
+
+.responsive-text-2xl {
+  font-size: 1.25rem;
+}
+
+@media (min-width: 768px) {
+  .responsive-text-sm {
+    font-size: 0.875rem;
+  }
+  
+  .responsive-text-base {
+    font-size: 1rem;
+  }
+  
+  .responsive-text-lg {
+    font-size: 1.125rem;
+  }
+  
+  .responsive-text-xl {
+    font-size: 1.25rem;
+  }
+  
+  .responsive-text-2xl {
+    font-size: 1.5rem;
+  }
+}
+
+/* Responsive button sizes */
+.btn-responsive-sm {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+}
+
+.btn-responsive-md {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+}
+
+.btn-responsive-lg {
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+}
+
+@media (min-width: 768px) {
+  .btn-responsive-sm {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+  }
+  
+  .btn-responsive-md {
+    padding: 0.75rem 1.5rem;
+    font-size: 1rem;
+  }
+  
+  .btn-responsive-lg {
+    padding: 1rem 2rem;
+    font-size: 1.125rem;
+  }
+}

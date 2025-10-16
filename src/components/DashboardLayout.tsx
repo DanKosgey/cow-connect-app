@@ -31,7 +31,6 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
-import { MarketPriceDisplay } from '@/components/admin/MarketPriceDisplay';
 
 interface NavItem {
   label: string;
@@ -58,7 +57,6 @@ const roleNavigation: Record<string, NavItem[]> = {
     // Finance - Payments and earnings
     { label: 'Payments', path: '/farmer/payments', icon: <DollarSign className="h-5 w-5" />, category: 'finance' },
     { label: 'Analytics', path: '/farmer/analytics', icon: <BarChart3 className="h-5 w-5" />, category: 'finance' },
-    { label: 'Market Prices', path: '/farmer/market-prices', icon: <TrendingUp className="h-5 w-5" />, category: 'finance' },
     
     // Communication & Community
     { label: 'Community Forum', path: '/farmer/community', icon: <MessageCircle className="h-5 w-5" />, category: 'community' },
@@ -67,6 +65,10 @@ const roleNavigation: Record<string, NavItem[]> = {
     // Account Management
     { label: 'KYC Upload', path: '/farmer/kyc-upload', icon: <FileText className="h-5 w-5" />, category: 'account' },
     { label: 'Profile', path: '/farmer/profile', icon: <UserCog className="h-5 w-5" />, category: 'account' },
+    
+    // System & Settings
+    { label: 'Application Status', path: '/farmer/application-status', icon: <Activity className="h-5 w-5" />, category: 'system' },
+    { label: 'Documents Under Review', path: '/farmer/documents-under-review', icon: <FileText className="h-5 w-5" />, category: 'system' },
   ],
   staff: [
     { label: 'Dashboard', path: '/staff/dashboard', icon: <LayoutDashboard className="h-5 w-5" />, category: 'main' },
@@ -388,11 +390,7 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
         </div>
 
         {/* Admin Rate Display for Admin */}
-        {userRole === 'admin' && (
-          <div className="p-2 border-b border-border">
-            <MarketPriceDisplay />
-          </div>
-        )}
+        {/* Market Prices display removed as requested */}
 
         {/* Navigation */}
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">

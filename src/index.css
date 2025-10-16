@@ -1,5 +1,6 @@
 @import './styles/responsive.css';
 @import './styles/navigation.css';
+@import './styles/forum-responsive.css';
 
 @tailwind base;
 @tailwind components;
@@ -205,85 +206,6 @@ All colors MUST be HSL.
     transition: var(--transition-bounce);
   }
 
-  /* Fade in animations */
-  @keyframes fadeIn {
-    from {
-      opacity: 0;
-      transform: translateY(10px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-
-  @keyframes fadeInUp {
-    from {
-      opacity: 0;
-      transform: translateY(20px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-
-  @keyframes fadeInLeft {
-    from {
-      opacity: 0;
-      transform: translateX(-20px);
-    }
-    to {
-      opacity: 1;
-      transform: translateX(0);
-    }
-  }
-
-  @keyframes fadeInRight {
-    from {
-      opacity: 0;
-      transform: translateX(20px);
-    }
-    to {
-      opacity: 1;
-      transform: translateX(0);
-    }
-  }
-
-  @keyframes bounceIn {
-    0% {
-      transform: scale(0.8);
-      opacity: 0;
-    }
-    50% {
-      transform: scale(1.05);
-    }
-    100% {
-      transform: scale(1);
-      opacity: 1;
-    }
-  }
-
-  .animate-fade-in {
-    animation: fadeIn 0.3s ease-out forwards;
-  }
-
-  .animate-fade-in-up {
-    animation: fadeInUp 0.4s ease-out forwards;
-  }
-
-  .animate-fade-in-left {
-    animation: fadeInLeft 0.3s ease-out forwards;
-  }
-
-  .animate-fade-in-right {
-    animation: fadeInRight 0.3s ease-out forwards;
-  }
-
-  .animate-bounce-in {
-    animation: bounceIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
-  }
-
   /* Page transition animations */
   .page-transition-enter {
     opacity: 0;
@@ -334,6 +256,35 @@ All colors MUST be HSL.
     opacity: 0;
     transform: translateX(-100%);
     transition: opacity 300ms ease-in, transform 300ms ease-in;
+  }
+  
+  /* Landing Page Hero Background */
+  .hero-background {
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+  }
+  
+  /* Card hover animation */
+  .card-hover {
+    transition: all 0.3s ease;
+    transform: translateY(0);
+  }
+  
+  .card-hover:hover {
+    transform: translateY(-5px);
+    box-shadow: var(--shadow-strong);
+  }
+  
+  /* Icon animation */
+  .icon-animate {
+    transition: all 0.3s ease;
+  }
+  
+  .icon-animate:hover {
+    transform: scale(1.1);
   }
 }
 
@@ -452,6 +403,26 @@ All colors MUST be HSL.
   }
 }
 
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-20px);
+  }
+}
+
+@keyframes scroll {
+  0% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+}
+
 /* Animation Classes */
 .fade-in {
   animation: fadeIn 0.3s ease-out forwards;
@@ -491,6 +462,14 @@ All colors MUST be HSL.
 
 .slide-out-right {
   animation: slideOutRight 0.3s ease-out forwards;
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.animate-scroll {
+  animation: scroll 1.5s ease-in-out infinite;
 }
 
 /* Staggered Animations */
