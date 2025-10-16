@@ -8,6 +8,15 @@ import "./styles/responsive.css";
 import Toaster from '@/components/ui/toaster'
 // import SonnerToaster from '@/components/ui/sonner' // optional, wire later
 
+// Unregister service workers for debugging
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then(registrations => {
+    for (const registration of registrations) {
+      registration.unregister();
+    }
+  });
+}
+
 // Ensure the root element exists
 const rootElement = document.getElementById("root");
 if (!rootElement) {

@@ -1,73 +1,53 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { Component, ReactNode } from 'react';
 
-interface Props {
+interface ErrorBoundaryProps {
   children: ReactNode;
-  fallback?: ReactNode;
 }
 
-interface State {
+interface ErrorBoundaryState {
   hasError: boolean;
-  error: Error | null;
-  errorInfo: ErrorInfo | null;
+  error?: Error;
 }
 
-export class ErrorBoundary extends Component<Props, State> {
-  public state: State = {
-    hasError: false,
-    error: null,
-    errorInfo: null
-  };
-
-  public static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, error, errorInfo: null };
+export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false };
   }
 
-  public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    this.setState({
-      error,
-      errorInfo
-    });
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    // Update state so the next render will show the fallback UI.
+    return { hasError: true, error };
+  }
 
-    // Log error to monitoring service
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    // You can also log the error to an error reporting service
     console.error('ErrorBoundary caught an error:', error, errorInfo);
   }
 
-  private handleRetry = () => {
-    this.setState({
-      hasError: false,
-      error: null,
-      errorInfo: null
-    });
-  };
-
-  public render() {
+  render() {
     if (this.state.hasError) {
-      if (this.props.fallback) {
-        return this.props.fallback;
-      }
-
+      // You can render any custom fallback UI
       return (
-        <div className="flex items-center justify-center min-h-[400px] p-4">
-          <Card className="p-6 max-w-md w-full">
-            <div className="text-center space-y-4">
-              <div className="mx-auto w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
-                <AlertTriangle className="h-6 w-6 text-red-600" />
-              </div>
-              <h3 className="text-lg font-medium">Something went wrong</h3>
-              <p className="text-sm text-muted-foreground">
-                We're sorry, but something went wrong. Please try again.
-              </p>
-              <div className="pt-4">
-                <Button onClick={this.handleRetry} className="w-full">
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  Try Again
-                </Button>
-              </div>
-            </div>
-          </Card>
+        <div className="min-h-screen flex items-center justify-center bg-red-50 p-4">
+          <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-6 space-y-4">
+            <h2 className="text-xl font-bold text-red-700">Something went wrong</h2>
+            <p className="text-gray-600">
+              We're sorry, but something went wrong. Please try refreshing the page.
+            </p>
+            {this.state.error && (
+              <details className="text-sm text-gray-500 bg-gray-100 p-3 rounded">
+                <summary className="font-medium cursor-pointer">Error details</summary>
+                <pre className="mt-2 overflow-auto">{this.state.error.toString()}</pre>
+              </details>
+            )}
+            <button
+              onClick={() => window.location.reload()}
+              className="w-full bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700 transition"
+            >
+              Reload Page
+            </button>
+          </div>
         </div>
       );
     }
