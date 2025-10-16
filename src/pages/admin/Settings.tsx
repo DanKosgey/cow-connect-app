@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { DashboardLayout } from '@/components/DashboardLayout';
+// DashboardLayout provided by AdminPortalLayout; avoid duplicate wrapper here
 import { PageHeader } from '@/components/admin/PageHeader';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -39,8 +39,8 @@ interface User {
   user_roles: UserRole[] | null;
 }
 
-// Define type for branch locations
-interface BranchLocation {
+// Define type for company locations
+interface CompanyLocation {
   id: string;
   name: string;
   address: string;
@@ -97,16 +97,16 @@ const AdminSettings = () => {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [notificationErrors, setNotificationErrors] = useState<Record<string, string>>({});
   
-  // Branch location state
-  const [branches, setBranches] = useState<BranchLocation[]>([]);
-  const [branchLoading, setBranchLoading] = useState(false);
-  const [newBranch, setNewBranch] = useState({
+  // Company location state
+  const [locations, setLocations] = useState<CompanyLocation[]>([]);
+  const [locationLoading, setLocationLoading] = useState(false);
+  const [newLocation, setNewLocation] = useState({
     name: '',
     address: '',
     gps_latitude: '',
     gps_longitude: ''
   });
-  const [branchErrors, setBranchErrors] = useState<Record<string, string>>({});
+  const [locationErrors, setLocationErrors] = useState<Record<string, string>>({});
 
   const fetchSettings = useCallback(async () => {
     try {
@@ -149,9 +149,9 @@ const AdminSettings = () => {
     }
   }, [toast]);
 
-  // Fetch branch locations
-  const fetchBranches = useCallback(async () => {
-    setBranchLoading(true);
+  // Fetch company locations
+  const fetchLocations = useCallback(async () => {
+    setLocationLoading(true);
     try {
       const { data, error } = await supabase
         .from('warehouses')
@@ -160,45 +160,45 @@ const AdminSettings = () => {
 
       if (error) throw error;
       
-      setBranches(data || []);
+      setLocations(data || []);
     } catch (error: any) {
-      console.error('Error fetching branch locations:', error);
+      console.error('Error fetching company locations:', error);
       toast({
         title: 'Error',
-        description: error.message || 'Failed to load branch locations',
+        description: error.message || 'Failed to load company locations',
         variant: 'error',
       });
     } finally {
-      setBranchLoading(false);
+      setLocationLoading(false);
     }
   }, [toast]);
 
-  // Add new branch location
-  const addBranch = useCallback(async () => {
+  // Add new company location
+  const addLocation = useCallback(async () => {
     // Validate input
     const errors: Record<string, string> = {};
     
-    if (!newBranch.name.trim()) {
-      errors.name = 'Branch name is required';
+    if (!newLocation.name.trim()) {
+      errors.name = 'Location name is required';
     }
     
-    if (!newBranch.address.trim()) {
-      errors.address = 'Branch address is required';
+    if (!newLocation.address.trim()) {
+      errors.address = 'Location address is required';
     }
     
-    // GPS coordinates are now mandatory for new branches
-    if (!newBranch.gps_latitude) {
+    // GPS coordinates are now mandatory for new locations
+    if (!newLocation.gps_latitude) {
       errors.gps_latitude = 'Latitude is required';
     }
     
-    if (!newBranch.gps_longitude) {
+    if (!newLocation.gps_longitude) {
       errors.gps_longitude = 'Longitude is required';
     }
     
     // Validate GPS coordinates if provided
-    if (newBranch.gps_latitude && newBranch.gps_longitude) {
-      const lat = parseFloat(newBranch.gps_latitude);
-      const lng = parseFloat(newBranch.gps_longitude);
+    if (newLocation.gps_latitude && newLocation.gps_longitude) {
+      const lat = parseFloat(newLocation.gps_latitude);
+      const lng = parseFloat(newLocation.gps_longitude);
       
       if (isNaN(lat)) {
         errors.gps_latitude = 'Invalid latitude value';
@@ -214,7 +214,7 @@ const AdminSettings = () => {
     }
     
     if (Object.keys(errors).length > 0) {
-      setBranchErrors(errors);
+      setLocationErrors(errors);
       toast({
         title: 'Validation Error',
         description: 'Please fix the errors before saving',
@@ -224,26 +224,32 @@ const AdminSettings = () => {
     }
 
     try {
-      const branchData: any = {
-        name: newBranch.name.trim(),
-        address: newBranch.address.trim(),
-        gps_latitude: parseFloat(newBranch.gps_latitude),
-        gps_longitude: parseFloat(newBranch.gps_longitude)
+      const locationData: any = {
+        name: newLocation.name.trim(),
+        address: newLocation.address.trim(),
+        gps_latitude: parseFloat(newLocation.gps_latitude),
+        gps_longitude: parseFloat(newLocation.gps_longitude)
       };
       
       const { data, error } = await supabase
         .from('warehouses')
-        .insert([branchData])
-        .select()
-        .single();
+        .insert([locationData])
+        .select();
 
       if (error) throw error;
       
+      // Check if we have data and handle accordingly
+      const locationRecord = data && data.length > 0 ? data[0] : null;
+      
+      if (!locationRecord) {
+        throw new Error('Failed to create company location');
+      }
+      
       // Add to local state
-      setBranches(prev => [...prev, data]);
+      setLocations(prev => [...prev, locationRecord]);
       
       // Reset form
-      setNewBranch({
+      setNewLocation({
         name: '',
         address: '',
         gps_latitude: '',
@@ -252,21 +258,21 @@ const AdminSettings = () => {
       
       toast({
         title: 'Success',
-        description: 'Branch location added successfully',
+        description: 'Company location added successfully',
         variant: 'success',
       });
     } catch (error: any) {
-      console.error('Error adding branch location:', error);
+      console.error('Error adding company location:', error);
       toast({
         title: 'Error',
-        description: error.message || 'Failed to add branch location',
+        description: error.message || 'Failed to add company location',
         variant: 'error',
       });
     }
-  }, [newBranch, toast]);
+  }, [newLocation, toast]);
 
-  // Delete branch location
-  const deleteBranch = useCallback(async (id: string) => {
+  // Delete company location
+  const deleteLocation = useCallback(async (id: string) => {
     try {
       const { error } = await supabase
         .from('warehouses')
@@ -276,18 +282,18 @@ const AdminSettings = () => {
       if (error) throw error;
       
       // Remove from local state
-      setBranches(prev => prev.filter(branch => branch.id !== id));
+      setLocations(prev => prev.filter(location => location.id !== id));
       
       toast({
         title: 'Success',
-        description: 'Branch location deleted successfully',
+        description: 'Company location deleted successfully',
         variant: 'success',
       });
     } catch (error: any) {
-      console.error('Error deleting branch location:', error);
+      console.error('Error deleting company location:', error);
       toast({
         title: 'Error',
-        description: error.message || 'Failed to delete branch location',
+        description: error.message || 'Failed to delete company location',
         variant: 'error',
       });
     }
@@ -506,7 +512,7 @@ const AdminSettings = () => {
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        setNewBranch(prev => ({
+        setNewLocation(prev => ({
           ...prev,
           gps_latitude: position.coords.latitude.toString(),
           gps_longitude: position.coords.longitude.toString()
@@ -553,22 +559,22 @@ const AdminSettings = () => {
     );
   }, [toast]);
 
-  // Handle branch input change
-  const handleBranchInputChange = useCallback((field: keyof typeof newBranch, value: string) => {
-    setNewBranch(prev => ({
+  // Handle location input change
+  const handleLocationInputChange = useCallback((field: keyof typeof newLocation, value: string) => {
+    setNewLocation(prev => ({
       ...prev,
       [field]: value
     }));
 
     // Clear error when user starts typing
-    if (branchErrors[field]) {
-      setBranchErrors(prev => {
+    if (locationErrors[field]) {
+      setLocationErrors(prev => {
         const newErrors = { ...prev };
         delete newErrors[field];
         return newErrors;
       });
     }
-  }, [branchErrors]);
+  }, [locationErrors]);
 
   // Memoize users with roles to prevent unnecessary re-renders
   const usersWithRoles = useMemo(() => {
@@ -581,22 +587,19 @@ const AdminSettings = () => {
   useEffect(() => {
     fetchSettings();
     fetchUsers();
-    fetchBranches(); // Fetch branches on component mount
-  }, [fetchSettings, fetchUsers, fetchBranches]);
+    fetchLocations(); // Fetch locations on component mount
+  }, [fetchSettings, fetchUsers, fetchLocations]);
 
   if (loading) {
     return (
-      <DashboardLayout>
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-        </div>
-      </DashboardLayout>
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
     );
   }
 
   return (
-    <DashboardLayout>
-      <div className="space-y-6">
+    <div className="space-y-6">
         <PageHeader 
           title="System Settings" 
           description="Manage system configuration and preferences"
@@ -808,50 +811,50 @@ const AdminSettings = () => {
           </Card>
         </div>
 
-        {/* Branch Locations */}
+        {/* Company Locations */}
         <Card>
           <CardHeader>
-            <CardTitle>Branch Locations</CardTitle>
-            <CardDescription>Manage company branch locations and GPS coordinates</CardDescription>
+            <CardTitle>Company Locations</CardTitle>
+            <CardDescription>Manage company locations and GPS coordinates</CardDescription>
           </CardHeader>
           <CardContent>
-            {/* Add New Branch Form */}
+            {/* Add New Location Form */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 p-4 border rounded-lg">
               <div className="space-y-2">
-                <Label htmlFor="branch_name">Branch Name *</Label>
+                <Label htmlFor="location_name">Location Name *</Label>
                 <Input
-                  id="branch_name"
-                  value={newBranch.name}
-                  onChange={(e) => handleBranchInputChange('name', e.target.value)}
-                  placeholder="Enter branch name"
+                  id="location_name"
+                  value={newLocation.name}
+                  onChange={(e) => handleLocationInputChange('name', e.target.value)}
+                  placeholder="Enter location name"
                 />
-                {branchErrors.name && (
-                  <p className="text-sm text-red-500">{branchErrors.name}</p>
+                {locationErrors.name && (
+                  <p className="text-sm text-red-500">{locationErrors.name}</p>
                 )}
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="branch_address">Branch Address *</Label>
+                <Label htmlFor="location_address">Location Address *</Label>
                 <Input
-                  id="branch_address"
-                  value={newBranch.address}
-                  onChange={(e) => handleBranchInputChange('address', e.target.value)}
-                  placeholder="Enter branch address"
+                  id="location_address"
+                  value={newLocation.address}
+                  onChange={(e) => handleLocationInputChange('address', e.target.value)}
+                  placeholder="Enter location address"
                 />
-                {branchErrors.address && (
-                  <p className="text-sm text-red-500">{branchErrors.address}</p>
+                {locationErrors.address && (
+                  <p className="text-sm text-red-500">{locationErrors.address}</p>
                 )}
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="branch_latitude">Latitude *</Label>
+                <Label htmlFor="location_latitude">Latitude *</Label>
                 <div className="flex gap-2">
                   <Input
-                    id="branch_latitude"
+                    id="location_latitude"
                     type="number"
                     step="any"
-                    value={newBranch.gps_latitude}
-                    onChange={(e) => handleBranchInputChange('gps_latitude', e.target.value)}
+                    value={newLocation.gps_latitude}
+                    onChange={(e) => handleLocationInputChange('gps_latitude', e.target.value)}
                     placeholder="Enter latitude"
                   />
                   <Button 
@@ -863,35 +866,35 @@ const AdminSettings = () => {
                     📍
                   </Button>
                 </div>
-                {branchErrors.gps_latitude && (
-                  <p className="text-sm text-red-500">{branchErrors.gps_latitude}</p>
+                {locationErrors.gps_latitude && (
+                  <p className="text-sm text-red-500">{locationErrors.gps_latitude}</p>
                 )}
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="branch_longitude">Longitude *</Label>
+                <Label htmlFor="location_longitude">Longitude *</Label>
                 <Input
-                  id="branch_longitude"
+                  id="location_longitude"
                   type="number"
                   step="any"
-                  value={newBranch.gps_longitude}
-                  onChange={(e) => handleBranchInputChange('gps_longitude', e.target.value)}
+                  value={newLocation.gps_longitude}
+                  onChange={(e) => handleLocationInputChange('gps_longitude', e.target.value)}
                   placeholder="Enter longitude"
                 />
-                {branchErrors.gps_longitude && (
-                  <p className="text-sm text-red-500">{branchErrors.gps_longitude}</p>
+                {locationErrors.gps_longitude && (
+                  <p className="text-sm text-red-500">{locationErrors.gps_longitude}</p>
                 )}
               </div>
               
               <div className="md:col-span-2 flex justify-end">
-                <Button onClick={addBranch}>
-                  Add Branch Location
+                <Button onClick={addLocation}>
+                  Add Company Location
                 </Button>
               </div>
             </div>
             
-            {/* Branch Locations List */}
-            {branchLoading ? (
+            {/* Company Locations List */}
+            {locationLoading ? (
               <div className="flex items-center justify-center h-32">
                 <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
               </div>
@@ -900,27 +903,27 @@ const AdminSettings = () => {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Branch Name</TableHead>
+                      <TableHead>Location Name</TableHead>
                       <TableHead>Address</TableHead>
                       <TableHead>GPS Coordinates</TableHead>
                       <TableHead>Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {branches.length === 0 ? (
+                    {locations.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
-                          No branch locations found. Add your first branch location above.
+                          No company locations found. Add your first company location above.
                         </TableCell>
                       </TableRow>
                     ) : (
-                      branches.map((branch) => (
-                        <TableRow key={branch.id}>
-                          <TableCell className="font-medium">{branch.name}</TableCell>
-                          <TableCell>{branch.address}</TableCell>
+                      locations.map((location) => (
+                        <TableRow key={location.id}>
+                          <TableCell className="font-medium">{location.name}</TableCell>
+                          <TableCell>{location.address}</TableCell>
                           <TableCell>
-                            {branch.gps_latitude !== null && branch.gps_longitude !== null ? (
-                              <span>{branch.gps_latitude.toFixed(6)}, {branch.gps_longitude.toFixed(6)}</span>
+                            {location.gps_latitude !== null && location.gps_longitude !== null ? (
+                              <span>{location.gps_latitude.toFixed(6)}, {location.gps_longitude.toFixed(6)}</span>
                             ) : (
                               <span className="text-muted-foreground">Not set</span>
                             )}
@@ -929,7 +932,7 @@ const AdminSettings = () => {
                             <Button
                               variant="destructive"
                               size="sm"
-                              onClick={() => deleteBranch(branch.id)}
+                              onClick={() => deleteLocation(location.id)}
                             >
                               Delete
                             </Button>
@@ -1016,7 +1019,6 @@ const AdminSettings = () => {
           </Button>
         </div>
       </div>
-    </DashboardLayout>
   );
 };
 

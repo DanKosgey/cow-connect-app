@@ -93,7 +93,7 @@ const QUALITY_COLORS = {
 };
 
 const EnhancedStaffDashboard = () => {
-  const { user } = useAuth();
+  const { user, userRole } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
   const { staffInfo, loading: staffLoading } = useStaffInfo();
@@ -134,7 +134,7 @@ const EnhancedStaffDashboard = () => {
           total_amount,
           collection_date,
           status,
-          farmers (
+          farmers!fk_collections_farmer_id (
             full_name,
             id
           )
@@ -602,22 +602,36 @@ const EnhancedStaffDashboard = () => {
     );
   }
 
-  // Show a message if user is authenticated but has no staff record
-  if (!staffInfo && user?.id && !staffLoading) {
+  // Show a message if user is authenticated but has no staff record or wrong role
+  if ((!staffInfo && user?.id && !staffLoading) || (userRole && userRole !== 'staff')) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen p-4">
         <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8 text-center">
           <AlertCircle className="h-16 w-16 text-yellow-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Staff Record Not Found</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">
+            {userRole && userRole !== 'staff' ? 'Staff Access Required' : 'Staff Record Not Found'}
+          </h2>
           <p className="text-gray-600 mb-6">
-            Your account is authenticated, but no staff record was found. Please contact your administrator to set up your staff profile.
+            {userRole && userRole !== 'staff' 
+              ? `Your account is authenticated as a ${userRole}, but this portal requires staff access.`
+              : "Your account is authenticated, but no staff record was found."}
+            Please contact your administrator to set up your staff profile or log in with a staff account.
           </p>
-          <Button 
-            onClick={() => navigate('/')}
-            className="bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded"
-          >
-            Return to Home
-          </Button>
+          <div className="flex flex-col gap-2">
+            <Button 
+              onClick={() => navigate(`/${userRole || 'farmer'}/dashboard`)}
+              className="w-full bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded"
+            >
+              Go to {userRole === 'farmer' ? 'Farmer' : userRole === 'admin' ? 'Admin' : 'Your'} Dashboard
+            </Button>
+            <Button 
+              variant="outline"
+              onClick={() => navigate('/')}
+              className="w-full py-2 px-4 rounded"
+            >
+              Return to Home
+            </Button>
+          </div>
         </div>
       </div>
     );

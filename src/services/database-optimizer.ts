@@ -227,7 +227,7 @@ class DatabaseOptimizer {
             full_name,
             registration_number
           ),
-          staff (
+          collections_staff_id_fkey:staff (
             employee_id
           )
         `)

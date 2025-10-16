@@ -1,5 +1,4 @@
-import { useState, useEffect } from "react";
-import { DashboardLayout } from "@/components/DashboardLayout";
+import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,741 +6,958 @@ import { Textarea } from "@/components/ui/textarea";
 import { 
   MessageCircle, 
   ThumbsUp, 
-  Share2, 
-  Filter, 
-  Search,
-  Plus,
   User,
   Clock,
-  Tag,
-  Users,
-  Download
+  Bot,
+  Sparkles,
+  AlertCircle,
+  BookOpen,
+  Bell,
+  X,
+  Send,
+  Trash2
 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
-import useToastNotifications from "@/hooks/useToastNotifications";
-import { formatDistanceToNow } from 'date-fns';
 import { useRealtimeForumPosts, useRealtimeForumComments } from "@/hooks/useRealtimeForum";
-import { exportToCSV, exportToJSON } from "@/utils/exportUtils";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/SimplifiedAuthContext";
+import { PageHeader } from "@/components/PageHeader";
 
-interface ForumPost {
-  id: string;
-  title: string;
-  content: string;
-  author: {
-    id: string;
-    name: string;
-    avatar?: string;
+const GEMINI_API_KEY = "AIzaSyAbRPjA1V7byZ5db23NOxWtY1UX7qp5h8M";
+
+// Notification Component
+const NotificationCenter = ({ notifications, onClose, onClear }) => {
+  return (
+    <div className="absolute top-16 right-4 w-96 bg-white rounded-lg shadow-2xl border-2 border-blue-500 z-50 max-h-[500px] overflow-hidden flex flex-col">
+      <div className="flex items-center justify-between p-4 border-b bg-blue-50">
+        <h3 className="font-bold text-lg flex items-center gap-2">
+          <Bell className="h-5 w-5 text-blue-600" />
+          Notifications ({notifications.length})
+        </h3>
+        <div className="flex gap-2">
+          {notifications.length > 0 && (
+            <button onClick={onClear} className="text-sm text-blue-600 hover:text-blue-800">
+              Clear All
+            </button>
+          )}
+          <button onClick={onClose}>
+            <X className="h-5 w-5 text-gray-600" />
+          </button>
+        </div>
+      </div>
+      <div className="overflow-y-auto flex-1">
+        {notifications.length === 0 ? (
+          <div className="p-8 text-center text-gray-500">
+            <Bell className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+            <p>No notifications yet</p>
+          </div>
+        ) : (
+          <div className="divide-y">
+            {notifications.map((notif, idx) => (
+              <div key={idx} className={`p-4 hover:bg-gray-50 ${!notif.read ? 'bg-blue-50' : ''}`}>
+                <div className="flex items-start gap-3">
+                  <div className={`p-2 rounded-full ${notif.type === 'ai' ? 'bg-purple-100' : 'bg-green-100'}`}>
+                    {notif.type === 'ai' ? 
+                      <Bot className="h-4 w-4 text-purple-600" /> : 
+                      <MessageCircle className="h-4 w-4 text-green-600" />
+                    }
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">{notif.title}</p>
+                    <p className="text-xs text-gray-600 mt-1">{notif.message}</p>
+                    <p className="text-xs text-gray-400 mt-2">{notif.time}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// AI Chat Center Component
+const AIChatCenter = () => {
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const messagesEndRef = useRef(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
-  createdAt: string;
-  likes: number;
-  comments: number;
-  tags: string[];
-  isLiked: boolean;
-}
 
-interface Comment {
-  id: string;
-  content: string;
-  author: {
-    id: string;
-    name: string;
-    avatar?: string;
-  };
-  createdAt: string;
-  likes: number;
-  isLiked: boolean;
-}
-
-const CommunityForumPage = () => {
-  const toast = useToastNotifications();
-  const [loading, setLoading] = useState(true);
-  const [posts, setPosts] = useState<ForumPost[]>([]);
-  const [filteredPosts, setFilteredPosts] = useState<ForumPost[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [tagFilter, setTagFilter] = useState('all');
-  const [selectedPost, setSelectedPost] = useState<ForumPost | null>(null);
-  const [comments, setComments] = useState<Comment[]>([]);
-  const [newPostTitle, setNewPostTitle] = useState('');
-  const [newPostContent, setNewPostContent] = useState('');
-  const [newPostTags, setNewPostTags] = useState('');
-  const [newComment, setNewComment] = useState('');
-  const [showNewPostForm, setShowNewPostForm] = useState(false);
-  const { posts: realtimePosts, newPost: latestPost } = useRealtimeForumPosts();
-  const { comments: realtimeComments, newComment: latestComment } = useRealtimeForumComments(selectedPost?.id || '');
-
-  // Fetch forum posts
   useEffect(() => {
-    const fetchForumPosts = async () => {
-      try {
-        setLoading(true);
-        
-        // Use real-time posts if available, otherwise generate mock data
-        if (realtimePosts.length > 0) {
-          setPosts(realtimePosts.map(post => ({
-            id: post.id,
-            title: post.title,
-            content: post.content,
-            author: {
-              id: post.author_id,
-              name: 'Community Member', // In a real app, this would come from user data
+    scrollToBottom();
+  }, [messages]);
+
+  const callGeminiAPI = async (userMessage) => {
+    try {
+      const systemPrompt = `You are Dr. Dairy AI, a PhD-level dairy science specialist. You provide evidence-based advice on:
+- Dairy cattle nutrition and feeding strategies
+- Milk production optimization techniques
+- Disease prevention and herd health management
+- Breeding and genetics
+- Farm management best practices
+
+CRITICAL BOUNDARIES - You MUST follow these rules:
+1. For animal disease diagnosis or treatment: Say "⚠️ Please consult a licensed veterinarian immediately for proper diagnosis and treatment."
+2. For animal health emergencies: Say "🚨 This requires urgent veterinary attention. Contact your local vet right away."
+3. For legal/regulatory matters: Say "Please consult your local agricultural extension office or legal advisor."
+4. For financial/investment advice: Say "Please consult a financial advisor for investment decisions."
+
+Always cite scientific sources when possible (e.g., Journal of Dairy Science, ILRI Research, FAO guidelines).
+Be concise, practical, and farmer-friendly in your language.
+Use bullet points and clear formatting for better readability.`;
+
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            contents: [
+              {
+                role: "user",
+                parts: [
+                  {
+                    text: systemPrompt + "\n\nFarmer's Question: " + userMessage
+                  }
+                ]
+              }
+            ],
+            generationConfig: {
+              temperature: 0.7,
+              topK: 40,
+              topP: 0.95,
+              maxOutputTokens: 2048,
             },
-            createdAt: post.created_at,
-            likes: post.likes,
-            comments: post.comments,
-            tags: [], // In a real app, this would come from post data
-            isLiked: false
-          })));
-        } else {
-          // Generate mock forum posts
-          const mockPosts: ForumPost[] = [
-            {
-              id: '1',
-              title: 'Best practices for dairy cow feeding in dry season',
-              content: 'I\'ve been struggling with maintaining milk production during the dry season. What feeding strategies have worked for you?',
-              author: {
-                id: 'user1',
-                name: 'John Kamau',
+            safetySettings: [
+              {
+                category: "HARM_CATEGORY_HARASSMENT",
+                threshold: "BLOCK_MEDIUM_AND_ABOVE"
               },
-              createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), // 2 hours ago
-              likes: 24,
-              comments: 8,
-              tags: ['feeding', 'dry-season', 'cows'],
-              isLiked: false
-            },
-            {
-              id: '2',
-              title: 'Mastitis prevention tips',
-              content: 'Share your experiences with preventing mastitis in dairy cows. I\'ve found that regular teat dipping helps a lot.',
-              author: {
-                id: 'user2',
-                name: 'Mary Wanjiru',
+              {
+                category: "HARM_CATEGORY_HATE_SPEECH",
+                threshold: "BLOCK_MEDIUM_AND_ABOVE"
               },
-              createdAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(), // 5 hours ago
-              likes: 18,
-              comments: 12,
-              tags: ['health', 'mastitis', 'prevention'],
-              isLiked: true
-            },
-            {
-              id: '3',
-              title: 'New milking parlor equipment recommendations',
-              content: 'Looking to upgrade our milking parlor. Any recommendations for cost-effective yet efficient equipment?',
-              author: {
-                id: 'user3',
-                name: 'Peter Ochieng',
+              {
+                category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                threshold: "BLOCK_MEDIUM_AND_ABOVE"
               },
-              createdAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(), // 1 day ago
-              likes: 31,
-              comments: 15,
-              tags: ['equipment', 'milking', 'upgrade'],
-              isLiked: false
-            },
-            {
-              id: '4',
-              title: 'Organic dairy farming experiences',
-              content: 'Has anyone transitioned to organic dairy farming? How was your experience with certification?',
-              author: {
-                id: 'user4',
-                name: 'Grace Njeri',
-              },
-              createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(), // 3 days ago
-              likes: 12,
-              comments: 7,
-              tags: ['organic', 'certification', 'transition'],
-              isLiked: false
-            },
-            {
-              id: '5',
-              title: 'Dealing with milk spoilage during transport',
-              content: 'We\'re experiencing milk spoilage issues during transport to the collection center. Any solutions?',
-              author: {
-                id: 'user5',
-                name: 'David Mwangi',
-              },
-              createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(), // 5 days ago
-              likes: 9,
-              comments: 5,
-              tags: ['transport', 'spoilage', 'quality'],
-              isLiked: false
-            }
-          ];
-          
-          setPosts(mockPosts);
+              {
+                category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+                threshold: "BLOCK_MEDIUM_AND_ABOVE"
+              }
+            ]
+          })
         }
-        
-        setLoading(false);
-      } catch (err) {
-        console.error('Error fetching forum posts:', err);
-        toast.error('Error', 'Failed to load forum posts');
-        setLoading(false);
-      }
-    };
-    
-    fetchForumPosts();
-  }, [realtimePosts, toast]);
-
-  // Update comments when real-time comments change
-  useEffect(() => {
-    if (realtimeComments.length > 0) {
-      setComments(realtimeComments.map(comment => ({
-        id: comment.id,
-        content: comment.content,
-        author: {
-          id: comment.author_id,
-          name: 'Community Member', // In a real app, this would come from user data
-        },
-        createdAt: comment.created_at,
-        likes: comment.likes,
-        isLiked: false
-      })));
-    }
-  }, [realtimeComments]);
-
-  // Update filtered posts when posts or filters change
-  useEffect(() => {
-    let result = [...posts];
-    
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      result = result.filter(post => 
-        post.title.toLowerCase().includes(term) ||
-        post.content.toLowerCase().includes(term) ||
-        post.author.name.toLowerCase().includes(term)
       );
-    }
-    
-    if (tagFilter !== 'all') {
-      result = result.filter(post => post.tags.includes(tagFilter));
-    }
-    
-    setFilteredPosts(result);
-  }, [searchTerm, tagFilter, posts]);
 
-  // Generate mock comments
-  const generateMockComments = () => {
-    // Generate mock comments
-    const mockComments: Comment[] = [
-      {
-        id: 'c1',
-        content: 'We use a combination of hay and silage during dry season. Works well for us!',
-        author: {
-          id: 'user6',
-          name: 'Sarah Kimani',
-        },
-        createdAt: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(), // 1 hour ago
-        likes: 5,
-        isLiked: false
-      },
-      {
-        id: 'c2',
-        content: 'Don\'t forget to supplement with minerals. That\'s crucial during dry season.',
-        author: {
-          id: 'user7',
-          name: 'Robert Onyango',
-        },
-        createdAt: new Date(Date.now() - 30 * 60 * 1000).toISOString(), // 30 minutes ago
-        likes: 3,
-        isLiked: true
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('API Error Details:', errorData);
+        throw new Error(`API request failed: ${response.status}`);
       }
-    ];
-    
-    setComments(mockComments);
-  };
 
-  const handleCreatePost = () => {
-    if (!newPostTitle.trim() || !newPostContent.trim()) {
-      toast.error('Error', 'Please fill in all required fields');
-      return;
+      const data = await response.json();
+      
+      if (data.candidates && data.candidates[0] && data.candidates[0].content) {
+        return data.candidates[0].content.parts[0].text;
+      } else {
+        throw new Error('Unexpected API response format');
+      }
+    } catch (error) {
+      console.error('Gemini API Error:', error);
+      
+      // More helpful error message
+      if (error.message.includes('API request failed: 400')) {
+        return "⚠️ I encountered an error processing your request. This might be due to API configuration. Please try rephrasing your question or contact support if this continues.";
+      } else if (error.message.includes('API request failed: 429')) {
+        return "⚠️ I'm receiving too many requests right now. Please wait a moment and try again.";
+      } else if (error.message.includes('API request failed: 403')) {
+        return "⚠️ There's an authentication issue with the API. Please contact the administrator to check the API key configuration.";
+      } else {
+        return "⚠️ I'm having trouble connecting right now. Please check your internet connection and try again. If the issue persists, contact support.";
+      }
     }
-    
-    const tags = newPostTags.split(',').map(tag => tag.trim()).filter(tag => tag);
-    
-    const newPost: ForumPost = {
-      id: `${posts.length + 1}`,
-      title: newPostTitle,
-      content: newPostContent,
-      author: {
-        id: 'current-user',
-        name: 'You',
-      },
-      createdAt: new Date().toISOString(),
-      likes: 0,
-      comments: 0,
-      tags,
-      isLiked: false
-    };
-    
-    setPosts([newPost, ...posts]);
-    setFilteredPosts([newPost, ...filteredPosts]);
-    setShowNewPostForm(false);
-    setNewPostTitle('');
-    setNewPostContent('');
-    setNewPostTags('');
-    toast.success('Success', 'Post created successfully');
   };
 
-  const handleAddComment = () => {
-    if (!newComment.trim() || !selectedPost) {
-      toast.error('Error', 'Please enter a comment');
-      return;
+  const handleSend = async () => {
+    if (!input.trim() || loading) return;
+
+    const userMessage = {
+      role: 'user',
+      content: input,
+      timestamp: new Date()
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    setInput('');
+    setLoading(true);
+
+    const aiResponse = await callGeminiAPI(input);
+
+    const aiMessage = {
+      role: 'ai',
+      content: aiResponse,
+      timestamp: new Date()
+    };
+
+    setMessages(prev => [...prev, aiMessage]);
+    setLoading(false);
+  };
+
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
     }
-    
-    const comment: Comment = {
-      id: `${comments.length + 1}`,
-      content: newComment,
-      author: {
-        id: 'current-user',
-        name: 'You',
-      },
-      createdAt: new Date().toISOString(),
-      likes: 0,
-      isLiked: false
-    };
-    
-    setComments([...comments, comment]);
-    setNewComment('');
-    
-    // Update comment count on the post
-    setPosts(posts.map(post => 
-      post.id === selectedPost.id 
-        ? {...post, comments: post.comments + 1} 
-        : post
-    ));
-    
-    setFilteredPosts(filteredPosts.map(post => 
-      post.id === selectedPost.id 
-        ? {...post, comments: post.comments + 1} 
-        : post
-    ));
-    
-    toast.success('Success', 'Comment added successfully');
   };
 
-  const handleLikePost = (postId: string) => {
-    setPosts(posts.map(post => 
-      post.id === postId 
-        ? {...post, likes: post.isLiked ? post.likes - 1 : post.likes + 1, isLiked: !post.isLiked} 
-        : post
-    ));
-    
-    setFilteredPosts(filteredPosts.map(post => 
-      post.id === postId 
-        ? {...post, likes: post.isLiked ? post.likes - 1 : post.likes + 1, isLiked: !post.isLiked} 
-        : post
-    ));
-    
-    if (selectedPost && selectedPost.id === postId) {
-      setSelectedPost({
-        ...selectedPost,
-        likes: selectedPost.isLiked ? selectedPost.likes - 1 : selectedPost.likes + 1,
-        isLiked: !selectedPost.isLiked
+  const clearChat = () => {
+    if (confirm('Clear all chat history?')) {
+      setMessages([]);
+    }
+  };
+
+  return (
+    <Card className="h-[600px] flex flex-col shadow-lg">
+      <CardHeader className="bg-gradient-to-r from-purple-500 to-blue-600 text-white">
+        <CardTitle className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-white/20 rounded-full">
+              <Bot className="h-6 w-6" />
+            </div>
+            <div>
+              <div className="font-bold text-lg">Dr. Dairy AI</div>
+              <div className="text-xs font-normal opacity-90">PhD Dairy Science Specialist</div>
+            </div>
+          </div>
+          {messages.length > 0 && (
+            <button 
+              onClick={clearChat}
+              className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+            >
+              <Trash2 className="h-5 w-5" />
+            </button>
+          )}
+        </CardTitle>
+      </CardHeader>
+
+      <CardContent className="flex-1 overflow-hidden p-0 flex flex-col">
+        {/* Disclaimer */}
+        <div className="bg-yellow-50 border-b border-yellow-200 p-3">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 text-yellow-600 mt-0.5 flex-shrink-0" />
+            <p className="text-xs text-yellow-800">
+              <strong>Important:</strong> For animal health emergencies, disease diagnosis, or treatment decisions, always consult a licensed veterinarian.
+            </p>
+          </div>
+        </div>
+
+        {/* Messages Area */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
+          {messages.length === 0 ? (
+            <div className="text-center py-12">
+              <Sparkles className="h-16 w-16 text-purple-400 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-gray-700 mb-2">Ask Dr. Dairy AI Anything!</h3>
+              <p className="text-sm text-gray-600 mb-6">Get expert advice on dairy farming</p>
+              <div className="grid grid-cols-2 gap-3 max-w-md mx-auto">
+                <button
+                  onClick={() => setInput('What are the best feeding practices during dry season?')}
+                  className="p-3 bg-white rounded-lg border-2 border-purple-200 hover:border-purple-400 transition-colors text-left"
+                >
+                  <div className="text-2xl mb-1">🌾</div>
+                  <div className="text-xs font-medium text-gray-700">Feeding Strategies</div>
+                </button>
+                <button
+                  onClick={() => setInput('How can I prevent mastitis in my dairy herd?')}
+                  className="p-3 bg-white rounded-lg border-2 border-blue-200 hover:border-blue-400 transition-colors text-left"
+                >
+                  <div className="text-2xl mb-1">🏥</div>
+                  <div className="text-xs font-medium text-gray-700">Disease Prevention</div>
+                </button>
+                <button
+                  onClick={() => setInput('What factors affect milk quality?')}
+                  className="p-3 bg-white rounded-lg border-2 border-green-200 hover:border-green-400 transition-colors text-left"
+                >
+                  <div className="text-2xl mb-1">🥛</div>
+                  <div className="text-xs font-medium text-gray-700">Milk Quality</div>
+                </button>
+                <button
+                  onClick={() => setInput('Best practices for breeding dairy cows?')}
+                  className="p-3 bg-white rounded-lg border-2 border-pink-200 hover:border-pink-400 transition-colors text-left"
+                >
+                  <div className="text-2xl mb-1">🐄</div>
+                  <div className="text-xs font-medium text-gray-700">Breeding Tips</div>
+                </button>
+              </div>
+            </div>
+          ) : (
+            messages.map((msg, idx) => (
+              <div key={idx} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+                <div className={`p-2 rounded-full h-fit ${msg.role === 'user' ? 'bg-blue-100' : 'bg-purple-100'}`}>
+                  {msg.role === 'user' ? 
+                    <User className="h-5 w-5 text-blue-600" /> : 
+                    <Bot className="h-5 w-5 text-purple-600" />
+                  }
+                </div>
+                <div className={`flex-1 max-w-[80%] ${msg.role === 'user' ? 'items-end' : 'items-start'} flex flex-col`}>
+                  <div className={`p-4 rounded-lg ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200'}`}>
+                    <p className="text-sm whitespace-pre-line">{msg.content}</p>
+                  </div>
+                  <span className="text-xs text-gray-500 mt-1 px-2">
+                    {new Date(msg.timestamp).toLocaleTimeString()}
+                  </span>
+                </div>
+              </div>
+            ))
+          )}
+          {loading && (
+            <div className="flex gap-3">
+              <div className="p-2 rounded-full bg-purple-100 h-fit">
+                <Bot className="h-5 w-5 text-purple-600" />
+              </div>
+              <div className="bg-white border border-gray-200 p-4 rounded-lg">
+                <div className="flex gap-2">
+                  <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce"></div>
+                  <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                  <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                </div>
+              </div>
+            </div>
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Input Area */}
+        <div className="border-t bg-white p-4">
+          <div className="flex gap-2">
+            <Textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyPress={handleKeyPress}
+              placeholder="Ask about feeding, health, breeding, milk quality..."
+              rows={2}
+              className="flex-1 resize-none"
+              disabled={loading}
+            />
+            <Button 
+              onClick={handleSend}
+              disabled={loading || !input.trim()}
+              className="bg-purple-600 hover:bg-purple-700 px-6"
+            >
+              <Send className="h-4 w-4" />
+            </Button>
+          </div>
+          <p className="text-xs text-gray-500 mt-2">
+            Press Enter to send, Shift + Enter for new line
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
+// Simple Discussion Forum
+const DiscussionForum = ({ onNewNotification }) => {
+  const { posts, newPost } = useRealtimeForumPosts();
+  const [newPostContent, setNewPostContent] = useState('');
+  const [editingPostId, setEditingPostId] = useState(null);
+  const [editingPostContent, setEditingPostContent] = useState('');
+  const [showComments, setShowComments] = useState(null);
+  const [commentText, setCommentText] = useState('');
+  const [editingCommentId, setEditingCommentId] = useState(null);
+  const [editingCommentContent, setEditingCommentContent] = useState('');
+  const [postComments, setPostComments] = useState({});
+  const { user } = useAuth();
+
+  // Get user profiles for display names
+  const [userProfiles, setUserProfiles] = useState({});
+
+  // Get comments for a post
+  const getCommentsForPost = (postId) => {
+    return postComments[postId] || [];
+  };
+
+  // Fetch comments when showing comments for a post
+  useEffect(() => {
+    const fetchComments = async () => {
+      if (showComments) {
+        const { data, error } = await supabase
+          .from('forum_comments')
+          .select('*')
+          .eq('post_id', showComments)
+          .order('created_at', { ascending: true });
+        
+        if (!error && data) {
+          setPostComments(prev => ({
+            ...prev,
+            [showComments]: data
+          }));
+          
+          // Fetch user profiles for comment authors
+          const authorIds = [...new Set(data.map(comment => comment.author_id))];
+          if (authorIds.length > 0) {
+            const { data: profilesData, error: profilesError } = await supabase
+              .from('profiles')
+              .select('id, full_name')
+              .in('id', authorIds);
+            
+            if (!profilesError && profilesData) {
+              const profileMap = {};
+              profilesData.forEach(profile => {
+                profileMap[profile.id] = profile.full_name || 'Unknown User';
+              });
+              setUserProfiles(prev => ({
+                ...prev,
+                ...profileMap
+              }));
+            }
+          }
+        }
+      }
+    };
+
+    fetchComments();
+  }, [showComments]);
+
+  // Get user profiles for all post authors
+  useEffect(() => {
+    const fetchUserProfiles = async () => {
+      if (posts.length > 0) {
+        const authorIds = [...new Set(posts.map(post => post.author_id))];
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('id, full_name')
+          .in('id', authorIds);
+        
+        if (!error && data) {
+          const profileMap = {};
+          data.forEach(profile => {
+            profileMap[profile.id] = profile.full_name || 'Unknown User';
+          });
+          setUserProfiles(profileMap);
+        }
+      }
+    };
+
+    fetchUserProfiles();
+  }, [posts]);
+
+  // Fetch user profile for new post author
+  useEffect(() => {
+    if (newPost) {
+      const fetchUserProfile = async () => {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('full_name')
+          .eq('id', newPost.author_id)
+          .single();
+        
+        if (!error && data) {
+          setUserProfiles(prev => ({
+            ...prev,
+            [newPost.author_id]: data.full_name || 'Unknown User'
+          }));
+        }
+      };
+
+      fetchUserProfile();
+    }
+  }, [newPost]);
+
+  const handlePost = async () => {
+    if (!newPostContent.trim() || !user) return;
+
+    const { error } = await supabase
+      .from('forum_posts')
+      .insert({
+        title: newPostContent.substring(0, 50) + (newPostContent.length > 50 ? '...' : ''),
+        content: newPostContent,
+        author_id: user.id
+      });
+
+    if (!error) {
+      setNewPostContent('');
+      onNewNotification({
+        type: 'post',
+        title: 'Post Published',
+        message: 'Your post has been shared with the community',
+        time: 'Just now',
+        read: false
       });
     }
   };
 
-  const handleLikeComment = (commentId: string) => {
-    setComments(comments.map(comment => 
-      comment.id === commentId 
-        ? {...comment, likes: comment.isLiked ? comment.likes - 1 : comment.likes + 1, isLiked: !comment.isLiked} 
-        : comment
-    ));
-  };
-
-  // Get all unique tags
-  const allTags = Array.from(new Set(posts.flatMap(post => post.tags)));
-
-  const exportForumData = (format: 'csv' | 'json') => {
-    try {
-      // Prepare posts data for export
-      const postsExportData = filteredPosts.map(post => ({
-        id: post.id,
-        title: post.title,
-        content: post.content,
-        author: post.author.name,
-        createdAt: new Date(post.createdAt).toLocaleDateString(),
-        likes: post.likes,
-        comments: post.comments,
-        tags: post.tags.join(', ')
-      }));
-      
-      // Prepare comments data for export
-      const commentsExportData = comments.map(comment => ({
-        id: comment.id,
-        content: comment.content,
-        author: comment.author.name,
-        createdAt: new Date(comment.createdAt).toLocaleDateString(),
-        likes: comment.likes
-      }));
-      
-      if (format === 'csv') {
-        exportToCSV(postsExportData, 'forum-posts');
-        exportToCSV(commentsExportData, 'forum-comments');
-        toast.success('Success', 'Forum data exported as CSV');
-      } else {
-        exportToJSON(postsExportData, 'forum-posts');
-        exportToJSON(commentsExportData, 'forum-comments');
-        toast.success('Success', 'Forum data exported as JSON');
-      }
-    } catch (err) {
-      console.error('Error exporting forum data:', err);
-      toast.error('Error', 'Failed to export forum data');
+  const startEditingPost = (post) => {
+    if (user && post.author_id === user.id) {
+      setEditingPostId(post.id);
+      setEditingPostContent(post.content);
     }
   };
 
-  if (loading) {
-    return (
-      <DashboardLayout>
-        <div className="container mx-auto py-6">
-          <div className="flex items-center justify-center h-64">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-          </div>
-        </div>
-      </DashboardLayout>
-    );
-  }
+  const saveEditedPost = async (postId) => {
+    if (!editingPostContent.trim() || !user) return;
+
+    const { error } = await supabase
+      .from('forum_posts')
+      .update({
+        content: editingPostContent,
+        title: editingPostContent.substring(0, 50) + (editingPostContent.length > 50 ? '...' : ''),
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', postId)
+      .eq('author_id', user.id);
+
+    if (!error) {
+      setEditingPostId(null);
+      setEditingPostContent('');
+      onNewNotification({
+        type: 'post',
+        title: 'Post Updated',
+        message: 'Your post has been updated',
+        time: 'Just now',
+        read: false
+      });
+    }
+  };
+
+  const deletePost = async (postId) => {
+    if (!user) return;
+
+    if (window.confirm('Are you sure you want to delete this post?')) {
+      const { error } = await supabase
+        .from('forum_posts')
+        .delete()
+        .eq('id', postId)
+        .eq('author_id', user.id);
+
+      if (!error) {
+        onNewNotification({
+          type: 'post',
+          title: 'Post Deleted',
+          message: 'Your post has been deleted',
+          time: 'Just now',
+          read: false
+        });
+      }
+    }
+  };
+
+  const handleLike = async (postId, currentLikes, isLiked) => {
+    // In a real implementation, you would track which users have liked which posts
+    // For now, we'll just update the like count
+    const newLikes = isLiked ? currentLikes - 1 : currentLikes + 1;
+    
+    await supabase
+      .from('forum_posts')
+      .update({ likes: newLikes })
+      .eq('id', postId);
+  };
+
+  const handleComment = async (postId) => {
+    if (!commentText.trim() || !user) return;
+
+    const { error } = await supabase
+      .from('forum_comments')
+      .insert({
+        post_id: postId,
+        content: commentText,
+        author_id: user.id
+      });
+
+    if (!error) {
+      // Update the comment count for the post
+      const post = posts.find(p => p.id === postId);
+      if (post) {
+        await supabase
+          .from('forum_posts')
+          .update({ comments: post.comments + 1 })
+          .eq('id', postId);
+      }
+
+      setCommentText('');
+      setShowComments(null);
+      onNewNotification({
+        type: 'comment',
+        title: 'Comment Added',
+        message: 'Your comment has been posted',
+        time: 'Just now',
+        read: false
+      });
+    }
+  };
+
+  const startEditingComment = (comment) => {
+    if (user && comment.author_id === user.id) {
+      setEditingCommentId(comment.id);
+      setEditingCommentContent(comment.content);
+    }
+  };
+
+  const saveEditedComment = async (commentId, postId) => {
+    if (!editingCommentContent.trim() || !user) return;
+
+    const { error } = await supabase
+      .from('forum_comments')
+      .update({
+        content: editingCommentContent,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', commentId)
+      .eq('author_id', user.id);
+
+    if (!error) {
+      setEditingCommentId(null);
+      setEditingCommentContent('');
+      
+      // Refresh comments for this post
+      setShowComments(null);
+      setTimeout(() => setShowComments(postId), 100);
+      
+      onNewNotification({
+        type: 'comment',
+        title: 'Comment Updated',
+        message: 'Your comment has been updated',
+        time: 'Just now',
+        read: false
+      });
+    }
+  };
+
+  const deleteComment = async (commentId, postId) => {
+    if (!user) return;
+
+    if (window.confirm('Are you sure you want to delete this comment?')) {
+      const { error } = await supabase
+        .from('forum_comments')
+        .delete()
+        .eq('id', commentId)
+        .eq('author_id', user.id);
+
+      if (!error) {
+        // Update the comment count for the post
+        const post = posts.find(p => p.id === postId);
+        if (post) {
+          await supabase
+            .from('forum_posts')
+            .update({ comments: Math.max(0, post.comments - 1) })
+            .eq('id', postId);
+        }
+        
+        // Refresh comments for this post
+        setShowComments(null);
+        setTimeout(() => setShowComments(postId), 100);
+        
+        onNewNotification({
+          type: 'comment',
+          title: 'Comment Deleted',
+          message: 'Your comment has been deleted',
+          time: 'Just now',
+          read: false
+        });
+      }
+    }
+  };
+
+  const formatTime = (dateString) => {
+    const now = new Date();
+    const date = new Date(dateString);
+    const diff = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+    if (diff < 60) return 'Just now';
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    return `${Math.floor(diff / 86400)}d ago`;
+  };
 
   return (
-    <DashboardLayout>
-      <div className="container mx-auto py-6">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Community Forum</h1>
-            <p className="text-gray-600 mt-2">Connect with fellow farmers and share knowledge</p>
-          </div>
-          <div className="mt-4 md:mt-0 flex gap-2">
+    <Card className="shadow-lg">
+      <CardHeader className="bg-gradient-to-r from-green-500 to-blue-600 text-white">
+        <CardTitle className="flex items-center gap-2">
+          <MessageCircle className="h-6 w-6" />
+          Community Discussion
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="pt-6">
+        {/* New Post */}
+        <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+          <Textarea
+            value={newPostContent}
+            onChange={(e) => setNewPostContent(e.target.value)}
+            placeholder="Share your experiences, ask questions, or start a discussion..."
+            rows={3}
+            className="mb-3"
+          />
+          <div className="flex justify-end">
             <Button 
-              onClick={() => setShowNewPostForm(!showNewPostForm)} 
-              className="flex items-center gap-2"
+              onClick={handlePost}
+              disabled={!newPostContent.trim() || !user}
+              className="bg-green-600 hover:bg-green-700"
             >
-              <Plus className="h-4 w-4" />
-              New Post
-            </Button>
-            <Button onClick={() => exportForumData('csv')} variant="outline" className="flex items-center gap-2">
-              <Download className="h-4 w-4" />
-              CSV
-            </Button>
-            <Button onClick={() => exportForumData('json')} variant="outline" className="flex items-center gap-2">
-              <Download className="h-4 w-4" />
-              JSON
+              <Send className="h-4 w-4 mr-2" />
+              Post
             </Button>
           </div>
         </div>
 
-        {/* New Post Form - Responsive */}
-        {showNewPostForm && (
-          <Card className="mb-8">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <MessageCircle className="h-5 w-5" />
-                Create New Post
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium mb-2">Title</label>
-                  <Input
-                    value={newPostTitle}
-                    onChange={(e) => setNewPostTitle(e.target.value)}
-                    placeholder="Enter post title"
-                  />
+        {/* Posts Feed */}
+        <div className="space-y-4">
+          {posts.map(post => (
+            <div key={post.id} className="border rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
+              <div className="flex items-start gap-3">
+                <div className="p-2 rounded-full bg-green-100">
+                  <User className="h-5 w-5 text-green-600" />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium mb-2">Content</label>
-                  <Textarea
-                    value={newPostContent}
-                    onChange={(e) => setNewPostContent(e.target.value)}
-                    placeholder="Share your thoughts, questions, or experiences..."
-                    rows={4}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-2">Tags (comma separated)</label>
-                  <Input
-                    value={newPostTags}
-                    onChange={(e) => setNewPostTags(e.target.value)}
-                    placeholder="e.g., feeding, health, equipment"
-                  />
-                </div>
-                <div className="flex justify-end space-x-3">
-                  <Button variant="outline" onClick={() => setShowNewPostForm(false)}>
-                    Cancel
-                  </Button>
-                  <Button onClick={handleCreatePost}>
-                    Post
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Filters - Responsive */}
-        <Card className="mb-8">
-          <CardContent className="pt-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search posts..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-              <div>
-                <select
-                  className="w-full h-10 px-3 py-2 border border-input rounded-md text-sm"
-                  value={tagFilter}
-                  onChange={(e) => setTagFilter(e.target.value)}
-                >
-                  <option value="all">All Tags</option>
-                  {allTags.map(tag => (
-                    <option key={tag} value={tag}>{tag}</option>
-                  ))}
-                </select>
-              </div>
-              <Button 
-                variant="outline" 
-                onClick={() => {
-                  setSearchTerm('');
-                  setTagFilter('all');
-                }}
-              >
-                <Filter className="h-4 w-4 mr-2" />
-                Clear Filters
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Forum Content - Responsive */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Forum Posts */}
-          <div className="lg:col-span-2">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <MessageCircle className="h-5 w-5 text-primary" />
-                  Recent Discussions
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {filteredPosts.length > 0 ? (
-                  <div className="space-y-6">
-                    {filteredPosts.map((post) => (
-                      <div 
-                        key={post.id} 
-                        className={`border rounded-lg p-6 hover:bg-muted/50 transition-colors cursor-pointer ${
-                          selectedPost?.id === post.id ? 'ring-2 ring-primary' : ''
-                        }`}
-                        onClick={() => setSelectedPost(post)}
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="flex items-start space-x-3">
-                            <div className="p-2 rounded-full bg-muted">
-                              <User className="h-5 w-5 text-muted-foreground" />
-                            </div>
-                            <div>
-                              <h3 className="font-semibold text-lg">{post.title}</h3>
-                              <p className="text-muted-foreground mt-1 line-clamp-2">{post.content}</p>
-                              <div className="flex flex-wrap gap-2 mt-3">
-                                {post.tags.map(tag => (
-                                  <span 
-                                    key={tag} 
-                                    className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800"
-                                  >
-                                    <Tag className="h-3 w-3 mr-1" />
-                                    {tag}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                        
-                        <div className="flex items-center justify-between mt-4">
-                          <div className="flex items-center space-x-4 text-sm text-muted-foreground">
-                            <span>{post.author.name}</span>
-                            <span>•</span>
-                            <span className="flex items-center">
-                              <Clock className="h-4 w-4 mr-1" />
-                              {formatDistanceToNow(new Date(post.createdAt), { addSuffix: true })}
-                            </span>
-                          </div>
-                          
-                          <div className="flex items-center space-x-4">
-                            <button 
-                              className="flex items-center space-x-1 text-sm hover:text-primary transition-colors"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleLikePost(post.id);
-                              }}
-                            >
-                              <ThumbsUp className={`h-4 w-4 ${post.isLiked ? 'text-primary fill-current' : ''}`} />
-                              <span>{post.likes}</span>
-                            </button>
-                            <div className="flex items-center space-x-1 text-sm text-muted-foreground">
-                              <MessageCircle className="h-4 w-4" />
-                              <span>{post.comments}</span>
-                            </div>
-                            <button className="text-muted-foreground hover:text-primary transition-colors">
-                              <Share2 className="h-4 w-4" />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                <div className="flex-1">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-semibold text-gray-900">
+                      {userProfiles[post.author_id] || 'Loading...'}
+                    </span>
+                    <span className="text-xs text-gray-500 flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      {formatTime(post.created_at)}
+                    </span>
                   </div>
-                ) : (
-                  <div className="text-center py-12">
-                    <MessageCircle className="mx-auto h-12 w-12 text-gray-400" />
-                    <h3 className="mt-2 text-sm font-medium text-gray-900">No posts found</h3>
-                    <p className="mt-1 text-sm text-gray-500">
-                      Try adjusting your search or filter criteria
-                    </p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Post Details & Comments - Responsive */}
-          <div>
-            <Card className="mb-6">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Users className="h-5 w-5 text-primary" />
-                  Discussion
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {selectedPost ? (
-                  <div className="space-y-6">
-                    <div>
-                      <h2 className="text-xl font-bold">{selectedPost.title}</h2>
-                      <div className="flex items-center mt-2 text-sm text-muted-foreground">
-                        <span>{selectedPost.author.name}</span>
-                        <span className="mx-2">•</span>
-                        <span className="flex items-center">
-                          <Clock className="h-4 w-4 mr-1" />
-                          {formatDistanceToNow(new Date(selectedPost.createdAt), { addSuffix: true })}
-                        </span>
-                      </div>
-                      <p className="mt-4 text-gray-700">{selectedPost.content}</p>
-                      <div className="flex flex-wrap gap-2 mt-4">
-                        {selectedPost.tags.map(tag => (
-                          <span 
-                            key={tag} 
-                            className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800"
-                          >
-                            <Tag className="h-3 w-3 mr-1" />
-                            {tag}
-                          </span>
-                        ))}
+                  
+                  {editingPostId === post.id ? (
+                    <div className="mb-3">
+                      <Textarea
+                        value={editingPostContent}
+                        onChange={(e) => setEditingPostContent(e.target.value)}
+                        rows={3}
+                        className="mb-2"
+                      />
+                      <div className="flex gap-2">
+                        <Button 
+                          onClick={() => saveEditedPost(post.id)}
+                          size="sm"
+                          className="bg-blue-600 hover:bg-blue-700"
+                        >
+                          Save
+                        </Button>
+                        <Button 
+                          onClick={() => {
+                            setEditingPostId(null);
+                            setEditingPostContent('');
+                          }}
+                          variant="outline"
+                          size="sm"
+                        >
+                          Cancel
+                        </Button>
                       </div>
                     </div>
-                    
-                    <div className="flex items-center justify-between pt-4 border-t">
-                      <button 
-                        className="flex items-center space-x-1 hover:text-primary transition-colors"
-                        onClick={() => handleLikePost(selectedPost.id)}
-                      >
-                        <ThumbsUp className={`h-5 w-5 ${selectedPost.isLiked ? 'text-primary fill-current' : ''}`} />
-                        <span>{selectedPost.likes} likes</span>
-                      </button>
-                      <button className="flex items-center space-x-1 text-muted-foreground hover:text-primary transition-colors">
-                        <Share2 className="h-5 w-5" />
-                        <span>Share</span>
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-center py-8">
-                    <MessageCircle className="mx-auto h-12 w-12 text-gray-400" />
-                    <h3 className="mt-2 text-sm font-medium text-gray-900">No post selected</h3>
-                    <p className="mt-1 text-sm text-gray-500">
-                      Select a post from the list to view details
-                    </p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Comments Section - Responsive */}
-            {selectedPost && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <MessageCircle className="h-5 w-5 text-primary" />
-                    Comments ({comments.length})
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-6">
-                    {/* Add Comment Form */}
-                    <div className="flex space-x-3">
-                      <div className="p-2 rounded-full bg-muted">
-                        <User className="h-5 w-5 text-muted-foreground" />
+                  ) : (
+                    <p className="text-gray-700 mb-3">{post.content}</p>
+                  )}
+                  
+                  <div className="flex items-center gap-4">
+                    <button
+                      onClick={() => handleLike(post.id, post.likes, false)}
+                      className="flex items-center gap-1 text-sm text-gray-600 hover:text-blue-600 transition-colors"
+                    >
+                      <ThumbsUp className="h-4 w-4" />
+                      {post.likes}
+                    </button>
+                    <button
+                      onClick={() => setShowComments(showComments === post.id ? null : post.id)}
+                      className="flex items-center gap-1 text-sm text-gray-600 hover:text-blue-600 transition-colors"
+                    >
+                      <MessageCircle className="h-4 w-4" />
+                      {post.comments}
+                    </button>
+                    {user && post.author_id === user.id && (
+                      <div className="flex gap-2 ml-auto">
+                        <Button
+                          onClick={() => startEditingPost(post)}
+                          variant="outline"
+                          size="sm"
+                          className="h-8 px-2 text-xs"
+                        >
+                          Edit
+                        </Button>
+                        <Button
+                          onClick={() => deletePost(post.id)}
+                          variant="outline"
+                          size="sm"
+                          className="h-8 px-2 text-xs text-red-600 hover:text-red-800"
+                        >
+                          Delete
+                        </Button>
                       </div>
-                      <div className="flex-1">
-                        <Textarea
-                          value={newComment}
-                          onChange={(e) => setNewComment(e.target.value)}
-                          placeholder="Add a comment..."
-                          rows={3}
-                        />
-                        <div className="mt-2 flex justify-end">
-                          <Button 
-                            size="sm" 
-                            onClick={handleAddComment}
-                            disabled={!newComment.trim()}
-                          >
-                            Post Comment
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
+                    )}
+                  </div>
 
-                    {/* Comments List */}
-                    <div className="space-y-6">
-                      {comments.map((comment) => (
-                        <div key={comment.id} className="flex space-x-3">
-                          <div className="p-2 rounded-full bg-muted">
-                            <User className="h-5 w-5 text-muted-foreground" />
-                          </div>
-                          <div className="flex-1">
-                            <div className="bg-muted rounded-lg p-4">
+                  {/* Comment Section */}
+                  {showComments === post.id && (
+                    <div className="mt-4 pt-4 border-t">
+                      <div className="space-y-3">
+                        {getCommentsForPost(post.id).map(comment => (
+                          <div key={comment.id} className="flex items-start gap-2 p-2 bg-gray-50 rounded">
+                            <User className="h-4 w-4 text-gray-600 mt-1" />
+                            <div className="flex-1">
                               <div className="flex items-center justify-between">
-                                <span className="font-medium">{comment.author.name}</span>
-                                <span className="text-xs text-muted-foreground">
-                                  {formatDistanceToNow(new Date(comment.createdAt), { addSuffix: true })}
+                                <span className="text-sm font-medium">
+                                  {userProfiles[comment.author_id] || 'Loading...'}
+                                </span>
+                                <span className="text-xs text-gray-500">
+                                  {formatTime(comment.created_at)}
                                 </span>
                               </div>
-                              <p className="mt-2 text-gray-700">{comment.content}</p>
-                            </div>
-                            <div className="mt-2 flex items-center space-x-4">
-                              <button 
-                                className="flex items-center space-x-1 text-xs hover:text-primary transition-colors"
-                                onClick={() => handleLikeComment(comment.id)}
-                              >
-                                <ThumbsUp className={`h-4 w-4 ${comment.isLiked ? 'text-primary fill-current' : ''}`} />
-                                <span>{comment.likes}</span>
-                              </button>
+                              
+                              {editingCommentId === comment.id ? (
+                                <div className="mt-2">
+                                  <Textarea
+                                    value={editingCommentContent}
+                                    onChange={(e) => setEditingCommentContent(e.target.value)}
+                                    rows={2}
+                                    className="mb-2 text-sm"
+                                  />
+                                  <div className="flex gap-2">
+                                    <Button 
+                                      onClick={() => saveEditedComment(comment.id, post.id)}
+                                      size="sm"
+                                      className="h-7 text-xs bg-blue-600 hover:bg-blue-700"
+                                    >
+                                      Save
+                                    </Button>
+                                    <Button 
+                                      onClick={() => {
+                                        setEditingCommentId(null);
+                                        setEditingCommentContent('');
+                                      }}
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-7 text-xs"
+                                    >
+                                      Cancel
+                                    </Button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <p className="text-sm text-gray-700 mt-1">{comment.content}</p>
+                              )}
+                              
+                              {user && comment.author_id === user.id && editingCommentId !== comment.id && (
+                                <div className="flex gap-2 mt-2">
+                                  <Button
+                                    onClick={() => startEditingComment(comment)}
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-6 px-2 text-xs"
+                                  >
+                                    Edit
+                                  </Button>
+                                  <Button
+                                    onClick={() => deleteComment(comment.id, post.id)}
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-6 px-2 text-xs text-red-600 hover:text-red-800"
+                                  >
+                                    Delete
+                                  </Button>
+                                </div>
+                              )}
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
+                      
+                      <div className="flex gap-2 mt-3">
+                        <Input
+                          value={commentText}
+                          onChange={(e) => setCommentText(e.target.value)}
+                          placeholder="Write a comment..."
+                          className="flex-1"
+                        />
+                        <Button
+                          onClick={() => handleComment(post.id)}
+                          disabled={!commentText.trim() || !user}
+                          size="sm"
+                          className="bg-blue-600 hover:bg-blue-700"
+                        >
+                          Comment
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-          </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
-      </div>
-    </DashboardLayout>
+      </CardContent>
+    </Card>
   );
 };
 
-export default CommunityForumPage;
+// Main Component
+const DairyFarmerHub = () => {
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [notifications, setNotifications] = useState([
+    {
+      type: 'ai',
+      title: 'Welcome to Dr. Dairy AI',
+      message: 'Ask me anything about dairy farming!',
+      time: '5 minutes ago',
+      read: false
+    }
+  ]);
+
+  const addNotification = (notif) => {
+    setNotifications(prev => [notif, ...prev]);
+  };
+
+  const clearNotifications = () => {
+    setNotifications([]);
+  };
+
+  const unreadCount = notifications.filter(n => !n.read).length;
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-green-50 p-4">
+      <div className="max-w-7xl mx-auto">
+        <PageHeader
+          title="Dairy Farmer Hub"
+          description="AI-Powered Support & Community Discussion"
+          actions={
+            <div className="relative">
+              <Button
+                onClick={() => setShowNotifications(!showNotifications)}
+                variant="outline"
+                className="relative"
+              >
+                <Bell className="h-5 w-5" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                    {unreadCount}
+                  </span>
+                )}
+              </Button>
+              {showNotifications && (
+                <NotificationCenter
+                  notifications={notifications}
+                  onClose={() => setShowNotifications(false)}
+                  onClear={clearNotifications}
+                />
+              )}
+            </div>
+          }
+        />
+
+        {/* Main Content */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <AIChatCenter />
+          <DiscussionForum onNewNotification={addNotification} />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default DairyFarmerHub;

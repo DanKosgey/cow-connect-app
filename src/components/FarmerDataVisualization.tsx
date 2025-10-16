@@ -208,24 +208,37 @@ export const MiniDataVisualization = ({
   chartData: any[];
   dataKey: string;
 }) => {
-  const isPositive = !change.includes('-');
+  // Ensure we have data for the mini chart
+  const finalChartData = chartData && chartData.length > 0 
+    ? chartData 
+    : [
+        { date: 'Mon', liters: 0, earnings: 0 },
+        { date: 'Tue', liters: 0, earnings: 0 },
+        { date: 'Wed', liters: 0, earnings: 0 },
+        { date: 'Thu', liters: 0, earnings: 0 },
+        { date: 'Fri', liters: 0, earnings: 0 },
+        { date: 'Sat', liters: 0, earnings: 0 },
+        { date: 'Sun', liters: 0, earnings: 0 }
+      ];
+      
+  const isPositive = !change.includes('-') && change !== 'No data';
   
   return (
-    <Card className="border border-border hover:shadow-md transition-all duration-300">
+    <Card className="border border-border hover:shadow-md transition-all duration-300 h-full">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-medium text-gray-600">{title}</CardTitle>
         <div className="p-2 rounded-full bg-primary/10 text-primary">
           {icon}
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="p-4">
         <div className="text-2xl font-bold text-gray-900">{value}</div>
-        <div className={`flex items-center mt-1 text-sm ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
+        <div className={`flex items-center mt-1 text-sm ${isPositive ? 'text-green-600' : change === 'No data' ? 'text-gray-500' : 'text-red-600'}`}>
           {change}
         </div>
         <div className="h-16 mt-2">
           <EnhancedAreaChart 
-            data={chartData} 
+            data={finalChartData} 
             dataKey={dataKey}
             height={64}
           />

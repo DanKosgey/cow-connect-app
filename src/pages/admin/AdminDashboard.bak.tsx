@@ -343,7 +343,7 @@ const AdminDashboard = () => {
               email
             )
           ),
-          staff (
+          collections_staff_id_fkey:staff (
             full_name,
             id
           )

@@ -1,4 +1,4 @@
-import { DashboardLayout } from '@/components/DashboardLayout';
+// DashboardLayout provided by Staff/Admin portal layout; avoid duplicate wrapper
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import React, { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
@@ -12,6 +12,7 @@ import { SearchAndFilter } from '@/components/admin/SearchAndFilter';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { StaffSkeleton } from '@/components/admin/StaffSkeleton';
 import { Pagination } from '@/components/admin/Pagination';
+import { StaffInviteDialog } from '@/components/admin/StaffInviteDialog';
 import { PaginatedResponse, paginateArray } from '@/utils/paginationUtils';
 import { usePerformanceMonitor } from '@/hooks/usePerformanceMonitor';
 
@@ -50,37 +51,54 @@ const Staff = () => {
           setTotalCount(count || 0);
           
           // Then fetch the paginated data with user roles in a single query
-          // Fixed the query to properly fetch user roles without incorrect foreign key syntax
+          // Fixed the query to properly fetch user roles by joining through the profiles table
           const { data, error } = await supabase
             .from('staff')
             .select(`
               id, 
               employee_id, 
               user_id,
-              profiles:user_id(full_name, email),
-              user_roles:user_id(
-                role
-              )
+              profiles:user_id(full_name, email)
             `)
             .order('created_at', { ascending: false })
             .range((currentPage - 1) * pageSize, currentPage * pageSize - 1);
           
           if (!error && data) {
-            // Transform the data to match the expected structure
-            // Filter out only staff and admin roles, not farmer roles
+            // Fetch user roles separately since there's no direct relationship between staff and user_roles
+            const userIds = data.map(staffMember => staffMember.user_id);
+            let userRolesData = [];
+            
+            if (userIds.length > 0) {
+              const { data: rolesData, error: rolesError } = await supabase
+                .from('user_roles')
+                .select('user_id, role, active')
+                .in('user_id', userIds);
+              
+              if (!rolesError && rolesData) {
+                userRolesData = rolesData;
+              }
+            }
+            
+            // Combine staff data with user roles
             const staffWithRoles = data.map(staffMember => {
+              const userRoles = userRolesData.filter(role => role.user_id === staffMember.user_id);
               let roles = [];
-              if (Array.isArray(staffMember.user_roles)) {
-                roles = staffMember.user_roles
+              let activeRoles = [];
+              
+              if (Array.isArray(userRoles)) {
+                roles = userRoles
                   .filter((r: any) => r.role === 'staff' || r.role === 'admin')
                   .map((r: any) => r.role);
-              } else if (staffMember.user_roles && (staffMember.user_roles.role === 'staff' || staffMember.user_roles.role === 'admin')) {
-                roles = [staffMember.user_roles.role];
+                
+                activeRoles = userRoles
+                  .filter((r: any) => (r.role === 'staff' || r.role === 'admin') && r.active)
+                  .map((r: any) => r.role);
               }
               
               return {
                 ...staffMember,
-                roles: roles
+                roles: roles,
+                activeRoles: activeRoles
               };
             });
             
@@ -88,7 +106,7 @@ const Staff = () => {
           } else if (error) {
             console.error('Error fetching staff data:', error);
             // Handle 400/401 errors by potentially refreshing the session
-            if (error.status === 400 || error.status === 401) {
+            if ((error as any).status === 400 || (error as any).status === 401) {
               console.warn('Authentication issue detected, may need to refresh session');
               // The app should handle session refresh automatically through the auth context
             }
@@ -138,25 +156,9 @@ const Staff = () => {
   const getStats = () => {
     return {
       total: totalCount,
-      admins: staff.filter(s => {
-        if (Array.isArray(s.roles)) {
-          return s.roles.includes('admin');
-        }
-        return s.roles === 'admin';
-      }).length,
-      staff: staff.filter(s => {
-        if (Array.isArray(s.roles)) {
-          return s.roles.includes('staff');
-        }
-        return s.roles === 'staff';
-      }).length,
-      active: staff.filter(s => {
-        if (Array.isArray(s.roles)) {
-          // Only count as active if they have staff or admin roles, not farmer roles
-          return s.roles.some(role => role === 'staff' || role === 'admin');
-        }
-        return s.roles !== undefined && s.roles !== null && (s.roles === 'staff' || s.roles === 'admin');
-      }).length
+      admins: staff.filter(s => s.roles?.includes('admin')).length,
+      staff: staff.filter(s => s.roles?.includes('staff')).length,
+      active: staff.filter(s => s.activeRoles?.length > 0).length
     };
   };
 
@@ -171,27 +173,103 @@ const Staff = () => {
     setCurrentPage(1); // Reset to first page when page size changes
   };
 
+  const handleInviteSent = () => {
+    // Refresh the staff list to show updated counts
+    // The invitation won't appear in the staff list until the user accepts it,
+    // but we can refresh to get updated statistics
+    const refreshData = async () => {
+      try {
+        setLoading(true);
+        
+        // Get updated count
+        const { count, error: countError } = await supabase
+          .from('staff')
+          .select('*', { count: 'exact', head: true });
+        
+        if (!countError) {
+          setTotalCount(count || 0);
+        }
+        
+        // Fetch updated staff data
+        const { data, error } = await supabase
+          .from('staff')
+          .select(`
+            id, 
+            employee_id, 
+            user_id,
+            profiles:user_id(full_name, email)
+          `)
+          .order('created_at', { ascending: false })
+          .range((currentPage - 1) * pageSize, currentPage * pageSize - 1);
+        
+        if (!error && data) {
+          // Fetch user roles separately since there's no direct relationship between staff and user_roles
+          const userIds = data.map(staffMember => staffMember.user_id);
+          let userRolesData = [];
+          
+          if (userIds.length > 0) {
+            const { data: rolesData, error: rolesError } = await supabase
+              .from('user_roles')
+              .select('user_id, role, active')
+              .in('user_id', userIds);
+            
+            if (!rolesError && rolesData) {
+              userRolesData = rolesData;
+            }
+          }
+          
+          // Combine staff data with user roles
+          const staffWithRoles = data.map(staffMember => {
+            const userRoles = userRolesData.filter(role => role.user_id === staffMember.user_id);
+            let roles = [];
+            let activeRoles = [];
+            
+            if (Array.isArray(userRoles)) {
+              roles = userRoles
+                .filter((r: any) => r.role === 'staff' || r.role === 'admin')
+                .map((r: any) => r.role);
+              
+              activeRoles = userRoles
+                .filter((r: any) => (r.role === 'staff' || r.role === 'admin') && r.active)
+                .map((r: any) => r.role);
+            }
+            
+            return {
+              ...staffMember,
+              roles: roles,
+              activeRoles: activeRoles
+            };
+          });
+          
+          setStaff(staffWithRoles);
+        }
+      } catch (error) {
+        console.error('Error refreshing staff data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    refreshData();
+  };
+
   if (loading && staff.length === 0) {
     return (
-      <DashboardLayout>
+      <div className="container mx-auto py-6">
         <StaffSkeleton />
-      </DashboardLayout>
+      </div>
     );
   }
 
   return (
-    <DashboardLayout>
-      <div className="container mx-auto py-6">
+    <div className="container mx-auto py-6">
         {/* Header */}
         <PageHeader
           title="Staff Management"
           description="Manage staff profiles, roles, and permissions"
           icon={<UserCog className="h-8 w-8" />}
           actions={
-            <Button className="bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800">
-              <Plus className="h-4 w-4 mr-2" />
-              Add Staff
-            </Button>
+            <StaffInviteDialog onInviteSent={handleInviteSent} />
           }
         />
 
@@ -295,8 +373,8 @@ const Staff = () => {
                             </div>
                           </TableCell>
                           <TableCell>
-                            <Badge variant={staffMember.roles?.length > 0 ? "default" : "destructive"}>
-                              {staffMember.roles?.length > 0 ? 'Active' : 'Inactive'}
+                            <Badge variant={staffMember.activeRoles?.length > 0 ? "default" : "destructive"}>
+                              {staffMember.activeRoles?.length > 0 ? 'Active' : 'Inactive'}
                             </Badge>
                           </TableCell>
                           <TableCell>
@@ -323,8 +401,7 @@ const Staff = () => {
             )}
           </CardContent>
         </Card>
-      </div>
-    </DashboardLayout>
+    </div>
   );
 };
 

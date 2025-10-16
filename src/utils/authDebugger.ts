@@ -36,6 +36,8 @@ export class AuthDebugger {
         .from('user_roles')
         .select('role')
         .eq('user_id', userId)
+        .eq('active', true)
+        .order('created_at', { ascending: false })
         .maybeSingle();
         
       if (error) {

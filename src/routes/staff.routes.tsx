@@ -5,6 +5,7 @@ import { ProtectedRoute } from "../components/ProtectedRoute";
 import { LoadingSkeleton } from '@/components/LoadingSkeleton';
 import { PageTransition } from '@/components/PageTransition';
 import { preloadRouteWhenIdle } from '@/utils/routePreloader';
+import { StaffPortalLayout } from '@/components/staff/StaffPortalLayout';
 
 // Lazy load staff components
 const StaffDashboard = lazy(() => {
@@ -60,156 +61,37 @@ export default function StaffRoutes() {
   
   return (
     <Suspense fallback={<LoadingSkeleton type="dashboard" />}>
-      <Routes location={location}>
+      <Routes>
         <Route path="login" element={<StaffLogin />} />
-        <Route path="dashboard" element={
+        <Route path="/*" element={
           <ProtectedRoute requiredRole={UserRole.STAFF}>
-            <PageTransition>
-              <StaffDashboard />
-            </PageTransition>
+            <StaffPortalLayout>
+              <Routes>
+                <Route path="dashboard" element={<StaffDashboard />} />
+                <Route path="collections/new" element={<CollectionForm />} />
+                <Route path="collections" element={<CollectionHistory />} />
+                <Route path="farmers" element={<FarmerDirectory />} />
+                <Route path="payments/approval" element={<PaymentApproval />} />
+                <Route path="payments/history" element={<PaymentHistory />} />
+                <Route path="performance" element={<PerformanceDashboard />} />
+                <Route path="analytics" element={<DetailedAnalytics />} />
+                <Route path="performance-tracking" element={<StaffPerformanceTracking />} />
+                <Route path="quality-control" element={<QualityControlManagement />} />
+                <Route path="inventory" element={<InventoryManagement />} />
+                <Route path="reports" element={<ComprehensiveReporting />} />
+                <Route path="routes" element={<RouteManagement />} />
+                <Route path="notifications" element={<StaffNotifications />} />
+                <Route path="quick-actions" element={<StaffQuickActions />} />
+                <Route path="farmer-visits" element={<FarmerVisitsTracker />} />
+                <Route path="quality-reports" element={<QualityReports />} />
+                <Route path="route-optimization" element={<RouteOptimization />} />
+                <Route path="performance-insights" element={<PerformanceInsights />} />
+                <Route index element={<StaffPortalLanding />} />
+                <Route path="*" element={<Navigate to="/staff" replace />} />
+              </Routes>
+            </StaffPortalLayout>
           </ProtectedRoute>
         } />
-        <Route path="collections/new" element={
-          <ProtectedRoute requiredRole={UserRole.STAFF}>
-            <PageTransition>
-              <CollectionForm />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="collections" element={
-          <ProtectedRoute requiredRole={UserRole.STAFF}>
-            <PageTransition>
-              <CollectionForm />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="collections/history" element={
-          <ProtectedRoute requiredRole={UserRole.STAFF}>
-            <PageTransition>
-              <CollectionHistory />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="farmers" element={
-          <ProtectedRoute requiredRole={UserRole.STAFF}>
-            <PageTransition>
-              <FarmerDirectory />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="payments/approval" element={
-          <ProtectedRoute requiredRole={UserRole.STAFF}>
-            <PageTransition>
-              <PaymentApproval />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="payments/history" element={
-          <ProtectedRoute requiredRole={UserRole.STAFF}>
-            <PageTransition>
-              <PaymentHistory />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="performance" element={
-          <ProtectedRoute requiredRole={UserRole.STAFF}>
-            <PageTransition>
-              <PerformanceDashboard />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="analytics" element={
-          <ProtectedRoute requiredRole={UserRole.STAFF}>
-            <PageTransition>
-              <DetailedAnalytics />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="performance-tracking" element={
-          <ProtectedRoute requiredRole={UserRole.STAFF}>
-            <PageTransition>
-              <StaffPerformanceTracking />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="quality-control" element={
-          <ProtectedRoute requiredRole={UserRole.STAFF}>
-            <PageTransition>
-              <QualityControlManagement />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="inventory" element={
-          <ProtectedRoute requiredRole={UserRole.STAFF}>
-            <PageTransition>
-              <InventoryManagement />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="reports" element={
-          <ProtectedRoute requiredRole={UserRole.STAFF}>
-            <PageTransition>
-              <ComprehensiveReporting />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="routes" element={
-          <ProtectedRoute requiredRole={UserRole.STAFF}>
-            <PageTransition>
-              <RouteManagement />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="notifications" element={
-          <ProtectedRoute requiredRole={UserRole.STAFF}>
-            <PageTransition>
-              <StaffNotifications />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="quick-actions" element={
-          <ProtectedRoute requiredRole={UserRole.STAFF}>
-            <PageTransition>
-              <StaffQuickActions />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="farmer-visits" element={
-          <ProtectedRoute requiredRole={UserRole.STAFF}>
-            <PageTransition>
-              <FarmerVisitsTracker />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="quality-reports" element={
-          <ProtectedRoute requiredRole={UserRole.STAFF}>
-            <PageTransition>
-              <QualityReports />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="route-optimization" element={
-          <ProtectedRoute requiredRole={UserRole.STAFF}>
-            <PageTransition>
-              <RouteOptimization />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="performance-insights" element={
-          <ProtectedRoute requiredRole={UserRole.STAFF}>
-            <PageTransition>
-              <PerformanceInsights />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="" element={
-          <ProtectedRoute requiredRole={UserRole.STAFF}>
-            <PageTransition>
-              <StaffPortalLanding />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="*" element={<Navigate to="" replace />} />
       </Routes>
     </Suspense>
   );

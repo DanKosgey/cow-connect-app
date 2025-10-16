@@ -1,0 +1,12 @@
+{
+  "tasks": {
+    "bundle": "deno bundle --import-map=deno.json index.ts"
+  },
+  "imports": {
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.75.0"
+  },
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "jsxImportSource": "react"
+  }
+}

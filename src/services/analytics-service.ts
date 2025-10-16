@@ -1,6 +1,8 @@
 import { supabase } from '@/integrations/supabase/client';
 import { format, subDays, startOfMonth, endOfMonth, startOfYear, eachWeekOfInterval, format as formatDate, eachDayOfInterval, parseISO } from 'date-fns';
 import { trendService } from '@/services/trend-service';
+import { marketPriceService } from './market-price-service';
+import { milkRateService } from './milk-rate-service';
 
 // Types based on the database schema
 interface Collection {
@@ -190,6 +192,8 @@ const COLORS = { 'A+': '#10b981', 'A': '#3b82f6', 'B': '#f59e0b', 'C': '#ef4444'
 export class AnalyticsService {
   async fetchDashboardData(timeRange: string): Promise<AnalyticsData | null> {
     try {
+      console.log('Fetching analytics data for time range:', timeRange);
+      
       const endDate = new Date();
       let startDate = new Date();
 
@@ -225,6 +229,15 @@ export class AnalyticsService {
         this.fetchWarehouses()
       ]);
 
+      // Log data for debugging
+      console.log('Fetched data:', {
+        collectionsCount: collectionsData.length,
+        farmersCount: farmersData.length,
+        staffCount: staffData.length,
+        paymentsCount: paymentsData.length,
+        warehousesCount: warehousesData.length
+      });
+
       // Process the data
       const processedData = this.processAllData(
         collectionsData,
@@ -236,6 +249,7 @@ export class AnalyticsService {
         endDate
       );
 
+      console.log('Processed analytics data:', processedData);
       return processedData;
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
@@ -254,7 +268,8 @@ export class AnalyticsService {
         liters,
         quality_grade,
         collection_date,
-        created_at
+        created_at,
+        total_amount
       `)
       .gte('collection_date', startDate.toISOString())
       .lte('collection_date', endDate.toISOString())
@@ -308,11 +323,14 @@ export class AnalyticsService {
       throw error;
     }
 
-    // Simulate payments based on collections
+    // Fetch the current admin rate to calculate payment amounts
+    const adminRate = await milkRateService.getCurrentRate();
+
+    // Simulate payments based on collections and admin rate
     return (data || []).map(collection => ({
       id: `pay_${collection.id}`,
       farmer_id: collection.farmer_id,
-      amount: collection.liters * 100, // Assuming KES 100 per liter
+      amount: collection.liters * adminRate,
       status: Math.random() > 0.1 ? 'completed' : Math.random() > 0.5 ? 'processing' : 'failed',
       created_at: collection.collection_date
     }));
@@ -326,7 +344,8 @@ export class AnalyticsService {
         farmer_id,
         quality_grade,
         liters,
-        collection_date
+        collection_date,
+        total_amount
       `)
       .gte('collection_date', startDate.toISOString())
       .lte('collection_date', endDate.toISOString())
@@ -410,7 +429,8 @@ export class AnalyticsService {
         staff_id,
         liters,
         quality_grade,
-        collection_date
+        collection_date,
+        total_amount
       `)
       .gte('collection_date', startDate.toISOString())
       .lte('collection_date', endDate.toISOString())
@@ -421,11 +441,9 @@ export class AnalyticsService {
       throw error;
     }
 
-    // Calculate total amount based on liters and a fixed rate (for demo purposes)
-    return (data || []).map(collection => ({
-      ...collection,
-      total_amount: collection.liters * 100 // Assuming KES 100 per liter
-    }));
+    console.log('Fetched collections:', data?.length || 0);
+    // Return collections with actual total_amount from database
+    return data || [];
   }
 
   private async fetchFarmers(): Promise<Farmer[]> {
@@ -446,6 +464,7 @@ export class AnalyticsService {
       throw error;
     }
 
+    console.log('Fetched farmers:', data?.length || 0);
     return data || [];
   }
 
@@ -478,7 +497,7 @@ export class AnalyticsService {
       }
 
       // Merge staff data with profiles
-      return data.map(staff => {
+      const mergedData = data.map(staff => {
         const profile = profilesData?.find(p => p.id === staff.user_id);
         return {
           ...staff,
@@ -486,8 +505,12 @@ export class AnalyticsService {
           email: profile?.email || ''
         };
       });
+      
+      console.log('Fetched staff:', mergedData.length);
+      return mergedData;
     }
 
+    console.log('Fetched staff:', data?.length || 0);
     return data || [];
   }
 
@@ -500,7 +523,8 @@ export class AnalyticsService {
         id,
         farmer_id,
         liters,
-        collection_date
+        collection_date,
+        total_amount
       `)
       .gte('collection_date', startDate.toISOString())
       .lte('collection_date', endDate.toISOString());
@@ -510,14 +534,17 @@ export class AnalyticsService {
       throw error;
     }
 
-    // Simulate payments based on collections
-    return (collections || []).map(collection => ({
+    // Use the actual total_amount from collections instead of calculating it
+    const payments = (collections || []).map(collection => ({
       id: `pay_${collection.id}`,
       farmer_id: collection.farmer_id,
-      amount: collection.liters * 100, // Assuming KES 100 per liter
+      amount: collection.total_amount || 0,
       status: Math.random() > 0.1 ? 'completed' : Math.random() > 0.5 ? 'processing' : 'failed',
       created_at: collection.collection_date
     }));
+    
+    console.log('Generated payments:', payments.length);
+    return payments;
   }
 
   private async fetchWarehouses(): Promise<Warehouse[]> {
@@ -536,6 +563,7 @@ export class AnalyticsService {
 
     // If no warehouses exist, return empty array
     if (!data || data.length === 0) {
+      console.log('No warehouses found, returning empty array');
       return [];
     }
 
@@ -556,7 +584,7 @@ export class AnalyticsService {
       })
     );
 
-    return warehouseCollectionCounts.map(warehouse => ({
+    const processedWarehouses = warehouseCollectionCounts.map(warehouse => ({
       id: warehouse.id,
       name: warehouse.name,
       address: warehouse.address,
@@ -564,6 +592,9 @@ export class AnalyticsService {
         count: warehouse.count
       }
     }));
+    
+    console.log('Fetched warehouses:', processedWarehouses.length);
+    return processedWarehouses;
   }
 
   // Simple linear regression for forecasting
@@ -628,12 +659,31 @@ export class AnalyticsService {
     startDate: Date,
     endDate: Date
   ): Promise<AnalyticsData> {
+    // Log data for debugging
+    console.log('Processing analytics data:', {
+      collectionsCount: collections.length,
+      farmersCount: farmers.length,
+      staffCount: staff.length,
+      paymentsCount: payments.length
+    });
+
     // Calculate metrics
     const totalFarmers = farmers.length;
     const activeFarmers = farmers.filter(f => !f.deleted_at).length;
+    
+    // Log active farmers count for debugging
+    console.log('Farmers data:', {
+      totalFarmers,
+      activeFarmers,
+      deletedFarmers: farmers.filter(f => f.deleted_at).length
+    });
+    
     const totalCollections = collections.length;
     const totalLiters = collections.reduce((sum, c) => sum + (c.liters || 0), 0);
+    
+    // Use the total_amount from collections which is already calculated with admin rate
     const totalRevenue = collections.reduce((sum, c) => sum + (c.total_amount || 0), 0);
+    
     const pendingPayments = payments
       .filter(p => p.status === 'processing')
       .reduce((sum, p) => sum + (p.amount || 0), 0);
@@ -841,6 +891,10 @@ export class AnalyticsService {
       ];
     }
 
+    // Fetch the current admin rate
+    const marketPrice = await milkRateService.getCurrentRate();
+    const marketPriceChange = 0; // No change data for admin rate
+
     // Generate trend analysis using the trend service
     let trendAnalysis: TrendData[] = [];
     
@@ -873,10 +927,10 @@ export class AnalyticsService {
         },
         {
           metric: 'CostPerLiter',
-          current: trendData.totalLiters > 0 ? (trendData.totalRevenue * 0.7) / trendData.totalLiters : 0,
+          current: await milkRateService.getCurrentRate(),
           previous: 0,
           trend: 'stable',
-          percentageChange: -2.5
+          percentageChange: 0
         },
         {
           metric: 'RevenuePerFarmer',
@@ -920,21 +974,21 @@ export class AnalyticsService {
         },
         {
           metric: 'CostPerLiter',
-          current: 0,
+          current: await milkRateService.getCurrentRate(),
           previous: 0,
           trend: 'stable',
-          percentageChange: -2.5
+          percentageChange: 0
         },
         {
           metric: 'RevenuePerFarmer',
-          current: 0,
+          current: activeFarmers > 0 ? totalRevenue / activeFarmers : 0,
           previous: 0,
           trend: 'stable',
           percentageChange: 5.2
         },
         {
           metric: 'CollectionEfficiency',
-          current: 0,
+          current: activeFarmers > 0 ? (totalCollections / activeFarmers) * 100 : 0,
           previous: 0,
           trend: 'stable',
           percentageChange: 1.8
@@ -957,9 +1011,11 @@ export class AnalyticsService {
     const previousPeriodVolume = totalLiters * 0.95; // Simulated previous period data
 
     // Calculate business intelligence metrics
-    const costPerLiter = totalLiters > 0 ? (totalRevenue * 0.7) / totalLiters : 0; // Assuming 70% cost
-    const revenuePerFarmer = activeFarmers > 0 ? totalRevenue / activeFarmers : 0;
-    const collectionEfficiency = totalCollections > 0 ? (totalCollections / activeFarmers) * 100 : 0;
+    const costPerLiter = await milkRateService.getCurrentRate();
+    
+    // Fix: Ensure we don't divide by zero
+    const revenuePerFarmer = activeFarmers > 0 && totalRevenue > 0 ? totalRevenue / activeFarmers : 0;
+    const collectionEfficiency = activeFarmers > 0 && totalCollections > 0 ? (totalCollections / activeFarmers) * 100 : 0;
     const qualityIndex = avgQuality;
     const farmerRetention = totalFarmers > 0 ? (activeFarmers / totalFarmers) * 100 : 0;
     
@@ -1003,11 +1059,11 @@ export class AnalyticsService {
     const businessIntelligence: BusinessIntelligenceMetric[] = [
       {
         id: 'cost-per-liter',
-        title: 'Cost per Liter',
-        value: `KES ${costPerLiter.toFixed(2)}`,
-        change: parseFloat(costPerLiterTrend.toFixed(1)),
-        changeType: costPerLiterTrend >= 0 ? 'positive' : 'negative',
-        description: 'Operational cost efficiency',
+        title: 'Admin Rate per Liter',
+        value: `KES ${marketPrice.toFixed(2)}`,
+        change: parseFloat(marketPriceChange.toFixed(1)),
+        changeType: marketPriceChange >= 0 ? 'positive' : 'negative',
+        description: 'Current admin-configured rate for fresh milk',
         icon: 'DollarSign'
       },
       {
@@ -1067,6 +1123,19 @@ export class AnalyticsService {
     const collectionForecast = this.generateForecast(weeklyTrends, 'totalCollections', 4);
     const revenueForecast = this.generateForecast(weeklyTrends, 'revenue', 4);
     const qualityForecast = this.generateForecast(weeklyTrends, 'avgQuality', 4);
+
+    // Log final metrics for debugging
+    console.log('Final analytics metrics:', {
+      totalFarmers,
+      activeFarmers,
+      totalCollections,
+      totalLiters,
+      totalRevenue,
+      revenuePerFarmer,
+      collectionEfficiency,
+      qualityIndex,
+      farmerRetention
+    });
 
     return {
       metrics: {

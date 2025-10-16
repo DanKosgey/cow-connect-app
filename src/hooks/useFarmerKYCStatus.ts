@@ -29,8 +29,8 @@ export const useFarmerKYCStatus = (userId: string | null): FarmerKYCStatus => {
         const { data, error } = await supabase
           .from('farmers')
           .select('kyc_status')
-          .eq('user_id', userId)
-          .single();
+          .eq('user_id', userId);
+          // Removed .single() to avoid PGRST116 error when no records found
 
         if (error) {
           setStatus({
@@ -41,7 +41,10 @@ export const useFarmerKYCStatus = (userId: string | null): FarmerKYCStatus => {
           return;
         }
 
-        if (!data) {
+        // Check if we have data and handle accordingly
+        const farmerData = data && data.length > 0 ? data[0] : null;
+
+        if (!farmerData) {
           setStatus({
             kycStatus: null,
             isLoading: false,
@@ -51,7 +54,7 @@ export const useFarmerKYCStatus = (userId: string | null): FarmerKYCStatus => {
         }
 
         setStatus({
-          kycStatus: data.kyc_status as 'pending' | 'approved' | 'rejected',
+          kycStatus: farmerData.kyc_status as 'pending' | 'approved' | 'rejected',
           isLoading: false,
           error: null
         });

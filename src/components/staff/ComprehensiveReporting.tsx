@@ -157,7 +157,7 @@ export default function ComprehensiveReporting() {
           total_amount,
           collection_date,
           status,
-          farmers!farmer_id (
+          farmers!fk_collections_farmer_id (
             full_name
           )
         `)
@@ -243,7 +243,7 @@ export default function ComprehensiveReporting() {
 
       // Fetch quality tests report data
       const { data: qualityData, error: qualityError } = await supabase
-        .from('quality_tests')
+        .from('milk_quality_parameters')
         .select(`
           id,
           test_type,
@@ -251,7 +251,7 @@ export default function ComprehensiveReporting() {
           test_date,
           collection!collection_id (
             collection_id,
-            farmers (
+            farmers!fk_collections_farmer_id (
               full_name
             )
           )
@@ -288,8 +288,11 @@ export default function ComprehensiveReporting() {
         `)
         .order('name', { ascending: true });
 
-      if (inventoryError) throw inventoryError;
-      
+      // Handle the case where inventory table doesn't exist
+      if (inventoryError && !inventoryError.message.includes('inventory_items')) {
+        throw inventoryError;
+      }
+
       const formattedInventory = inventoryData?.map(item => ({
         id: item.id,
         item_name: item.name,
@@ -340,6 +343,9 @@ export default function ComprehensiveReporting() {
       if (error.code === 'PGRST201') {
         const hint = error.hint || 'Failed to load report data. Check network tab for more details.';
         showError('Error', `Failed to load report data: ${error.message}. ${hint}`);
+      } else if (error.message && error.message.includes('inventory_items')) {
+        // Don't show error for missing inventory tables
+        console.warn('Inventory tables not found. Continuing with other report data.');
       } else {
         showError('Error', error.message || 'Failed to load report data');
       }

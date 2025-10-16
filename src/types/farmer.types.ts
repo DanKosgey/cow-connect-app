@@ -1,25 +1,65 @@
-export type ProfileStatus = 'pending' | 'under_review' | 'approved' | 'rejected' | 'suspended';
+export type ProfileStatus = 'pending_verification' | 'email_verified' | 'approved' | 'rejected';
 export type PaymentStatus = 'pending' | 'processing' | 'completed' | 'failed';
 export type DocumentStatus = 'pending' | 'approved' | 'rejected' | 'expired';
 export type NotificationType = 'payment' | 'collection' | 'document' | 'system';
 
 export interface FarmerProfile {
   id: string;
+  user_id: string;
   registration_number: string;
   full_name: string;
   id_number: string;
   phone_number: string;
   email?: string;
+  physical_address: string;
+  farm_location: string;
   location_coordinates?: {
     lat: number;
     lng: number;
   };
+  kyc_status: ProfileStatus;
   collection_point_id?: string;
-  status: ProfileStatus;
   approval_date?: string;
   rejection_reason?: string;
+  registration_completed: boolean;
+  email_verified: boolean;
   created_at: string;
   updated_at: string;
+  
+  // Banking details
+  bank_name?: string;
+  bank_account_name?: string;
+  bank_account_number?: string;
+  bank_branch?: string;
+  
+  // Farm details
+  number_of_cows?: number;
+  cow_breeds?: Array<{
+    breed_name: string;
+    count: number;
+  }>;
+  breeding_method?: string;
+  feeding_type?: string;
+  
+  // Analytics (calculated fields)
+  total_collections?: number;
+  total_liters?: number;
+  avg_quality_score?: number;
+  current_month_liters?: number;
+  current_month_earnings?: number;
+  
+  // Joined data
+  active_collection_point?: {
+    id: string;
+    name: string;
+    location: string;
+  };
+  latest_collection?: {
+    id: string;
+    date: string;
+    liters: number;
+    quality_grade: string;
+  };
 }
 
 export interface BankDetails {

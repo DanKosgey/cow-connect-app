@@ -122,13 +122,15 @@ const EnhancedPaymentApproval: React.FC = () => {
   const collectionsRef = useRef(collections);
   const farmerPaymentsRef = useRef(farmerPayments);
   const loadingRef = useRef(loadingData);
+  const showErrorRef = useRef(showError);
 
   // Update refs when state changes
   useEffect(() => {
     collectionsRef.current = collections;
     farmerPaymentsRef.current = farmerPayments;
     loadingRef.current = loadingData;
-  }, [collections, farmerPayments, loadingData]);
+    showErrorRef.current = showError;
+  }, [collections, farmerPayments, loadingData, showError]);
 
   // Memoize filtered collections to prevent unnecessary re-renders
   const filteredCollections = React.useMemo(() => {
@@ -171,7 +173,7 @@ const EnhancedPaymentApproval: React.FC = () => {
           approved_for_payment,
           approved_at,
           verification_code,
-          farmers (
+          farmers!fk_collections_farmer_id (
             full_name,
             id,
             phone_number
@@ -237,15 +239,17 @@ const EnhancedPaymentApproval: React.FC = () => {
       setStats(stats);
     } catch (error: any) {
       console.error('Error fetching data:', error);
-      showError('Error', String(error?.message || 'Failed to fetch data'));
+      showErrorRef.current('Error', String(error?.message || 'Failed to fetch data'));
     } finally {
       setLoadingData(false);
     }
-  }, [user?.id, showError]);
+  }, [user?.id]);
 
   // Setup real-time subscriptions
   useEffect(() => {
     if (!user?.id) return;
+
+    let isSubscribed = true;
 
     // Setup real-time subscription for collections
     const collectionsSubscription = supabase
@@ -259,7 +263,7 @@ const EnhancedPaymentApproval: React.FC = () => {
         },
         (payload) => {
           // Only update if not currently loading to prevent flashing
-          if (!loadingRef.current) {
+          if (!loadingRef.current && isSubscribed) {
             fetchData();
           }
         }
@@ -273,7 +277,7 @@ const EnhancedPaymentApproval: React.FC = () => {
         },
         (payload) => {
           // Only update if not currently loading to prevent flashing
-          if (!loadingRef.current) {
+          if (!loadingRef.current && isSubscribed) {
             fetchData();
           }
         }
@@ -292,7 +296,7 @@ const EnhancedPaymentApproval: React.FC = () => {
         },
         (payload) => {
           // Only update if not currently loading to prevent flashing
-          if (!loadingRef.current) {
+          if (!loadingRef.current && isSubscribed) {
             fetchData();
           }
         }
@@ -306,7 +310,7 @@ const EnhancedPaymentApproval: React.FC = () => {
         },
         (payload) => {
           // Only update if not currently loading to prevent flashing
-          if (!loadingRef.current) {
+          if (!loadingRef.current && isSubscribed) {
             fetchData();
           }
         }
@@ -324,6 +328,7 @@ const EnhancedPaymentApproval: React.FC = () => {
 
     // Cleanup subscriptions
     return () => {
+      isSubscribed = false;
       if (collectionsSubscription) {
         supabase.removeChannel(collectionsSubscription);
       }
@@ -377,6 +382,11 @@ const EnhancedPaymentApproval: React.FC = () => {
       return;
     }
 
+    if (!user?.id) {
+      showError('Authentication Error', 'User not authenticated');
+      return;
+    }
+
     try {
       // Group collections by farmer
       const selectedCollectionData = collections.filter(c => 
@@ -406,7 +416,7 @@ const EnhancedPaymentApproval: React.FC = () => {
           collectionIds,
           totalAmount,
           notes || undefined,
-          user?.id
+          user?.id // Pass the user ID, the service will resolve the staff ID
         );
 
         if (!result.success) {
@@ -432,6 +442,11 @@ const EnhancedPaymentApproval: React.FC = () => {
   }, [collections, notes, selectedCollections, show, showError, user?.id, fetchData]);
 
   const handleMarkAsPaid = useCallback(async (paymentId: string) => {
+    if (!user?.id) {
+      showError('Authentication Error', 'User not authenticated');
+      return;
+    }
+
     try {
       const result = await PaymentService.markPaymentAsPaid(paymentId, user?.id);
       

@@ -5,8 +5,11 @@ import { ProtectedRoute } from "../components/ProtectedRoute";
 import { PageLoader } from '@/components/PageLoader';
 import { PageTransition } from '@/components/PageTransition';
 import { preloadRouteWhenIdle } from '@/utils/routePreloader';
+// Lazy load admin components with preload optimization
+import { AdminPortalLayout } from '@/components/admin/AdminPortalLayout';
 
 // Lazy load admin components with preload optimization
+const AdminNotifications = lazy(() => import("../pages/admin/AdminNotifications"));
 const AdminDashboard = lazy(() => {
   const promise = import("../pages/admin/AdminDashboard");
   // Preload other frequently accessed pages when the app is idle
@@ -27,6 +30,7 @@ const CollectionsAnalyticsDashboard = lazy(() => import("../pages/admin/Collecti
 const KYCAdminDashboard = lazy(() => import("../pages/admin/KYCAdminDashboard"));
 const KYCPendingFarmersDashboard = lazy(() => import("../pages/admin/KYCPendingFarmersDashboard"));
 const KYCPendingFarmerDetails = lazy(() => import("../pages/admin/KYCPendingFarmerDetails"));
+const KYCStorageTest = lazy(() => import('@/pages/admin/KYCStorageTest'));
 const Settings = lazy(() => import("../pages/admin/Settings"));
 const AdminInvite = lazy(() => import("../pages/admin/AdminInvite"));
 const AnalyticsDashboard = lazy(() => import("../pages/admin/AnalyticsDashboard"));
@@ -34,6 +38,35 @@ const Checkpoints = lazy(() => import("../pages/admin/Checkpoints"));
 const AuthTestPage = lazy(() => import("../pages/admin/AuthTestPage"));
 const AuthDebugPage = lazy(() => import("../pages/admin/AuthDebugPage"));
 const NetworkDiagnosticsPage = lazy(() => import("../pages/admin/NetworkDiagnosticsPage"));
+const InvitationManagement = lazy(() => import("../pages/admin/InvitationManagement"));
+const StorageDiagnostics = lazy(() => import('@/pages/admin/StorageDiagnostics'));
+const StorageTest = lazy(() => import('@/pages/admin/StorageTest'));
+const FarmerPerformanceDashboard = lazy(() => import('@/pages/admin/FarmerPerformanceDashboard'));
+
+export const adminRoutes = [
+  { path: '/admin/login', element: <AdminLogin /> },
+  { path: '/admin/diagnostics', element: <AuthDiagnostics /> },
+  { path: '/admin/connection-test', element: <ConnectionTestPage /> },
+  { path: '/admin/auth-debug', element: <AuthDebugPage /> },
+  { path: '/admin/network-diagnostics', element: <NetworkDiagnosticsPage /> },
+  { path: '/admin/checkpoints', element: <Checkpoints /> },
+  { path: '/admin/*', element: <AdminPortalLayout><div>Placeholder</div></AdminPortalLayout> },
+  { path: '/admin/farmers', element: <Farmers /> },
+  { path: '/admin/staff', element: <Staff /> },
+  { path: '/admin/payments', element: <PaymentSystem /> },
+  { path: '/admin/collections', element: <CollectionsAnalyticsDashboard /> },
+  { path: '/admin/kyc', element: <KYCAdminDashboard /> },
+  { path: '/admin/kyc-pending-farmers', element: <KYCPendingFarmersDashboard /> },
+  { path: '/admin/kyc-pending-farmers/:id', element: <KYCPendingFarmerDetails /> },
+  { path: '/admin/kyc-storage-test', element: <KYCStorageTest /> },
+  { path: '/admin/settings', element: <Settings /> },
+  { path: '/admin/invite', element: <AdminInvite /> },
+  { path: '/admin/notifications', element: <AdminNotifications /> },
+  { path: '/admin/analytics', element: <AnalyticsDashboard /> },
+  { path: '/admin/farmer-performance', element: <FarmerPerformanceDashboard /> },
+  { path: '/admin/auth-test', element: <AuthTestPage /> },
+  { path: '/admin', element: <Navigate to="/admin/dashboard" replace /> },
+];
 
 export default function AdminRoutes() {
   const location = useLocation();
@@ -73,18 +106,34 @@ export default function AdminRoutes() {
             </PageTransition>
           </ProtectedRoute>
         } />
-        <Route path="dashboard" element={
+        <Route path="/*" element={
           <ProtectedRoute requiredRole={UserRole.ADMIN}>
-            <PageTransition>
-              <AdminDashboard />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="farmers" element={
-          <ProtectedRoute requiredRole={UserRole.ADMIN}>
-            <PageTransition>
-              <Farmers />
-            </PageTransition>
+            <AdminPortalLayout>
+              <Routes>
+                <Route path="dashboard" element={<AdminDashboard />} />
+                <Route path="farmers" element={<Farmers />} />
+                <Route path="staff" element={<Staff />} />
+                <Route path="payments" element={<PaymentSystem />} />
+                <Route path="collections" element={<CollectionsAnalyticsDashboard />} />
+                <Route path="kyc" element={<KYCAdminDashboard />} />
+                <Route path="kyc-pending-farmers" element={<KYCPendingFarmersDashboard />} />
+                <Route path="kyc-pending-farmers/:id" element={<KYCPendingFarmerDetails />} />
+                <Route path="kyc-storage-test" element={<KYCStorageTest />} />
+                <Route path="settings" element={<Settings />} />
+                <Route path="invite" element={<AdminInvite />} />
+                <Route path="notifications" element={<AdminNotifications />} />
+                <Route path="analytics" element={<AnalyticsDashboard />} />
+                <Route path="checkpoints" element={<Checkpoints />} />
+                <Route path="network-diagnostics" element={<NetworkDiagnosticsPage />} />
+                <Route path="invitation-management" element={<InvitationManagement />} />
+                <Route path="storage-diagnostics" element={<StorageDiagnostics />} />
+                <Route path="storage-test" element={<StorageTest />} />
+                <Route path="kyc-storage-test" element={<KYCStorageTest />} />
+                <Route path="farmer-performance" element={<FarmerPerformanceDashboard />} />
+                <Route index element={<Navigate to="dashboard" replace />} />
+                <Route path="*" element={<Navigate to="/admin" replace />} />
+              </Routes>
+            </AdminPortalLayout>
           </ProtectedRoute>
         } />
         <Route path="staff" element={
@@ -143,6 +192,13 @@ export default function AdminRoutes() {
             </PageTransition>
           </ProtectedRoute>
         } />
+          <Route path="notifications" element={
+            <ProtectedRoute requiredRole={UserRole.ADMIN}>
+              <PageTransition>
+                <AdminNotifications />
+              </PageTransition>
+            </ProtectedRoute>
+          } />
         <Route path="analytics" element={
           <ProtectedRoute requiredRole={UserRole.ADMIN}>
             <PageTransition>

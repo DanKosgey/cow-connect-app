@@ -24,41 +24,19 @@ const IconFor = (v?: ToastVariant) => {
 
 export const Toast: React.FC<ToastProps & { onClose?: () => void }> = ({ title, description, variant = 'default', action, onClose }) => {
   return (
-    <RadixToast.Root 
-      className={`radix-toast-root w-full max-w-md rounded-md border p-4 shadow-lg flex items-start gap-3 transition-all duration-300 ease-out data-[state=open]:animate-fade-in-up data-[state=closed]:animate-fade-out-down ${
-        variant === 'success' 
-          ? 'bg-emerald-50 border-emerald-200' 
-          : variant === 'error' 
-            ? 'bg-red-50 border-red-200' 
-            : 'bg-white border-gray-200'
-      }`}
-      onOpenChange={(open) => { 
-        if (!open) onClose?.() 
-      }}
-    >
+    <RadixToast.Root className={`radix-toast-root w-full max-w-md rounded-md border p-3 shadow-sm flex items-start gap-3 ${variant === 'success' ? 'bg-emerald-50 border-emerald-200' : variant === 'error' ? 'bg-red-50 border-red-200' : 'bg-white border-gray-200'}`} onOpenChange={(open) => { if (!open) onClose?.() }}>
       <div className="flex-shrink-0 mt-0.5">{IconFor(variant)}</div>
       <div className="flex-1">
         {title && <RadixToast.Title className="font-medium text-sm">{title}</RadixToast.Title>}
         {description && <RadixToast.Description className="text-sm text-muted-foreground mt-1">{description}</RadixToast.Description>}
         {action && (
           <div className="mt-3">
-            <button 
-              onClick={() => { 
-                action.onClick(); 
-                onClose?.(); 
-              }} 
-              className="text-sm font-medium text-primary underline hover:opacity-80 transition-opacity"
-            >
-              {action.label}
-            </button>
+            <button onClick={() => { action.onClick(); onClose?.(); }} className="text-sm font-medium text-primary underline">{action.label}</button>
           </div>
         )}
       </div>
       <RadixToast.Close asChild>
-        <button 
-          aria-label="Dismiss" 
-          className="text-gray-500 hover:text-gray-700 transition-colors"
-        >
+        <button aria-label="Dismiss" className="text-gray-500 hover:text-gray-700">
           <X className="h-4 w-4" />
         </button>
       </RadixToast.Close>

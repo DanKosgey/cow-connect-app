@@ -1,262 +1,307 @@
-import React, { useState, useEffect } from 'react';
-import { supabase } from '@/integrations/supabase/client';
-import { DashboardLayout } from '@/components/DashboardLayout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { 
   Milk, 
-  BarChart3, 
   DollarSign, 
-  Award, 
-  Clock, 
-  CheckCircle, 
-  Calendar,
-  TrendingUp
-} from 'lucide-react';
-import useToastNotifications from '@/hooks/useToastNotifications';
+  BarChart3, 
+  Calendar, 
+  TrendingUp, 
+  Award,
+  Droplets,
+  Leaf,
+  Users,
+  MapPin,
+  Bell,
+  Target,
+  CalendarDays
+} from "lucide-react";
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { useFarmerDashboard } from '@/hooks/useFarmerDashboard';
+import { format } from 'date-fns';
 
 const FarmerDashboard = () => {
-  const toast = useToastNotifications();
-  const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState<any[]>([]);
-  const [recentActivities, setRecentActivities] = useState<any[]>([]);
-  const [upcomingTasks, setUpcomingTasks] = useState<any[]>([]);
-
-  useEffect(() => {
-    fetchDashboardData();
-  }, []);
-
-  const fetchDashboardData = async () => {
-    try {
-      setLoading(true);
-      
-      // Get current user
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        toast.error('Error', 'User not found');
-        return;
-      }
-
-      // Get farmer profile
-      const { data: farmer, error: farmerError } = await supabase
-        .from('farmers')
-        .select('id')
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      if (farmerError) throw farmerError;
-      if (!farmer) {
-        toast.error('Error', 'Farmer profile not found. Please complete your registration.');
-        return;
-      }
-
-      // Get today's collections
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-
-      const { data: todayCollections, error: todayCollectionsError } = await supabase
-        .from('collections')
-        .select('liters, collection_date')
-        .eq('farmer_id', farmer.id)
-        .gte('collection_date', today.toISOString())
-        .lt('collection_date', tomorrow.toISOString());
-
-      if (todayCollectionsError) throw todayCollectionsError;
-
-      const todayLiters = todayCollections.reduce((sum, c) => sum + (c.liters || 0), 0);
-
-      // Get this month's collections
-      const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-      const { data: monthCollections, error: monthCollectionsError } = await supabase
-        .from('collections')
-        .select('liters, total_amount, collection_date')
-        .eq('farmer_id', farmer.id)
-        .gte('collection_date', startOfMonth.toISOString());
-
-      if (monthCollectionsError) throw monthCollectionsError;
-
-      const monthLiters = monthCollections.reduce((sum, c) => sum + (c.liters || 0), 0);
-      const monthEarnings = monthCollections.reduce((sum, c) => sum + (c.total_amount || 0), 0);
-
-      // Get quality score (average of quality grades)
-      const qualityScores: Record<string, number> = { 'A+': 100, 'A': 90, 'B': 75, 'C': 60 };
-      const avgQuality = monthCollections.length > 0
-        ? monthCollections.reduce((sum, c) => sum + (qualityScores[c.quality_grade] || 0), 0) / monthCollections.length
-        : 0;
-
-      // Set stats with real data
-      const realStats = [
-        {
-          title: "Today's Collection",
-          value: `${todayLiters.toFixed(1)} L`,
-          change: "Based on today's collections",
-          icon: <Milk className="h-6 w-6 text-blue-500" />,
-          color: "bg-blue-100"
-        },
-        {
-          title: "This Month",
-          value: `${monthLiters.toFixed(0)} L`,
-          change: "Current month total",
-          icon: <BarChart3 className="h-6 w-6 text-green-500" />,
-          color: "bg-green-100"
-        },
-        {
-          title: "Payments",
-          value: `KES ${monthEarnings.toFixed(0)}`,
-          change: "This month earnings",
-          icon: <DollarSign className="h-6 w-6 text-yellow-500" />,
-          color: "bg-yellow-100"
-        },
-        {
-          title: "Quality Score",
-          value: `${avgQuality.toFixed(1)}`,
-          change: avgQuality >= 90 ? "Excellent" : avgQuality >= 75 ? "Good" : "Needs improvement",
-          icon: <Award className="h-6 w-6 text-purple-500" />,
-          color: "bg-purple-100"
-        }
-      ];
-
-      setStats(realStats);
-
-      // Set recent activities (last 4 collections)
-      const recentCollections = [...monthCollections]
-        .sort((a, b) => new Date(b.collection_date).getTime() - new Date(a.collection_date).getTime())
-        .slice(0, 4);
-
-      const activities = recentCollections.map((collection, index) => ({
-        id: index + 1,
-        action: `Collection recorded: ${collection.liters}L`,
-        time: new Date(collection.collection_date).toLocaleDateString(),
-        status: "completed"
-      }));
-
-      setRecentActivities(activities);
-
-      // Set upcoming tasks (mock data for now)
-      const tasks = [
-        { id: 1, task: "Morning collection", time: "7:00 AM - 9:00 AM", status: "pending" },
-        { id: 2, task: "Quality testing", time: "10:00 AM - 11:00 AM", status: "pending" }
-      ];
-
-      setUpcomingTasks(tasks);
-
-    } catch (error: any) {
-      console.error('Error fetching dashboard data:', error);
-      toast.error('Error', error.message || 'Failed to fetch dashboard data');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { stats, loading, error } = useFarmerDashboard();
+  const [selectedPeriod, setSelectedPeriod] = useState('month');
 
   if (loading) {
     return (
-      <DashboardLayout>
-        <div className="container mx-auto py-6">
-          <div className="flex items-center justify-center h-64">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-          </div>
+      <div className="container mx-auto py-6">
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
         </div>
-      </DashboardLayout>
+      </div>
     );
   }
 
-  return (
-    <DashboardLayout>
+  if (error) {
+    return (
       <div className="container mx-auto py-6">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Farmer Dashboard</h1>
-            <p className="text-gray-600 mt-2">Welcome back! Here's your dairy operations overview.</p>
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+          <div className="flex items-center space-x-3">
+            <div className="w-6 h-6 text-red-600">⚠️</div>
+            <h3 className="text-lg font-medium text-red-800">Error Loading Data</h3>
           </div>
-          <div className="mt-4 md:mt-0">
-            <Button className="flex items-center gap-2">
-              <Calendar className="h-4 w-4" />
-              Schedule Collection
-            </Button>
-          </div>
-        </div>
-
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          {stats.map((stat, index) => (
-            <Card key={index} className="border border-border hover:shadow-md transition-shadow">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-gray-600">{stat.title}</CardTitle>
-                <div className={`p-2 rounded-full ${stat.color}`}>
-                  {stat.icon}
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-gray-900">{stat.value}</div>
-                <p className="text-xs text-gray-500 mt-1">{stat.change}</p>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
-        {/* Main Content Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Recent Activities */}
-          <div className="lg:col-span-2">
-            <Card className="shadow-sm">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Clock className="h-5 w-5 text-primary" />
-                  Recent Activities
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {recentActivities.map((activity) => (
-                    <div key={activity.id} className="flex items-start gap-3 pb-4 border-b border-border last:border-0 last:pb-0">
-                      <div className="mt-1 p-1.5 rounded-full bg-green-100">
-                        <CheckCircle className="h-4 w-4 text-green-600" />
-                      </div>
-                      <div>
-                        <p className="font-medium text-gray-900">{activity.action}</p>
-                        <p className="text-sm text-gray-500">{activity.time}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Upcoming Tasks */}
-          <div>
-            <Card className="shadow-sm">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <TrendingUp className="h-5 w-5 text-primary" />
-                  Upcoming Tasks
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {upcomingTasks.map((task) => (
-                    <div key={task.id} className="flex items-start gap-3 pb-4 border-b border-border last:border-0 last:pb-0">
-                      <div className="mt-1 p-1.5 rounded-full bg-blue-100">
-                        <Clock className="h-4 w-4 text-blue-600" />
-                      </div>
-                      <div>
-                        <p className="font-medium text-gray-900">{task.task}</p>
-                        <p className="text-sm text-gray-500">{task.time}</p>
-                      </div>
-                    </div>
-                  ))}
-                  <Button variant="outline" className="w-full">
-                    View Full Schedule
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+          <p className="mt-2 text-red-700">{error}</p>
+          <Button 
+            onClick={() => window.location.reload()} 
+            className="mt-4"
+          >
+            Try Again
+          </Button>
         </div>
       </div>
-    </DashboardLayout>
+    );
+  }
+
+  if (!stats) {
+    return (
+      <div className="container mx-auto py-6">
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6">
+          <div className="flex items-center space-x-3">
+            <div className="w-6 h-6 text-yellow-600">⚠️</div>
+            <h3 className="text-lg font-medium text-yellow-800">No Data Available</h3>
+          </div>
+          <p className="mt-2 text-yellow-700">No dashboard data found for your account.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Stats cards data
+  const statsCards = [
+    {
+      title: "Today's Collection",
+      value: `${stats.today.liters.toFixed(1)} L`,
+      change: `${stats.today.collections} collections`,
+      icon: <Droplets className="h-5 w-5" />,
+    },
+    {
+      title: 'This Month',
+      value: `${stats.thisMonth.liters.toFixed(1)} L`,
+      change: `KSh ${stats.thisMonth.earnings.toFixed(0)}`,
+      icon: <TrendingUp className="h-5 w-5" />,
+    },
+    {
+      title: 'Avg Quality',
+      value: stats.today.avgQuality > 0 ? stats.today.avgQuality.toFixed(1) : 'N/A',
+      change: 'This week',
+      icon: <Award className="h-5 w-5" />,
+    },
+    {
+      title: 'Total Earnings',
+      value: `KSh ${stats.allTime.totalEarnings.toFixed(0)}`,
+      change: 'All time',
+      icon: <DollarSign className="h-5 w-5" />,
+    }
+  ];
+
+  // Prepare data for charts
+  const qualityDistributionData = Object.entries(stats.thisMonth.qualityDistribution).map(([grade, count]) => ({
+    name: `Grade ${grade}`,
+    value: count as number
+  }));
+
+  // Prepare data for the dual-axis line chart
+  const collectionTrendData = stats.qualityTrend.map((item: any) => ({
+    date: item.date,
+    collections: item.liters, // Using liters as collections metric
+    revenue: item.liters * 20 // Mock revenue calculation - you might want to adjust this
+  }));
+
+  const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444'];
+
+  return (
+    <div className="container mx-auto py-6">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-8">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Farmer Dashboard</h1>
+          <p className="text-gray-600 mt-2">Overview of your dairy operations</p>
+        </div>
+        <div className="mt-4 md:mt-0 flex items-center space-x-3">
+          <Button variant="outline" className="flex items-center gap-2">
+            <Bell className="h-4 w-4" />
+            Notifications
+          </Button>
+          <Button className="flex items-center gap-2 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800">
+            <Calendar className="h-4 w-4" />
+            Schedule Collection
+          </Button>
+        </div>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        {statsCards.map((card, index) => (
+          <Card key={index} className="border border-border hover:shadow-md transition-all duration-300">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium text-gray-600">{card.title}</CardTitle>
+              <div className="p-2 rounded-full bg-primary/10 text-primary">
+                {card.icon}
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-gray-900">{card.value}</div>
+              <p className="text-xs text-gray-500 mt-1">{card.change}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Charts Section */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        {/* Collection & Revenue Trend - Dual Axis Line Chart */}
+        <Card className="shadow-sm">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-primary" />
+              Collection & Revenue Trend
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={collectionTrendData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis 
+                    dataKey="date" 
+                    stroke="#6b7280"
+                    tickFormatter={(value) => format(new Date(value), 'MMM dd')}
+                  />
+                  <YAxis 
+                    yAxisId="left" 
+                    stroke="#10b981" 
+                    tickFormatter={(value) => `${value} L`}
+                    label={{ 
+                      value: 'Collections (Liters)', 
+                      angle: -90, 
+                      position: 'insideLeft',
+                      style: { textAnchor: 'middle', fill: '#10b981' }
+                    }}
+                  />
+                  <YAxis 
+                    yAxisId="right" 
+                    orientation="right" 
+                    stroke="#3b82f6" 
+                    tickFormatter={(value) => `KSh${value >= 1000 ? `${(value/1000).toFixed(1)}k` : value}`}
+                    label={{ 
+                      value: 'Revenue (KSh)', 
+                      angle: 90, 
+                      position: 'insideRight',
+                      style: { textAnchor: 'middle', fill: '#3b82f6' }
+                    }}
+                  />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }} 
+                    formatter={(value, name) => {
+                      if (name === 'collections') return [`${value} L`, 'Collections'];
+                      if (name === 'revenue') return [`KSh ${Number(value).toLocaleString()}`, 'Revenue'];
+                      return [value, name];
+                    }}
+                    labelFormatter={(value) => format(new Date(value), 'MMM dd, yyyy')}
+                  />
+                  <Line 
+                    yAxisId="left"
+                    type="monotone" 
+                    dataKey="collections" 
+                    stroke="#10b981" 
+                    strokeWidth={2} 
+                    dot={{ r: 4, fill: '#10b981' }} 
+                    activeDot={{ r: 6, stroke: '#10b981', strokeWidth: 2 }}
+                    name="Collections (L)"
+                  />
+                  <Line 
+                    yAxisId="right"
+                    type="monotone" 
+                    dataKey="revenue" 
+                    stroke="#3b82f6" 
+                    strokeWidth={2} 
+                    dot={{ r: 4, fill: '#3b82f6' }} 
+                    activeDot={{ r: 6, stroke: '#3b82f6', strokeWidth: 2 }}
+                    name="Revenue (KSh)"
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Quality Distribution */}
+        <Card className="shadow-sm">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Award className="h-5 w-5 text-primary" />
+              Quality Distribution
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={qualityDistributionData}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {qualityDistributionData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(value) => [value, 'Collections']} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Recent Collections */}
+      <div className="mb-8">
+        <Card className="shadow-sm">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Milk className="h-5 w-5 text-primary" />
+              Recent Collections
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {stats.recentCollections.slice(0, 5).map((collection: any) => (
+                <div key={collection.id} className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center space-x-4">
+                    <div className="p-2 rounded-full bg-blue-100">
+                      <Droplets className="w-5 h-5 text-blue-600" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-900">{collection.liters} Liters</p>
+                      <p className="text-sm text-gray-500">
+                        {format(new Date(collection.collection_date), 'MMM d, yyyy')}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-4">
+                    <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
+                      collection.quality_grade === 'A+' ? 'bg-green-100 text-green-800' :
+                      collection.quality_grade === 'A' ? 'bg-blue-100 text-blue-800' :
+                      collection.quality_grade === 'B' ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-red-100 text-red-800'
+                    }`}>
+                      Grade {collection.quality_grade}
+                    </span>
+                    <span className="text-lg font-bold text-gray-900">KSh {collection.total_amount}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   );
 };
 

@@ -101,8 +101,8 @@ describe('Farmer Registration Security', () => {
 
       // Then approve the farmer
       const approvalResult = await mockSupabase.rpc('approve_pending_farmer', {
-        p_pending_farmer_id: 'pending-123',
-        p_admin_id: 'admin-123'
+        pending_farmer_id: 'pending-123',
+        approved_by_user_id: 'admin-123'
       });
 
       expect(approvalResult.data.success).toBe(true);
@@ -167,8 +167,8 @@ describe('Farmer Registration Security', () => {
       (mockSupabase.rpc as jest.Mock).mockResolvedValue(mockApprovalResponse);
 
       const result = await mockSupabase.rpc('approve_pending_farmer', {
-        p_pending_farmer_id: 'invalid-id',
-        p_admin_id: 'admin-123'
+        pending_farmer_id: 'invalid-id',
+        approved_by_user_id: 'admin-123'
       });
 
       expect(result.data.success).toBe(false);
@@ -190,8 +190,8 @@ describe('Farmer Registration Security', () => {
       (mockSupabase.rpc as jest.Mock).mockResolvedValue(mockApprovalResponse);
 
       const result = await mockSupabase.rpc('approve_pending_farmer', {
-        p_pending_farmer_id: "1'; DROP TABLE farmers; --",
-        p_admin_id: 'admin-123'
+        pending_farmer_id: "1'; DROP TABLE farmers; --",
+        approved_by_user_id: 'admin-123'
       });
 
       // The function should handle this gracefully and not execute the malicious code
@@ -214,14 +214,14 @@ describe('Farmer Registration Security', () => {
 
       // Missing farmer ID
       const result1 = await mockSupabase.rpc('approve_pending_farmer', {
-        p_admin_id: 'admin-123'
+        approved_by_user_id: 'admin-123'
       });
 
       expect(result1.data.success).toBe(false);
 
       // Missing admin ID
       const result2 = await mockSupabase.rpc('approve_pending_farmer', {
-        p_pending_farmer_id: 'pending-123'
+        pending_farmer_id: 'pending-123'
       });
 
       expect(result2.data.success).toBe(false);

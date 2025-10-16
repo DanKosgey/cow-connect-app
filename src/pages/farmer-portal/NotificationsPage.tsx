@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { 
@@ -14,6 +13,8 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import useToastNotifications from "@/hooks/useToastNotifications";
+import { PageHeader } from "@/components/PageHeader";
+import { FilterBar } from "@/components/FilterBar";
 
 interface Notification {
   id: string;
@@ -142,25 +143,21 @@ const NotificationsPage = () => {
 
   if (loading) {
     return (
-      <DashboardLayout>
-        <div className="container mx-auto py-6">
-          <div className="flex items-center justify-center h-64">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-          </div>
+      <div className="container mx-auto py-6">
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
         </div>
-      </DashboardLayout>
+      </div>
     );
   }
 
   return (
-    <DashboardLayout>
-      <div className="container mx-auto py-6">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Notifications</h1>
-            <p className="text-gray-600 mt-2">Stay updated with important alerts and announcements</p>
-          </div>
-          <div className="mt-4 md:mt-0 flex items-center space-x-4">
+    <div className="container mx-auto py-6">
+      <PageHeader
+        title="Notifications"
+        description="Stay updated with important alerts and announcements"
+        actions={
+          <div className="flex items-center space-x-4">
             {unreadCount > 0 && (
               <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
                 {unreadCount} unread
@@ -174,131 +171,107 @@ const NotificationsPage = () => {
               Mark All as Read
             </Button>
           </div>
-        </div>
+        }
+      />
 
-        {/* Category Filters */}
-        <Card className="mb-8">
-          <CardContent className="pt-6">
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant={categoryFilter === "all" ? "default" : "outline"}
-                onClick={() => setCategoryFilter("all")}
-                className="flex items-center gap-2"
-              >
-                <Bell className="h-4 w-4" />
-                All
-              </Button>
-              <Button
-                variant={categoryFilter === "payment" ? "default" : "outline"}
-                onClick={() => setCategoryFilter("payment")}
-                className="flex items-center gap-2"
-              >
-                <DollarSign className="h-4 w-4" />
-                Payments
-              </Button>
-              <Button
-                variant={categoryFilter === "collection" ? "default" : "outline"}
-                onClick={() => setCategoryFilter("collection")}
-                className="flex items-center gap-2"
-              >
-                <Milk className="h-4 w-4" />
-                Collections
-              </Button>
-              <Button
-                variant={categoryFilter === "system" ? "default" : "outline"}
-                onClick={() => setCategoryFilter("system")}
-                className="flex items-center gap-2"
-              >
-                <Info className="h-4 w-4" />
-                System
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+      {/* Category Filters */}
+      <Card className="mb-8">
+        <CardContent className="pt-6">
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant={categoryFilter === "all" ? "default" : "outline"}
+              onClick={() => setCategoryFilter("all")}
+              className="flex items-center gap-2"
+            >
+              <Bell className="h-4 w-4" />
+              All
+            </Button>
+            <Button
+              variant={categoryFilter === "payment" ? "default" : "outline"}
+              onClick={() => setCategoryFilter("payment")}
+              className="flex items-center gap-2"
+            >
+              <DollarSign className="h-4 w-4" />
+              Payments
+            </Button>
+            <Button
+              variant={categoryFilter === "collection" ? "default" : "outline"}
+              onClick={() => setCategoryFilter("collection")}
+              className="flex items-center gap-2"
+            >
+              <Milk className="h-4 w-4" />
+              Collections
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
-        {/* Notifications List */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Bell className="h-5 w-5 text-primary" />
-              Recent Notifications
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
+      {/* Notifications List */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Bell className="h-5 w-5 text-primary" />
+            Recent Notifications
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
             {filteredNotifications.length === 0 ? (
               <div className="text-center py-12">
-                <Bell className="mx-auto h-12 w-12 text-gray-400" />
-                <h3 className="mt-2 text-sm font-medium text-gray-900">No notifications</h3>
-                <p className="mt-1 text-sm text-gray-500">
-                  You're all caught up! Check back later for new notifications.
-                </p>
+                <Bell className="h-12 w-12 mx-auto text-gray-300 mb-4" />
+                <p className="text-gray-500">No notifications found</p>
               </div>
             ) : (
-              <div className="space-y-4">
-                {filteredNotifications.map((notification) => (
-                  <div 
-                    key={notification.id} 
-                    className={`border rounded-lg p-4 transition-all duration-200 ${
-                      notification.read 
-                        ? 'bg-white border-border' 
-                        : 'bg-blue-50 border-blue-200 hover:bg-blue-100'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-start space-x-3">
-                        <div className="mt-0.5">
-                          {getIcon(notification.type)}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center space-x-2">
-                            <h3 className="text-sm font-medium text-gray-900">
-                              {notification.title}
-                            </h3>
-                            {!notification.read && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                New
-              </span>
-                            )}
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                              <span className="mr-1">{getCategoryIcon(notification.category)}</span>
-                              {notification.category.charAt(0).toUpperCase() + notification.category.slice(1)}
-                            </span>
-                          </div>
-                          <p className="mt-1 text-sm text-gray-600">
-                            {notification.message}
-                          </p>
-                          <p className="mt-2 text-xs text-gray-500 flex items-center">
-                            <Clock className="h-3 w-3 mr-1" />
-                            {new Date(notification.created_at).toLocaleDateString('en-US', {
-                              month: 'short',
-                              day: 'numeric',
-                              year: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit'
-                            })}
-                          </p>
-                        </div>
+              filteredNotifications.map((notification) => (
+                <div 
+                  key={notification.id} 
+                  className={`p-4 rounded-lg border ${!notification.read ? 'bg-blue-50 border-blue-200' : 'bg-white border-gray-200'} hover:shadow-md transition-shadow`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-start gap-3">
+                      <div className={`p-2 rounded-full ${!notification.read ? 'bg-blue-100' : 'bg-gray-100'}`}>
+                        {getIcon(notification.type)}
                       </div>
-                      <div className="flex space-x-2">
-                        {!notification.read && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => markAsRead(notification.id)}
-                          >
-                            Mark as Read
-                          </Button>
-                        )}
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="font-medium text-gray-900">{notification.title}</h3>
+                          {!notification.read && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                              New
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-600 mb-2">{notification.message}</p>
+                        <div className="flex items-center gap-4 text-xs text-gray-500">
+                          <span className="flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            {new Date(notification.created_at).toLocaleDateString()}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            {getCategoryIcon(notification.category)}
+                            {notification.category.charAt(0).toUpperCase() + notification.category.slice(1)}
+                          </span>
+                        </div>
                       </div>
                     </div>
+                    {!notification.read && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => markAsRead(notification.id)}
+                        className="h-8 w-8 p-0"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
-                ))}
-              </div>
+                </div>
+              ))
             )}
-          </CardContent>
-        </Card>
-      </div>
-    </DashboardLayout>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 };
 

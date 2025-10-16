@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { DashboardLayout } from '@/components/DashboardLayout';
+// DashboardLayout provided by AdminPortalLayout; avoid duplicate wrapper here
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -38,11 +38,14 @@ export default function InvitationManagement() {
           const { data: profile } = await supabase
             .from('profiles')
             .select('full_name')
-            .eq('id', user.id)
-            .single();
+            .eq('id', user.id);
+            // Removed .single() to avoid PGRST116 error when no records found
+          
+          // Check if we have data and handle accordingly
+          const profileData = profile && profile.length > 0 ? profile[0] : null;
           
           // Fetch pending invitations
-          await fetchInvitations(user.id, profile?.full_name || 'Unknown');
+          await fetchInvitations(user.id, profileData?.full_name || 'Unknown');
         }
       } catch (error) {
         console.error('Error fetching user data:', error);

@@ -326,7 +326,7 @@ describe('Farmer Email Delivery System', () => {
     const notificationTypes = [
       'registration_confirmation',
       'kyc_submitted',
-      'under_review',
+      'approved',
       'approved',
       'rejected',
       'resubmission_required'

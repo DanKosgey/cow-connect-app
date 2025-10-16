@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { generateUUID } from '@/utils/uuid';
 
 export interface WarehouseLocation {
   id: string;
@@ -188,6 +189,8 @@ export class WarehouseService {
     const { data, error } = await supabase
       .from('warehouse_collections')
       .insert({
+        // Generate a UUID to avoid null ID issues
+        id: generateUUID(),
         warehouse_id: warehouseId,
         collection_id: collectionId,
         added_at: new Date().toISOString()

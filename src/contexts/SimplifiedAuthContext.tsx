@@ -54,6 +54,73 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // Global flag to track if auth initialization is in progress
   const isAuthInitializing = useRef(false);
 
+  // Define signOut function early to avoid circular dependency issues
+  const [signOutInProgress, setSignOutInProgress] = useState(false);
+  
+  const signOut = useCallback(async () => {
+    // Prevent multiple simultaneous signOut calls
+    if (signOutInProgress) {
+      logger.debug('Sign out already in progress, skipping');
+      return;
+    }
+    
+    setSignOutInProgress(true);
+    const id = performanceMonitor.startTiming('signOut');
+    try {
+      logger.info('Signing out user');
+      
+      // Sign out from Supabase with timeout
+      const { error } = await executeWithTimeout(supabase.auth.signOut(), 30000);
+      
+      if (error) {
+        logger.errorWithContext('Supabase signOut', error);
+      }
+      
+      // Clear local storage items related to auth
+      try {
+        // Clear specific auth-related items instead of all localStorage
+        const itemsToRemove = [
+          'cached_user', 
+          'cached_role', 
+          'auth_cache_timestamp',
+          'pending_profile',
+          'last_auth_clear_time'
+        ];
+        
+        itemsToRemove.forEach(item => {
+          localStorage.removeItem(item);
+        });
+        
+        // Clear specific Supabase items
+        Object.keys(localStorage).forEach(key => {
+          if (key.startsWith('sb-') || key.startsWith('supabase-')) {
+            localStorage.removeItem(key);
+          }
+        });
+        
+        // Clear sessionStorage
+        window.sessionStorage.clear();
+      } catch (e) {
+        logger.warn('Could not clear storage', e);
+      }
+    } catch (error) {
+      logger.errorWithContext('Sign out process', error);
+    } finally {
+      // Always reset state regardless of errors
+      setUser(null);
+      setSession(null);
+      setUserRole(null);
+      
+      // Reset signOutInProgress flag
+      setSignOutInProgress(false);
+      
+      // Force a small delay to ensure state is cleared
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      performanceMonitor.endTiming(id, 'signOut');
+    }
+  }, [signOutInProgress]);
+
   // Handle app close event
   useEffect(() => {
     const handleBeforeUnload = async (event: BeforeUnloadEvent) => {
@@ -75,7 +142,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // Update last activity on user interaction
   useEffect(() => {
     const updateLastActivity = () => {
-      setLastActivity(Date.now());
+      const now = Date.now();
+      // Only update if it's been more than 1 second since last update to prevent excessive state updates
+      if (now - lastActivity > 1000) {
+        setLastActivity(now);
+      }
     };
 
     window.addEventListener('mousedown', updateLastActivity);
@@ -89,7 +160,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       window.removeEventListener('scroll', updateLastActivity);
       window.removeEventListener('touchstart', updateLastActivity);
     };
-  }, []);
+  }, [lastActivity]); // Add lastActivity to dependencies
 
   // Check for session timeout - increased timeout and improved handling
   useEffect(() => {
@@ -106,7 +177,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }, 5 * 60 * 1000); // Check every 5 minutes instead of every minute
 
     return () => clearInterval(checkTimeout);
-  }, [lastActivity, user]);
+  }, [lastActivity, user, signOut]);
 
   const getUserRole = useCallback(async (userId: string): Promise<UserRole | null> => {
     const id = performanceMonitor.startTiming('getUserRole');
@@ -1010,72 +1081,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, []);
 
-  const [signOutInProgress, setSignOutInProgress] = useState(false);
-  
-  const signOut = useCallback(async () => {
-    // Prevent multiple simultaneous signOut calls
-    if (signOutInProgress) {
-      logger.debug('Sign out already in progress, skipping');
-      return;
-    }
-    
-    setSignOutInProgress(true);
-    const id = performanceMonitor.startTiming('signOut');
-    try {
-      logger.info('Signing out user');
-      
-      // Sign out from Supabase with timeout
-      const { error } = await executeWithTimeout(supabase.auth.signOut(), 30000);
-      
-      if (error) {
-        logger.errorWithContext('Supabase signOut', error);
-      }
-      
-      // Clear local storage items related to auth
-      try {
-        // Clear specific auth-related items instead of all localStorage
-        const itemsToRemove = [
-          'cached_user', 
-          'cached_role', 
-          'auth_cache_timestamp',
-          'pending_profile',
-          'last_auth_clear_time'
-        ];
-        
-        itemsToRemove.forEach(item => {
-          localStorage.removeItem(item);
-        });
-        
-        // Clear specific Supabase items
-        Object.keys(localStorage).forEach(key => {
-          if (key.startsWith('sb-') || key.startsWith('supabase-')) {
-            localStorage.removeItem(key);
-          }
-        });
-        
-        // Clear sessionStorage
-        window.sessionStorage.clear();
-      } catch (e) {
-        logger.warn('Could not clear storage', e);
-      }
-    } catch (error) {
-      logger.errorWithContext('Sign out process', error);
-    } finally {
-      // Always reset state regardless of errors
-      setUser(null);
-      setSession(null);
-      setUserRole(null);
-      
-      // Reset signOutInProgress flag
-      setSignOutInProgress(false);
-      
-      // Force a small delay to ensure state is cleared
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      performanceMonitor.endTiming(id, 'signOut');
-    }
-  }, [signOutInProgress]);
-
   // Add a function to completely clear all authentication state and cache
   // Use a flag to prevent repeated calls
   const clearAllAuthData = useCallback(async () => {
@@ -1270,17 +1275,25 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
               kyc_status: 'pending', // Set to pending for KYC approval
               registration_completed: false // Set to false until KYC is completed
             }])
-            .select()
-            .single();
+            .select();
+            // Removed .single() to avoid PGRST116 error when no records found
 
           if (farmerInsert.error) {
             logger.errorWithContext('Creating farmer record from pending data', farmerInsert.error);
             return;
           }
           
+          // Check if we have data and handle accordingly
+          const farmerRecord = farmerInsert.data && farmerInsert.data.length > 0 ? farmerInsert.data[0] : null;
+          
+          if (!farmerRecord) {
+            logger.errorWithContext('No farmer record created from pending data', farmerInsert.error);
+            return;
+          }
+          
           // If farmer record was created successfully, complete the rest of the farmer registration
           if (pendingProfile.farmerData) {
-            const farmerId = farmerInsert.data?.id;
+            const farmerId = farmerRecord.id;
             if (farmerId) {
               // Update with additional farmer details
               const { error: updateError } = await supabase

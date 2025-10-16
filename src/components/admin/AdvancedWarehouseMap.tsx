@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -13,7 +13,8 @@ import {
   Truck,
   Warehouse as WarehouseIcon,
   Droplets,
-  Users
+  Users,
+  RefreshCw
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -60,6 +61,7 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [qualityFilter, setQualityFilter] = useState('all');
   const [dateRange, setDateRange] = useState('week');
+  const [connectionStatus, setConnectionStatus] = useState<'online' | 'offline' | 'checking'>('checking');
   
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
@@ -106,7 +108,7 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
       } catch (err) {
         console.error('Error loading Leaflet:', err);
         if (isMounted) {
-          setError('Failed to load map functionality');
+          setError('Failed to load map functionality. Please check your internet connection and try again.');
         }
       }
     };
@@ -126,7 +128,25 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
     };
   }, []);
 
-  // Initialize the map
+  // Monitor network status
+  useEffect(() => {
+    const updateOnlineStatus = () => {
+      setConnectionStatus(navigator.onLine ? 'online' : 'offline');
+    };
+
+    window.addEventListener('online', updateOnlineStatus);
+    window.addEventListener('offline', updateOnlineStatus);
+
+    // Initial check
+    updateOnlineStatus();
+
+    return () => {
+      window.removeEventListener('online', updateOnlineStatus);
+      window.removeEventListener('offline', updateOnlineStatus);
+    };
+  }, []);
+
+  // Initialize the map with more detailed settings
   const initializeMap = () => {
     if (typeof window === 'undefined' || !window.L || !mapRef.current) return;
 
@@ -147,13 +167,45 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
     }
 
     try {
-      // Create new map
-      const map = window.L.map(mapRef.current).setView([-1.2921, 36.8219], 10); // Default to Nairobi
+      // Create new map with more detailed settings
+      const map = window.L.map(mapRef.current, {
+        center: [-1.2921, 36.8219],
+        zoom: 10,
+        minZoom: 3,
+        maxZoom: 18,
+        zoomControl: true,
+        attributionControl: true
+      });
       
-      window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      // Add multiple tile layers with fallbacks and retry mechanism
+      const primaryLayer = window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap contributors',
-        maxZoom: 19
-      }).addTo(map);
+        maxZoom: 19,
+        className: 'primary-tiles',
+        errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==', // Transparent pixel
+        retryOnError: true
+      });
+      
+      const fallbackLayer1 = window.L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        attribution: '© CARTO',
+        maxZoom: 19,
+        className: 'fallback-tiles-1',
+        errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==',
+        retryOnError: true
+      });
+      
+      const fallbackLayer2 = window.L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+        attribution: '© Esri',
+        maxZoom: 19,
+        className: 'fallback-tiles-2',
+        errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==',
+        retryOnError: true
+      });
+      
+      // Add layers to map with fallback priority
+      fallbackLayer2.addTo(map); // Lowest priority fallback
+      fallbackLayer1.addTo(map); // Medium priority fallback
+      primaryLayer.addTo(map);   // Primary layer
       
       mapInstanceRef.current = map;
       layersRef.current = window.L.layerGroup().addTo(map);
@@ -163,6 +215,18 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
       
       // Fetch and display collection data
       fetchCollectionData();
+      
+      // Add layer control for users to switch between providers
+      const baseMaps = {
+        "OpenStreetMap": primaryLayer,
+        "CARTO Light": fallbackLayer1,
+        "Esri World Street": fallbackLayer2
+      };
+      
+      window.L.control.layers(baseMaps).addTo(map);
+      
+      // Add scale control
+      window.L.control.scale({imperial: false}).addTo(map);
     } catch (error) {
       console.error('Error initializing map:', error);
       setError('Failed to initialize map');
@@ -210,25 +274,28 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
     setError(null);
     
     try {
-      // Calculate date filter
+      // Calculate date filter with more precise date handling
       const now = new Date();
       let startDate = new Date();
       
       switch(dateRange) {
         case 'today':
-          startDate = new Date(now.setHours(0, 0, 0, 0));
+          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
           break;
         case 'week':
-          startDate = new Date(now.setDate(now.getDate() - 7));
+          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7, 0, 0, 0, 0);
           break;
         case 'month':
-          startDate = new Date(now.setMonth(now.getMonth() - 1));
+          startDate = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate(), 0, 0, 0, 0);
+          break;
+        case '90days':
+          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 90, 0, 0, 0, 0);
           break;
         case 'year':
-          startDate = new Date(now.setFullYear(now.getFullYear() - 1));
+          startDate = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate(), 0, 0, 0, 0);
           break;
         default:
-          startDate = new Date(now.setDate(now.getDate() - 7));
+          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7, 0, 0, 0, 0);
       }
       
       // Fetch collections with GPS data
@@ -337,7 +404,7 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
       // Add cluster group to map
       clusterGroupRef.current.addTo(mapInstanceRef.current);
       
-      // Add collection point markers
+      // Add collection point markers with more detail
       filteredCollections.forEach(collection => {
         if (collection.gps_latitude && collection.gps_longitude) {
           // Determine marker color based on quality grade
@@ -352,22 +419,34 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
           const marker = window.L.marker([collection.gps_latitude, collection.gps_longitude], {
             icon: window.L.divIcon({
               className: 'collection-marker',
-              html: `<div class="bg-white border-2 rounded-full w-6 h-6 flex items-center justify-center font-bold shadow-lg" 
-                       style="border-color: ${markerColor};">
-                </div>`,
-              iconSize: [24, 24],
-              iconAnchor: [12, 12]
+              html: `<div class="bg-white border-2 rounded-full w-8 h-8 flex items-center justify-center font-bold shadow-lg hover:scale-110 transition-transform" 
+                       style="border-color: ${markerColor}; transform: translate(-50%, -50%);">
+                       <div class="w-3 h-3 rounded-full" style="background-color: ${markerColor};"></div>
+                     </div>`,
+              iconSize: [32, 32],
+              iconAnchor: [16, 16]
             })
           });
           
+          // Format date for display
+          const collectionDate = new Date(collection.collection_date);
+          const formattedDate = collectionDate.toLocaleDateString() + ' ' + collectionDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+          
           marker.bindPopup(`
-            <div class="p-2 min-w-48">
-              <h3 class="font-bold text-gray-800">${collection.farmers?.full_name || 'Unknown Farmer'}</h3>
-              <p class="text-sm text-gray-600">${collection.farmers?.registration_number || 'N/A'}</p>
-              <div class="mt-2 space-y-1">
-                <p><strong>Collection ID:</strong> ${collection.collection_id}</p>
-                <p><strong>Liters:</strong> ${collection.liters}L</p>
-                <p><strong>Quality:</strong> 
+            <div class="p-3 min-w-64 max-w-80">
+              <h3 class="font-bold text-lg text-gray-800 border-b pb-2">${collection.farmers?.full_name || 'Unknown Farmer'}</h3>
+              <p class="text-sm text-gray-600 mb-2">${collection.farmers?.registration_number || 'N/A'}</p>
+              <div class="space-y-2">
+                <div class="flex justify-between">
+                  <span class="font-medium">Collection ID:</span>
+                  <span>${collection.collection_id}</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="font-medium">Liters:</span>
+                  <span class="font-bold text-blue-600">${collection.liters}L</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="font-medium">Quality:</span>
                   <span class="px-2 py-1 rounded text-xs font-medium ${
                     collection.quality_grade === 'A+' ? 'bg-green-100 text-green-800' :
                     collection.quality_grade === 'A' ? 'bg-blue-100 text-blue-800' :
@@ -376,12 +455,26 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
                   }">
                     ${collection.quality_grade}
                   </span>
-                </p>
-                <p><strong>Amount:</strong> KES ${Math.round(collection.total_amount)}</p>
-                <p><strong>Date:</strong> ${new Date(collection.collection_date).toLocaleDateString()}</p>
+                </div>
+                <div class="flex justify-between">
+                  <span class="font-medium">Amount:</span>
+                  <span class="font-bold text-green-600">KES ${Math.round(collection.total_amount)}</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="font-medium">Date:</span>
+                  <span>${formattedDate}</span>
+                </div>
               </div>
             </div>
-          `);
+          `, {
+            maxWidth: 320,
+            className: 'custom-popup'
+          });
+          
+          // Add hover effect
+          marker.on('mouseover', function() {
+            this.openPopup();
+          });
           
           clusterGroupRef.current.addLayer(marker);
           markersRef.current.push(marker);
@@ -496,6 +589,13 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
     }
   }, [filteredCollections, mapInitialized]);
 
+  // Refresh data when date range changes
+  useEffect(() => {
+    if (mapInitialized) {
+      fetchCollectionData();
+    }
+  }, [dateRange, mapInitialized]);
+
   // Handle search
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchTerm(e.target.value);
@@ -509,6 +609,8 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
   // Handle date range filter
   const handleDateRangeChange = (range: string) => {
     setDateRange(range);
+    // Trigger data refresh when date range changes
+    fetchCollectionData();
   };
 
   // Handle zoom in
@@ -525,10 +627,29 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
     }
   };
 
-  // Handle refresh
-  const handleRefresh = () => {
-    fetchCollectionData();
-  };
+  // Handle retry mechanism
+  const handleRefresh = useCallback(() => {
+    setError(null);
+    setLoading(true);
+    setCollections([]);
+    setFilteredCollections([]);
+    
+    // Clear existing map
+    if (mapInstanceRef.current) {
+      try {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+      } catch (e) {
+        console.warn('Error removing map:', e);
+      }
+    }
+    
+    // Reinitialize
+    setTimeout(() => {
+      initializeMap();
+      fetchCollectionData();
+    }, 100);
+  }, []);
 
   // Format currency
   const formatCurrency = (amount: number) => {
@@ -621,15 +742,21 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
             <div className="space-y-2">
               <Label>Date Range</Label>
               <div className="flex flex-wrap gap-2">
-                {['today', 'week', 'month', 'year'].map(range => (
+                {[
+                  { key: 'today', label: 'Today' },
+                  { key: 'week', label: 'Last 7 Days' },
+                  { key: 'month', label: 'Last 30 Days' },
+                  { key: '90days', label: 'Last 90 Days' },
+                  { key: 'year', label: 'Last Year' }
+                ].map(range => (
                   <Button
-                    key={range}
-                    variant={dateRange === range ? 'default' : 'outline'}
+                    key={range.key}
+                    variant={dateRange === range.key ? 'default' : 'outline'}
                     size="sm"
-                    onClick={() => handleDateRangeChange(range)}
-                    className="capitalize"
+                    onClick={() => handleDateRangeChange(range.key)}
+                    className="whitespace-nowrap"
                   >
-                    {range}
+                    {range.label}
                   </Button>
                 ))}
               </div>
@@ -641,25 +768,33 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
               <div className="flex flex-wrap gap-2">
                 <Button variant="outline" size="sm" onClick={handleZoomIn}>
                   <ZoomIn className="h-4 w-4" />
+                  <span className="ml-1">Zoom In</span>
                 </Button>
                 <Button variant="outline" size="sm" onClick={handleZoomOut}>
                   <ZoomOut className="h-4 w-4" />
+                  <span className="ml-1">Zoom Out</span>
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => mapInstanceRef.current && mapInstanceRef.current.setView([-1.2921, 36.8219], 10)}>
+                  <Navigation className="h-4 w-4" />
+                  <span className="ml-1">Reset View</span>
                 </Button>
                 <Button variant="outline" size="sm" onClick={handleRefresh}>
-                  <Navigation className="h-4 w-4" />
+                  <RefreshCw className="h-4 w-4" />
+                  <span className="ml-1">Refresh</span>
                 </Button>
               </div>
             </div>
           </div>
           
           {/* Map Container */}
-          <div className="border-2 border-gray-200 rounded-lg overflow-hidden" style={{ height: '500px' }}>
-            <div ref={mapRef} style={{ height: '100%', width: '100%' }} />
+          <div className="border-2 border-gray-300 rounded-lg overflow-hidden relative" style={{ height: '600px' }}>
+            <div ref={mapRef} style={{ height: '100%', width: '100%' }} className="z-0" />
             {!mapInitialized && (
-              <div className="absolute inset-0 flex items-center justify-center bg-gray-50">
+              <div className="absolute inset-0 flex items-center justify-center bg-gray-50 z-10">
                 <div className="text-center">
-                  <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500 mb-2"></div>
-                  <p className="text-gray-500">Loading map...</p>
+                  <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-4"></div>
+                  <p className="text-gray-600 font-medium">Loading map...</p>
+                  <p className="text-gray-500 text-sm mt-1">Please wait while we load the collection points</p>
                 </div>
               </div>
             )}
@@ -748,8 +883,33 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
             </div>
           ) : error ? (
             <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-              <p className="text-red-700">{error}</p>
-              <Button onClick={handleRefresh} className="mt-2">Retry</Button>
+              <p className="text-red-700 mb-2">Map Loading Error</p>
+              <p className="text-sm text-red-600 mb-3">
+                {error.includes('503') 
+                  ? 'The map service is temporarily unavailable. This is usually due to high demand on the map servers. Please try again in a few minutes.'
+                  : error}
+              </p>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <Button onClick={handleRefresh} className="flex items-center gap-2">
+                  <RefreshCw className="h-4 w-4" />
+                  Retry
+                </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    setError(null);
+                    setMapInitialized(false);
+                    setTimeout(() => setMapInitialized(true), 100);
+                  }}
+                  className="flex items-center gap-2"
+                >
+                  <Navigation className="h-4 w-4" />
+                  Try Different Map Provider
+                </Button>
+              </div>
+              <p className="text-xs text-gray-500 mt-3">
+                Tip: You can switch between different map providers using the layer control in the top-right corner of the map.
+              </p>
             </div>
           ) : filteredCollections.length === 0 ? (
             <div className="text-center py-8">

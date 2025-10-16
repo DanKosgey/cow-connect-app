@@ -196,18 +196,27 @@ const AuthCallback = () => {
                     email_verified: false,
                     registration_number: `F-${Date.now()}`
                   }])
-                  .select()
-                  .single();
+                  .select();
+                // Removed .single() to avoid PGRST116 error when no records found
 
-                if (pendingFarmerError) {
-                  console.error('AuthCallback: Pending farmer record creation failed', pendingFarmerError);
-                  throw new Error(`Pending farmer record creation failed: ${pendingFarmerError.message}`);
-                }
-                console.log('AuthCallback: Pending farmer record created successfully', pendingFarmerData);
+              if (pendingFarmerError) {
+                console.error('AuthCallback: Pending farmer record creation failed', pendingFarmerError);
+                throw new Error(`Pending farmer record creation failed: ${pendingFarmerError.message}`);
+              }
+              
+              // Check if we have data and handle accordingly
+              const pendingFarmerRecord = pendingFarmerData && pendingFarmerData.length > 0 ? pendingFarmerData[0] : null;
+              
+              if (!pendingFarmerRecord) {
+                console.error('AuthCallback: No pending farmer record created');
+                throw new Error('Failed to create pending farmer record');
+              }
+              
+              console.log('AuthCallback: Pending farmer record created successfully', pendingFarmerRecord);
 
                 // Generate email verification token
                 const { data: tokenData, error: tokenError } = await supabase.rpc('generate_email_verification_token', {
-                  p_pending_farmer_id: pendingFarmerData.id
+                  p_pending_farmer_id: pendingFarmerRecord.id
                 });
 
                 if (tokenError) {
@@ -293,15 +302,18 @@ const AuthCallback = () => {
                     const { data: pendingFarmer, error: pendingError } = await supabase
                       .from('pending_farmers')
                       .select('status')
-                      .eq('user_id', user.id)
-                      .single();
+                      .eq('user_id', user.id);
+                      // Removed .single() to avoid PGRST116 error when no records found
                     
-                    if (!pendingError && pendingFarmer) {
+                    // Check if we have data and handle accordingly
+                    const pendingFarmerData = pendingFarmer && pendingFarmer.length > 0 ? pendingFarmer[0] : null;
+                    
+                    if (!pendingError && pendingFarmerData) {
                       // If they're in pending_farmers, redirect to appropriate page based on status
-                      if (pendingFarmer.status === 'pending_verification') {
+                      if (pendingFarmerData.status === 'pending_verification') {
                         // Instead of going to email verification waiting page, go directly to KYC upload
                         navigate('/farmer/kyc-upload');
-                      } else if (pendingFarmer.status === 'email_verified') {
+                      } else if (pendingFarmerData.status === 'email_verified') {
                         navigate('/farmer/kyc-upload');
                       } else {
                         navigate('/farmer/kyc-upload');
@@ -313,12 +325,15 @@ const AuthCallback = () => {
                     const { data: farmer, error } = await supabase
                       .from('farmers')
                       .select('registration_completed')
-                      .eq('user_id', user.id)
-                      .single();
+                      .eq('user_id', user.id);
+                      // Removed .single() to avoid PGRST116 error when no records found
+                    
+                    // Check if we have data and handle accordingly
+                    const farmerData = farmer && farmer.length > 0 ? farmer[0] : null;
                     
                     if (error) throw error;
                     
-                    if (farmer && farmer.registration_completed) {
+                    if (farmerData && farmerData.registration_completed) {
                       navigate('/farmer/dashboard');
                     } else {
                       // Redirect to KYC upload page for farmers who haven't completed registration

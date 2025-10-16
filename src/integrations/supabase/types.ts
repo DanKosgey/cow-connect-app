@@ -178,6 +178,42 @@ export type Database = {
         }
         Relationships: []
       }
+      market_prices: {
+        Row: {
+          id: string
+          product: string
+          region: string
+          price: number
+          previous_price: number | null
+          change: number | null
+          change_percent: number | null
+          updated_at: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          product: string
+          region: string
+          price: number
+          previous_price?: number | null
+          change?: number | null
+          change_percent?: number | null
+          updated_at?: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          product?: string
+          region?: string
+          price?: number
+          previous_price?: number | null
+          change?: number | null
+          change_percent?: number | null
+          updated_at?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
       payments: {
         Row: {
           amount: number

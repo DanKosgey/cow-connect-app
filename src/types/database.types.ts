@@ -741,6 +741,64 @@ export interface Database {
           created_at?: string;
         };
       };
+      forum_posts: {
+        Row: {
+          id: string;
+          title: string;
+          content: string;
+          author_id: string;
+          created_at: string;
+          updated_at: string;
+          likes: number;
+          comments: number;
+        };
+        Insert: {
+          id?: string;
+          title: string;
+          content: string;
+          author_id: string;
+          created_at?: string;
+          updated_at?: string;
+          likes?: number;
+          comments?: number;
+        };
+        Update: {
+          id?: string;
+          title?: string;
+          content?: string;
+          author_id?: string;
+          created_at?: string;
+          updated_at?: string;
+          likes?: number;
+          comments?: number;
+        };
+      };
+      forum_comments: {
+        Row: {
+          id: string;
+          post_id: string;
+          content: string;
+          author_id: string;
+          created_at: string;
+          likes: number;
+        };
+        Insert: {
+          id?: string;
+          post_id: string;
+          content: string;
+          author_id: string;
+          created_at?: string;
+          likes?: number;
+        };
+        Update: {
+          id?: string;
+          post_id?: string;
+          content?: string;
+          author_id?: string;
+          created_at?: string;
+          likes?: number;
+        };
+      };
       notifications: {
         Row: {
           id: string;

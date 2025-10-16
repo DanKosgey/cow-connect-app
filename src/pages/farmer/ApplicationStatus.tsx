@@ -7,15 +7,32 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import useToastNotifications from "@/hooks/useToastNotifications";
 import { supabase } from "@/integrations/supabase/client";
 
-type ApplicationStatus = 'pending' | 'rejected' | null;
+type ApplicationStatus = 'pending_verification' | 'email_verified' | 'approved' | 'rejected';
 
 interface FarmerData {
-  status: ApplicationStatus;
+  status: 'pending_verification' | 'email_verified' | 'approved' | 'rejected';
   full_name: string;
   email: string;
   created_at: string;
+  updated_at: string;
   rejection_reason?: string;
+  rejection_count?: number;
   email_verified: boolean;
+  kyc_complete: boolean;
+  kyc_submitted_at?: string;
+  kyc_review_notes?: string;
+  required_documents: Array<{
+    type: string;
+    status: 'pending' | 'submitted' | 'approved' | 'rejected';
+    submitted_at?: string;
+    rejection_reason?: string;
+  }>;
+  verification_steps: Array<{
+    step: string;
+    completed: boolean;
+    completed_at?: string;
+  }>;
+  submitted_at?: string;
 }
 
 const ApplicationStatus = () => {
@@ -45,9 +62,8 @@ const ApplicationStatus = () => {
       // Fetch farmer data from pending_farmers table
       const { data, error } = await supabase
         .from('pending_farmers')
-        .select('status, full_name, email, created_at, rejection_reason, email_verified')
-        .eq('user_id', user.id)
-        .single();
+        .select('status, full_name, email, created_at, rejection_reason, email_verified, submitted_at')
+        .eq('user_id', user.id);
 
       if (error) {
         console.error('Error fetching farmer data:', error);
@@ -55,10 +71,19 @@ const ApplicationStatus = () => {
         return;
       }
 
-      setFarmerData(data);
+      // Check if we have data and handle accordingly
+      const farmerData = data && data.length > 0 ? data[0] : null;
+
+      if (!farmerData) {
+        console.error('No farmer data found for user:', user.id);
+        toast.error("Error", "No application found");
+        return;
+      }
+
+      setFarmerData(farmerData);
 
       // If approved, redirect to dashboard
-      if (data.status === 'approved') {
+      if (farmerData.status === 'approved') {
         toast.success("Approved!", "Your application has been approved. Redirecting to dashboard...");
         setTimeout(() => navigate('/farmer/dashboard'), 2000);
       }
@@ -75,7 +100,7 @@ const ApplicationStatus = () => {
     setIsRefreshing(true);
     await fetchApplicationStatus();
     setIsRefreshing(false);
-    toast.info("Refreshed", "Application status updated");
+    toast.show({ title: "Refreshed", description: "Application status updated" });
   };
 
   const formatDate = (dateString: string) => {
@@ -149,11 +174,11 @@ const ApplicationStatus = () => {
           {/* Status Icon and Title */}
           <div className="text-center mb-8">
             <div className={`inline-flex items-center justify-center w-20 h-20 rounded-full mb-6 ${
-              farmerData.status === 'pending' 
+              (farmerData.status === 'pending_verification' || farmerData.status === 'email_verified') 
                 ? 'bg-blue-100 dark:bg-blue-900/20'
                 : 'bg-red-100 dark:bg-red-900/20'
             }`}>
-              {farmerData.status === 'pending' ? (
+              {(farmerData.status === 'pending_verification' || farmerData.status === 'email_verified') ? (
                 <Clock className="w-10 h-10 text-blue-600 dark:text-blue-400" />
               ) : (
                 <XCircle className="w-10 h-10 text-red-600 dark:text-red-400" />
@@ -161,8 +186,8 @@ const ApplicationStatus = () => {
             </div>
             <h1 className="text-3xl md:text-4xl font-bold mb-2">
               Application{" "}
-              <span className={farmerData.status === 'pending' ? 'text-blue-600' : 'text-red-600'}>
-                {farmerData.status === 'pending' ? 'Under Review' : 'Requires Attention'}
+              <span className={(farmerData.status === 'pending_verification' || farmerData.status === 'email_verified') ? 'text-blue-600' : 'text-red-600'}>
+                {(farmerData.status === 'pending_verification' || farmerData.status === 'email_verified') ? 'Under Review' : 'Requires Attention'}
               </span>
             </h1>
             <p className="text-lg text-muted-foreground">
@@ -177,7 +202,9 @@ const ApplicationStatus = () => {
                 <div>
                   <CardTitle>Application Status</CardTitle>
                   <CardDescription>
-                    Submitted on {formatDate(farmerData.created_at)}
+                    {farmerData.submitted_at 
+                      ? `Submitted on ${formatDate(farmerData.submitted_at)}`
+                      : `Created on ${formatDate(farmerData.created_at)}`}
                   </CardDescription>
                 </div>
                 <Button
@@ -195,12 +222,12 @@ const ApplicationStatus = () => {
               </div>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Pending Status */}
-              {farmerData.status === 'pending' && (
+              {/* Under Review Status */}
+              {(farmerData.status === 'pending_verification' || farmerData.status === 'email_verified') && (
                 <>
                   <Alert>
                     <Clock className="h-4 w-4" />
-                    <AlertTitle>Review in Progress</AlertTitle>
+                    <AlertTitle>Application Status</AlertTitle>
                     <AlertDescription>
                       Your application is currently being reviewed by our team. 
                       This process typically takes 1-3 business days.
@@ -315,8 +342,8 @@ const ApplicationStatus = () => {
               <Home className="mr-2 h-4 w-4" />
               Return to Home
             </Button>
-            {farmerData.status === 'pending' && (
-              <Button onClick={() => navigate('/documents-under-review')}>
+            {(farmerData.status === 'pending_verification' || farmerData.status === 'email_verified') && (
+              <Button onClick={() => navigate('/farmer/documents-under-review')}>
                 View Submission Details
               </Button>
             )}

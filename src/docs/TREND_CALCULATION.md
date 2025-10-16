@@ -76,7 +76,7 @@ If trend calculation fails, the system falls back to default values to ensure th
 
 The following metrics now use real trend data:
 
-1. **Cost per Liter**: Operational cost efficiency
+1. **Admin Rate per Liter**: Current admin-configured rate for fresh milk
 2. **Revenue per Farmer**: Average revenue generated per farmer
 3. **Collection Efficiency**: Collections per active farmer
 4. **Quality Index**: Average quality score

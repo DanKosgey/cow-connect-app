@@ -30,7 +30,9 @@ export const getUserRole = async (userId: string) => {
             .from('user_roles')
             .select('role, active')
             .eq('user_id', userId)
-            .single();
+            .eq('active', true)
+            .order('created_at', { ascending: false })
+            .maybeSingle();
 
         if (error) throw error;
         if (!data?.active) throw new AuthError('Account is inactive');

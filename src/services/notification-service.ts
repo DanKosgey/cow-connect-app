@@ -13,8 +13,16 @@ export interface Notification {
 
 class NotificationService {
   private static instance: NotificationService;
+  private subscription: any;
+  private listeners: Set<(notification: Notification) => void> = new Set();
+  // Map of adminId -> channel for admin-specific subscriptions
+  private adminChannels: Map<string, any> = new Map();
 
-  private constructor() {}
+  private constructor() {
+    if (typeof window !== 'undefined') {
+      this.requestNotificationPermission();
+    }
+  }
 
   static getInstance(): NotificationService {
     if (!NotificationService.instance) {
@@ -118,6 +126,86 @@ class NotificationService {
   }
 
   /**
+   * Subscribe to admin-specific notifications
+   */
+  async subscribeToAdminNotifications(adminId: string) {
+    try {
+      // Subscribe to admin notifications channel
+      const adminChannel = supabase.channel(`admin-notifications-${adminId}`);
+
+      // Listen for critical system events
+      adminChannel
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'system_events',
+            filter: `severity=in.(high,critical)`
+          },
+          (payload) => {
+            this.handleCriticalEvent(payload.new);
+          }
+        )
+        // Listen for security events
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'security_events'
+          },
+          (payload) => {
+            this.handleSecurityEvent(payload.new);
+          }
+        )
+        // Listen for KYC events
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'kyc_events'
+          },
+          (payload) => {
+            this.handleKYCEvent(payload.new);
+          }
+        )
+        .subscribe();
+
+      // Store the channel for cleanup
+      this.adminChannels.set(adminId, adminChannel);
+    } catch (error) {
+      console.error('Error subscribing to admin notifications:', error);
+      throw error;
+    }
+  }
+
+  private async handleCriticalEvent(event: any) {
+    await this.sendAdminNotification(
+      'Critical System Event',
+      `${event.message}\nSeverity: ${event.severity}\nAction Required: ${event.action_required || 'Review immediately'}`,
+      'critical'
+    );
+  }
+
+  private async handleSecurityEvent(event: any) {
+    await this.sendAdminNotification(
+      'Security Alert',
+      `Security event detected: ${event.event_type}\nDetails: ${JSON.stringify(event.data)}`,
+      'security'
+    );
+  }
+
+  private async handleKYCEvent(event: any) {
+    await this.sendAdminNotification(
+      'KYC Update',
+      `KYC event: ${event.event_type}\nFarmer: ${event.farmer_name}\nStatus: ${event.status}`,
+      'kyc'
+    );
+  }
+
+  /**
    * Get notifications for a specific user
    */
   async getUserNotifications(userId: string, limit: number = 10): Promise<Notification[]> {
@@ -190,6 +278,82 @@ class NotificationService {
       console.error('Error deleting notification:', error);
       return false;
     }
+  }
+
+  /**
+   * Subscribe to real-time notifications
+   */
+  async subscribeToNotifications(userId: string) {
+    this.subscription = supabase
+      .channel('notification-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${userId}`
+        },
+        (payload) => {
+          this.notifyListeners(payload.new as Notification);
+          this.showBrowserNotification(payload.new as Notification);
+        }
+      )
+      .subscribe();
+  }
+
+  /**
+   * Subscribe to notification updates
+   */
+  subscribe(callback: (notification: Notification) => void) {
+    this.listeners.add(callback);
+    return () => this.listeners.delete(callback);
+  }
+
+  private notifyListeners(notification: Notification) {
+    this.listeners.forEach(listener => listener(notification));
+  }
+
+  private async requestNotificationPermission() {
+    if (!("Notification" in window)) return;
+    
+    if (Notification.permission !== "denied") {
+      await Notification.requestPermission();
+    }
+  }
+
+  private showBrowserNotification(notification: Notification) {
+    if (!("Notification" in window)) return;
+
+    if (Notification.permission === "granted") {
+      new Notification(notification.title, {
+        body: notification.message,
+        icon: '/favicon.svg',
+        tag: notification.id
+      });
+    }
+  }
+
+  /**
+   * Clean up subscriptions
+   */
+  cleanup() {
+    if (this.subscription) {
+      supabase.removeChannel(this.subscription);
+    }
+    // remove any admin channels as well
+    if (this.adminChannels && this.adminChannels.size > 0) {
+      for (const ch of this.adminChannels.values()) {
+        try {
+          supabase.removeChannel(ch);
+        } catch (e) {
+          console.warn('Failed to remove admin channel', e);
+        }
+      }
+      this.adminChannels.clear();
+    }
+
+    this.listeners.clear();
   }
 
   /**

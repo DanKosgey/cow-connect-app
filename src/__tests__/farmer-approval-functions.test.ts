@@ -155,6 +155,11 @@ describe('Farmer Approval Functions', () => {
         p_rejection_reason: ''
       });
 
+      expect(supabase.rpc).toHaveBeenCalledWith('reject_pending_farmer', {
+        p_pending_farmer_id: 'pending-123',
+        p_admin_id: 'admin-123',
+        p_rejection_reason: ''
+      });
       expect(result.data.success).toBe(false);
       expect(result.data.message).toBe('Rejection reason is required');
     });
@@ -175,13 +180,13 @@ describe('Farmer Approval Functions', () => {
       (supabase.rpc as jest.Mock).mockResolvedValue(mockResponse);
 
       const result = await supabase.rpc('resubmit_kyc_documents', {
-        p_pending_farmer_id: 'pending-123',
-        p_user_id: 'user-123'
+        pending_farmer_id: 'pending-123',
+        user_id: 'user-123'
       });
 
       expect(supabase.rpc).toHaveBeenCalledWith('resubmit_kyc_documents', {
-        p_pending_farmer_id: 'pending-123',
-        p_user_id: 'user-123'
+        pending_farmer_id: 'pending-123',
+        user_id: 'user-123'
       });
       expect(result.data.success).toBe(true);
       expect(result.data.message).toBe('You can now upload new documents');
@@ -200,8 +205,8 @@ describe('Farmer Approval Functions', () => {
       (supabase.rpc as jest.Mock).mockResolvedValue(mockResponse);
 
       const result = await supabase.rpc('resubmit_kyc_documents', {
-        p_pending_farmer_id: 'pending-123',
-        p_user_id: 'user-123'
+        pending_farmer_id: 'pending-123',
+        user_id: 'user-123'
       });
 
       expect(result.data.success).toBe(false);
@@ -224,13 +229,13 @@ describe('Farmer Approval Functions', () => {
       (supabase.rpc as jest.Mock).mockResolvedValue(mockResponse);
 
       const result = await supabase.rpc('submit_kyc_for_review', {
-        p_pending_farmer_id: 'pending-123',
-        p_user_id: 'user-123'
+        pending_farmer_id: 'pending-123',
+        user_id: 'user-123'
       });
 
       expect(supabase.rpc).toHaveBeenCalledWith('submit_kyc_for_review', {
-        p_pending_farmer_id: 'pending-123',
-        p_user_id: 'user-123'
+        pending_farmer_id: 'pending-123',
+        user_id: 'user-123'
       });
       expect(result.data.success).toBe(true);
       expect(result.data.message).toBe('KYC submitted for review');
@@ -249,8 +254,8 @@ describe('Farmer Approval Functions', () => {
       (supabase.rpc as jest.Mock).mockResolvedValue(mockResponse);
 
       const result = await supabase.rpc('submit_kyc_for_review', {
-        p_pending_farmer_id: 'pending-123',
-        p_user_id: 'user-123'
+        pending_farmer_id: 'pending-123',
+        user_id: 'user-123'
       });
 
       expect(result.data.success).toBe(false);
@@ -265,7 +270,7 @@ describe('Farmer Approval Functions', () => {
           id: 'pending-123',
           full_name: 'John Doe',
           email: 'john@example.com',
-          status: 'submitted',
+          status: 'email_verified',
           created_at: '2023-01-01T00:00:00Z',
           rejection_count: 0
         },
@@ -273,7 +278,7 @@ describe('Farmer Approval Functions', () => {
           id: 'pending-456',
           full_name: 'Jane Smith',
           email: 'jane@example.com',
-          status: 'submitted',
+          status: 'email_verified',
           created_at: '2023-01-02T00:00:00Z',
           rejection_count: 1
         }
@@ -288,14 +293,14 @@ describe('Farmer Approval Functions', () => {
 
       const result = await supabase.rpc('get_pending_farmers_for_review', {
         p_admin_id: 'admin-123',
-        p_status_filter: 'submitted',
+        p_status_filter: 'email_verified',
         p_limit: 50,
         p_offset: 0
       });
 
       expect(supabase.rpc).toHaveBeenCalledWith('get_pending_farmers_for_review', {
         p_admin_id: 'admin-123',
-        p_status_filter: 'submitted',
+        p_status_filter: 'email_verified',
         p_limit: 50,
         p_offset: 0
       });

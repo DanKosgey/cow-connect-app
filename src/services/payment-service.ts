@@ -64,6 +64,23 @@ export class PaymentService {
   // Approval workflow method for staff (creates payment record for approval)
   static async createPaymentForApproval(farmerId: string, collectionIds: string[], totalAmount: number, notes?: string, approvedBy?: string) {
     try {
+      // First, get the staff ID from the staff table using the user ID
+      let staffId = null;
+      if (approvedBy) {
+        const { data: staffData, error: staffError } = await supabase
+          .from('staff')
+          .select('id')
+          .eq('user_id', approvedBy)
+          .maybeSingle();
+          
+        if (staffError) {
+          console.error('Error fetching staff data:', staffError);
+          throw staffError;
+        }
+        
+        staffId = staffData?.id || null;
+      }
+
       const { data, error } = await supabase
         .from('farmer_payments')
         .insert({
@@ -72,7 +89,7 @@ export class PaymentService {
           total_amount: totalAmount,
           approval_status: 'approved',
           approved_at: new Date().toISOString(),
-          approved_by: approvedBy,
+          approved_by: staffId, // Use the staff ID instead of user ID
           notes: notes || null
         })
         .select()
@@ -86,7 +103,7 @@ export class PaymentService {
         .update({ 
           approved_for_payment: true,
           approved_at: new Date().toISOString(),
-          approved_by: approvedBy
+          approved_by: staffId // Use the staff ID instead of user ID
         })
         .in('id', collectionIds);
 
@@ -102,12 +119,29 @@ export class PaymentService {
   // Mark payment as paid (for staff to finalize approved payments)
   static async markPaymentAsPaid(paymentId: string, paidBy?: string) {
     try {
+      // First, get the staff ID from the staff table using the user ID
+      let staffId = null;
+      if (paidBy) {
+        const { data: staffData, error: staffError } = await supabase
+          .from('staff')
+          .select('id')
+          .eq('user_id', paidBy)
+          .maybeSingle();
+          
+        if (staffError) {
+          console.error('Error fetching staff data:', staffError);
+          throw staffError;
+        }
+        
+        staffId = staffData?.id || null;
+      }
+
       const { data, error } = await supabase
         .from('farmer_payments')
         .update({
           approval_status: 'paid',
           paid_at: new Date().toISOString(),
-          paid_by: paidBy
+          paid_by: staffId // Use the staff ID instead of user ID
         })
         .eq('id', paymentId)
         .select()

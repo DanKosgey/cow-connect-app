@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Database } from '@/types/database.types';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import useToastNotifications from '@/hooks/useToastNotifications';
-import { CheckCircle, XCircle, Eye, FileText, Download, Search, Filter, Camera } from 'lucide-react';
+import { CheckCircle, XCircle, Eye, FileText, Download, Search, Filter, Camera, User as UserIcon } from 'lucide-react'; // Renamed User to UserIcon to avoid conflict
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -39,6 +39,7 @@ const KYCAdminDashboard = () => {
   const [rejectionReason, setRejectionReason] = useState('');
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [viewingDocument, setViewingDocument] = useState<string | null>(null); // URL of document being viewed
 
   // Statistics
   const [stats, setStats] = useState({
@@ -249,45 +250,56 @@ const KYCAdminDashboard = () => {
     }
   };
 
-  const downloadDocument = async (doc: KYCDocument) => {
+  const handleViewDocument = async (filePath: string) => {
     try {
-      if (!doc.file_path) {
-        toast.error('Error', 'Document path not found');
+      console.log('Attempting to view document:', filePath);
+      
+      // Try to get the public URL for the document first
+      const { data: publicData } = supabase.storage
+        .from('kyc-documents')
+        .getPublicUrl(filePath);
+      
+      if (publicData?.publicUrl) {
+        console.log('Opening public URL:', publicData.publicUrl);
+        setViewingDocument(publicData.publicUrl);
         return;
       }
-
-      // Get the public URL for the document
-      const publicUrlData = supabase.storage.from('kyc-documents').getPublicUrl(doc.file_path);
-
-      // Create a temporary link to download the file
-      const link = document.createElement('a');
-      link.href = publicUrlData.data.publicUrl;
-      link.download = doc.file_name || 'document';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      
+      // If public URL fails, try signed URL for admin access
+      const { data: signedData, error: signedError } = await supabase.storage
+        .from('kyc-documents')
+        .createSignedUrl(filePath, 600); // 10 minutes expiry for admin view
+      
+      if (signedError) {
+        console.error('Signed URL error:', signedError);
+        throw signedError;
+      }
+      
+      if (signedData?.signedUrl) {
+        console.log('Opening signed URL:', signedData.signedUrl);
+        setViewingDocument(signedData.signedUrl);
+      } else {
+        toast.error('Error', 'Failed to generate document URL');
+      }
     } catch (error: any) {
-      console.error('Error downloading document:', error);
-      toast.error('Error', error.message);
+      console.error('Error getting document URL:', error);
+      toast.error('Error', `Failed to access document: ${error.message || 'Unknown error'}`);
     }
   };
 
   const getDocumentLabel = (docType: string) => {
     const labels: Record<string, string> = {
-      'national_id_front': 'National ID (Front)',
-      'national_id_back': 'National ID (Back)',
-      'selfie_1': 'Selfie 1',
-      'selfie_2': 'Selfie 2',
-      'selfie_3': 'Selfie 3'
+      'id_front': 'ID (Front)',
+      'id_back': 'ID (Back)',
+      'selfie': 'Selfie',
     };
     return labels[docType] || docType;
   };
 
   const getDocumentIcon = (docType: string) => {
-    if (docType.includes('selfie')) {
-      return <Camera className="w-5 h-5" />;
-    }
-    return <FileText className="w-5 h-5" />;
+    if (docType.includes('id_')) return <FileText className="h-5 w-5 text-red-500" />;
+    if (docType.includes('selfie')) return <UserIcon className="h-5 w-5 text-blue-500" />;
+    return <FileText className="h-5 w-5 text-gray-500" />;
   };
 
   const exportToCSV = () => {
@@ -348,8 +360,8 @@ const KYCAdminDashboard = () => {
         <div className="max-w-7xl mx-auto">
           {/* Header */}
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900">KYC Management</h1>
-            <p className="text-gray-600 mt-2">Review and approve farmer registrations</p>
+            <h1 className="text-3xl font-bold text-gray-900">Approved Farmers</h1>
+            <p className="text-gray-600 mt-2">View and manage approved farmer profiles</p>
           </div>
 
           {/* Statistics Cards */}
@@ -587,22 +599,15 @@ const KYCAdminDashboard = () => {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => downloadDocument(doc)}
+                                onClick={() => handleViewDocument(doc.file_path)}
                               >
-                                <Download className="h-4 w-4" />
+                                <Eye className="h-4 w-4" />
                               </Button>
                             </div>
                           </div>
                           {doc.mime_type?.startsWith('image/') && doc.file_path && (
-                            <img
-                              src={supabase.storage.from('kyc-documents').getPublicUrl(doc.file_path).data.publicUrl}
-                              alt={getDocumentLabel(doc.document_type || '')}
-                              className="mt-2 max-h-48 rounded border"
-                              onError={(e) => {
-                                const target = e.target as HTMLImageElement;
-                                target.style.display = 'none';
-                              }}
-                            />
+                            // Removed direct image display, now handled by the viewer dialog
+                            null
                           )}
                         </div>
                       ))}
@@ -671,6 +676,27 @@ const KYCAdminDashboard = () => {
               >
                 {actionLoading ? 'Rejecting...' : 'Confirm Rejection'}
               </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Document Viewer Dialog */}
+        <Dialog open={!!viewingDocument} onOpenChange={() => setViewingDocument(null)}>
+          <DialogContent className="max-w-3xl h-[90vh] flex flex-col">
+            <DialogHeader>
+              <DialogTitle>View Document</DialogTitle>
+            </DialogHeader>
+            <div className="flex-grow flex items-center justify-center bg-muted p-2 rounded-md">
+              {viewingDocument && (
+                viewingDocument.includes('.pdf') ? (
+                  <iframe src={viewingDocument} className="w-full h-full rounded-md" title="Document Viewer"></iframe>
+                ) : (
+                  <img src={viewingDocument} alt="Document Preview" className="max-w-full max-h-full object-contain rounded-md" />
+                )
+              )}
+            </div>
+            <DialogFooter>
+              <Button onClick={() => setViewingDocument(null)}>Close</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

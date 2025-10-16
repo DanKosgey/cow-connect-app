@@ -137,19 +137,23 @@ export default function RouteManagement() {
                 )
               )
             `)
-            .eq('id', routeId)
-            .single();
+            .eq('id', routeId);
+            // Removed .single() to avoid PGRST116 error when no records found
             
-          // For debugging - you can uncomment this in development
-          // console.log('Route result:', routeResult);
-            
+          // Check if we have data and handle accordingly
+          const routeData = routeResult.data && routeResult.data.length > 0 ? routeResult.data[0] : null;
+          
           if (routeResult.error) {
             throw routeResult.error;
           }
           
+          if (!routeData) {
+            throw new Error('Route not found');
+          }
+          
           // Structure the data to match what we expect
           staffRoutes = [{
-            routes: routeResult.data
+            routes: routeData
           }];
         } else {
           staffRoutes = result1.data;

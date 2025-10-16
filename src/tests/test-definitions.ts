@@ -124,7 +124,7 @@ export const workflowTests = {
             action: 'Submit Documents',
             data: {
               documents: ['id', 'address_proof'],
-              status: 'pending' as ProfileStatus
+              status: 'pending_verification' as ProfileStatus
             },
             expectation: 'Documents uploaded, status pending'
           },
@@ -138,7 +138,7 @@ export const workflowTests = {
           {
             action: 'Account Activation',
             data: {
-              status: 'active' as ProfileStatus
+              status: 'approved' as ProfileStatus
             },
             expectation: 'Account activated, welcome sent'
           }
@@ -151,7 +151,7 @@ export const workflowTests = {
             action: 'Submit Partial',
             data: {
               documents: ['id'],
-              status: 'pending' as ProfileStatus
+              status: 'pending_verification' as ProfileStatus
             },
             expectation: 'Error: Missing documents'
           }

@@ -72,6 +72,9 @@ export default function InventoryManagement() {
   const { staffInfo, loading: staffLoading } = useStaffInfo();
   const { items, transactions, loading: inventoryLoading } = useInventoryData();
   
+  // Check if inventory features are available
+  const inventoryFeaturesAvailable = items.length > 0 || transactions.length > 0 || !inventoryLoading;
+
   const [filteredItems, setFilteredItems] = useState<InventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   
@@ -102,6 +105,16 @@ export default function InventoryManagement() {
   
   // Categories
   const categories = ['Feed', 'Medicine', 'Equipment', 'Cleaning Supplies', 'Packaging', 'Other'];
+
+  useEffect(() => {
+    // Show a message if inventory features are not available
+    if (!inventoryLoading && !inventoryFeaturesAvailable) {
+      show({ 
+        title: 'Inventory Management Not Available', 
+        description: 'Inventory management features are not currently available in this system.' 
+      });
+    }
+  }, [inventoryLoading, inventoryFeaturesAvailable, show]);
 
   useEffect(() => {
     applyFilters();

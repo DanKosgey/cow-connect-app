@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 interface ChartDataPoint {
   [key: string]: any;
@@ -6,7 +6,7 @@ interface ChartDataPoint {
 
 export const useChartStabilizer = <T extends ChartDataPoint>(
   data: T[],
-  delay: number = 100
+  delay: number = 50 // Reduced from 100 to 50ms
 ) => {
   const [stabilizedData, setStabilizedData] = useState<T[]>([]);
   const [isStable, setIsStable] = useState(false);
@@ -27,10 +27,18 @@ export const useChartStabilizer = <T extends ChartDataPoint>(
       return;
     }
 
+    // For empty data or small datasets, stabilize immediately
+    if (data.length === 0 || data.length < 10) {
+      setStabilizedData([...data]);
+      setIsStable(true);
+      prevDataRef.current = [...data];
+      return;
+    }
+
     // Set loading state while we wait for stabilization
     setIsStable(false);
     
-    // Set timeout to stabilize data
+    // Set timeout to stabilize data with shorter delay
     timeoutRef.current = setTimeout(() => {
       setStabilizedData([...data]);
       setIsStable(true);

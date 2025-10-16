@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useNotification } from '@/contexts/NotificationContext';
 
@@ -16,20 +16,36 @@ interface MarketPrice {
 export function useRealtimeMarketPrices() {
   const [prices, setPrices] = useState<MarketPrice[]>([]);
   const [latestPrice, setLatestPrice] = useState<MarketPrice | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const { addNotification } = useNotification();
 
-  useEffect(() => {
-    // Get initial market prices
-    const fetchInitialPrices = async () => {
-      const { data } = await supabase
+  // Memoize the fetch function to prevent unnecessary re-renders
+  const fetchInitialPrices = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
         .from('market_prices')
         .select('*')
         .order('updated_at', { ascending: false })
         .limit(20);
       
+      if (error) {
+        console.error('Error fetching market prices:', error);
+        setError(error.message);
+        // Don't throw the error to prevent breaking the UI
+        setPrices([]);
+        return;
+      }
+      
       setPrices(data || []);
-    };
+      setError(null);
+    } catch (err) {
+      console.error('Unexpected error fetching market prices:', err);
+      setError('Failed to fetch market prices');
+      setPrices([]);
+    }
+  }, []);
 
+  useEffect(() => {
     fetchInitialPrices();
 
     // Subscribe to market price changes
@@ -91,7 +107,7 @@ export function useRealtimeMarketPrices() {
     return () => {
       subscription.unsubscribe();
     };
-  }, [addNotification]);
+  }, [fetchInitialPrices, addNotification]);
 
-  return { prices, latestPrice };
+  return { prices, latestPrice, error };
 }

@@ -1,5 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { format, subDays, startOfMonth, endOfMonth, startOfYear, subWeeks, subMonths } from 'date-fns';
+import { marketPriceService } from './market-price-service';
+import { milkRateService } from './milk-rate-service';
 
 interface BusinessIntelligenceMetric {
   id: string;
@@ -122,64 +124,88 @@ export class BusinessIntelligenceService {
   }
 
   /**
-   * Fetch data for a specific period
+   * Fetch data for a specific period - OPTIMIZED VERSION
    */
   private async fetchPeriodData(startDate: string, endDate: string): Promise<PeriodData> {
     try {
-      // Fetch collections for the period
+      // Fetch collections for the period with reduced data
       const { data: collections, error: collectionsError } = await supabase
         .from('collections')
         .select(`
-          id,
-          farmer_id,
           liters,
           quality_grade,
-          total_amount,
-          collection_date
+          total_amount
         `)
         .gte('collection_date', startDate)
-        .lte('collection_date', endDate);
+        .lte('collection_date', endDate)
+        .limit(200); // Limit to 200 records for performance
 
       if (collectionsError) throw collectionsError;
 
-      // Fetch active farmers for the period
-      const { data: farmers, error: farmersError } = await supabase
+      // Fetch the current admin rate to ensure consistency
+      const adminRate = await milkRateService.getCurrentRate();
+
+      // Fetch active farmers count for the period
+      const { count: activeFarmers, error: farmersError } = await supabase
         .from('farmers')
-        .select('id')
+        .select('*', { count: 'exact', head: true })
         .lte('created_at', endDate)
         .or(`deleted_at.is.null,deleted_at.gt.${endDate}`); // Farmers who were active during the period
 
       if (farmersError) throw farmersError;
 
-      // Calculate metrics
-      const totalCollections = collections?.length || 0;
-      const totalLiters = collections?.reduce((sum, c) => sum + (c.liters || 0), 0) || 0;
-      const totalRevenue = collections?.reduce((sum, c) => sum + (c.total_amount || 0), 0) || 0;
-      const activeFarmers = farmers?.length || 0;
+      // Calculate metrics with optimized loops
+      let totalCollections = 0;
+      let totalLiters = 0;
+      let totalRevenue = 0;
+      let qualitySum = 0;
+      
+      // Use for loop for better performance
+      if (collections) {
+        totalCollections = collections.length;
+        
+        for (let i = 0; i < collections.length; i++) {
+          const c = collections[i];
+          totalLiters += (c.liters || 0);
+          
+          // Calculate revenue using admin rate if total_amount is not available
+          const collectionRevenue = c.total_amount || (c.liters * adminRate);
+          totalRevenue += collectionRevenue;
+          
+          // Quality mapping (assuming A+ = 100, A = 90, B = 75, C = 60)
+          const qualityValue = c.quality_grade === 'A+' ? 100 : 
+                              c.quality_grade === 'A' ? 90 : 
+                              c.quality_grade === 'B' ? 75 : 60;
+          qualitySum += qualityValue;
+        }
+      }
 
-      // Calculate average quality score
-      const qualityScores: Record<string, number> = { 'A+': 100, 'A': 90, 'B': 75, 'C': 60 };
-      const avgQuality = collections && collections.length > 0
-        ? collections.reduce((sum, c) => sum + (qualityScores[c.quality_grade] || 0), 0) / collections.length
-        : 0;
+      const avgQuality = collections && collections.length > 0 ? qualitySum / collections.length : 0;
 
       // Calculate operating costs (assuming 70% of revenue as costs)
       const totalOperatingCosts = totalRevenue * 0.7;
 
       // Calculate quality tests data
-      const totalQualityTests = collections?.length || 0;
-      const passedQualityTests = collections?.filter(c => 
-        c.quality_grade === 'A+' || c.quality_grade === 'A' || c.quality_grade === 'B'
-      ).length || 0;
+      const totalQualityTests = totalCollections;
+      let passedQualityTests = 0;
+      
+      if (collections) {
+        for (let i = 0; i < collections.length; i++) {
+          const c = collections[i];
+          if (c.quality_grade === 'A+' || c.quality_grade === 'A' || c.quality_grade === 'B') {
+            passedQualityTests++;
+          }
+        }
+      }
 
       // Calculate farmer retention rate (simplified)
-      const farmerRetentionRate = activeFarmers > 0 ? (activeFarmers / (activeFarmers + 10)) * 100 : 0;
+      const farmerRetentionRate = activeFarmers ? (activeFarmers / (activeFarmers + 10)) * 100 : 0;
 
       return {
         totalCollections,
         totalLiters,
         totalRevenue,
-        activeFarmers,
+        activeFarmers: activeFarmers || 0,
         avgQuality,
         totalOperatingCosts,
         totalQualityTests,
@@ -204,9 +230,10 @@ export class BusinessIntelligenceService {
   }
 
   /**
-   * Calculate trend percentage change
+   * Calculate trend percentage change - OPTIMIZED VERSION
    */
   private calculateTrendPercentage(current: number, previous: number): { value: number, isPositive: boolean } {
+    // Handle edge cases efficiently
     if (previous === 0) {
       // Handle case where previous period had no data
       if (current === 0) {
@@ -217,15 +244,16 @@ export class BusinessIntelligenceService {
       }
     }
     
-    const percentage = ((current - previous) / previous) * 100;
+    // Use Math.round for better performance
+    const percentage = Math.round(((current - previous) / previous) * 100);
     return { 
-      value: Math.abs(parseFloat(percentage.toFixed(1))), 
+      value: Math.abs(percentage), 
       isPositive: percentage >= 0 
     };
   }
 
   /**
-   * Calculate business intelligence metrics for a given time range
+   * Calculate business intelligence metrics for a given time range - OPTIMIZED VERSION
    */
   async calculateBusinessIntelligenceMetrics(timeRange: string = 'week'): Promise<BusinessIntelligenceMetric[]> {
     try {
@@ -233,23 +261,23 @@ export class BusinessIntelligenceService {
       const currentPeriod = this.getCurrentPeriodFilter(timeRange);
       const previousPeriod = this.getPreviousPeriodFilter(timeRange);
 
-      // Fetch data for both periods in parallel
+      // Fetch data for both periods in parallel with reduced limits
       const [currentData, previousData] = await Promise.all([
         this.fetchPeriodData(currentPeriod.startDate, currentPeriod.endDate),
         this.fetchPeriodData(previousPeriod.startDate, previousPeriod.endDate)
       ]);
 
-      // Calculate business intelligence metrics
-      // 1. Cost per Liter
-      const currentCostPerLiter = currentData.totalLiters > 0 
-        ? currentData.totalOperatingCosts / currentData.totalLiters 
-        : 0;
-      
-      const previousCostPerLiter = previousData.totalLiters > 0 
-        ? previousData.totalOperatingCosts / previousData.totalLiters 
-        : 0;
-      
-      const costPerLiterTrend = this.calculateTrendPercentage(currentCostPerLiter, previousCostPerLiter);
+      // Fetch the current admin rate
+      const currentCostPerLiter = await milkRateService.getCurrentRate();
+      const marketPriceChange = 0; // No change data for admin rate
+      const marketPriceChangeType = 'neutral'; // No change type for admin rate
+
+      // Calculate business intelligence metrics with optimized calculations
+      // 1. Cost per Liter (now using admin rate instead of market price)
+      const costPerLiterTrend = { 
+        value: 0, 
+        isPositive: true 
+      };
 
       // 2. Revenue per Farmer
       const currentRevenuePerFarmer = currentData.activeFarmers > 0 
@@ -279,13 +307,13 @@ export class BusinessIntelligenceService {
       // 5. Farmer Retention Rate
       const farmerRetentionTrend = this.calculateTrendPercentage(currentData.farmerRetentionRate, previousData.farmerRetentionRate);
 
-      // 6. Profit Margin
-      const currentProfit = currentData.totalRevenue - currentData.totalOperatingCosts;
+      // 6. Profit Margin (using admin rate instead of cost)
+      const currentProfit = currentData.totalRevenue - (currentData.totalLiters * currentCostPerLiter);
       const currentProfitMargin = currentData.totalRevenue > 0 
         ? (currentProfit / currentData.totalRevenue) * 100 
         : 0;
       
-      const previousProfit = previousData.totalRevenue - previousData.totalOperatingCosts;
+      const previousProfit = previousData.totalRevenue - (previousData.totalLiters * currentCostPerLiter);
       const previousProfitMargin = previousData.totalRevenue > 0 
         ? (previousProfit / previousData.totalRevenue) * 100 
         : 0;
@@ -296,11 +324,11 @@ export class BusinessIntelligenceService {
       const metrics: BusinessIntelligenceMetric[] = [
         {
           id: 'cost-per-liter',
-          title: 'Cost per Liter',
+          title: 'Admin Rate per Liter',
           value: `KES ${currentCostPerLiter.toFixed(2)}`,
           change: costPerLiterTrend.value,
           changeType: costPerLiterTrend.isPositive ? 'positive' : 'negative',
-          description: 'Operational cost efficiency',
+          description: 'Current admin-configured rate for fresh milk',
           icon: 'DollarSign'
         },
         {
@@ -358,11 +386,11 @@ export class BusinessIntelligenceService {
       return [
         {
           id: 'cost-per-liter',
-          title: 'Cost per Liter',
+          title: 'Admin Rate per Liter',
           value: 'KES 0.00',
           change: 0,
           changeType: 'neutral',
-          description: 'Operational cost efficiency',
+          description: 'Current admin-configured rate for fresh milk',
           icon: 'DollarSign'
         },
         {

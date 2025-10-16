@@ -12,13 +12,28 @@ import {
   Calendar,
   TrendingUp,
   MapPin,
-  Wallet
+  Wallet,
+  AlertCircle
 } from 'lucide-react';
 import { useAuth } from '@/contexts/SimplifiedAuthContext';
+import { useState, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+
+interface StaffStats {
+  total_collections_today: number;
+  total_farmers_today: number;
+  total_earnings_today: number;
+}
 
 export default function StaffPortalLanding() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const [staffStats, setStaffStats] = useState<StaffStats>({
+    total_collections_today: 0,
+    total_farmers_today: 0,
+    total_earnings_today: 0
+  });
+  const [loading, setLoading] = useState(true);
 
   const staffFeatures = [
     {
@@ -79,14 +94,88 @@ export default function StaffPortalLanding() {
     }
   ];
 
+  useEffect(() => {
+    const fetchStaffStats = async () => {
+      try {
+        setLoading(true);
+        
+        // Get today's date range
+        const today = new Date();
+        const startOfDay = new Date(today.setHours(0, 0, 0, 0)).toISOString();
+        const endOfDay = new Date(today.setHours(23, 59, 59, 999)).toISOString();
+
+        // First, get staff ID
+        const { data: staffData, error: staffError } = await supabase
+          .from('staff')
+          .select('id')
+          .eq('user_id', user?.id)
+          .maybeSingle();
+
+        if (staffError) throw staffError;
+        
+        if (!staffData) {
+          // If no staff record, use default values
+          setStaffStats({
+            total_collections_today: 0,
+            total_farmers_today: 0,
+            total_earnings_today: 0
+          });
+          return;
+        }
+
+        const staffId = staffData.id;
+
+        // Fetch today's collections for this staff member
+        const { data: collectionsData, error: collectionsError } = await supabase
+          .from('collections')
+          .select(`
+            id,
+            farmer_id,
+            liters,
+            total_amount
+          `)
+          .eq('staff_id', staffId)
+          .gte('collection_date', startOfDay)
+          .lte('collection_date', endOfDay);
+
+        if (collectionsError) throw collectionsError;
+
+        // Calculate stats
+        const totalCollections = collectionsData?.length || 0;
+        const totalFarmers = new Set(collectionsData?.map(c => c.farmer_id)).size || 0;
+        const totalEarnings = collectionsData?.reduce((sum, c) => sum + (c.total_amount || 0), 0) || 0;
+
+        setStaffStats({
+          total_collections_today: totalCollections,
+          total_farmers_today: totalFarmers,
+          total_earnings_today: parseFloat(totalEarnings.toFixed(2))
+        });
+      } catch (error) {
+        console.error('Error fetching staff stats:', error);
+        // Use default values on error
+        setStaffStats({
+          total_collections_today: 0,
+          total_farmers_today: 0,
+          total_earnings_today: 0
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (user?.id) {
+      fetchStaffStats();
+    }
+  }, [user?.id]);
+
   return (
     <div className="space-y-6">
       {/* Welcome Header */}
       <div className="bg-gradient-to-r from-primary to-primary-light rounded-2xl p-6 text-primary-foreground shadow-lg">
         <h1 className="text-3xl font-bold">Welcome, {user?.email || 'Staff Member'}!</h1>
-        <p className="text-primary-foreground/90 mt-2">
+        <div className="text-primary-foreground/90 mt-2">
           Manage milk collections, farmers, and payments all in one place.
-        </p>
+        </div>
       </div>
 
       {/* Quick Stats Preview */}
@@ -95,8 +184,14 @@ export default function StaffPortalLanding() {
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Today's Collections</p>
-                <p className="text-2xl font-bold">12</p>
+                <div className="text-sm font-medium text-muted-foreground">Today's Collections</div>
+                <div className="text-2xl font-bold">
+                  {loading ? (
+                    <div className="h-6 w-8 bg-gray-200 rounded animate-pulse"></div>
+                  ) : (
+                    staffStats.total_collections_today
+                  )}
+                </div>
               </div>
               <Milk className="h-8 w-8 text-blue-500" />
             </div>
@@ -107,8 +202,14 @@ export default function StaffPortalLanding() {
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Farmers Visited</p>
-                <p className="text-2xl font-bold">8</p>
+                <div className="text-sm font-medium text-muted-foreground">Farmers Visited</div>
+                <div className="text-2xl font-bold">
+                  {loading ? (
+                    <div className="h-6 w-8 bg-gray-200 rounded animate-pulse"></div>
+                  ) : (
+                    staffStats.total_farmers_today
+                  )}
+                </div>
               </div>
               <Users className="h-8 w-8 text-green-500" />
             </div>
@@ -119,8 +220,14 @@ export default function StaffPortalLanding() {
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Total Earnings</p>
-                <p className="text-2xl font-bold">KSh 24,500</p>
+                <div className="text-sm font-medium text-muted-foreground">Total Earnings</div>
+                <div className="text-2xl font-bold">
+                  {loading ? (
+                    <div className="h-6 w-20 bg-gray-200 rounded animate-pulse"></div>
+                  ) : (
+                    `KSh ${staffStats.total_earnings_today.toLocaleString()}`
+                  )}
+                </div>
               </div>
               <DollarSign className="h-8 w-8 text-purple-500" />
             </div>
@@ -143,7 +250,7 @@ export default function StaffPortalLanding() {
               <CardTitle className="text-xl">{feature.title}</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-muted-foreground mb-4">{feature.description}</p>
+              <div className="text-muted-foreground mb-4">{feature.description}</div>
               <Button 
                 onClick={() => navigate(feature.path)}
                 className="w-full"
@@ -166,20 +273,20 @@ export default function StaffPortalLanding() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <ul className="space-y-2">
-              <li className="flex items-start gap-2">
+            <div className="space-y-2">
+              <div className="flex items-start gap-2">
                 <div className="w-2 h-2 rounded-full bg-primary mt-2 flex-shrink-0"></div>
                 <span>Remember to verify farmer IDs before each collection</span>
-              </li>
-              <li className="flex items-start gap-2">
+              </div>
+              <div className="flex items-start gap-2">
                 <div className="w-2 h-2 rounded-full bg-primary mt-2 flex-shrink-0"></div>
                 <span>Check milk quality parameters for accurate grading</span>
-              </li>
-              <li className="flex items-start gap-2">
+              </div>
+              <div className="flex items-start gap-2">
                 <div className="w-2 h-2 rounded-full bg-primary mt-2 flex-shrink-0"></div>
                 <span>Submit collections before end of day for timely payments</span>
-              </li>
-            </ul>
+              </div>
+            </div>
           </CardContent>
         </Card>
         

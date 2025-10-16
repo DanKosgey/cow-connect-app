@@ -25,6 +25,11 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import useToastNotifications from '@/hooks/useToastNotifications';
 import { useAuth } from '@/contexts/SimplifiedAuthContext';
+import { checkPendingFarmerDocuments, fixDocumentTypes } from '@/utils/kycDocumentChecker';
+import { verifyDocumentIntegrity } from '@/utils/kycStorageTest';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 
 const KYCPendingFarmersDashboard = () => {
   const navigate = useNavigate();
@@ -43,6 +48,10 @@ const KYCPendingFarmersDashboard = () => {
     pendingVerification: 0,
     today: 0
   });
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [farmerToReject, setFarmerToReject] = useState<string | null>(null); // For single rejection
+  const [viewingDocument, setViewingDocument] = useState<string | null>(null); // URL of document being viewed
 
   useEffect(() => {
     fetchPendingFarmers();
@@ -129,10 +138,36 @@ const KYCPendingFarmersDashboard = () => {
     try {
       setLoading(true);
       
+      // Check documents before approval
+      const docCheck = await checkPendingFarmerDocuments(farmerId);
+      console.log('Document check before approval:', docCheck);
+      
+      // If documents have issues, try to fix them
+      if (!docCheck.hasRequiredDocuments || !docCheck.allPending) {
+        console.log('Attempting to fix document issues...');
+        await fixDocumentTypes(farmerId);
+        
+        // Re-check after fix
+        const docCheckAfterFix = await checkPendingFarmerDocuments(farmerId);
+        console.log('Document check after fix:', docCheckAfterFix);
+        
+        if (!docCheckAfterFix.hasRequiredDocuments) {
+          toast.error('Error', 'Missing required documents. Please ensure ID front, ID back, and selfie are uploaded.');
+          return;
+        }
+      }
+      
+      // Verify document integrity (check if files actually exist in storage)
+      const integrityCheck = await verifyDocumentIntegrity(farmerId);
+      if (!integrityCheck.success || !integrityCheck.allFilesExist) {
+        toast.error('Error', 'Some documents are missing from storage. Please ask the farmer to re-upload them.');
+        return;
+      }
+      
       // Call the Supabase function to approve the farmer
       const { data, error } = await supabase.rpc('approve_pending_farmer', {
-        pending_farmer_id: farmerId,
-        approved_by_user_id: user.id
+        p_pending_farmer_id: farmerId,
+        p_admin_id: user.id
       });
 
       if (error) throw error;
@@ -152,28 +187,28 @@ const KYCPendingFarmersDashboard = () => {
     }
   };
 
-  const handleReject = async (farmerId: string) => {
-    if (!user) {
-      toast.error('Error', 'User not authenticated');
+  const handleReject = async () => {
+    if (!user || !farmerToReject || !rejectionReason.trim()) {
+      toast.error('Error', 'User not authenticated or rejection reason missing');
       return;
     }
 
     try {
       setLoading(true);
       
-      // For simplicity, we'll use a basic rejection reason
-      // In a production app, you might want a modal to enter the reason
       const { data, error } = await supabase.rpc('reject_pending_farmer', {
-        pending_farmer_id: farmerId,
-        rejection_reason: 'Application rejected by admin',
-        rejected_by_user_id: user.id
+        p_pending_farmer_id: farmerToReject,
+        p_rejection_reason: rejectionReason,
+        p_admin_id: user.id
       });
 
       if (error) throw error;
       
       if (data?.success) {
         toast.success('Farmer Rejected', 'Farmer registration has been rejected');
-        // Refresh the list
+        setShowRejectModal(false);
+        setRejectionReason('');
+        setFarmerToReject(null);
         fetchPendingFarmers();
       } else {
         throw new Error(data?.message || 'Unknown error occurred');
@@ -192,19 +227,61 @@ const KYCPendingFarmersDashboard = () => {
     try {
       setLoading(true);
       let successCount = 0;
+      let errorCount = 0;
       
       for (const farmerId of selectedFarmers) {
-        const { data, error } = await supabase.rpc('approve_pending_farmer', {
-          pending_farmer_id: farmerId,
-          approved_by_user_id: user.id
-        });
-        
-        if (data?.success) {
-          successCount++;
+        try {
+          // Check documents before approval
+          const docCheck = await checkPendingFarmerDocuments(farmerId);
+          console.log(`Document check for farmer ${farmerId}:`, docCheck);
+          
+          // If documents have issues, try to fix them
+          if (!docCheck.hasRequiredDocuments || !docCheck.allPending) {
+            console.log(`Attempting to fix document issues for farmer ${farmerId}...`);
+            await fixDocumentTypes(farmerId);
+            
+            // Re-check after fix
+            const docCheckAfterFix = await checkPendingFarmerDocuments(farmerId);
+            console.log(`Document check after fix for farmer ${farmerId}:`, docCheckAfterFix);
+            
+            if (!docCheckAfterFix.hasRequiredDocuments) {
+              console.error(`Missing required documents for farmer ${farmerId}`);
+              errorCount++;
+              continue;
+            }
+          }
+          
+          // Verify document integrity (check if files actually exist in storage)
+          const integrityCheck = await verifyDocumentIntegrity(farmerId);
+          if (!integrityCheck.success || !integrityCheck.allFilesExist) {
+            console.error(`Documents missing from storage for farmer ${farmerId}`);
+            errorCount++;
+            continue;
+          }
+          
+          const { data, error } = await supabase.rpc('approve_pending_farmer', {
+            p_pending_farmer_id: farmerId,
+            p_admin_id: user.id
+          });
+          
+          if (data?.success) {
+            successCount++;
+          } else {
+            console.error(`Error approving farmer ${farmerId}:`, data?.message || 'Unknown error');
+            errorCount++;
+          }
+        } catch (farmerError: any) {
+          console.error(`Error processing farmer ${farmerId}:`, farmerError);
+          errorCount++;
         }
       }
       
-      toast.success('Bulk Approval Complete', `${successCount} farmers approved successfully`);
+      if (errorCount === 0) {
+        toast.success('Bulk Approval Complete', `${successCount} farmers approved successfully`);
+      } else {
+        toast.success('Bulk Approval Complete', `${successCount} farmers approved, ${errorCount} failed`);
+      }
+      
       setSelectedFarmers([]);
       fetchPendingFarmers();
     } catch (error: any) {
@@ -216,7 +293,10 @@ const KYCPendingFarmersDashboard = () => {
   };
 
   const handleBulkReject = async () => {
-    if (!user || selectedFarmers.length === 0) return;
+    if (!user || selectedFarmers.length === 0 || !rejectionReason.trim()) {
+      toast.error('Error', 'User not authenticated or rejection reason missing');
+      return;
+    }
 
     try {
       setLoading(true);
@@ -224,9 +304,9 @@ const KYCPendingFarmersDashboard = () => {
       
       for (const farmerId of selectedFarmers) {
         const { data, error } = await supabase.rpc('reject_pending_farmer', {
-          pending_farmer_id: farmerId,
-          rejection_reason: 'Application rejected by admin (bulk action)',
-          rejected_by_user_id: user.id
+          p_pending_farmer_id: farmerId,
+          p_rejection_reason: rejectionReason,
+          p_admin_id: user.id
         });
         
         if (data?.success) {
@@ -236,6 +316,8 @@ const KYCPendingFarmersDashboard = () => {
       
       toast.success('Bulk Rejection Complete', `${successCount} farmers rejected successfully`);
       setSelectedFarmers([]);
+      setShowRejectModal(false);
+      setRejectionReason('');
       fetchPendingFarmers();
     } catch (error: any) {
       console.error('Error in bulk rejection:', error);
@@ -248,11 +330,11 @@ const KYCPendingFarmersDashboard = () => {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'pending_verification':
-        return <Badge variant="secondary">Pending Verification</Badge>;
+        return <Badge variant="default">Pending Verification</Badge>;
       case 'email_verified':
-        return <Badge className="bg-green-500 hover:bg-green-600">Email Verified</Badge>;
+        return <Badge variant="secondary">Email Verified</Badge>;
       case 'approved':
-        return <Badge className="bg-blue-500 hover:bg-blue-600">Approved</Badge>;
+        return <Badge variant="secondary">Approved</Badge>;
       case 'rejected':
         return <Badge variant="destructive">Rejected</Badge>;
       default:
@@ -293,6 +375,36 @@ const KYCPendingFarmersDashboard = () => {
       <ChevronDown className="ml-1 h-4 w-4" />;
   };
 
+  const getDocumentPreview = async (doc: any) => {
+    try {
+      // Try to get the public URL for the document first
+      const { data: publicData } = supabase.storage
+        .from('kyc-documents')
+        .getPublicUrl(doc.file_path);
+      
+      if (publicData?.publicUrl) {
+        window.open(publicData.publicUrl, '_blank');
+        return;
+      }
+      
+      // If public URL fails, try signed URL for admin access
+      const { data: signedData, error: signedError } = await supabase.storage
+        .from('kyc-documents')
+        .createSignedUrl(doc.file_path, 60); // 60 seconds expiry
+      
+      if (signedError) throw signedError;
+      
+      if (signedData?.signedUrl) {
+        window.open(signedData.signedUrl, '_blank');
+      } else {
+        toast.error('Error', 'Failed to get document preview');
+      }
+    } catch (error) {
+      console.error('Error getting document preview:', error);
+      toast.error('Error', 'Failed to get document preview');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-background to-secondary/10">
       {/* Header matching landing page style */}
@@ -318,9 +430,9 @@ const KYCPendingFarmersDashboard = () => {
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-7xl mx-auto">
           <div className="mb-8">
-            <h1 className="text-3xl font-bold mb-2">KYC Pending Farmers</h1>
+            <h1 className="text-3xl font-bold mb-2">KYC Approvals</h1>
             <p className="text-muted-foreground">
-              Review and approve farmer registration requests
+              Review and approve pending farmer registrations
             </p>
           </div>
 
@@ -377,7 +489,7 @@ const KYCPendingFarmersDashboard = () => {
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                 <CardTitle className="flex items-center gap-2">
                   <Users className="h-5 w-5" />
-                  Pending Farmer Registrations
+                  Pending Approvals
                 </CardTitle>
                 <div className="flex flex-col sm:flex-row gap-3">
                   <div className="relative w-full md:w-64">
@@ -420,7 +532,7 @@ const KYCPendingFarmersDashboard = () => {
                     <Button 
                       size="sm" 
                       variant="destructive"
-                      onClick={handleBulkReject}
+                      onClick={() => setShowRejectModal(true)} // Open modal for bulk reject reason
                       disabled={loading}
                     >
                       <XCircle className="h-4 w-4 mr-1" />
@@ -530,7 +642,10 @@ const KYCPendingFarmersDashboard = () => {
                               <Button
                                 size="sm"
                                 variant="destructive"
-                                onClick={() => handleReject(farmer.id)}
+                                onClick={() => {
+                                  setFarmerToReject(farmer.id);
+                                  setShowRejectModal(true);
+                                }}
                                 disabled={loading}
                               >
                                 <XCircle className="h-4 w-4 mr-1" />
@@ -548,6 +663,68 @@ const KYCPendingFarmersDashboard = () => {
           </Card>
         </div>
       </div>
+
+      {/* Rejection Modal */}
+      <Dialog open={showRejectModal} onOpenChange={setShowRejectModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reject Application(s)</DialogTitle>
+            <DialogDescription>
+              Please provide a reason for rejection for the selected farmer(s):
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Label htmlFor="rejectionReason">Rejection Reason</Label>
+            <Textarea
+              id="rejectionReason"
+              value={rejectionReason}
+              onChange={(e) => setRejectionReason(e.target.value)}
+              placeholder="Enter rejection reason..."
+              className="w-full h-32 mt-2"
+            />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowRejectModal(false);
+                setRejectionReason('');
+                setFarmerToReject(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={farmerToReject ? () => handleReject() : handleBulkReject}
+              disabled={loading || !rejectionReason.trim()}
+              variant="destructive"
+            >
+              {loading ? 'Rejecting...' : 'Confirm Rejection'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Document Viewer Dialog */}
+      <Dialog open={!!viewingDocument} onOpenChange={() => setViewingDocument(null)}>
+        <DialogContent className="max-w-3xl h-[90vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>View Document</DialogTitle>
+          </DialogHeader>
+          <div className="flex-grow flex items-center justify-center bg-muted p-2 rounded-md">
+            {viewingDocument && (
+              viewingDocument.includes('.pdf') ? (
+                <iframe src={viewingDocument} className="w-full h-full rounded-md" title="Document Viewer"></iframe>
+              ) : (
+                <img src={viewingDocument} alt="Document Preview" className="max-w-full max-h-full object-contain rounded-md" />
+              )
+            )}
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setViewingDocument(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

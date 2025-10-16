@@ -26,7 +26,21 @@ const FarmerLogin = () => {
 
   // Check if user is already logged in with correct role
   useEffect(() => {
+    console.log('[FarmerLogin] Component mounted', { user: user?.id, userRole });
+    
+    // Log farmer portal access
+    console.log('[FarmerPortal] Farmer accessing login page', {
+      timestamp: new Date().toISOString(),
+      userAgent: navigator.userAgent,
+      location: window.location.href
+    });
+    
     if (user && userRole === UserRole.FARMER) {
+      console.log('[FarmerLogin] User already logged in, redirecting to dashboard');
+      console.log('[FarmerPortal] Authenticated farmer redirected to dashboard', {
+        userId: user.id,
+        timestamp: new Date().toISOString()
+      });
       // Redirect immediately to dashboard
       navigate(from, { replace: true });
     }
@@ -35,9 +49,18 @@ const FarmerLogin = () => {
   // Only clear auth data if there's a specific reason (e.g., coming from logout)
   useEffect(() => {
     const shouldClearAuth = (location.state as any)?.clearAuth;
+    console.log('[FarmerLogin] Checking if auth data should be cleared', { shouldClearAuth });
     if (shouldClearAuth) {
       const clearAuth = async () => {
+        console.log('[FarmerLogin] Clearing auth data');
+        console.log('[FarmerPortal] Clearing authentication data for farmer', {
+          timestamp: new Date().toISOString()
+        });
         await clearAllAuthData();
+        console.log('[FarmerLogin] Auth data cleared successfully');
+        console.log('[FarmerPortal] Authentication data cleared successfully', {
+          timestamp: new Date().toISOString()
+        });
       };
       clearAuth();
     }
@@ -45,10 +68,15 @@ const FarmerLogin = () => {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('[FarmerLogin] Login attempt started', { email: loginData.email });
+    console.log('[FarmerPortal] Farmer attempting login', {
+      email: loginData.email,
+      timestamp: new Date().toISOString()
+    });
     setLoading(true);
 
     try {
-      console.log('Attempting farmer login for:', loginData.email);
+      console.log('[FarmerLogin] Attempting farmer login for:', loginData.email);
       
       const { error } = await login({
         email: loginData.email,
@@ -57,7 +85,12 @@ const FarmerLogin = () => {
       });
 
       if (error) {
-        console.error('Login failed:', error);
+        console.error('[FarmerLogin] Login failed:', error);
+        console.log('[FarmerPortal] Farmer login failed', {
+          email: loginData.email,
+          error: error.message,
+          timestamp: new Date().toISOString()
+        });
         toast.error('Access Denied', error.message || 'Please verify your farmer credentials.');
         
         // Reset button after 3 seconds as per user preference
@@ -65,12 +98,22 @@ const FarmerLogin = () => {
           setLoading(false);
         }, 3000);
       } else {
+        console.log('[FarmerLogin] Login successful, redirecting to dashboard');
+        console.log('[FarmerPortal] Farmer login successful', {
+          email: loginData.email,
+          timestamp: new Date().toISOString()
+        });
         toast.success('Welcome Back, Farmer', 'Accessing farmer dashboard...');
         // Redirect to the originally requested page or default dashboard
         navigate(from, { replace: true });
       }
     } catch (err) {
-      console.error('Authentication error:', err);
+      console.error('[FarmerLogin] Authentication error:', err);
+      console.log('[FarmerPortal] Farmer authentication error', {
+        email: loginData.email,
+        error: err instanceof Error ? err.message : 'Unknown error',
+        timestamp: new Date().toISOString()
+      });
       toast.error('Authentication Error', err instanceof Error ? err.message : 'Failed to authenticate');
       
       // Reset button after 3 seconds as per user preference
@@ -161,7 +204,13 @@ const FarmerLogin = () => {
               <Button
                 variant="link"
                 className="text-sm text-muted-foreground hover:text-foreground p-0 h-auto"
-                onClick={() => navigate('/auth/forgot-password')}
+                onClick={() => {
+                  console.log('[FarmerLogin] Forgot password link clicked');
+                  console.log('[FarmerPortal] Farmer clicked forgot password link', {
+                    timestamp: new Date().toISOString()
+                  });
+                  navigate('/auth/forgot-password');
+                }}
               >
                 Forgot Password?
               </Button>
@@ -171,14 +220,26 @@ const FarmerLogin = () => {
               <Button
                 variant="ghost"
                 className="text-sm text-muted-foreground hover:text-foreground"
-                onClick={() => navigate('/register')}
+                onClick={() => {
+                  console.log('[FarmerLogin] New farmer sign up link clicked');
+                  console.log('[FarmerPortal] New farmer clicked sign up link', {
+                    timestamp: new Date().toISOString()
+                  });
+                  navigate('/register');
+                }}
               >
                 New Farmer? Sign Up
               </Button>
               <Button
                 variant="ghost"
                 className="text-sm text-muted-foreground hover:text-foreground"
-                onClick={() => navigate('/')}
+                onClick={() => {
+                  console.log('[FarmerLogin] Return to home link clicked');
+                  console.log('[FarmerPortal] Farmer clicked return to home link', {
+                    timestamp: new Date().toISOString()
+                  });
+                  navigate('/');
+                }}
               >
                 Return to Home
               </Button>

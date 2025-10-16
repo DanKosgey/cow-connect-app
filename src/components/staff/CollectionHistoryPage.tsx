@@ -149,7 +149,7 @@ const CollectionHistoryPage = () => {
           collection_date,
           status,
           notes,
-          farmers (
+          farmers!fk_collections_farmer_id (
             full_name,
             id
           )
@@ -371,7 +371,7 @@ const CollectionHistoryPage = () => {
                 <SelectItem value="all">All Farmers</SelectItem>
                 {farmers.filter(farmer => farmer.id && farmer.id.trim() !== '').map(farmer => (
                   <SelectItem key={farmer.id} value={farmer.id}>
-                    {farmer.profiles.full_name}
+                    {farmer.full_name}
                   </SelectItem>
                 ))}
               </SelectContent>

@@ -30,9 +30,7 @@ interface Collection {
 
 interface Farmer {
   id: string;
-  profiles: {
-    full_name: string;
-  };
+  full_name: string;
   kyc_status: string;
 }
 
@@ -237,7 +235,7 @@ export const useStaffCollections = (staffId: string | null, dateRange: 'today' |
             collection_date,
             status,
             notes,
-            farmers (
+            farmers!fk_collections_farmer_id (
               full_name,
               id
             )
@@ -413,8 +411,17 @@ export const useInventoryData = () => {
         setItems(itemsData);
         setTransactions(transactionsData);
       } catch (err: any) {
-        setError(err.message || 'Failed to fetch inventory data');
-        console.error('Error fetching inventory data:', err);
+        // Handle the case where inventory tables don't exist
+        if (err.message && (err.message.includes('inventory_items') || err.message.includes('inventory_transactions'))) {
+          // Set empty arrays and no error when tables don't exist
+          setItems([]);
+          setTransactions([]);
+          setError(null); // Don't show error to user when tables don't exist
+          console.warn('Inventory tables not found in database. Inventory features will be disabled.');
+        } else {
+          setError(err.message || 'Failed to fetch inventory data');
+          console.error('Error fetching inventory data:', err);
+        }
       } finally {
         setLoading(false);
       }
@@ -780,7 +787,7 @@ export const useInventoryTransactions = (page: number = 1, pageSize: number = 10
           .select(`
             *,
             inventory_items (name),
-            staff (profiles (full_name))
+            staff!inventory_transactions_staff_id_fkey (profiles (full_name))
           `)
           .order('created_at', { ascending: false })
           .range((page - 1) * pageSize, page * pageSize - 1);

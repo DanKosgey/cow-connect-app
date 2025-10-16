@@ -19,11 +19,15 @@ import {
   ArrowLeft, 
   FileText,
   User,
-  Loader2
+  Loader2,
+  Eye
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import useToastNotifications from '@/hooks/useToastNotifications';
 import { useAuth } from '@/contexts/SimplifiedAuthContext';
+import { checkPendingFarmerDocuments, fixDocumentTypes } from '@/utils/kycDocumentChecker';
+import { verifyDocumentIntegrity } from '@/utils/kycStorageTest';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 
 const KYCPendingFarmerDetails = () => {
   const { id } = useParams();
@@ -36,6 +40,7 @@ const KYCPendingFarmerDetails = () => {
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
+  const [viewingDocument, setViewingDocument] = useState<string | null>(null); // URL of document being viewed
 
   useEffect(() => {
     if (id) {
@@ -51,11 +56,18 @@ const KYCPendingFarmerDetails = () => {
       const { data: farmerData, error: farmerError } = await supabase
         .from('pending_farmers')
         .select('*')
-        .eq('id', id)
-        .single();
+        .eq('id', id);
 
       if (farmerError) throw farmerError;
-      setFarmer(farmerData);
+      
+      // Check if we have data and handle accordingly
+      const farmerRecord = farmerData && farmerData.length > 0 ? farmerData[0] : null;
+      
+      if (!farmerRecord) {
+        throw new Error('Farmer not found');
+      }
+      
+      setFarmer(farmerRecord);
 
       // Fetch KYC documents
       const { data: documentsData, error: documentsError } = await supabase
@@ -82,10 +94,36 @@ const KYCPendingFarmerDetails = () => {
     try {
       setApproving(true);
       
+      // Check documents before approval
+      const docCheck = await checkPendingFarmerDocuments(id);
+      console.log('Document check before approval:', docCheck);
+      
+      // If documents have issues, try to fix them
+      if (!docCheck.hasRequiredDocuments || !docCheck.allPending) {
+        console.log('Attempting to fix document issues...');
+        await fixDocumentTypes(id);
+        
+        // Re-check after fix
+        const docCheckAfterFix = await checkPendingFarmerDocuments(id);
+        console.log('Document check after fix:', docCheckAfterFix);
+        
+        if (!docCheckAfterFix.hasRequiredDocuments) {
+          toast.error('Error', 'Missing required documents. Please ensure ID front, ID back, and selfie are uploaded.');
+          return;
+        }
+      }
+      
+      // Verify document integrity (check if files actually exist in storage)
+      const integrityCheck = await verifyDocumentIntegrity(id);
+      if (!integrityCheck.success || !integrityCheck.allFilesExist) {
+        toast.error('Error', 'Some documents are missing from storage. Please ask the farmer to re-upload them.');
+        return;
+      }
+      
       // Call the Supabase function to approve the farmer
       const { data, error } = await supabase.rpc('approve_pending_farmer', {
-        pending_farmer_id: id,
-        approved_by_user_id: user.id
+        p_pending_farmer_id: id,
+        p_admin_id: user.id
       });
 
       if (error) throw error;
@@ -120,9 +158,9 @@ const KYCPendingFarmerDetails = () => {
       
       // Call the Supabase function to reject the farmer
       const { data, error } = await supabase.rpc('reject_pending_farmer', {
-        pending_farmer_id: id,
-        rejection_reason: rejectionReason,
-        rejected_by_user_id: user.id
+        p_pending_farmer_id: id,
+        p_rejection_reason: rejectionReason,
+        p_admin_id: user.id
       });
 
       if (error) throw error;
@@ -143,18 +181,54 @@ const KYCPendingFarmerDetails = () => {
 
   const getDocumentLabel = (type: string) => {
     const labels: Record<string, string> = {
-      'national_id_front': 'National ID (Front)',
-      'national_id_back': 'National ID (Back)',
-      'selfie_1': 'Selfie 1',
-      'selfie_2': 'Selfie 2',
-      'selfie_3': 'Selfie 3'
+      'id_front': 'ID (Front)',
+      'id_back': 'ID (Back)',
+      'selfie': 'Selfie',
     };
     return labels[type] || type;
   };
 
   const getDocumentIcon = (type: string) => {
-    if (type.includes('national_id')) return <FileText className="h-5 w-5 text-red-500" />;
-    return <User className="h-5 w-5 text-blue-500" />;
+    if (type.includes('id_')) return <FileText className="h-5 w-5 text-red-500" />;
+    if (type.includes('selfie')) return <User className="h-5 w-5 text-blue-500" />;
+    return <FileText className="h-5 w-5 text-gray-500" />;
+  };
+
+  const handleViewDocument = async (filePath: string) => {
+    try {
+      console.log('Attempting to view document:', filePath);
+      
+      // Try to get the public URL for the document first
+      const { data: publicData } = supabase.storage
+        .from('kyc-documents')
+        .getPublicUrl(filePath);
+      
+      if (publicData?.publicUrl) {
+        console.log('Opening public URL:', publicData.publicUrl);
+        setViewingDocument(publicData.publicUrl);
+        return;
+      }
+      
+      // If public URL fails, try signed URL for admin access
+      const { data: signedData, error: signedError } = await supabase.storage
+        .from('kyc-documents')
+        .createSignedUrl(filePath, 600); // 10 minutes expiry for admin view
+      
+      if (signedError) {
+        console.error('Signed URL error:', signedError);
+        throw signedError;
+      }
+      
+      if (signedData?.signedUrl) {
+        console.log('Opening signed URL:', signedData.signedUrl);
+        setViewingDocument(signedData.signedUrl);
+      } else {
+        toast.error('Error', 'Failed to generate document URL');
+      }
+    } catch (error: any) {
+      console.error('Error getting document URL:', error);
+      toast.error('Error', `Failed to access document: ${error.message || 'Unknown error'}`);
+    }
   };
 
   // Show loading state
@@ -270,9 +344,9 @@ const KYCPendingFarmerDetails = () => {
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Feeding Type</p>
-                      <p className="font-medium">
+                      <div className="font-medium">
                         <Badge variant="outline">{farmer.feeding_type}</Badge>
-                      </p>
+                      </div>
                     </div>
                     <div className="md:col-span-2">
                       <p className="text-sm text-muted-foreground">Farm Location</p>
@@ -320,7 +394,9 @@ const KYCPendingFarmerDetails = () => {
                                 {getDocumentLabel(doc.document_type)}
                               </span>
                             </div>
-                            <Badge variant="outline">{doc.status}</Badge>
+                            <div>
+                              <Badge variant="outline">{doc.status}</Badge>
+                            </div>
                           </div>
                           <p className="text-sm text-muted-foreground truncate">
                             {doc.file_name}
@@ -333,24 +409,9 @@ const KYCPendingFarmerDetails = () => {
                             variant="outline" 
                             size="sm" 
                             className="w-full mt-3"
-                            onClick={async () => {
-                              try {
-                                // Get the public URL for the document
-                                const { data } = supabase.storage
-                                  .from('kyc-documents')
-                                  .getPublicUrl(doc.file_path);
-                                
-                                if (data?.publicUrl) {
-                                  window.open(data.publicUrl, '_blank');
-                                } else {
-                                  toast.error('Error', 'Failed to get document URL');
-                                }
-                              } catch (error) {
-                                console.error('Error getting document URL:', error);
-                                toast.error('Error', 'Failed to get document URL');
-                              }
-                            }}
+                            onClick={() => handleViewDocument(doc.file_path)}
                           >
+                            <Eye className="h-4 w-4 mr-2" />
                             View Document
                           </Button>
                         </div>
@@ -371,18 +432,22 @@ const KYCPendingFarmerDetails = () => {
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <span className="text-muted-foreground">Status</span>
-                      <Badge>
-                        {farmer.status === 'pending_verification' && 'Pending Verification'}
-                        {farmer.status === 'email_verified' && 'Email Verified'}
-                        {farmer.status === 'approved' && 'Approved'}
-                        {farmer.status === 'rejected' && 'Rejected'}
-                      </Badge>
+                      <div>
+                        <Badge>
+                          {farmer.status === 'pending_verification' && 'Pending Verification'}
+                          {farmer.status === 'email_verified' && 'Email Verified'}
+                          {farmer.status === 'approved' && 'Approved'}
+                          {farmer.status === 'rejected' && 'Rejected'}
+                        </Badge>
+                      </div>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-muted-foreground">Email Verified</span>
-                      <Badge variant={farmer.email_verified ? 'default' : 'secondary'}>
-                        {farmer.email_verified ? 'Yes' : 'No'}
-                      </Badge>
+                      <div>
+                        <Badge variant={farmer.email_verified ? 'default' : 'secondary'}>
+                          {farmer.email_verified ? 'Yes' : 'No'}
+                        </Badge>
+                      </div>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-muted-foreground">Registration Date</span>
@@ -488,6 +553,27 @@ const KYCPendingFarmerDetails = () => {
           </div>
         </div>
       </div>
+
+      {/* Document Viewer Dialog */}
+      <Dialog open={!!viewingDocument} onOpenChange={() => setViewingDocument(null)}>
+        <DialogContent className="max-w-3xl h-[90vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>View Document</DialogTitle>
+          </DialogHeader>
+          <div className="flex-grow flex items-center justify-center bg-muted p-2 rounded-md">
+            {viewingDocument && (
+              viewingDocument.includes('.pdf') ? (
+                <iframe src={viewingDocument} className="w-full h-full rounded-md" title="Document Viewer"></iframe>
+              ) : (
+                <img src={viewingDocument} alt="Document Preview" className="max-w-full max-h-full object-contain rounded-md" />
+              )
+            )}
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setViewingDocument(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

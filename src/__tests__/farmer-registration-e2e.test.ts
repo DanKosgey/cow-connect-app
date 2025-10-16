@@ -83,14 +83,21 @@ describe('Farmer Registration End-to-End Workflow', () => {
       
       // Step 1: Farmer Registration
       const registrationData: FarmerRegistrationData = {
-        email: 'newfarmer@example.com',
+        email: 'testfarmer@example.com',
         password: 'securepassword123',
         confirmPassword: 'securepassword123',
         fullName: 'John Doe',
         phone: '+254712345678',
+        age: 30,
+        idNumber: '12345678',
+        gender: 'male',
         nationalId: '12345678',
         address: '123 Farm Road, Nairobi',
-        farmLocation: 'Trans-Nzoia'
+        farmLocation: 'Trans-Nzoia',
+        numberOfCows: 10,
+        breedingMethod: 'artificial_insemination',
+        feedingType: 'zero_grazing',
+        cowBreeds: [{ breedName: 'Friesian', count: 10 }]
       };
 
       // Mock auth signup response
@@ -106,7 +113,7 @@ describe('Farmer Registration End-to-End Workflow', () => {
       // Start registration
       const startResult = await FarmerRegistrationService.startRegistration(registrationData);
       expect(startResult.success).toBe(true);
-      expect(startResult.userId).toBe('user-123');
+      expect(startResult.data?.userId).toBe('user-123');
       
       // Verify pending profile was stored
       expect(localStorage.setItem).toHaveBeenCalledWith(
@@ -118,7 +125,7 @@ describe('Farmer Registration End-to-End Workflow', () => {
       const pendingData = {
         userId: 'user-123',
         fullName: 'John Doe',
-        email: 'newfarmer@example.com',
+        email: 'testfarmer@example.com',
         phone: '+254712345678',
         role: 'farmer',
         createdAt: new Date().toISOString(),
@@ -157,7 +164,7 @@ describe('Farmer Registration End-to-End Workflow', () => {
 
       const completeResult = await FarmerRegistrationService.completeRegistration('user-123', pendingData);
       expect(completeResult.success).toBe(true);
-      expect(completeResult.farmerId).toBe('pending-123');
+      expect(completeResult.data?.pendingFarmerId).toBe('pending-123');
 
       // Step 3: KYC Document Upload
       const mockFile = new File([''], 'id-front.jpg', { type: 'image/jpeg' });
@@ -217,8 +224,8 @@ describe('Farmer Registration End-to-End Workflow', () => {
       (mockSupabase.rpc as jest.Mock).mockResolvedValue(mockApprovalResponse);
 
       const approvalResult = await mockSupabase.rpc('approve_pending_farmer', {
-        p_pending_farmer_id: 'pending-123',
-        p_admin_id: 'admin-123'
+        pending_farmer_id: 'pending-123',
+        approved_by_user_id: 'admin-123'
       });
       expect(approvalResult.data.success).toBe(true);
       expect(approvalResult.data.farmer_id).toBe('farmer-123');
@@ -260,9 +267,16 @@ describe('Farmer Registration End-to-End Workflow', () => {
         confirmPassword: 'securepassword123',
         fullName: 'Jane Smith',
         phone: '+254712345679',
+        age: 30,
+        idNumber: '87654321',
+        gender: 'female',
         nationalId: '87654321',
         address: '456 Farm Road, Nairobi',
-        farmLocation: 'Trans-Nzoia'
+        farmLocation: 'Trans-Nzoia',
+        numberOfCows: 5,
+        breedingMethod: 'male_bull',
+        feedingType: 'field_grazing',
+        cowBreeds: [{ breedName: 'Jersey', count: 5 }]
       };
 
       const mockAuthData = {
@@ -347,9 +361,9 @@ describe('Farmer Registration End-to-End Workflow', () => {
       (mockSupabase.rpc as jest.Mock).mockResolvedValue(mockRejectionResponse);
 
       const rejectionResult = await mockSupabase.rpc('reject_pending_farmer', {
-        p_pending_farmer_id: 'pending-456',
-        p_admin_id: 'admin-123',
-        p_rejection_reason: 'ID document not clear'
+        pending_farmer_id: 'pending-456',
+        rejected_by_user_id: 'admin-123',
+        rejection_reason: 'ID document not clear'
       });
       expect(rejectionResult.data.success).toBe(true);
       expect(rejectionResult.data.rejection_count).toBe(1);
@@ -368,8 +382,8 @@ describe('Farmer Registration End-to-End Workflow', () => {
       (mockSupabase.rpc as jest.Mock).mockResolvedValue(mockResubmitResponse);
 
       const resubmitResult = await mockSupabase.rpc('resubmit_kyc_documents', {
-        p_pending_farmer_id: 'pending-456',
-        p_user_id: 'user-456'
+        pending_farmer_id: 'pending-456',
+        user_id: 'user-456'
       });
       expect(resubmitResult.data.success).toBe(true);
       expect(resubmitResult.data.attempts_remaining).toBe(2);
@@ -401,8 +415,8 @@ describe('Farmer Registration End-to-End Workflow', () => {
 
       // Resubmit for review
       const resubmitReviewResult = await mockSupabase.rpc('submit_kyc_for_review', {
-        p_pending_farmer_id: 'pending-456',
-        p_user_id: 'user-456'
+        pending_farmer_id: 'pending-456',
+        user_id: 'user-456'
       });
       expect(resubmitReviewResult.data.success).toBe(true);
     });
@@ -413,14 +427,21 @@ describe('Farmer Registration End-to-End Workflow', () => {
       const mockSupabase = require('@/integrations/supabase/client').supabase;
       
       const registrationData: FarmerRegistrationData = {
-        email: 'existing@example.com',
+        email: 'duplicate@example.com',
         password: 'securepassword123',
         confirmPassword: 'securepassword123',
-        fullName: 'John Doe',
-        phone: '+254712345678',
-        nationalId: '12345678',
-        address: '123 Farm Road, Nairobi',
-        farmLocation: 'Trans-Nzoia'
+        fullName: 'Duplicate User',
+        phone: '+254712345680',
+        age: 35,
+        idNumber: '11223344',
+        gender: 'other',
+        nationalId: '11223344',
+        address: '789 Farm Road, Nairobi',
+        farmLocation: 'Trans-Nzoia',
+        numberOfCows: 15,
+        breedingMethod: 'both',
+        feedingType: 'mixed',
+        cowBreeds: [{ breedName: 'Ayrshire', count: 15 }]
       };
 
       // Mock auth signup to return email exists error

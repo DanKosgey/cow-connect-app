@@ -1,100 +1,267 @@
 import { useState, useEffect } from "react";
-import { DashboardLayout } from "@/components/DashboardLayout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { 
-  Milk, 
-  DollarSign, 
-  BarChart3, 
-  Calendar, 
-  TrendingUp, 
-  Award,
-  Clock,
-  CheckCircle,
-  AlertCircle,
-  Droplets,
-  Leaf,
-  Users,
-  MapPin,
-  Bell,
-  Target,
-  Zap,
-  CalendarDays,
-  TrendingDown,
-  Star,
-  Package,
-  Truck,
-  Download
-} from "lucide-react";
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area } from 'recharts';
-import { milkRateService } from '@/services/milk-rate-service';
 import { supabase } from "@/integrations/supabase/client";
-import useToastNotifications from '@/hooks/useToastNotifications';
-import { format, subDays } from 'date-fns';
-import { MiniDataVisualization } from "@/components/FarmerDataVisualization";
-import { exportToCSV, exportToJSON } from "@/utils/exportUtils";
+import { 
+  Milk, DollarSign, BarChart3, Calendar, TrendingUp, Award,
+  Clock, CheckCircle, AlertCircle, Droplets, Leaf, Users,
+  MapPin, Bell, Target, Zap, CalendarDays, TrendingDown,
+  Star, Package, Truck, Download, ArrowUp, ArrowDown, Loader
+} from "lucide-react";
+import { 
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, 
+  ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area,
+  ComposedChart, Bar, Legend
+} from 'recharts';
+
+// Define types for our data
+interface Farmer {
+  id: string;
+  user_id: string;
+  full_name: string;
+  phone_number: string;
+  farm_location: string;
+  farm_size: number;
+  created_at: string;
+}
 
 interface Collection {
   id: string;
+  farmer_id: string;
   collection_date: string;
   liters: number;
   quality_grade: string;
+  fat_content: number;
   total_amount: number;
-  status: string;
+  created_at: string;
 }
 
 interface Payment {
   id: string;
+  farmer_id: string;
   amount: number;
   status: string;
+  payment_date: string;
   created_at: string;
 }
 
-interface FarmerAnalytics {
-  total_collections: number;
-  total_liters: number;
+interface Analytics {
+  id: string;
+  farmer_id: string;
   current_month_liters: number;
   current_month_earnings: number;
   avg_quality_score: number;
-  today_collections_trend?: { isPositive: boolean; value: number };
-  monthly_liters_trend?: { isPositive: boolean; value: number };
-  monthly_earnings_trend?: { isPositive: boolean; value: number };
-}
-
-interface Notification {
-  id: string;
-  title: string;
-  message: string;
-  read: boolean;
+  today_collections_trend: {
+    value: number;
+    isPositive: boolean;
+  };
+  monthly_liters_trend: {
+    value: number;
+    isPositive: boolean;
+  };
+  monthly_earnings_trend: {
+    value: number;
+    isPositive: boolean;
+  };
   created_at: string;
-  type: 'info' | 'warning' | 'success';
 }
 
-const EnhancedFarmerDashboard = () => {
-  const toast = useToastNotifications();
+interface MonthlyTrendData {
+  month: string;
+  liters: number;
+  earnings: number;
+}
+
+interface WeeklyTrendData {
+  date: string;
+  liters: number;
+  earnings: number;
+}
+
+interface QualityData {
+  name: string;
+  value: number;
+  percentage: string;
+}
+
+// Date utility functions
+const format = (date: Date | string, pattern: string): string => {
+  const d = new Date(date);
+  const map: Record<string, string> = {
+    'MMM': d.toLocaleString('en-US', { month: 'short' }),
+    'MMM yyyy': d.toLocaleString('en-US', { month: 'short', year: 'numeric' }),
+    'MMM d, yyyy': d.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+    'EEE': d.toLocaleString('en-US', { weekday: 'short' }),
+    'yyyy-MM-dd': d.toISOString().split('T')[0]
+  };
+  return map[pattern] || d.toString();
+};
+
+const subDays = (date: Date | string, days: number): Date => {
+  const d = new Date(date);
+  d.setDate(d.getDate() - days);
+  return d;
+};
+
+const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444'];
+
+const StatCard = ({ title, value, change, isPositive, icon, unit }: { 
+  title: string; 
+  value: string | number; 
+  change?: number | null; 
+  isPositive?: boolean; 
+  icon: React.ReactNode; 
+  unit?: string;
+}) => (
+  <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition-shadow">
+    <div className="flex items-center justify-between mb-4">
+      <div className="p-2.5 rounded-lg bg-gradient-to-br from-blue-50 to-indigo-50">
+        {icon}
+      </div>
+      {change !== null && change !== undefined && (
+        <div className={`flex items-center gap-1 text-sm font-semibold ${
+          isPositive ? 'text-green-600' : 'text-red-600'
+        }`}>
+          {isPositive ? <ArrowUp size={16} /> : <ArrowDown size={16} />}
+          {Math.abs(change).toFixed(1)}%
+        </div>
+      )}
+    </div>
+    <p className="text-sm text-gray-600 font-medium mb-1">{title}</p>
+    <div className="flex items-baseline gap-2">
+      <p className="text-2xl font-bold text-gray-900">{value}</p>
+      {unit && <p className="text-sm text-gray-500">{unit}</p>}
+    </div>
+  </div>
+);
+
+const Card = ({ title, icon, children }: { 
+  title: string; 
+  icon: React.ReactNode; 
+  children: React.ReactNode;
+}) => (
+  <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
+    <div className="border-b border-gray-100 p-6">
+      <div className="flex items-center gap-3">
+        <div className="p-2 rounded-lg text-indigo-600">
+          {icon}
+        </div>
+        <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+      </div>
+    </div>
+    <div className="p-6">
+      {children}
+    </div>
+  </div>
+);
+
+const DualAxisChart = ({ data, title, icon, leftKey, leftName, rightKey, rightName, leftColor, rightColor, leftFormatter, rightFormatter }: { 
+  data: MonthlyTrendData[];
+  title: string;
+  icon: React.ReactNode;
+  leftKey: string;
+  leftName: string;
+  rightKey: string;
+  rightName: string;
+  leftColor: string;
+  rightColor: string;
+  leftFormatter: (value: number) => string;
+  rightFormatter: (value: number) => string;
+}) => (
+  <Card title={title} icon={icon}>
+    <div className="h-80 -mx-6 -mb-6">
+      <ResponsiveContainer width="100%" height="100%">
+        <ComposedChart data={data} margin={{ top: 20, right: 80, left: 60, bottom: 20 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+          <XAxis dataKey="month" stroke="#9ca3af" tick={{ fontSize: 12 }} />
+          
+          <YAxis 
+            yAxisId="left"
+            stroke={leftColor}
+            tick={{ fontSize: 12 }}
+            tickFormatter={leftFormatter}
+            label={{ value: leftName, angle: -90, position: 'insideLeft', style: { fill: leftColor, fontSize: 12, fontWeight: 500 } }}
+          />
+          
+          <YAxis 
+            yAxisId="right"
+            orientation="right"
+            stroke={rightColor}
+            tick={{ fontSize: 12 }}
+            tickFormatter={rightFormatter}
+            label={{ value: rightName, angle: 90, position: 'insideRight', style: { fill: rightColor, fontSize: 12, fontWeight: 500 } }}
+          />
+          
+          <Tooltip 
+            contentStyle={{ 
+              backgroundColor: '#fff', 
+              border: `2px solid ${leftColor}`, 
+              borderRadius: '8px', 
+              boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+            }}
+            formatter={(value, name) => {
+              if (name === leftKey) return [leftFormatter(value as number), leftName];
+              if (name === rightKey) return [rightFormatter(value as number), rightName];
+              return [value, name];
+            }}
+          />
+          
+          <Legend 
+            wrapperStyle={{ paddingTop: '20px' }}
+            iconType="line"
+          />
+          
+          <Area 
+            yAxisId="left"
+            type="monotone" 
+            dataKey={leftKey} 
+            stroke={leftColor}
+            fill={leftColor}
+            fillOpacity={0.1}
+            strokeWidth={2.5}
+            name={leftName}
+            isAnimationActive={true}
+          />
+          
+          <Line 
+            yAxisId="right"
+            type="monotone" 
+            dataKey={rightKey} 
+            stroke={rightColor}
+            strokeWidth={2.5}
+            dot={{ stroke: rightColor, strokeWidth: 2, r: 4, fill: '#fff' }}
+            activeDot={{ r: 6, fill: rightColor }}
+            name={rightName}
+            isAnimationActive={true}
+          />
+        </ComposedChart>
+      </ResponsiveContainer>
+    </div>
+  </Card>
+);
+
+export default function FarmerDashboard() {
   const [loading, setLoading] = useState(true);
-  const [farmer, setFarmer] = useState<any>(null);
-  const [analytics, setAnalytics] = useState<FarmerAnalytics | null>(null);
+  const [farmer, setFarmer] = useState<Farmer | null>(null);
   const [collections, setCollections] = useState<Collection[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
-  const [currentRate, setCurrentRate] = useState<number>(0);
+  const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [monthlyTrendData, setMonthlyTrendData] = useState<MonthlyTrendData[]>([]);
+  const [weeklyTrendData, setWeeklyTrendData] = useState<WeeklyTrendData[]>([]);
+  const [qualityData, setQualityData] = useState<QualityData[]>([]);
 
-  // Fetch farmer data and analytics
   useEffect(() => {
-    const fetchFarmerData = async () => {
+    const fetchData = async () => {
       try {
         setLoading(true);
         const { data: { user } } = await supabase.auth.getUser();
         
         if (!user) {
-          setError("Not authenticated");
+          setError('Not authenticated');
+          setLoading(false);
           return;
         }
 
-        // Fetch farmer profile - handle case where no farmer record exists
+        // Fetch farmer profile
         const { data: farmerData, error: farmerError } = await supabase
           .from('farmers')
           .select('*')
@@ -103,762 +270,450 @@ const EnhancedFarmerDashboard = () => {
 
         if (farmerError) throw farmerError;
         
-        // Check if farmer data exists
         if (!farmerData) {
-          setError("No farmer profile found. Please complete your registration.");
+          setError('Farmer profile not found');
+          setLoading(false);
           return;
         }
-        
-        const farmerRecord = farmerData;
-        setFarmer(farmerRecord);
+
+        setFarmer(farmerData as Farmer);
+
+        // Fetch collections
+        const { data: collectionsData, error: collectionsError } = await supabase
+          .from('collections')
+          .select('*')
+          .eq('farmer_id', farmerData.id)
+          .order('collection_date', { ascending: false });
+
+        if (collectionsError) throw collectionsError;
+        setCollections((collectionsData || []) as Collection[]);
+
+        // Fetch payments
+        const { data: paymentsData, error: paymentsError } = await supabase
+          .from('payments')
+          .select('*')
+          .eq('farmer_id', farmerData.id)
+          .order('created_at', { ascending: false });
+
+        if (paymentsError) throw paymentsError;
+        setPayments((paymentsData || []) as Payment[]);
 
         // Fetch analytics
         const { data: analyticsData, error: analyticsError } = await supabase
           .from('farmer_analytics')
           .select('*')
-          .eq('farmer_id', farmerRecord.id);
+          .eq('farmer_id', farmerData.id)
+          .maybeSingle();
 
         if (analyticsError) throw analyticsError;
-        
-        // Handle case where no analytics record exists
-        if (analyticsData && analyticsData.length > 0) {
-          setAnalytics(analyticsData[0]);
-        } else {
-          // Initialize with default values
-          setAnalytics({
-            total_collections: 0,
-            total_liters: 0,
-            current_month_liters: 0,
-            current_month_earnings: 0,
-            avg_quality_score: 0
-          });
+        setAnalytics(analyticsData as Analytics || null);
+
+        // Process monthly trend data
+        const monthlyMap: Record<string, { liters: number; earnings: number; count: number }> = {};
+        (collectionsData || []).forEach((collection: any) => {
+          const month = format(new Date(collection.collection_date), 'MMM yyyy');
+          if (!monthlyMap[month]) {
+            monthlyMap[month] = { liters: 0, earnings: 0, count: 0 };
+          }
+          monthlyMap[month].liters += collection.liters || 0;
+          monthlyMap[month].earnings += collection.total_amount || 0;
+          monthlyMap[month].count += 1;
+        });
+
+        const sortedMonths = Object.keys(monthlyMap).sort((a, b) => 
+          new Date(`01 ${a}`).getTime() - new Date(`01 ${b}`).getTime()
+        );
+        const lastSixMonths = sortedMonths.slice(-6);
+
+        const monthlyData = lastSixMonths.map(month => ({
+          month: month.split(' ')[0],
+          liters: monthlyMap[month].liters,
+          earnings: monthlyMap[month].earnings
+        }));
+        setMonthlyTrendData(monthlyData);
+
+        // Process weekly trend data
+        const weeklyMap: Record<string, { liters: number; earnings: number }> = {};
+        for (let i = 6; i >= 0; i--) {
+          const date = subDays(new Date(), i);
+          const dateString = format(date, 'EEE');
+          const dayCollections = (collectionsData || []).filter((c: any) => 
+            format(new Date(c.collection_date), 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd')
+          ) || [];
+          
+          const totalLiters = dayCollections.reduce((sum: number, c: any) => sum + (c.liters || 0), 0);
+          const totalEarnings = dayCollections.reduce((sum: number, c: any) => sum + (c.total_amount || 0), 0);
+          
+          weeklyMap[dateString] = { liters: totalLiters, earnings: totalEarnings };
         }
 
-        // Fetch recent collections
-        const { data: collectionsData, error: collectionsError } = await supabase
-          .from('collections')
-          .select('*')
-          .eq('farmer_id', farmerRecord.id)
-          .order('collection_date', { ascending: false })
-          .limit(10);
+        const weeklyData = Object.entries(weeklyMap).map(([date, data]) => ({
+          date,
+          liters: data.liters,
+          earnings: data.earnings
+        }));
+        setWeeklyTrendData(weeklyData);
 
-        if (collectionsError) throw collectionsError;
-        setCollections(collectionsData || []);
+        // Process quality distribution
+        const qualityMap: Record<string, number> = {};
+        (collectionsData || []).forEach((collection: any) => {
+          const grade = collection.quality_grade || 'Unknown';
+          qualityMap[grade] = (qualityMap[grade] || 0) + 1;
+        });
 
-        // Fetch recent payments
-        const { data: paymentsData, error: paymentsError } = await supabase
-          .from('payments')
-          .select('*')
-          .eq('farmer_id', farmerRecord.id)
-          .order('created_at', { ascending: false })
-          .limit(5);
-
-        if (paymentsError) throw paymentsError;
-        setPayments(paymentsData || []);
-
-        // Fetch notifications
-        const { data: notificationsData, error: notificationsError } = await supabase
-          .from('notifications')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false })
-          .limit(5);
-
-        if (notificationsError) throw notificationsError;
-        setNotifications(notificationsData || []);
-        
-        // Count unread notifications
-        const unread = notificationsData?.filter(n => !n.read).length || 0;
-        setUnreadCount(unread);
+        const qualityChartData = Object.entries(qualityMap).map(([grade, count]) => ({
+          name: grade,
+          value: count,
+          percentage: (collectionsData || []).length > 0 ? ((count / (collectionsData || []).length) * 100).toFixed(0) : "0"
+        }));
+        setQualityData(qualityChartData);
 
       } catch (err) {
-        console.error('Error fetching farmer data:', err);
+        console.error('Error fetching data:', err);
         setError('Failed to load dashboard data');
-        toast.error('Error', 'Failed to load dashboard data');
       } finally {
         setLoading(false);
       }
     };
 
-    fetchFarmerData();
+    fetchData();
   }, []);
-
-  // Subscribe to milk rate changes
-  useEffect(() => {
-    const unsubscribe = milkRateService.subscribe((rate) => {
-      setCurrentRate(rate);
-    });
-    
-    // Fetch current rate on component mount
-    milkRateService.getCurrentRate();
-    
-    return () => {
-      unsubscribe();
-    };
-  }, []);
-
-  // Export collections data
-  const exportCollections = (format: 'csv' | 'json') => {
-    try {
-      const exportData = collections.map(collection => ({
-        date: new Date(collection.collection_date).toLocaleDateString(),
-        liters: collection.liters,
-        quality_grade: collection.quality_grade,
-        total_amount: collection.total_amount,
-        status: collection.status
-      }));
-      
-      if (format === 'csv') {
-        exportToCSV(exportData, 'collections-report');
-      } else {
-        exportToJSON(exportData, 'collections-report');
-      }
-      
-      toast.success('Success', `Collections exported as ${format.toUpperCase()}`);
-    } catch (err) {
-      console.error('Error exporting collections:', err);
-      toast.error('Error', 'Failed to export collections');
-    }
-  };
-
-  // Export payments data
-  const exportPayments = (format: 'csv' | 'json') => {
-    try {
-      const exportData = payments.map(payment => ({
-        date: new Date(payment.created_at).toLocaleDateString(),
-        amount: payment.amount,
-        status: payment.status
-      }));
-      
-      if (format === 'csv') {
-        exportToCSV(exportData, 'payments-report');
-      } else {
-        exportToJSON(exportData, 'payments-report');
-      }
-      
-      toast.success('Success', `Payments exported as ${format.toUpperCase()}`);
-    } catch (err) {
-      console.error('Error exporting payments:', err);
-      toast.error('Error', 'Failed to export payments');
-    }
-  };
-
-  // Prepare data for mini visualizations
-  const weeklyData = [];
-  for (let i = 6; i >= 0; i--) {
-    const date = subDays(new Date(), i);
-    const dateString = format(date, 'MMM dd');
-    const dayCollections = collections.filter(c => 
-      format(new Date(c.collection_date), 'MMM dd') === dateString
-    );
-    const totalLiters = dayCollections.reduce((sum, c) => sum + (c.liters || 0), 0);
-    const totalEarnings = dayCollections.reduce((sum, c) => sum + (c.total_amount || 0), 0);
-    
-    weeklyData.push({
-      date: dateString,
-      liters: totalLiters,
-      earnings: totalEarnings
-    });
-  }
-
-  // Stats cards data with mini visualizations
-  const statsCards = [
-    {
-      title: "Today's Collection",
-      value: collections.filter(c => new Date(c.collection_date).toDateString() === new Date().toDateString())
-        .reduce((sum, c) => sum + parseFloat(c.liters?.toString() || '0'), 0).toFixed(1),
-      unit: 'L',
-      icon: <Droplets className="h-5 w-5" />,
-      color: 'bg-blue-500',
-      trend: analytics?.today_collections_trend ? 
-        `${analytics.today_collections_trend.isPositive ? '+' : ''}${analytics.today_collections_trend.value.toFixed(1)}%` : 
-        'No data',
-      trendIcon: analytics?.today_collections_trend?.isPositive ? TrendingUp : TrendingDown,
-      chartData: weeklyData,
-      dataKey: 'liters'
-    },
-    {
-      title: 'Monthly Total',
-      value: analytics?.current_month_liters?.toFixed(1) || '0',
-      unit: 'L',
-      icon: <TrendingUp className="h-5 w-5" />,
-      color: 'bg-green-500',
-      trend: analytics?.monthly_liters_trend ? 
-        `${analytics.monthly_liters_trend.isPositive ? '+' : ''}${analytics.monthly_liters_trend.value.toFixed(1)}%` : 
-        'No data',
-      trendIcon: analytics?.monthly_liters_trend?.isPositive ? TrendingUp : TrendingDown,
-      chartData: weeklyData,
-      dataKey: 'liters'
-    },
-    {
-      title: 'Monthly Earnings',
-      value: `KSh ${analytics?.current_month_earnings?.toFixed(0) || '0'}`,
-      unit: '',
-      icon: <DollarSign className="h-5 w-5" />,
-      color: 'bg-purple-500',
-      trend: analytics?.monthly_earnings_trend ? 
-        `${analytics.monthly_earnings_trend.isPositive ? '+' : ''}${analytics.monthly_earnings_trend.value.toFixed(1)}%` : 
-        'No data',
-      trendIcon: analytics?.monthly_earnings_trend?.isPositive ? TrendingUp : TrendingDown,
-      chartData: weeklyData,
-      dataKey: 'earnings'
-    },
-    {
-      title: 'Current Rate',
-      value: `KSh ${currentRate.toFixed(2)}`,
-      unit: '/L',
-      icon: <Award className="h-5 w-5" />,
-      color: 'bg-yellow-500',
-      trend: 'per liter',
-      trendIcon: Zap,
-      chartData: weeklyData,
-      dataKey: 'earnings'
-    }
-  ];
-
-  // Quality distribution
-  const qualityDistribution = collections.reduce((acc, c) => {
-    const grade = c.quality_grade || 'Unknown';
-    acc[grade] = (acc[grade] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
-
-  const qualityChartData = Object.entries(qualityDistribution).map(([grade, count]) => ({
-    name: grade,
-    value: count
-  }));
-
-  const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444'];
-
-  // Weekly collection data
-  const weeklyCollectionData = [];
-  for (let i = 6; i >= 0; i--) {
-    const date = subDays(new Date(), i);
-    const dateString = format(date, 'MMM dd');
-    const dayCollections = collections.filter(c => 
-      format(new Date(c.collection_date), 'MMM dd') === dateString
-    );
-    const totalLiters = dayCollections.reduce((sum, c) => sum + (c.liters || 0), 0);
-    
-    weeklyCollectionData.push({
-      date: dateString,
-      liters: totalLiters,
-      collections: dayCollections.length
-    });
-  }
-
-  // Monthly trend data
-  const monthlyTrendData = [];
-  for (let i = 5; i >= 0; i--) {
-    const date = subDays(new Date(), i * 7);
-    const monthString = format(date, 'MMM');
-    const monthCollections = collections.filter(c => 
-      format(new Date(c.collection_date), 'MMM') === monthString
-    );
-    const totalLiters = monthCollections.reduce((sum, c) => sum + (c.liters || 0), 0);
-    const totalEarnings = monthCollections.reduce((sum, c) => sum + (c.total_amount || 0), 0);
-    
-    monthlyTrendData.push({
-      month: monthString,
-      liters: totalLiters,
-      earnings: totalEarnings
-    });
-  }
 
   if (loading) {
     return (
-      <DashboardLayout>
-        <div className="container mx-auto py-6">
-          <div className="flex items-center justify-center h-64">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-          </div>
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <Loader className="w-12 h-12 text-blue-600 animate-spin" />
+          <p className="text-gray-600 font-medium">Loading your dashboard...</p>
         </div>
-      </DashboardLayout>
+      </div>
     );
   }
 
   if (error) {
     return (
-      <DashboardLayout>
-        <div className="container mx-auto py-6">
-          <div className="bg-red-50 border border-red-200 rounded-lg p-6">
-            <div className="flex items-center space-x-3">
-              <AlertCircle className="w-6 h-6 text-red-600" />
-              <h3 className="text-lg font-medium text-red-800">Error Loading Data</h3>
-            </div>
-            <p className="mt-2 text-red-700">{error}</p>
-            <Button 
-              onClick={() => window.location.reload()} 
-              className="mt-4"
-            >
-              Try Again
-            </Button>
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50 flex items-center justify-center p-4">
+        <div className="bg-red-50 border border-red-200 rounded-xl p-8 max-w-md">
+          <div className="flex items-center gap-3 mb-4">
+            <AlertCircle className="w-6 h-6 text-red-600" />
+            <h3 className="text-lg font-semibold text-red-900">Error</h3>
           </div>
+          <p className="text-red-700">{error}</p>
         </div>
-      </DashboardLayout>
+      </div>
     );
   }
 
+  const todayCollection = collections
+    .filter(c => new Date(c.collection_date).toDateString() === new Date().toDateString())
+    .reduce((sum, c) => sum + (parseFloat(c.liters.toString()) || 0), 0);
+
+  const monthlyLiters = analytics?.current_month_liters || collections
+    .filter(c => {
+      const date = new Date(c.collection_date);
+      const now = new Date();
+      return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+    })
+    .reduce((sum, c) => sum + (c.liters || 0), 0);
+
+  const monthlyEarnings = analytics?.current_month_earnings || collections
+    .filter(c => {
+      const date = new Date(c.collection_date);
+      const now = new Date();
+      return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+    })
+    .reduce((sum, c) => sum + (c.total_amount || 0), 0);
+
+  const totalEarned = payments
+    .filter(p => p.status === 'completed')
+    .reduce((sum, p) => sum + parseFloat(p.amount.toString() || "0"), 0);
+
+  const totalPending = payments
+    .filter(p => p.status === 'processing')
+    .reduce((sum, p) => sum + parseFloat(p.amount.toString() || "0"), 0);
+
+  const avgQuality = analytics?.avg_quality_score || 0;
+
   return (
-    <DashboardLayout>
-      <div className="container mx-auto py-6">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Welcome back, {farmer?.full_name?.split(' ')[0] || 'Farmer'}!</h1>
-            <p className="text-gray-600 mt-2">Here's what's happening with your dairy operations today.</p>
-          </div>
-          <div className="mt-4 md:mt-0 flex items-center space-x-3">
-            <Button variant="outline" className="flex items-center gap-2">
-              <Bell className="h-4 w-4" />
-              {unreadCount > 0 && (
-                <span className="absolute top-0 right-0 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white transform translate-x-1/2 -translate-y-1/2 bg-red-500 rounded-full">
-                  {unreadCount}
-                </span>
-              )}
-              Notifications
-            </Button>
-            <Button className="flex items-center gap-2 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800">
-              <Calendar className="h-4 w-4" />
-              Schedule Collection
-            </Button>
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50">
+      {/* Header */}
+      <div className="border-b border-gray-200 bg-white sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Welcome back, {farmer?.full_name?.split(' ')[0] || 'Farmer'}!</h1>
+              <p className="text-gray-600 mt-1">Here's your dairy operations overview</p>
+            </div>
+            <div className="flex gap-3">
+              <button className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors font-medium flex items-center gap-2">
+                <Bell size={18} />
+                Notifications
+              </button>
+              <button className="px-4 py-2 rounded-lg bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:shadow-lg transition-all font-medium flex items-center gap-2">
+                <Calendar size={18} />
+                Schedule Collection
+              </button>
+            </div>
           </div>
         </div>
+      </div>
 
-        {/* Stats Grid with Mini Visualizations - Responsive */}
+      {/* Main Content */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* KPI Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          {statsCards.map((stat, index) => (
-            <MiniDataVisualization
-              key={index}
-              title={stat.title}
-              value={`${stat.value}${stat.unit}`}
-              change={stat.trend}
-              icon={stat.icon}
-              chartData={stat.chartData}
-              dataKey={stat.dataKey}
-            />
-          ))}
+          <StatCard 
+            title="Today's Collection"
+            value={todayCollection.toFixed(1)} 
+            unit="Liters"
+            change={analytics?.today_collections_trend?.value}
+            isPositive={analytics?.today_collections_trend?.isPositive ?? true}
+            icon={<Droplets className="w-6 h-6 text-blue-600" />}
+          />
+          <StatCard 
+            title="Monthly Total"
+            value={monthlyLiters.toFixed(0)} 
+            unit="Liters"
+            change={analytics?.monthly_liters_trend?.value}
+            isPositive={analytics?.monthly_liters_trend?.isPositive ?? true}
+            icon={<TrendingUp className="w-6 h-6 text-green-600" />}
+          />
+          <StatCard 
+            title="Monthly Earnings"
+            value={`KSh ${(monthlyEarnings/1000).toFixed(1)}k`}
+            unit="Income"
+            change={analytics?.monthly_earnings_trend?.value}
+            isPositive={analytics?.monthly_earnings_trend?.isPositive ?? true}
+            icon={<DollarSign className="w-6 h-6 text-emerald-600" />}
+          />
+          <StatCard 
+            title="Avg Quality"
+            value={`${avgQuality.toFixed(0)}%`}
+            unit="Grade"
+            change={null}
+            isPositive={true}
+            icon={<Award className="w-6 h-6 text-amber-600" />}
+          />
         </div>
 
-        {/* Charts Section - Responsive */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          {/* Weekly Collection Trend */}
-          <Card className="shadow-sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <BarChart3 className="h-5 w-5 text-primary" />
-                Weekly Collection Trend
-                <div className="ml-auto flex space-x-2">
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={() => exportCollections('csv')}
-                    className="flex items-center gap-1"
-                  >
-                    <Download className="h-4 w-4" />
-                    CSV
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={() => exportCollections('json')}
-                    className="flex items-center gap-1"
-                  >
-                    <Download className="h-4 w-4" />
-                    JSON
-                  </Button>
-                </div>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="h-80 chart-container-responsive">
+        {/* Main Charts - Dual Axis */}
+        {monthlyTrendData.length > 0 && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            <DualAxisChart
+              data={monthlyTrendData}
+              title="Collections & Earnings Trend"
+              icon={<BarChart3 className="w-5 h-5" />}
+              leftKey="liters"
+              leftName="Liters Collected"
+              rightKey="earnings"
+              rightName="Earnings (KSh)"
+              leftColor="#10b981"
+              rightColor="#8b5cf6"
+              leftFormatter={(v) => `${v.toFixed(0)}L`}
+              rightFormatter={(v) => `KSh${(v/1000).toFixed(1)}k`}
+            />
+
+            <Card 
+              title="Weekly Performance" 
+              icon={<BarChart3 className="w-5 h-5 text-indigo-600" />}
+            >
+              <div className="h-80 -mx-6 -mb-6">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={weeklyCollectionData}>
+                  <ComposedChart data={weeklyTrendData} margin={{ top: 20, right: 80, left: 60, bottom: 20 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis dataKey="date" stroke="#6b7280" />
-                    <YAxis yAxisId="left" stroke="#6b7280" />
-                    <YAxis yAxisId="right" orientation="right" stroke="#6b7280" />
+                    <XAxis dataKey="date" stroke="#9ca3af" tick={{ fontSize: 12 }} />
+                    
+                    <YAxis 
+                      yAxisId="left"
+                      stroke="#0ea5e9"
+                      tick={{ fontSize: 12 }}
+                      label={{ value: 'Liters (L)', angle: -90, position: 'insideLeft', style: { fill: '#0ea5e9', fontSize: 12, fontWeight: 500 } }}
+                    />
+                    
+                    <YAxis 
+                      yAxisId="right"
+                      orientation="right"
+                      stroke="#ec4899"
+                      tick={{ fontSize: 12 }}
+                      label={{ value: 'Earnings (KSh)', angle: 90, position: 'insideRight', style: { fill: '#ec4899', fontSize: 12, fontWeight: 500 } }}
+                    />
+                    
                     <Tooltip 
-                      contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }} 
-                      formatter={(value, name) => {
-                        if (name === 'liters') return [`${value} L`, 'Liters'];
-                        if (name === 'collections') return [value, 'Collections'];
-                        return [value, name];
+                      contentStyle={{ 
+                        backgroundColor: '#fff', 
+                        border: '2px solid #0ea5e9', 
+                        borderRadius: '8px',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
                       }}
                     />
-                    <Area 
+                    
+                    <Legend wrapperStyle={{ paddingTop: '20px' }} />
+                    
+                    <Bar 
                       yAxisId="left"
-                      type="monotone" 
                       dataKey="liters" 
-                      stroke="#10b981" 
-                      fill="#10b981" 
-                      fillOpacity={0.2} 
-                      name="Liters"
+                      fill="#0ea5e9" 
+                      fillOpacity={0.8}
+                      radius={[8, 8, 0, 0]}
+                      name="Liters Collected"
                     />
-                    <Area 
+                    
+                    <Line 
                       yAxisId="right"
                       type="monotone" 
-                      dataKey="collections" 
-                      stroke="#3b82f6" 
-                      fill="#3b82f6" 
-                      fillOpacity={0.2} 
-                      name="Collections"
+                      dataKey="earnings" 
+                      stroke="#ec4899" 
+                      strokeWidth={2.5}
+                      dot={{ stroke: '#ec4899', strokeWidth: 2, r: 4, fill: '#fff' }}
+                      activeDot={{ r: 6 }}
+                      name="Daily Earnings"
                     />
-                  </AreaChart>
+                  </ComposedChart>
                 </ResponsiveContainer>
               </div>
-            </CardContent>
-          </Card>
+            </Card>
+          </div>
+        )}
 
-          {/* Quality Distribution */}
-          <Card className="shadow-sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Award className="h-5 w-5 text-primary" />
-                Quality Distribution
-                <div className="ml-auto flex space-x-2">
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={() => exportCollections('csv')}
-                    className="flex items-center gap-1"
-                  >
-                    <Download className="h-4 w-4" />
-                    CSV
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={() => exportCollections('json')}
-                    className="flex items-center gap-1"
-                  >
-                    <Download className="h-4 w-4" />
-                    JSON
-                  </Button>
+        {/* Quality Distribution and Collections */}
+        {qualityData.length > 0 && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+            <div className="lg:col-span-2">
+              <Card 
+                title="Collections Over Time" 
+                icon={<Droplets className="w-5 h-5 text-blue-600" />}
+              >
+                <div className="h-80 -mx-6 -mb-6">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={monthlyTrendData} margin={{ top: 20, right: 30, left: 60, bottom: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <XAxis dataKey="month" stroke="#9ca3af" tick={{ fontSize: 12 }} />
+                      <YAxis stroke="#10b981" tick={{ fontSize: 12 }} />
+                      <Tooltip contentStyle={{ backgroundColor: '#fff', border: '2px solid #10b981', borderRadius: '8px' }} />
+                      <Line 
+                        type="monotone" 
+                        dataKey="liters" 
+                        stroke="#10b981" 
+                        strokeWidth={2.5}
+                        dot={{ stroke: '#10b981', strokeWidth: 2, r: 4, fill: '#fff' }}
+                        activeDot={{ r: 6 }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
                 </div>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="h-80 chart-container-responsive">
+              </Card>
+            </div>
+
+            <Card 
+              title="Quality Distribution" 
+              icon={<Award className="w-5 h-5 text-amber-600" />}
+            >
+              <div className="h-80 -mx-6 -mb-6">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
-                      data={qualityChartData}
+                      data={qualityData}
                       cx="50%"
                       cy="50%"
-                      labelLine={false}
-                      label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                      outerRadius={80}
-                      fill="#8884d8"
+                      innerRadius={50}
+                      outerRadius={90}
+                      paddingAngle={2}
                       dataKey="value"
+                      label={({ name, percentage }) => `${name}: ${percentage}%`}
                     >
-                      {qualityChartData.map((entry, index) => (
+                      {qualityData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(value) => [value, 'Collections']} />
+                    <Tooltip formatter={(value) => [`${value} collections`, '']} />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Monthly Performance and Recent Activities - Responsive */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-          {/* Monthly Performance */}
-          <div className="lg:col-span-2">
-            <Card className="shadow-sm">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Target className="h-5 w-5 text-primary" />
-                  Monthly Performance
-                  <div className="ml-auto flex space-x-2">
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={() => exportCollections('csv')}
-                      className="flex items-center gap-1"
-                    >
-                      <Download className="h-4 w-4" />
-                      CSV
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={() => exportCollections('json')}
-                      className="flex items-center gap-1"
-                    >
-                      <Download className="h-4 w-4" />
-                      JSON
-                    </Button>
-                  </div>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="h-80 chart-container-responsive">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={monthlyTrendData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                      <XAxis dataKey="month" stroke="#6b7280" />
-                      <YAxis yAxisId="left" stroke="#6b7280" />
-                      <YAxis yAxisId="right" orientation="right" stroke="#6b7280" />
-                      <Tooltip 
-                        contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }} 
-                        formatter={(value, name) => {
-                          if (name === 'liters') return [`${value} L`, 'Liters'];
-                          if (name === 'earnings') return [`KSh ${value}`, 'Earnings'];
-                          return [value, name];
-                        }}
-                      />
-                      <Bar yAxisId="left" dataKey="liters" fill="#10b981" name="Liters" />
-                      <Bar yAxisId="right" dataKey="earnings" fill="#8b5cf6" name="Earnings (KSh)" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </CardContent>
             </Card>
           </div>
+        )}
 
-          {/* Recent Notifications */}
-          <div>
-            <Card className="shadow-sm">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Bell className="h-5 w-5 text-primary" />
-                  Recent Notifications
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {notifications.length > 0 ? (
-                    notifications.slice(0, 5).map((notification) => (
-                      <div 
-                        key={notification.id} 
-                        className={`p-3 rounded-lg border ${
-                          notification.read 
-                            ? 'bg-white border-border' 
-                            : 'bg-blue-50 border-blue-200'
-                        }`}
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="flex items-start space-x-2">
-                            <div className="mt-0.5">
-                              {notification.type === 'success' ? (
-                                <CheckCircle className="w-4 h-4 text-green-500" />
-                              ) : notification.type === 'warning' ? (
-                                <AlertCircle className="w-4 h-4 text-yellow-500" />
-                              ) : (
-                                <Bell className="w-4 h-4 text-blue-500" />
-                              )}
-                            </div>
-                            <div>
-                              <h4 className="text-sm font-medium text-gray-900">
-                                {notification.title}
-                              </h4>
-                              <p className="text-xs text-gray-600 mt-1">
-                                {notification.message}
-                              </p>
-                            </div>
-                          </div>
-                          {!notification.read && (
-                            <span className="inline-flex items-center justify-center w-2 h-2 rounded-full bg-blue-500"></span>
+        {/* Bottom Section - Collections and Payments */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Recent Collections */}
+          <Card 
+            title="Recent Collections" 
+            icon={<Milk className="w-5 h-5 text-blue-600" />}
+          >
+            <div className="space-y-3">
+              {collections.slice(0, 5).map((collection) => (
+                <div key={collection.id} className="flex items-center justify-between p-4 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-blue-100">
+                      <Droplets className="w-4 h-4 text-blue-600" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-gray-900">{collection.liters}L</p>
+                      <p className="text-xs text-gray-500">{format(new Date(collection.collection_date), 'MMM d, yyyy')}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${
+                      collection.quality_grade === 'A+' ? 'bg-green-100 text-green-700' :
+                      collection.quality_grade === 'A' ? 'bg-blue-100 text-blue-700' :
+                      collection.quality_grade === 'B' ? 'bg-amber-100 text-amber-700' :
+                      'bg-red-100 text-red-700'
+                    }`}>
+                      {collection.quality_grade}
+                    </span>
+                    <p className="font-bold text-gray-900 min-w-20 text-right">KSh {collection.total_amount}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          {/* Payment Summary */}
+          <Card 
+            title="Payment Summary" 
+            icon={<DollarSign className="w-5 h-5 text-green-600" />}
+          >
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-4 rounded-lg border border-green-100">
+                  <p className="text-xs font-medium text-green-700 mb-1">Total Earned</p>
+                  <p className="text-2xl font-bold text-green-900">KSh {totalEarned.toLocaleString()}</p>
+                </div>
+                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-100">
+                  <p className="text-xs font-medium text-blue-700 mb-1">Pending</p>
+                  <p className="text-2xl font-bold text-blue-900">KSh {totalPending.toLocaleString()}</p>
+                </div>
+              </div>
+
+              <div>
+                <h4 className="font-semibold text-gray-900 mb-3">Recent Transactions</h4>
+                <div className="space-y-3">
+                  {payments.slice(0, 5).map((payment) => (
+                    <div key={payment.id} className="flex items-center justify-between p-3 border border-gray-100 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <div className={`p-2 rounded-lg ${
+                          payment.status === 'completed' ? 'bg-green-100' : 'bg-amber-100'
+                        }`}>
+                          {payment.status === 'completed' ? (
+                            <CheckCircle className="w-4 h-4 text-green-600" />
+                          ) : (
+                            <Clock className="w-4 h-4 text-amber-600" />
                           )}
                         </div>
-                        <p className="text-xs text-gray-500 mt-2">
-                          {format(new Date(notification.created_at), 'MMM d, h:mm a')}
-                        </p>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="text-center py-6">
-                      <Bell className="mx-auto h-8 w-8 text-gray-400" />
-                      <p className="mt-2 text-sm text-gray-500">No recent notifications</p>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-
-        {/* Recent Collections and Payment Summary - Responsive */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-          {/* Recent Collections */}
-          <div className="lg:col-span-2">
-            <Card className="shadow-sm">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Milk className="h-5 w-5 text-primary" />
-                  Recent Collections
-                  <div className="ml-auto flex space-x-2">
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={() => exportCollections('csv')}
-                      className="flex items-center gap-1"
-                    >
-                      <Download className="h-4 w-4" />
-                      CSV
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={() => exportCollections('json')}
-                      className="flex items-center gap-1"
-                    >
-                      <Download className="h-4 w-4" />
-                      JSON
-                    </Button>
-                  </div>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {collections.slice(0, 5).map((collection) => (
-                    <div key={collection.id} className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-muted/50 transition-colors">
-                      <div className="flex items-center space-x-4">
-                        <div className="p-2 rounded-full bg-blue-100">
-                          <Droplets className="w-5 h-5 text-blue-600" />
-                        </div>
                         <div>
-                          <p className="font-medium text-gray-900">{collection.liters} Liters</p>
-                          <p className="text-sm text-gray-500">
-                            {format(new Date(collection.collection_date), 'MMM d, yyyy')}
-                          </p>
+                          <p className="text-xs font-medium text-gray-500">{format(new Date(payment.created_at), 'MMM d, yyyy')}</p>
+                          <p className="text-xs text-gray-400 capitalize">{payment.status}</p>
                         </div>
                       </div>
-                      <div className="flex items-center space-x-4">
-                        <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
-                          collection.quality_grade === 'A+' ? 'bg-green-100 text-green-800' :
-                          collection.quality_grade === 'A' ? 'bg-blue-100 text-blue-800' :
-                          collection.quality_grade === 'B' ? 'bg-yellow-100 text-yellow-800' :
-                          'bg-red-100 text-red-800'
-                        }`}>
-                          Grade {collection.quality_grade}
-                        </span>
-                        <span className="text-lg font-bold text-gray-900">KSh {collection.total_amount}</span>
-                      </div>
+                      <p className="font-semibold text-gray-900">KSh {parseFloat(payment.amount.toString()).toLocaleString()}</p>
                     </div>
                   ))}
                 </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Payment Summary */}
-          <div>
-            <Card className="shadow-sm">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <DollarSign className="h-5 w-5 text-primary" />
-                  Payment Summary
-                  <div className="ml-auto flex space-x-2">
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={() => exportPayments('csv')}
-                      className="flex items-center gap-1"
-                    >
-                      <Download className="h-4 w-4" />
-                      CSV
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={() => exportPayments('json')}
-                      className="flex items-center gap-1"
-                    >
-                      <Download className="h-4 w-4" />
-                      JSON
-                    </Button>
-                  </div>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-6">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-green-50 p-4 rounded-lg">
-                      <p className="text-sm text-green-700">Total Earned</p>
-                      <p className="text-xl font-bold text-green-900">
-                        KSh {payments.reduce((sum, p) => sum + (p.status === 'completed' ? parseFloat(p.amount?.toString() || '0') : 0), 0).toFixed(0)}
-                      </p>
-                    </div>
-                    <div className="bg-blue-50 p-4 rounded-lg">
-                      <p className="text-sm text-blue-700">Pending</p>
-                      <p className="text-xl font-bold text-blue-900">
-                        KSh {payments.reduce((sum, p) => sum + (p.status === 'processing' ? parseFloat(p.amount?.toString() || '0') : 0), 0).toFixed(0)}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div>
-                    <h4 className="font-medium text-gray-900 mb-3">Recent Payments</h4>
-                    <div className="space-y-3">
-                      {payments.map((payment) => (
-                        <div key={payment.id} className="flex items-center justify-between">
-                          <div className="flex items-center space-x-2">
-                            <div className={`p-1.5 rounded-full ${
-                              payment.status === 'completed' ? 'bg-green-100' : 'bg-yellow-100'
-                            }`}>
-                              {payment.status === 'completed' ? (
-                                <CheckCircle className="w-4 h-4 text-green-600" />
-                              ) : (
-                                <Clock className="w-4 h-4 text-yellow-600" />
-                              )}
-                            </div>
-                            <span className="text-sm text-gray-600">
-                              {format(new Date(payment.created_at), 'MMM d')}
-                            </span>
-                          </div>
-                          <span className="font-medium">KSh {payment.amount}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <Button variant="outline" className="w-full">
-                    View Payment History
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-
-        {/* Quick Actions - Responsive */}
-        <div className="mb-8">
-          <Card className="shadow-sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Leaf className="h-5 w-5 text-primary" />
-                Quick Actions
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <Button className="h-20 flex flex-col items-center justify-center gap-2 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700">
-                  <Milk className="w-6 h-6" />
-                  <span className="text-sm">Record Collection</span>
-                </Button>
-                <Button variant="outline" className="h-20 flex flex-col items-center justify-center gap-2">
-                  <Package className="w-6 h-6" />
-                  <span className="text-sm">View Inventory</span>
-                </Button>
-                <Button variant="outline" className="h-20 flex flex-col items-center justify-center gap-2">
-                  <Truck className="w-6 h-6" />
-                  <span className="text-sm">Track Deliveries</span>
-                </Button>
-                <Button variant="outline" className="h-20 flex flex-col items-center justify-center gap-2">
-                  <Users className="w-6 h-6" />
-                  <span className="text-sm">View Profile</span>
-                </Button>
               </div>
-            </CardContent>
+            </div>
           </Card>
         </div>
       </div>
-    </DashboardLayout>
+    </div>
   );
-};
-
-export default EnhancedFarmerDashboard;
+}

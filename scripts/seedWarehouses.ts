@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import * as dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, resolve } from 'path';
+import { randomUUID } from 'crypto';
 
 // Get __dirname equivalent for ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -70,6 +71,8 @@ async function seedWarehouses() {
       
       const randomWarehouse = data[Math.floor(Math.random() * data.length)];
       return {
+        // Generate a UUID to avoid null ID issues
+        id: randomUUID(),
         warehouse_id: randomWarehouse.id,
         collection_id: collection.id
       };

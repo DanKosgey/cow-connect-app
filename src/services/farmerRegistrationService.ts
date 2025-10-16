@@ -1,6 +1,25 @@
 import { supabase } from "../integrations/supabase/client";
 import { logger } from "../utils/logger";
 import { notificationService } from "./notification-service";
+import {
+  ValidationResult,
+  farmerRegistrationSchema,
+  validateData,
+  documentSchema
+} from './validationSchemas';
+import { 
+  RegistrationError, 
+  ErrorCode,
+  withErrorHandling,
+  handleSupabaseError,
+  handleStorageError,
+  handleAuthError
+} from '../utils/errorHandling';
+import { 
+  createSuccessResponse, 
+  createErrorResponse, 
+  ApiResponse 
+} from '../utils/responseFormatter';
 
 export interface FarmerRegistrationData {
   // User auth data
@@ -31,8 +50,14 @@ export class FarmerRegistrationService {
    * This creates the user account and stores pending registration data
    * The user will need to confirm their email before completing registration
    */
-  static async startRegistration(data: FarmerRegistrationData) {
-    try {
+  static async startRegistration(data: FarmerRegistrationData): Promise<ApiResponse<{ userId: string }>> {
+    return withErrorHandling(async () => {
+      // Validate registration data
+      const validationResult = this.validateRegistrationData(data);
+      if (!validationResult.isValid) {
+        return createErrorResponse('VALIDATION_ERROR', validationResult.errors);
+      }
+
       // Step 1: Create user account
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: data.email,
@@ -48,11 +73,11 @@ export class FarmerRegistrationService {
       });
 
       if (authError) {
-        throw new Error(`Authentication failed: ${authError.message}`);
+        throw handleAuthError(authError);
       }
 
       if (!authData.user) {
-        throw new Error('Failed to create user account');
+        return createErrorResponse('AUTH_ERROR', null, 'Failed to create user account');
       }
 
       const userId = authData.user.id;
@@ -82,27 +107,31 @@ export class FarmerRegistrationService {
       };
 
       // Store in localStorage for use after email confirmation
-      localStorage.setItem('pending_profile', JSON.stringify(pendingRegistrationData));
+      try {
+        localStorage.setItem('pending_profile', JSON.stringify(pendingRegistrationData));
+        logger.info('Pending registration data stored', { userId });
+      } catch (storageError) {
+        logger.error('Failed to store pending registration data', { error: storageError });
+        return createErrorResponse(
+          'STORAGE_ERROR',
+          null,
+          'Failed to save registration data. Please try again.'
+        );
+      }
 
-      logger.info('Pending registration data stored', { userId });
-
-      return {
-        success: true,
+      return createSuccessResponse({
         userId,
         message: 'Registration started successfully. Please check your email to confirm your account.'
-      };
-    } catch (error) {
-      logger.error('Farmer registration start failed', { error });
-      throw error;
-    }
+      });
+    }, 'farmer registration start');
   }
 
   /**
    * Complete farmer registration after email confirmation
    * This should be called after the user has confirmed their email and signed in
    */
-  static async completeRegistration(userId: string, pendingData: any) {
-    try {
+  static async completeRegistration(userId: string, pendingData: any): Promise<ApiResponse<{ userId: string; pendingFarmerId: string }>> {
+    return withErrorHandling(async () => {
       // Step 1: Create user profile
       const { error: profileError } = await supabase
         .from('profiles')
@@ -115,7 +144,7 @@ export class FarmerRegistrationService {
         });
 
       if (profileError) {
-        throw new Error(`Profile creation failed: ${profileError.message}`);
+        throw handleSupabaseError(profileError);
       }
 
       logger.info('User profile created', { userId });
@@ -132,7 +161,7 @@ export class FarmerRegistrationService {
         });
 
       if (roleError) {
-        throw new Error(`Role creation failed: ${roleError.message}`);
+        throw handleSupabaseError(roleError);
       }
 
       // Step 3: Create pending farmer record with draft status
@@ -153,7 +182,7 @@ export class FarmerRegistrationService {
           cow_breeds: pendingData.farmerData.cowBreeds,
           breeding_method: pendingData.farmerData.breedingMethod,
           feeding_type: pendingData.farmerData.feedingType,
-          status: 'draft', // Set to draft for document upload
+          status: 'pending_verification', // Set to pending_verification for document upload
           email_verified: true, // Mark as verified since we're skipping email verification
           registration_number: `PF-${Date.now()}`
         }])
@@ -161,31 +190,26 @@ export class FarmerRegistrationService {
         .single();
 
       if (pendingFarmerError) {
-        throw new Error(`Pending farmer record creation failed: ${pendingFarmerError.message}`);
+        throw handleSupabaseError(pendingFarmerError);
       }
 
       const pendingFarmerId = pendingFarmerData.id;
-      logger.info('Pending farmer record created with draft status', { pendingFarmerId });
-
-      logger.info('Farmer registration completed successfully with draft status', { userId, pendingFarmerId });
+      logger.info('Pending farmer record created with pending_verification status', { pendingFarmerId });
+      logger.info('Farmer registration completed successfully with pending_verification status', { userId, pendingFarmerId });
       
-      return {
-        success: true,
+      return createSuccessResponse({
         userId,
         pendingFarmerId,
         message: 'Registration completed successfully. Please upload your documents to complete the process.'
-      };
-    } catch (error) {
-      logger.error('Farmer registration completion failed', { error });
-      throw error;
-    }
+      });
+    }, 'farmer registration completion');
   }
 
   /**
    * Upload a document for a farmer
    */
-  static async uploadDocument(pendingFarmerId: string, file: File, documentType: string) {
-    try {
+  static async uploadDocument(pendingFarmerId: string, file: File, documentType: string): Promise<ApiResponse<any>> {
+    return withErrorHandling(async () => {
       // Upload file to Supabase Storage
       const fileName = `${documentType}-${Date.now()}.${file.name.split('.').pop()}`;
       const filePath = `${pendingFarmerId}/${fileName}`;
@@ -198,7 +222,7 @@ export class FarmerRegistrationService {
         });
 
       if (uploadError) {
-        throw new Error(`Failed to upload document: ${uploadError.message}`);
+        throw handleStorageError(uploadError);
       }
 
       // Create a record in the kyc_documents table
@@ -218,7 +242,7 @@ export class FarmerRegistrationService {
 
       if (docError) {
         logger.warn('Failed to create document record', { error: docError });
-        throw new Error(`Failed to save document metadata: ${docError.message}`);
+        throw handleSupabaseError(docError);
       }
 
       // Send notification to admins about new document upload
@@ -248,39 +272,44 @@ export class FarmerRegistrationService {
           );
         }
       } catch (notificationError) {
+        // Don't fail the upload if notification fails, just log it
         logger.warn('Failed to send admin notification about document upload', { error: notificationError });
       }
 
-      return docData;
-    } catch (error) {
-      logger.error('Document upload failed', { error, pendingFarmerId, documentType });
-      throw error;
-    }
+      return createSuccessResponse({
+        document: docData,
+        message: 'Document uploaded successfully'
+      });
+    }, 'document upload');
   }
 
   /**
    * Submit KYC documents for review
    */
-  static async submitKycForReview(pendingFarmerId: string, userId: string) {
-    try {
+  static async submitKycForReview(pendingFarmerId: string, userId: string): Promise<ApiResponse<any>> {
+    return withErrorHandling(async () => {
       const { data, error } = await supabase.rpc('submit_kyc_for_review', {
-        p_pending_farmer_id: pendingFarmerId,
-        p_user_id: userId
+        pending_farmer_id: pendingFarmerId,
+        user_id: userId
       });
 
       if (error) {
-        throw new Error(`Failed to submit KYC for review: ${error.message}`);
+        throw handleSupabaseError(error);
       }
 
       if (!data.success) {
-        throw new Error(data.message);
+        return createErrorResponse(
+          'VALIDATION_ERROR',
+          null,
+          data.message || 'Failed to submit KYC for review'
+        );
       }
 
-      return data;
-    } catch (error) {
-      logger.error('KYC submission failed', { error, pendingFarmerId });
-      throw error;
-    }
+      return createSuccessResponse({
+        ...data,
+        message: 'KYC documents submitted for review successfully'
+      });
+    }, 'KYC submission');
   }
 
   /**

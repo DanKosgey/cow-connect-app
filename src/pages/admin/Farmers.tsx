@@ -1,4 +1,4 @@
-import { DashboardLayout } from '@/components/DashboardLayout';
+// DashboardLayout provided by AdminPortalLayout; avoid duplicate wrapper here
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import React, { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
@@ -24,6 +24,7 @@ const Farmers = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [totalCount, setTotalCount] = useState(0);
+  const [error, setError] = useState<string | null>(null);
   
   // Initialize performance monitoring
   const { measureOperation } = usePerformanceMonitor({ 
@@ -33,9 +34,12 @@ const Farmers = () => {
 
   useEffect(() => {
     const fetch = async () => {
+      console.log('Fetching farmers data...');
       await measureOperation('fetchFarmers', async () => {
         setLoading(true);
+        setError(null);
         try {
+          console.log('Attempting to fetch farmers count...');
           // For pagination, we need to get the total count first
           const { count, error: countError } = await supabase
             .from('farmers')
@@ -43,26 +47,35 @@ const Farmers = () => {
           
           if (countError) {
             console.error('Error fetching farmers count:', countError);
+            setError(`Failed to fetch farmers count: ${countError.message}`);
             setLoading(false);
             return;
           }
           
+          console.log('Farmers count fetched:', count);
           setTotalCount(count || 0);
           
           // Then fetch the paginated data
+          console.log('Fetching farmers data...');
           const { data, error } = await supabase
             .from('farmers')
             .select('id, registration_number, full_name, phone_number, kyc_status')
             .order('created_at', { ascending: false })
             .range((currentPage - 1) * pageSize, currentPage * pageSize - 1);
             
-          if (!error && data) {
+          if (error) {
+            console.error('Error fetching farmers:', error);
+            setError(`Failed to fetch farmers: ${error.message}`);
+          } else if (data) {
+            console.log('Farmers data fetched successfully:', data);
             setFarmers(data as any[]);
           }
-        } catch (error) {
-          console.error('Error fetching farmers:', error);
+        } catch (err) {
+          console.error('Error fetching farmers:', err);
+          setError(`Unexpected error occurred: ${err instanceof Error ? err.message : String(err)}`);
         } finally {
           setLoading(false);
+          console.log('Finished fetching farmers data.');
         }
       });
     };
@@ -129,15 +142,24 @@ const Farmers = () => {
   };
 
   if (loading && farmers.length === 0) {
+    return <FarmersSkeleton />;
+  }
+
+  if (error) {
     return (
-      <DashboardLayout>
-        <FarmersSkeleton />
-      </DashboardLayout>
+      <div className="container mx-auto py-6">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+          <h3 className="text-lg font-medium text-red-800 mb-2">Error Loading Farmers Data</h3>
+          <p className="text-red-700 mb-4">{error}</p>
+          <Button onClick={() => window.location.reload()}>
+            Retry
+          </Button>
+        </div>
+      </div>
     );
   }
 
   return (
-    <DashboardLayout>
       <div className="container mx-auto py-6">
         {/* Header */}
         <PageHeader
@@ -256,7 +278,6 @@ const Farmers = () => {
           </CardContent>
         </Card>
       </div>
-    </DashboardLayout>
   );
 };
 

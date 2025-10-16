@@ -133,7 +133,7 @@ const CollectionsAnalyticsDashboard = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [selectedCollection, setSelectedCollection] = useState<Collection | null>(null);
-  const [dateRange, setDateRange] = useState('30days');
+  const [dateRange, setDateRange] = useState('7days'); // Changed default to 7 days for daily view
   const [selectedFarmer, setSelectedFarmer] = useState('all');
   const [selectedStaff, setSelectedStaff] = useState('all');
   const [currentView, setCurrentView] = useState('overview');
@@ -166,9 +166,135 @@ const CollectionsAnalyticsDashboard = () => {
   useEffect(() => {
     filterCollections();
     calculateAnalytics();
-  }, [collections, searchTerm, filterStatus, selectedFarmer, selectedStaff]);
+  }, [collections, searchTerm, filterStatus, selectedFarmer, selectedStaff, dateRange]); // Added dateRange dependency
 
   const { refreshSession } = useSessionRefresh({ refreshInterval: 10 * 60 * 1000 }); // Refresh every 10 minutes
+
+  const fetchInitialData = async () => {
+    try {
+      setLoading(true);
+      
+      // Fetch collections with basic data (without complex embedding)
+      const dateFilter = getDateFilter();
+      let collectionsQuery = supabase
+        .from('collections')
+        .select(`
+          *,
+          farmers!fk_collections_farmer_id (
+            id,
+            user_id,
+            profiles!user_id (
+              full_name,
+              phone
+            )
+          )
+        `);
+      
+      // Only add date filter if it's valid
+      if (dateFilter) {
+        collectionsQuery = collectionsQuery.gte('collection_date', dateFilter);
+      }
+
+      collectionsQuery = collectionsQuery.order('collection_date', { ascending: false });
+
+      const { data: collectionsData, error: collectionsError } = await collectionsQuery;
+
+      if (collectionsError) throw collectionsError;
+
+      // Extract unique staff IDs from collections
+      const staffIds = new Set<string>();
+      collectionsData?.forEach(collection => {
+        if (collection.staff_id) staffIds.add(collection.staff_id);
+      });
+
+      // Fetch staff profiles if we have staff IDs
+      let enrichedCollections = collectionsData || [];
+      if (collectionsData && staffIds.size > 0) {
+        const { data: staffProfiles, error: profilesError } = await supabase
+          .from('staff')
+          .select(`
+            id,
+            profiles!user_id (
+              full_name
+            )
+          `)
+          .in('id', Array.from(staffIds));
+
+        if (!profilesError && staffProfiles) {
+          // Create a map of staff ID to profile
+          const staffProfileMap = new Map<string, any>();
+          staffProfiles.forEach(staff => {
+            staffProfileMap.set(staff.id, staff.profiles);
+          });
+
+          // Enrich collections with staff names
+          enrichedCollections = collectionsData.map(collection => ({
+            ...collection,
+            staff: collection.staff_id ? { profiles: staffProfileMap.get(collection.staff_id) } : null
+          }));
+        }
+      }
+
+      // Fetch farmers for filter dropdown
+      const { data: farmersData, error: farmersError } = await supabase
+        .from('farmers')
+        .select(`
+          id,
+          profiles!user_id (
+            full_name
+          )
+        `)
+        .eq('kyc_status', 'approved');
+
+      if (farmersError) throw farmersError;
+
+      // Fetch staff for filter dropdown
+      const { data: staffData, error: staffError } = await supabase
+        .from('staff')
+        .select(`
+          id,
+          profiles!user_id (
+            full_name
+          )
+        `);
+
+      if (staffError) throw staffError;
+
+      setCollections(enrichedCollections);
+      setFarmers(farmersData || []);
+      setStaff(staffData || []);
+      
+      // Calculate real trends using the trend service
+      try {
+        const trendData = await trendService.calculateCollectionsTrends(dateRange);
+        setTrends(trendData);
+      } catch (trendError) {
+        console.error('Error calculating trends:', trendError);
+        // Fallback to default values
+        setTrends({
+          totalCollections: 0,
+          totalLiters: 0,
+          totalRevenue: 0,
+          avgQuality: 0,
+          collectionsTrend: { value: 0, isPositive: true },
+          litersTrend: { value: 0, isPositive: true },
+          revenueTrend: { value: 0, isPositive: true },
+          qualityTrend: { value: 0, isPositive: true }
+        });
+      }
+    } catch (error: any) {
+      // Log detailed error information for debugging
+      console.error('Error fetching data:', error.message, error);
+      // Also log as JSON for more detailed inspection
+      console.error('Error details:', JSON.stringify(error, null, 2));
+      
+      // Show user-friendly error message
+      const errorMessage = error.message || error.error_description || 'Failed to fetch data';
+      toast.error('Error', errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const fetchAllData = async () => {
     try {
@@ -284,7 +410,7 @@ const CollectionsAnalyticsDashboard = () => {
       '180days': new Date(now.getFullYear(), now.getMonth(), now.getDate() - 180),
       'all': new Date('2020-01-01')
     };
-    return ranges[dateRange]?.toISOString() || ranges['7days'].toISOString();
+    return ranges[dateRange]?.toISOString() || ranges['7days'].toISOString(); // Default to 7 days
   };
 
   const filterCollections = () => {
@@ -576,7 +702,7 @@ const CollectionsAnalyticsDashboard = () => {
                   onClick={() => {
                     setSearchTerm('');
                     setFilterStatus('all');
-                    setDateRange('30days');
+                    setDateRange('7days'); // Reset to 7 days (daily view)
                     setSelectedFarmer('all');
                     setSelectedStaff('all');
                   }}
@@ -592,7 +718,13 @@ const CollectionsAnalyticsDashboard = () => {
               <div className="mt-4 pt-4 border-t border-border-light dark:border-border-dark">
                 <select
                   value={selectedFarmer}
-                  onChange={(e) => setSelectedFarmer(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedFarmer(e.target.value);
+                    // Reset staff filter when farmer is selected
+                    if (e.target.value !== 'all') {
+                      setSelectedStaff('all');
+                    }
+                  }}
                   className="bg-input-light dark:bg-input-dark border border-border-light dark:border-border-dark text-text-light dark:text-text-dark rounded-md px-3 py-2"
                 >
                   <option value="all">All Farmers</option>
@@ -609,7 +741,13 @@ const CollectionsAnalyticsDashboard = () => {
               <div className="mt-4 pt-4 border-t border-border-light dark:border-border-dark">
                 <select
                   value={selectedStaff}
-                  onChange={(e) => setSelectedStaff(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedStaff(e.target.value);
+                    // Reset farmer filter when staff is selected
+                    if (e.target.value !== 'all') {
+                      setSelectedFarmer('all');
+                    }
+                  }}
                   className="bg-input-light dark:bg-input-dark border border-border-light dark:border-border-dark text-text-light dark:text-text-dark rounded-md px-3 py-2"
                 >
                   <option value="all">All Staff</option>

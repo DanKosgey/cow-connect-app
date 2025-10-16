@@ -99,7 +99,7 @@ describe('Farmer Registration Performance', () => {
         id: `pending-${i}`,
         full_name: `Farmer ${i}`,
         email: `farmer${i}@example.com`,
-        status: 'submitted',
+        status: 'email_verified',
         created_at: new Date(Date.now() - i * 86400000).toISOString()
       }));
 
@@ -125,7 +125,7 @@ describe('Farmer Registration Performance', () => {
         return await mockSupabase
           .from('pending_farmers')
           .select('*')
-          .in('status', ['submitted', 'under_review'])
+          .in('status', ['email_verified', 'approved'])
           .order('created_at', { ascending: false })
           .range(0, 49);
       }, 'get_pending_farmers');
@@ -142,7 +142,7 @@ describe('Farmer Registration Performance', () => {
       
       // Mock approval response
       const mockApprovalResponse = {
-        data: {+56.47474747474747474747474747474747474747474747474747474747474
+        data: {
           farmer_id: 'farmer-123',
           message: 'Farmer approved successfully'
         },
@@ -157,8 +157,8 @@ describe('Farmer Registration Performance', () => {
         approvalPromises.push(
           measureExecutionTime(async () => {
             return await mockSupabase.rpc('approve_pending_farmer', {
-              p_pending_farmer_id: `pending-${i}`,
-              p_admin_id: 'admin-123'
+              pending_farmer_id: `pending-${i}`,
+              approved_by_user_id: 'admin-123'
             });
           }, 'approve_pending_farmer')
         );
@@ -228,8 +228,8 @@ describe('Farmer Registration Performance', () => {
             
             // Submit for review
             return await mockSupabase.rpc('submit_kyc_for_review', {
-              p_pending_farmer_id: `pending-${i}`,
-              p_user_id: `user-${i}`
+              pending_farmer_id: `pending-${i}`,
+              user_id: `user-${i}`
             });
           }, 'farmer_submission')
         );
@@ -334,7 +334,7 @@ describe('Farmer Registration Performance', () => {
         id: `pending-${i}`,
         full_name: `Farmer ${i}`,
         email: `farmer${i}@example.com`,
-        status: 'submitted',
+        status: 'email_verified',
         created_at: new Date(Date.now() - i * 86400000).toISOString()
       }));
 
@@ -410,8 +410,8 @@ describe('Farmer Registration Performance', () => {
         approvalPromises.push(
           measureExecutionTime(async () => {
             return await mockSupabase.rpc('approve_pending_farmer', {
-              p_pending_farmer_id: `pending-${i}`,
-              p_admin_id: 'admin-123'
+              pending_farmer_id: `pending-${i}`,
+              approved_by_user_id: 'admin-123'
             });
           }, 'concurrent_approval')
         );
@@ -467,7 +467,7 @@ describe('Farmer Registration Performance', () => {
               data: Array.from({ length: 50 }, (_, i) => ({
                 id: `pending-${i}`,
                 full_name: `Farmer ${i}`,
-                status: 'submitted'
+                status: 'email_verified'
               })),
               error: null
             })
@@ -494,7 +494,7 @@ describe('Farmer Registration Performance', () => {
         () => mockSupabase
           .from('pending_farmers')
           .select('*')
-          .in('status', ['submitted', 'under_review'])
+          .in('status', ['email_verified', 'approved'])
           .order('created_at', { ascending: false })
           .limit(50),
           

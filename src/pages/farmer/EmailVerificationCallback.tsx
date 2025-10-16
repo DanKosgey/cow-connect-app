@@ -4,33 +4,42 @@ import { Loader2, CheckCircle, XCircle, Milk, Home, RefreshCw } from "lucide-rea
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
-import useToastNotifications from "@/hooks/useToastNotifications";
+import useToastNotifications from '@/hooks/useToastNotifications';
+import { cleanupOldStorageItems } from '@/utils/storageQuotaManager';
 
 const EmailVerificationCallback = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const toast = useToastNotifications();
-  const [status, setStatus] = useState<'verifying' | 'success' | 'error'>('verifying');
+  const [status, setStatus] = useState<'verifying' | 'success' | 'error' | 'waiting'>('verifying');
   const [message, setMessage] = useState("Verifying your email...");
   const [isResending, setIsResending] = useState(false);
 
   useEffect(() => {
-    handleEmailVerification();
-  }, []);
+    // Clean up old storage items when component mounts
+    cleanupOldStorageItems();
+    
+    const token = searchParams.get('token');
+    const email = searchParams.get('email') || 
+      JSON.parse(localStorage.getItem('pending_registration') || '{}').email;
+    
+    if (token && email) {
+      handleEmailVerification(token, email);
+    } else if (email) {
+      setStatus('waiting');
+      setMessage('Please check your email for the verification link.');
+    } else {
+      setStatus('error');
+      setMessage('Invalid verification link. Please try registering again.');
+    }
+  }, [searchParams]);
 
-  const handleEmailVerification = async () => {
+  const handleEmailVerification = async (token: string, email: string) => {
     try {
-      // Get the token from URL
-      const token_hash = searchParams.get('token_hash');
-      const type = searchParams.get('type');
-      
-      if (!token_hash || type !== 'signup') {
-        throw new Error('Invalid verification link. Please check your email for the correct link.');
-      }
-
       // Verify the email with Supabase
       const { data, error } = await supabase.auth.verifyOtp({
-        token_hash,
+        email,
+        token,
         type: 'signup',
       });
 
@@ -54,22 +63,35 @@ const EmailVerificationCallback = () => {
       const { data: farmerData, error: farmerError } = await supabase
         .from('pending_farmers')
         .select('status, email_verified, full_name, email')
-        .eq('user_id', data.user.id)
-        .single();
+        .eq('user_id', data.user.id);
 
       if (farmerError) {
         console.error('Error fetching farmer data:', farmerError);
         // If error fetching farmer data, redirect to documents under review
         toast.success("Under Review", "Your application is still under review");
-        navigate('/documents-under-review');
+        navigate('/farmer/documents-under-review');
         return;
       }
 
-      // Update email_verified status if not already set
-      if (!farmerData.email_verified) {
+      // Check if we have data and handle accordingly
+      const farmerRecord = farmerData && farmerData.length > 0 ? farmerData[0] : null;
+
+      if (!farmerRecord) {
+        console.error('No farmer data found for user:', data.user.id);
+        // If no farmer data found, redirect to documents under review
+        toast.success("Under Review", "Your application is still under review");
+        navigate('/farmer/documents-under-review');
+        return;
+      }
+
+      // Update email_verified status and status field if not already set
+      if (!farmerRecord.email_verified) {
         const { error: updateError } = await supabase
           .from('pending_farmers')
-          .update({ email_verified: true })
+          .update({ 
+            email_verified: true,
+            status: 'email_verified'
+          })
           .eq('user_id', data.user.id);
 
         if (updateError) {
@@ -78,19 +100,19 @@ const EmailVerificationCallback = () => {
       }
 
       // Redirect based on farmer status
-      if (farmerData.status === 'approved') {
+      if (farmerRecord.status === 'approved') {
         // Farmer is approved - create profile if not exists and redirect to dashboard
-        await createFarmerProfile(data.user.id, farmerData);
-        toast.success("Welcome!", `Welcome ${farmerData.full_name}! Your application has been approved. Redirecting to dashboard...`);
+        await createFarmerProfile(data.user.id, farmerRecord);
+        toast.success("Welcome!", `Welcome ${farmerRecord.full_name}! Your application has been approved. Redirecting to dashboard...`);
         setTimeout(() => navigate('/farmer/dashboard'), 2000);
-      } else if (farmerData.status === 'rejected') {
+      } else if (farmerRecord.status === 'rejected') {
         // Farmer is rejected - redirect to application status page
         toast.success("Application Status", "Please check your application status for more details");
         setTimeout(() => navigate('/application-status'), 2000);
       } else {
         // Farmer is still pending - redirect to documents under review
         toast.success("Under Review", "Your application is still under review. Please check back later.");
-        setTimeout(() => navigate('/documents-under-review'), 2000);
+        setTimeout(() => navigate('/farmer/documents-under-review'), 2000);
       }
 
     } catch (error: any) {
@@ -111,93 +133,18 @@ const EmailVerificationCallback = () => {
         
         // Only process if the files are for this user
         if (fileData.userId === userId) {
-          console.log('Found pending KYC documents for user, attempting to upload...');
+          console.log('Found pending KYC documents for user, redirecting to upload page...');
           
-          // Get the data URLs from localStorage
-          const idFrontDataUrl = localStorage.getItem(`kyc_file_${userId}_id_front`);
-          const idBackDataUrl = localStorage.getItem(`kyc_file_${userId}_id_back`);
-          const selfieDataUrl = localStorage.getItem(`kyc_file_${userId}_selfie`);
-          
-          if (idFrontDataUrl && idBackDataUrl && selfieDataUrl) {
-            try {
-              // Convert data URLs back to files and upload them
-              const idFrontFile = dataURLToFile(idFrontDataUrl, fileData.idFront.name || 'id_front.jpg');
-              const idBackFile = dataURLToFile(idBackDataUrl, fileData.idBack.name || 'id_back.jpg');
-              const selfieFile = dataURLToFile(selfieDataUrl, fileData.selfie.name || 'selfie.jpg');
-              
-              // Upload the files
-              const idFrontUrl = await uploadKYCDocument(idFrontFile, `${userId}/id_front`);
-              const idBackUrl = await uploadKYCDocument(idBackFile, `${userId}/id_back`);
-              const selfieUrl = await uploadKYCDocument(selfieFile, `${userId}/selfie`);
-              
-              // Instead of updating non-existent columns, we'll rely on the kyc_documents table
-              // The view will automatically compute the URLs from the kyc_documents table
-              console.log('Successfully uploaded KYC documents');
-              toast.success("Documents Uploaded", "Your KYC documents have been successfully uploaded and are under review.");
-            } catch (uploadError) {
-              console.error('Error uploading KYC documents:', uploadError);
-              toast.error("Upload Error", "There was an issue uploading your documents. Please contact support.");
-            }
-          }
-          
-          // Clean up localStorage
-          localStorage.removeItem('pending_kyc_files');
-          localStorage.removeItem(`kyc_file_${userId}_id_front`);
-          localStorage.removeItem(`kyc_file_${userId}_id_back`);
-          localStorage.removeItem(`kyc_file_${userId}_selfie`);
+          // Instead of trying to process files from localStorage (which we no longer store due to quota issues),
+          // redirect the user to the document upload page where they can upload their documents
+          toast.show({ title: "Document Upload", description: "Please upload your KYC documents now." });
+          setTimeout(() => navigate('/farmer/kyc-upload'), 2000);
         }
       }
     } catch (error) {
       console.error('Error handling pending KYC documents:', error);
       // Don't throw error as this shouldn't break the verification flow
       toast.error("Processing Error", "There was an issue processing your documents. Please contact support.");
-    }
-  };
-
-  const dataURLToFile = (dataUrl: string, filename: string): File => {
-    try {
-      const arr = dataUrl.split(',');
-      const mimeMatch = arr[0].match(/:(.*?);/);
-      const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
-      const bstr = atob(arr[1]);
-      let n = bstr.length;
-      const u8arr = new Uint8Array(n);
-      
-      while (n--) {
-        u8arr[n] = bstr.charCodeAt(n);
-      }
-      
-      return new File([u8arr], filename, { type: mime });
-    } catch (error) {
-      console.error('Error converting data URL to file:', error);
-      // Fallback to a default file
-      return new File([], filename, { type: 'image/jpeg' });
-    }
-  };
-
-  const uploadKYCDocument = async (file: File, path: string): Promise<string> => {
-    try {
-      const fileExt = file.name.split('.').pop() || 'jpg';
-      const fileName = `${Math.random()}.${fileExt}`;
-      const filePath = `${path}/${fileName}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('kyc-documents')
-        .upload(filePath, file);
-
-      if (uploadError) {
-        console.error('Upload error:', uploadError);
-        throw new Error(`Failed to upload document: ${uploadError.message}`);
-      }
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('kyc-documents')
-        .getPublicUrl(filePath);
-
-      return publicUrl;
-    } catch (error) {
-      console.error('Error in uploadKYCDocument:', error);
-      throw error;
     }
   };
 

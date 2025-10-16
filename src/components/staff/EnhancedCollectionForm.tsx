@@ -37,12 +37,11 @@ import {
 } from 'lucide-react';
 import { WarehouseService } from '@/services/warehouse-service';
 import { useStaffInfo, useApprovedFarmers } from '@/hooks/useStaffData';
+import { generateUUID } from '@/utils/uuid';
 
 interface Farmer {
   id: string;
-  profiles: {
-    full_name: string;
-  };
+  full_name: string;
   kyc_status: string;
 }
 
@@ -246,11 +245,29 @@ const EnhancedCollectionForm = () => {
 
       // Get the current user
       const user = await supabase.auth.getUser();
-      const staffId = user.data.user?.id;
+      const userId = user.data.user?.id;
       
-      if (!staffId) {
-        throw new Error('Unable to get staff ID');
+      if (!userId) {
+        throw new Error('Unable to get user ID');
       }
+
+      // Get the staff ID by looking up the staff record that matches the user ID
+      const { data: staffData, error: staffError } = await supabase
+        .from('staff')
+        .select('id')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (staffError) {
+        console.error('Error fetching staff data:', staffError);
+        throw new Error('Unable to get staff information: ' + staffError.message);
+      }
+
+      if (!staffData) {
+        throw new Error('User is not registered as staff member. Please contact administrator.');
+      }
+
+      const staffId = staffData.id;
 
       // Generate unique collection ID
       const collectionId = `COL-${Date.now()}-${Math.random().toString(36).substr(2, 5).toUpperCase()}`;
@@ -278,7 +295,7 @@ const EnhancedCollectionForm = () => {
         .insert({
           collection_id: collectionId,
           farmer_id: selectedFarmer, // This correctly references the farmer's id
-          staff_id: staffId, // Use the correct staff ID
+          staff_id: staffId, // Use the correct staff ID from the staff table
           collection_point_id: collectionPointId, // Associate with collection point if found
           liters: parseFloat(liters),
           quality_grade: grade,
@@ -319,11 +336,13 @@ const EnhancedCollectionForm = () => {
       }
 
       const { error: qualityError } = await supabase
-        .from('quality_tests')
+        .from('milk_quality_parameters') // Changed from 'quality_tests' to 'milk_quality_parameters'
         .insert({
+          // Generate a UUID to avoid null ID issues
+          id: generateUUID(),
           collection_id: collectionRecord.id,
           ...qualityParameters,
-          measured_by: user?.data.user?.id
+          measured_by: userId // Use the user ID for quality tests
         });
 
       if (qualityError) throw qualityError;
@@ -389,7 +408,7 @@ const EnhancedCollectionForm = () => {
                       <SelectContent>
                         {farmers.filter(farmer => farmer.id && farmer.id.trim() !== '').map((farmer) => (
                           <SelectItem key={farmer.id} value={farmer.id}>
-                            {farmer.profiles.full_name} ({farmer.id})
+                            {farmer.full_name} ({farmer.id})
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -422,7 +441,7 @@ const EnhancedCollectionForm = () => {
                           <Users className="h-5 w-5 text-primary" />
                         </div>
                         <div>
-                          <h3 className="font-medium">{selectedFarmerData.profiles.full_name}</h3>
+                          <h3 className="font-medium">{selectedFarmerData.full_name}</h3>
                           <p className="text-sm text-muted-foreground">
                             ID: {selectedFarmerData.id}
                           </p>

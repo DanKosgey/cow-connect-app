@@ -228,7 +228,7 @@ export class StaffDataService {
           collection_date,
           status,
           notes,
-          farmers (
+          farmers!fk_collections_farmer_id (
             full_name,
             id
           )
@@ -419,6 +419,11 @@ export class StaffDataService {
 
       if (error) {
         console.error('Error fetching inventory items:', error);
+        // Check if the error is due to table not existing
+        if (error.message && error.message.includes('inventory_items')) {
+          // Return empty array when table doesn't exist
+          return [];
+        }
         throw new Error(`Failed to fetch inventory items: ${error.message}`);
       }
 
@@ -429,6 +434,11 @@ export class StaffDataService {
       return data || [];
     } catch (error: any) {
       console.error('Error in getInventoryItems:', error);
+      // Check if the error is due to table not existing
+      if (error.message && error.message.includes('inventory_items')) {
+        // Return empty array when table doesn't exist
+        return [];
+      }
       throw new Error(`Failed to fetch inventory items: ${error.message || 'Unknown error'}`);
     }
   }
@@ -446,13 +456,18 @@ export class StaffDataService {
         .select(`
           *,
           inventory_items (name),
-          staff (profiles (full_name))
+          staff!inventory_transactions_staff_id_fkey (profiles (full_name))
         `)
         .order('created_at', { ascending: false })
         .limit(limit);
 
       if (error) {
         console.error('Error fetching inventory transactions:', error);
+        // Check if the error is due to table not existing
+        if (error.message && error.message.includes('inventory_transactions')) {
+          // Return empty array when table doesn't exist
+          return [];
+        }
         throw new Error(`Failed to fetch inventory transactions: ${error.message}`);
       }
 
@@ -463,6 +478,11 @@ export class StaffDataService {
       return data || [];
     } catch (error: any) {
       console.error('Error in getInventoryTransactions:', error);
+      // Check if the error is due to table not existing
+      if (error.message && error.message.includes('inventory_transactions')) {
+        // Return empty array when table doesn't exist
+        return [];
+      }
       throw new Error(`Failed to fetch inventory transactions: ${error.message || 'Unknown error'}`);
     }
   }
@@ -635,6 +655,43 @@ export class StaffDataService {
     }
   }
 
+  async getMilkQualityParameters() {
+    const cacheKey = 'milkQualityParameters';
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    try {
+      let query = supabase
+        .from('milk_quality_parameters')
+        .select(`
+          id,
+          parameter_name,
+          parameter_value,
+          parameter_unit,
+          parameter_type
+        `)
+        .order('parameter_name', { ascending: true });
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error('Error fetching milk quality parameters:', error);
+        throw new Error(`Failed to fetch milk quality parameters: ${error.message}`);
+      }
+
+      if (data) {
+        cache.set(cacheKey, data);
+      }
+
+      return data || [];
+    } catch (error: any) {
+      console.error('Error in getMilkQualityParameters:', error);
+      throw new Error(`Failed to fetch milk quality parameters: ${error.message || 'Unknown error'}`);
+    }
+  }
+
   // Add real-time subscription methods
   subscribeToCollections(staffId: string, callback: (data: any[]) => void) {
     const subscription = supabase
@@ -755,7 +812,7 @@ export class StaffDataService {
         {
           event: 'INSERT',
           schema: 'public',
-          table: 'notifications'
+          table: 'inventory_transactions'
         },
         (payload) => {
           // Clear cache when new data is inserted
@@ -768,7 +825,7 @@ export class StaffDataService {
         {
           event: 'UPDATE',
           schema: 'public',
-          table: 'notifications'
+          table: 'inventory_transactions'
         },
         (payload) => {
           // Clear cache when data is updated
@@ -819,6 +876,43 @@ export class StaffDataService {
         (payload) => {
           // Clear cache when new data is inserted
           cache.clearKey(`farmerNotes_${staffId}_20`);
+          callback([payload.new]);
+        }
+      )
+      .subscribe();
+
+    this.subscriptions.push(subscription);
+    return subscription;
+  }
+
+  subscribeToMilkQualityParameters(staffId: string, callback: (data: any[]) => void) {
+    const subscription = supabase
+      .channel('milk-quality-parameters-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'milk_quality_parameters',
+          filter: `performed_by=eq.${staffId}`
+        },
+        (payload) => {
+          // Clear cache when new data is inserted
+          cache.clearKey('milkQualityParameters');
+          callback([payload.new]);
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'milk_quality_parameters',
+          filter: `performed_by=eq.${staffId}`
+        },
+        (payload) => {
+          // Clear cache when data is updated
+          cache.clearKey('milkQualityParameters');
           callback([payload.new]);
         }
       )

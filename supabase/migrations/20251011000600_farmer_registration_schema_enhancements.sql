@@ -250,7 +250,7 @@ $$;
 -- 6. Create or replace functions to ensure they match the current schema
 CREATE OR REPLACE FUNCTION public.get_pending_farmers_for_review(
     p_admin_id UUID,
-    p_status_filter TEXT DEFAULT 'submitted',
+    p_status_filter TEXT DEFAULT 'email_verified',
     p_limit INTEGER DEFAULT 50,
     p_offset INTEGER DEFAULT 0
 )
@@ -346,7 +346,7 @@ BEGIN
          WHERE pending_farmer_id = pf.id AND action = 'rejected' 
          ORDER BY timestamp DESC LIMIT 1) as last_rejection_reason
     FROM pending_farmers pf
-    WHERE pf.status = COALESCE(p_status_filter, 'submitted')
+    WHERE pf.status = COALESCE(p_status_filter, 'email_verified')
     ORDER BY 
         -- Priority: First-time submissions before resubmissions
         pf.rejection_count ASC,

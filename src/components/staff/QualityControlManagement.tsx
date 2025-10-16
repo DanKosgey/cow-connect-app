@@ -67,7 +67,7 @@ interface QualityTest {
   test_date: string;
   performed_by: string;
   notes: string | null;
-  collection: {
+  collections: {
     collection_id: string;
     farmers: {
       full_name: string;
@@ -138,7 +138,7 @@ export default function QualityControlManagement() {
           collection_date,
           status,
           notes,
-          farmers (
+          farmers!fk_collections_farmer_id (
             full_name,
             id
           )
@@ -151,7 +151,7 @@ export default function QualityControlManagement() {
 
       // Fetch quality tests
       const { data: testsData, error: testsError } = await supabase
-        .from('quality_tests')
+        .from('milk_quality_parameters')
         .select(`
           id,
           collection_id,
@@ -160,7 +160,7 @@ export default function QualityControlManagement() {
           test_date,
           performed_by,
           notes,
-          collection!collection_id (
+          collections!milk_quality_parameters_collection_id_fkey (
             collection_id,
             farmers (
               full_name
@@ -295,7 +295,7 @@ export default function QualityControlManagement() {
 
     try {
       const { error } = await supabase
-        .from('quality_tests')
+        .from('milk_quality_parameters')
         .insert({
           collection_id: selectedCollection.id,
           test_type: testType,
@@ -540,7 +540,7 @@ export default function QualityControlManagement() {
                 <SelectItem value="all">All Farmers</SelectItem>
                 {farmers.filter(farmer => farmer.id && farmer.id.trim() !== '').map(farmer => (
                   <SelectItem key={farmer.id} value={farmer.id}>
-                    {farmer.profiles.full_name}
+                    {farmer.full_name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -735,8 +735,8 @@ export default function QualityControlManagement() {
               <tbody>
                 {qualityTests.slice(0, 10).map((test) => (
                   <tr key={test.id} className="border-b hover:bg-muted/50">
-                    <td className="p-3 text-sm">{test.collection?.collection_id || 'N/A'}</td>
-                    <td className="p-3 text-sm">{test.collection?.farmers?.full_name || 'Unknown Farmer'}</td>
+                    <td className="p-3 text-sm">{test.collections?.collection_id || 'N/A'}</td>
+                    <td className="p-3 text-sm">{test.collections?.farmers?.full_name || 'Unknown Farmer'}</td>
                     <td className="p-3 text-sm">{test.test_type}</td>
                     <td className="p-3 text-sm">
                       <Badge variant={

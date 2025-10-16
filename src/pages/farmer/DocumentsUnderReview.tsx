@@ -14,30 +14,93 @@ const DocumentsUnderReview = () => {
   const [submittedAt, setSubmittedAt] = useState("");
   const [isResending, setIsResending] = useState(false);
   const [emailVerified, setEmailVerified] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Get pending registration data from localStorage
-    const pendingData = localStorage.getItem('pending_registration');
-    
-    if (!pendingData) {
-      // If no pending data, redirect to signup
-      navigate('/farmer/signup');
-      return;
-    }
+    const initializePage = async () => {
+      setLoading(true);
+      
+      try {
+        // First, try to get data from localStorage
+        const pendingData = localStorage.getItem('pending_registration');
+        
+        if (pendingData) {
+          try {
+            const data = JSON.parse(pendingData);
+            setEmail(data.email || "");
+            setFullName(data.full_name || "");
+            setSubmittedAt(data.submitted_at || "");
+          } catch (parseError) {
+            console.error("Error parsing pending registration data:", parseError);
+          }
+        }
 
-    try {
-      const data = JSON.parse(pendingData);
-      setEmail(data.email);
-      setFullName(data.full_name);
-      setSubmittedAt(data.submitted_at);
-    } catch (error) {
-      console.error("Error parsing pending registration data:", error);
-      navigate('/farmer/signup');
-    }
+        // If we don't have data from localStorage, try to get it from the database
+        if (!email || !fullName) {
+          await fetchUserDataFromDatabase();
+        }
 
-    // Check if user is logged in and email is verified
-    checkEmailVerificationStatus();
+        // Check email verification status
+        await checkEmailVerificationStatus();
+      } catch (error) {
+        console.error("Error initializing page:", error);
+        toast.error("Error", "Failed to load page data");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    initializePage();
   }, [navigate]);
+
+  const fetchUserDataFromDatabase = async () => {
+    try {
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      
+      if (userError || !user) {
+        console.error("User not authenticated:", userError);
+        navigate('/farmer/login');
+        return;
+      }
+
+      // Fetch farmer data from pending_farmers table
+      const { data: farmerData, error: farmerError } = await supabase
+        .from('pending_farmers')
+        .select('email, full_name, created_at')
+        .eq('user_id', user.id);
+
+      if (farmerError) {
+        console.error("Error fetching farmer data:", farmerError);
+        // If we can't get data from database and localStorage, redirect to signup
+        if (!email || !fullName) {
+          navigate('/farmer/signup');
+        }
+        return;
+      }
+
+      // Check if we have data and handle accordingly
+      const farmerRecord = farmerData && farmerData.length > 0 ? farmerData[0] : null;
+
+      if (!farmerRecord) {
+        console.error("No farmer data found for user:", user.id);
+        // If we can't get data from database and localStorage, redirect to signup
+        if (!email || !fullName) {
+          navigate('/farmer/signup');
+        }
+        return;
+      }
+
+      setEmail(farmerRecord.email || "");
+      setFullName(farmerRecord.full_name || "");
+      setSubmittedAt(farmerRecord.created_at || "");
+    } catch (error) {
+      console.error("Error fetching user data from database:", error);
+      // If we can't get data from database and localStorage, redirect to signup
+      if (!email || !fullName) {
+        navigate('/farmer/signup');
+      }
+    }
+  };
 
   const checkEmailVerificationStatus = async () => {
     try {
@@ -87,6 +150,49 @@ const DocumentsUnderReview = () => {
       return dateString;
     }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-background to-secondary/10 flex items-center justify-center">
+        <div className="text-center">
+          <RefreshCw className="w-8 h-8 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-muted-foreground">Loading page...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // If we still don't have essential data, show an error
+  if (!email || !fullName) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-background to-secondary/10 flex items-center justify-center p-4">
+        <Card className="max-w-md w-full">
+          <CardHeader>
+            <CardTitle>Unable to Load Page</CardTitle>
+            <CardDescription>Required data is missing</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              We couldn't load your application details. This might be because:
+            </p>
+            <ul className="text-sm text-muted-foreground space-y-2">
+              <li>• Your session has expired</li>
+              <li>• You haven't completed registration</li>
+              <li>• There was a technical issue</li>
+            </ul>
+            <div className="flex flex-col gap-2 pt-4">
+              <Button onClick={() => navigate('/farmer/signup')}>
+                Start New Application
+              </Button>
+              <Button variant="outline" onClick={() => navigate('/farmer/login')}>
+                Log In
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background to-secondary/10">

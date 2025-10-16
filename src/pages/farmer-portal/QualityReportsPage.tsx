@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +22,11 @@ import { supabase } from "@/integrations/supabase/client";
 import useToastNotifications from "@/hooks/useToastNotifications";
 import { format, subDays } from 'date-fns';
 import { exportToCSV, exportToJSON } from "@/utils/exportUtils";
+import { qualityReportService, QualityReportWithCollection, ServiceResponse } from "@/services/quality-report-service";
+import { PageHeader } from "@/components/PageHeader";
+import { FilterBar } from "@/components/FilterBar";
+import { DataTable } from "@/components/DataTable";
+import { StatCard } from "@/components/StatCard";
 
 interface QualityReport {
   id: string;
@@ -38,6 +42,9 @@ interface QualityReport {
   status: 'passed' | 'failed' | 'pending';
   notes: string;
 }
+
+// Update the interface to match what we're actually receiving
+interface FormattedQualityReport extends QualityReport {}
 
 const QualityReportsPage = () => {
   const toast = useToastNotifications();
@@ -71,96 +78,45 @@ const QualityReportsPage = () => {
           return;
         }
 
-        // Generate mock quality reports
-        const mockReports: QualityReport[] = [
-          {
-            id: '1',
-            collectionId: 'COL-20230615-001',
-            collectionDate: '2023-06-15',
-            fatContent: 4.2,
-            proteinContent: 3.5,
-            snfContent: 9.1,
-            acidityLevel: 6.8,
-            temperature: 3.2,
-            bacterialCount: 800,
-            qualityGrade: 'A+',
-            status: 'passed',
-            notes: 'Excellent quality with optimal fat and protein content'
-          },
-          {
-            id: '2',
-            collectionId: 'COL-20230614-001',
-            collectionDate: '2023-06-14',
-            fatContent: 3.8,
-            proteinContent: 3.2,
-            snfContent: 8.7,
-            acidityLevel: 7.1,
-            temperature: 4.5,
-            bacterialCount: 1200,
-            qualityGrade: 'A',
-            status: 'passed',
-            notes: 'Good quality, slightly high temperature'
-          },
-          {
-            id: '3',
-            collectionId: 'COL-20230613-001',
-            collectionDate: '2023-06-13',
-            fatContent: 4.5,
-            proteinContent: 3.7,
-            snfContent: 9.4,
-            acidityLevel: 6.5,
-            temperature: 2.8,
-            bacterialCount: 500,
-            qualityGrade: 'A+',
-            status: 'passed',
-            notes: 'Outstanding quality with excellent parameters'
-          },
-          {
-            id: '4',
-            collectionId: 'COL-20230612-001',
-            collectionDate: '2023-06-12',
-            fatContent: 3.1,
-            proteinContent: 2.9,
-            snfContent: 7.8,
-            acidityLevel: 8.2,
-            temperature: 6.1,
-            bacterialCount: 3500,
-            qualityGrade: 'B',
-            status: 'failed',
-            notes: 'Low fat content and high bacterial count'
-          },
-          {
-            id: '5',
-            collectionId: 'COL-20230611-001',
-            collectionDate: '2023-06-11',
-            fatContent: 3.9,
-            proteinContent: 3.3,
-            snfContent: 8.9,
-            acidityLevel: 7.0,
-            temperature: 3.8,
-            bacterialCount: 1800,
-            qualityGrade: 'A',
-            status: 'passed',
-            notes: 'Consistent quality with good parameters'
-          },
-          {
-            id: '6',
-            collectionId: 'COL-20230610-001',
-            collectionDate: '2023-06-10',
-            fatContent: 2.8,
-            proteinContent: 2.7,
-            snfContent: 7.2,
-            acidityLevel: 9.1,
-            temperature: 7.5,
-            bacterialCount: 5200,
-            qualityGrade: 'C',
-            status: 'failed',
-            notes: 'Poor quality with multiple parameter issues'
-          }
-        ];
+        // Fetch quality data for the farmer using the service
+        const qualityResponse = await qualityReportService.getReportsByFarmer(farmerData.id);
+        
+        if (!qualityResponse.success) {
+          toast.error('Error', qualityResponse.error || 'Failed to load quality reports');
+          setReports([]);
+          setFilteredReports([]);
+          return;
+        }
 
-        setReports(mockReports);
-        setFilteredReports(mockReports);
+        // Convert service data to UI format
+        const formattedReports: QualityReport[] = (qualityResponse.data || []).map(report => {
+          // Determine status based on quality parameters
+          let status: 'passed' | 'failed' | 'pending' = 'pending';
+          if (report.fat_content && report.protein_content && report.bacterial_count !== null) {
+            // Simple logic: if bacterial count is low and fat/protein are reasonable, it passes
+            status = (report.bacterial_count < 10000 && report.fat_content > 2.5 && report.protein_content > 2.0) 
+              ? 'passed' 
+              : 'failed';
+          }
+          
+          return {
+            id: report.id.toString(),
+            collectionId: report.collection?.id || 'N/A',
+            collectionDate: report.collection?.collection_date || new Date().toISOString(),
+            fatContent: report.fat_content || 0,
+            proteinContent: report.protein_content || 0,
+            snfContent: report.snf_content || 0,
+            acidityLevel: report.acidity_level || 0,
+            temperature: report.temperature || 0,
+            bacterialCount: report.bacterial_count || 0,
+            qualityGrade: report.collection?.quality_grade || 'N/A',
+            status: status,
+            notes: `Report for collection on ${report.collection?.collection_date ? new Date(report.collection.collection_date).toLocaleDateString() : 'unknown date'}`
+          };
+        });
+
+        setReports(formattedReports);
+        setFilteredReports(formattedReports);
 
       } catch (err) {
         console.error('Error fetching reports:', err);
@@ -291,311 +247,185 @@ const QualityReportsPage = () => {
 
   if (loading) {
     return (
-      <DashboardLayout>
-        <div className="container mx-auto py-6">
-          <div className="flex items-center justify-center h-64">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-          </div>
+      <div className="container mx-auto py-6">
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
         </div>
-      </DashboardLayout>
+      </div>
     );
   }
 
   return (
-    <DashboardLayout>
-      <div className="container mx-auto py-6">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Quality Reports</h1>
-            <p className="text-gray-600 mt-2">Monitor and analyze your milk quality parameters</p>
-          </div>
-          <div className="mt-4 md:mt-0 flex gap-2">
-            <Button onClick={() => exportQualityReports('csv')} variant="outline" className="flex items-center gap-2">
+    <div className="container mx-auto py-6">
+      <PageHeader
+        title="Quality Reports"
+        description="View and analyze your milk quality test results"
+        actions={
+          <div className="flex space-x-3">
+            <Button variant="outline" className="flex items-center gap-2" onClick={() => exportQualityReports('csv')}>
               <Download className="h-4 w-4" />
               CSV
             </Button>
-            <Button onClick={() => exportQualityReports('json')} variant="outline" className="flex items-center gap-2">
+            <Button variant="outline" className="flex items-center gap-2" onClick={() => exportQualityReports('json')}>
               <Download className="h-4 w-4" />
               JSON
             </Button>
           </div>
-        </div>
+        }
+      />
 
-        {/* Filters */}
-        <Card className="mb-8">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Filter className="h-5 w-5" />
-              Filters
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search by collection ID or grade..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-              <div>
-                <Input
-                  type="date"
-                  value={dateFilter}
-                  onChange={(e) => setDateFilter(e.target.value)}
-                />
-              </div>
-              <div>
-                <select
-                  className="w-full h-10 px-3 py-2 border border-input rounded-md text-sm"
-                  value={gradeFilter}
-                  onChange={(e) => setGradeFilter(e.target.value)}
-                >
-                  <option value="all">All Grades</option>
-                  <option value="A+">A+</option>
-                  <option value="A">A</option>
-                  <option value="B">B</option>
-                  <option value="C">C</option>
-                </select>
-              </div>
-              <div>
-                <select
-                  className="w-full h-10 px-3 py-2 border border-input rounded-md text-sm"
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                >
-                  <option value="all">All Statuses</option>
-                  <option value="passed">Passed</option>
-                  <option value="failed">Failed</option>
-                  <option value="pending">Pending</option>
-                </select>
-              </div>
-              <Button 
-                variant="outline" 
-                onClick={() => {
-                  setSearchTerm('');
-                  setDateFilter('');
-                  setGradeFilter('all');
-                  setStatusFilter('all');
-                }}
-              >
-                Clear Filters
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <Card className="border-l-4 border-l-blue-500">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Total Reports</p>
-                  <p className="text-2xl font-bold">{filteredReports.length}</p>
-                </div>
-                <Beaker className="h-8 w-8 text-blue-500" />
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card className="border-l-4 border-l-green-500">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Passed</p>
-                  <p className="text-2xl font-bold text-green-600">
-                    {filteredReports.filter(r => r.status === 'passed').length}
-                  </p>
-                </div>
-                <CheckCircle className="h-8 w-8 text-green-500" />
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card className="border-l-4 border-l-red-500">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Failed</p>
-                  <p className="text-2xl font-bold text-red-600">
-                    {filteredReports.filter(r => r.status === 'failed').length}
-                  </p>
-                </div>
-                <XCircle className="h-8 w-8 text-red-500" />
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card className="border-l-4 border-l-yellow-500">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Avg Quality</p>
-                  <p className="text-2xl font-bold">
-                    {filteredReports.length > 0 
-                      ? (filteredReports.reduce((sum, r) => {
-                          const score = r.qualityGrade === 'A+' ? 10 : 
-                                       r.qualityGrade === 'A' ? 8 : 
-                                       r.qualityGrade === 'B' ? 6 : 4;
-                          return sum + score;
-                        }, 0) / filteredReports.length).toFixed(1)
-                      : '0.0'}
-                  </p>
-                </div>
-                <Award className="h-8 w-8 text-yellow-500" />
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Charts */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          {/* Quality Distribution */}
-          <Card className="shadow-sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Beaker className="h-5 w-5 text-primary" />
-                Quality Distribution
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={qualityDistribution}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="value"
-                      label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                    >
-                      {qualityDistribution.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-          
-          {/* Parameter Trends */}
-          <Card className="shadow-sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <TrendingUp className="h-5 w-5 text-primary" />
-                Parameter Trends
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={parameterTrends}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Line 
-                      type="monotone" 
-                      dataKey="fat" 
-                      stroke={PARAMETER_COLORS[0]} 
-                      strokeWidth={2} 
-                      dot={{ fill: PARAMETER_COLORS[0], r: 4 }} 
-                      activeDot={{ r: 6 }} 
-                      name="Fat Content (%)"
-                    />
-                    <Line 
-                      type="monotone" 
-                      dataKey="protein" 
-                      stroke={PARAMETER_COLORS[1]} 
-                      strokeWidth={2} 
-                      dot={{ fill: PARAMETER_COLORS[1], r: 4 }} 
-                      activeDot={{ r: 6 }} 
-                      name="Protein Content (%)"
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Reports Table */}
-        <Card className="shadow-sm">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Beaker className="h-5 w-5 text-primary" />
-              Quality Reports
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {filteredReports.length > 0 ? (
-              <div className="border rounded-md overflow-hidden">
-                <table className="w-full">
-                  <thead className="bg-muted">
-                    <tr>
-                      <th className="text-left p-4">Collection ID</th>
-                      <th className="text-left p-4">Date</th>
-                      <th className="text-left p-4">Quality Grade</th>
-                      <th className="text-left p-4">Fat (%)</th>
-                      <th className="text-left p-4">Protein (%)</th>
-                      <th className="text-left p-4">Temperature (°C)</th>
-                      <th className="text-left p-4">Status</th>
-                      <th className="text-left p-4">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredReports.map((report) => (
-                      <tr key={report.id} className="border-t hover:bg-muted/50">
-                        <td className="p-4 font-medium">{report.collectionId}</td>
-                        <td className="p-4">{format(new Date(report.collectionDate), 'MMM d, yyyy')}</td>
-                        <td className="p-4">
-                          <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getQualityGradeColor(report.qualityGrade)}`}>
-                            {report.qualityGrade}
-                          </span>
-                        </td>
-                        <td className="p-4">{report.fatContent}%</td>
-                        <td className="p-4">{report.proteinContent}%</td>
-                        <td className="p-4">{report.temperature}°C</td>
-                        <td className="p-4">
-                          <div className="flex items-center gap-2">
-                            {getStatusIcon(report.status)}
-                            <span className={getStatusColor(report.status)}>
-                              {report.status.charAt(0).toUpperCase() + report.status.slice(1)}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="p-4">
-                          <Button variant="outline" size="sm">
-                            View Details
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="text-center py-12">
-                <Beaker className="mx-auto h-12 w-12 text-gray-400" />
-                <h3 className="mt-2 text-sm font-medium text-gray-900">No reports found</h3>
-                <p className="mt-1 text-sm text-gray-500">
-                  Try adjusting your search or filter criteria
-                </p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+      {/* Quality Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <StatCard
+          title="Total Tests"
+          value={reports.length}
+          description="Quality tests conducted"
+          icon={<Beaker className="h-6 w-6 text-blue-600" />}
+          color="bg-blue-100"
+        />
+        <StatCard
+          title="Passed Tests"
+          value={reports.filter(r => r.status === 'passed').length}
+          description="Tests that passed quality standards"
+          icon={<CheckCircle className="h-6 w-6 text-green-600" />}
+          color="bg-green-100"
+        />
+        <StatCard
+          title="Failed Tests"
+          value={reports.filter(r => r.status === 'failed').length}
+          description="Tests that failed quality standards"
+          icon={<XCircle className="h-6 w-6 text-red-600" />}
+          color="bg-red-100"
+        />
+        <StatCard
+          title="Avg. Fat Content"
+          value={`${reports.length > 0 ? (reports.reduce((sum, r) => sum + r.fatContent, 0) / reports.length).toFixed(2) : "0.00"}%`}
+          description="Average fat content in milk"
+          icon={<Droplets className="h-6 w-6 text-purple-600" />}
+          color="bg-purple-100"
+        />
       </div>
-    </DashboardLayout>
+
+      {/* Quality Distribution Chart */}
+      <Card className="mb-8">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Award className="h-5 w-5 text-primary" />
+            Quality Distribution
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={reports}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="qualityGrade" />
+                <YAxis />
+                <Tooltip />
+                <Bar dataKey="fatContent" fill="#8884d8" name="Fat Content (%)" />
+                <Bar dataKey="proteinContent" fill="#82ca9d" name="Protein Content (%)" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Filters and Search */}
+      <Card className="mb-8">
+        <CardContent className="pt-6">
+          <FilterBar
+            searchTerm={searchTerm}
+            onSearchChange={setSearchTerm}
+            searchPlaceholder="Search by collection ID or grade..."
+          >
+            <div>
+              <Input
+                type="date"
+                value={dateFilter}
+                onChange={(e) => setDateFilter(e.target.value)}
+              />
+            </div>
+            <div>
+              <select
+                value={gradeFilter}
+                onChange={(e) => setGradeFilter(e.target.value)}
+                className="w-full h-10 px-3 py-2 border border-input rounded-md text-sm"
+              >
+                <option value="all">All Grades</option>
+                {Array.from(new Set(reports.map(r => r.qualityGrade))).map(grade => (
+                  <option key={grade} value={grade}>{grade}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="w-full h-10 px-3 py-2 border border-input rounded-md text-sm"
+              >
+                <option value="all">All Statuses</option>
+                <option value="passed">Passed</option>
+                <option value="failed">Failed</option>
+                <option value="pending">Pending</option>
+              </select>
+            </div>
+          </FilterBar>
+        </CardContent>
+      </Card>
+
+      {/* Quality Reports Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Beaker className="h-5 w-5 text-primary" />
+            Quality Test Results
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <DataTable
+            headers={["Collection ID", "Date", "Fat (%)", "Protein (%)", "SNF (%)", "Acidity", "Temperature", "Bacterial Count", "Grade", "Status"]}
+            data={filteredReports}
+            renderRow={(report) => (
+              <tr key={report.id} className="hover:bg-muted/50">
+                <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  {report.collectionId}
+                </td>
+                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                  {new Date(report.collectionDate).toLocaleDateString()}
+                </td>
+                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                  {report.fatContent.toFixed(2)}
+                </td>
+                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                  {report.proteinContent.toFixed(2)}
+                </td>
+                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                  {report.snfContent.toFixed(2)}
+                </td>
+                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                  {report.acidityLevel.toFixed(2)}
+                </td>
+                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                  {report.temperature.toFixed(1)}°C
+                </td>
+                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                  {report.bacterialCount.toLocaleString()}
+                </td>
+                <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  {report.qualityGrade}
+                </td>
+                <td className="px-4 py-4 whitespace-nowrap">
+                  <span className={`inline-flex items-center px-2.5 py-0.5 text-xs font-medium rounded-full ${getStatusColor(report.status)}`}>
+                    {getStatusIcon(report.status)}
+                    {report.status.charAt(0).toUpperCase() + report.status.slice(1)}
+                  </span>
+                </td>
+              </tr>
+            )}
+          />
+        </CardContent>
+      </Card>
+    </div>
   );
 };
 

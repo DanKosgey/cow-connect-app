@@ -13,6 +13,9 @@ import {
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
+import { notificationService } from '@/services/notification-service';
+import { useAuth } from '@/contexts/SimplifiedAuthContext';
 
 interface Notification {
   id: string;
@@ -25,103 +28,131 @@ interface Notification {
 
 const StaffNotifications = () => {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchNotifications();
-  }, []);
+    let subscription: any | null = null;
 
-  const fetchNotifications = async () => {
-    setLoading(true);
+    const fetchNotifications = async () => {
+      if (!user) {
+        setNotifications([]);
+        setLoading(false);
+        return;
+      }
+
+      setLoading(true);
+      try {
+        const data = await notificationService.getUserNotifications(user.id, 50);
+        // Map to local shape if needed (some fields may differ)
+        const mapped = (data || []).map(n => ({
+          id: n.id,
+          title: n.title,
+          message: n.message,
+          timestamp: n.created_at || new Date().toISOString(),
+          read: n.read,
+          type: (n.type === 'system' ? 'info' : 'info') as any
+        }));
+
+        setNotifications(mapped || []);
+      } catch (err) {
+        console.error('Error fetching notifications:', err);
+        toast({ title: 'Error', description: 'Failed to load notifications', variant: 'error' });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchNotifications();
+
+    // Subscribe to realtime notifications for this user
+    if (user) {
+      try {
+        subscription = supabase
+          .channel(`notifications:${user.id}`)
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, (payload: any) => {
+            // Treat payload as any to avoid strict typings from Realtime lib
+            const p: any = payload;
+            const newRecord = p.new as any;
+            const oldRecord = p.old as any;
+            const ev = p.eventType || p.event || p.type || p.event_type;
+
+            setNotifications(prev => {
+              if (ev === 'INSERT' || ev === 'insert') {
+                const item = {
+                  id: newRecord?.id,
+                  title: newRecord?.title,
+                  message: newRecord?.message,
+                  timestamp: newRecord?.created_at || new Date().toISOString(),
+                  read: newRecord?.read || false,
+                  type: newRecord?.type === 'system' ? 'info' : 'info'
+                } as Notification;
+                return [item, ...prev];
+              }
+
+              if (ev === 'UPDATE' || ev === 'update') {
+                return prev.map(n => n.id === newRecord?.id ? { ...n, title: newRecord?.title, message: newRecord?.message, read: newRecord?.read } : n);
+              }
+
+              if (ev === 'DELETE' || ev === 'delete') {
+                return prev.filter(n => n.id !== oldRecord?.id);
+              }
+
+              return prev;
+            });
+          })
+          .subscribe();
+      } catch (err) {
+        console.warn('Realtime subscription failed for notifications:', err);
+      }
+    }
+
+    return () => {
+      if (subscription) {
+        try { supabase.removeChannel(subscription); } catch (e) { /* ignore */ }
+      }
+    };
+  }, [user, toast]);
+
+  const markAsRead = async (id: string) => {
     try {
-      // Mock notifications - in a real implementation, this would fetch from Supabase
-      const mockNotifications: Notification[] = [
-        {
-          id: '1',
-          title: 'New Collection Request',
-          message: 'Farmer John Smith has requested a collection pickup at 2:00 PM today',
-          timestamp: new Date(Date.now() - 3600000).toISOString(),
-          read: false,
-          type: 'info'
-        },
-        {
-          id: '2',
-          title: 'Quality Alert',
-          message: 'Collection from Farmer Jane needs quality review - high bacterial count detected',
-          timestamp: new Date(Date.now() - 7200000).toISOString(),
-          read: false,
-          type: 'warning'
-        },
-        {
-          id: '3',
-          title: 'Payment Processed',
-          message: 'Payment of KSh 15,000 has been processed for your collections from last week',
-          timestamp: new Date(Date.now() - 86400000).toISOString(),
-          read: true,
-          type: 'success'
-        },
-        {
-          id: '4',
-          title: 'Route Change',
-          message: 'Your collection route for tomorrow has been updated due to road construction',
-          timestamp: new Date(Date.now() - 172800000).toISOString(),
-          read: true,
-          type: 'info'
-        },
-        {
-          id: '5',
-          title: 'Urgent: Equipment Maintenance',
-          message: 'The milk testing equipment requires calibration today before use',
-          timestamp: new Date(Date.now() - 259200000).toISOString(),
-          read: false,
-          type: 'error'
-        }
-      ];
-      
-      setNotifications(mockNotifications);
-    } catch (error) {
-      console.error('Error fetching notifications:', error);
-      toast({
-        title: "Error",
-        description: "Failed to load notifications",
-        variant: "error"
-      });
-    } finally {
-      setLoading(false);
+      const ok = await notificationService.markAsRead(id);
+      if (ok) {
+        setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+        toast({ title: 'Success', description: 'Notification marked as read', variant: 'success' });
+      }
+    } catch (err) {
+      console.error('Error marking notification as read', err);
+      toast({ title: 'Error', description: 'Failed to mark notification', variant: 'error' });
     }
   };
 
-  const markAsRead = (id: string) => {
-    setNotifications(notifications.map(notification => 
-      notification.id === id ? {...notification, read: true} : notification
-    ));
-    
-    toast({
-      title: "Success",
-      description: "Notification marked as read",
-      variant: "success"
-    });
+  const markAllAsRead = async () => {
+    if (!user) return;
+    try {
+      const ok = await notificationService.markAllAsRead(user.id);
+      if (ok) {
+        setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+        toast({ title: 'Success', description: 'All notifications marked as read', variant: 'success' });
+      }
+    } catch (err) {
+      console.error('Error marking all as read', err);
+      toast({ title: 'Error', description: 'Failed to mark all notifications', variant: 'error' });
+    }
   };
 
-  const markAllAsRead = () => {
-    setNotifications(notifications.map(notification => ({...notification, read: true})));
-    
-    toast({
-      title: "Success",
-      description: "All notifications marked as read",
-      variant: "success"
-    });
-  };
-
-  const deleteNotification = (id: string) => {
-    setNotifications(notifications.filter(notification => notification.id !== id));
-    
-    toast({
-      title: "Success",
-      description: "Notification deleted",
-      variant: "success"
-    });
+  const deleteNotification = async (id: string) => {
+    try {
+      const ok = await notificationService.deleteNotification(id);
+      if (ok) {
+        setNotifications(prev => prev.filter(n => n.id !== id));
+        toast({ title: 'Success', description: 'Notification deleted', variant: 'success' });
+      }
+    } catch (err) {
+      console.error('Error deleting notification', err);
+      toast({ title: 'Error', description: 'Failed to delete notification', variant: 'error' });
+    }
   };
 
   const getTypeIcon = (type: string) => {

@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { BarChart3, TrendingUp, TrendingDown, Users, DollarSign, Activity, Award, ChevronUp, ChevronDown } from 'lucide-react';
 import { businessIntelligenceService } from '@/services/business-intelligence-service';
 import { trendService } from '@/services/trend-service';
+import { milkRateService } from '@/services/milk-rate-service';
 
 interface DetailedBusinessInsightsProps {
   metrics: any;
@@ -11,65 +12,55 @@ interface DetailedBusinessInsightsProps {
 }
 
 const DetailedBusinessInsights = ({ metrics, timeRange = 'week' }: DetailedBusinessInsightsProps) => {
-  const [detailedMetrics, setDetailedMetrics] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [detailedMetrics, setDetailedMetrics] = useState<any>({
+    costPerLiter: 0,
+    revenuePerFarmer: 0,
+    totalCollectionTarget: 0,
+    actualCollectionVolume: 0,
+    totalFarmers: 0,
+    activeFarmers: 0,
+    totalQualityTests: 0,
+    passedQualityTests: 0,
+    currentPeriodVolume: 0,
+    previousPeriodVolume: 0,
+    totalRevenue: 0,
+    totalOperatingCosts: 0
+  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [selectedTimeRange, setSelectedTimeRange] = useState(timeRange);
 
   useEffect(() => {
     const fetchDetailedMetrics = async () => {
       try {
-        setLoading(true);
+        setIsLoading(true);
+        const metrics = await businessIntelligenceService.calculateBusinessIntelligenceMetrics(selectedTimeRange);
         
-        // If we already have metrics passed in, use them
-        if (metrics) {
-          setDetailedMetrics(metrics);
-          setLoading(false);
-          return;
+        // Find the cost per liter metric and update the detailed metrics
+        const costPerLiterMetric = metrics.find(m => m.id === 'cost-per-liter');
+        if (costPerLiterMetric) {
+          setDetailedMetrics(prev => ({
+            ...prev,
+            costPerLiter: parseFloat(costPerLiterMetric.value.toString().replace('KES ', ''))
+          }));
         }
         
-        // Otherwise fetch from services
-        const biMetrics = await businessIntelligenceService.calculateBusinessIntelligenceMetrics(timeRange);
-        
-        // Extract values from the business intelligence metrics
-        const costPerLiterMetric = biMetrics.find(m => m.id === 'cost-per-liter');
-        const revenuePerFarmerMetric = biMetrics.find(m => m.id === 'revenue-per-farmer');
-        const collectionEfficiencyMetric = biMetrics.find(m => m.id === 'collection-efficiency');
-        const qualityIndexMetric = biMetrics.find(m => m.id === 'quality-index');
-        
-        // Fetch trend data for additional metrics
-        const trendData = await trendService.calculateCollectionsTrends(timeRange);
-        
-        // Create detailed metrics object
-        const detailedMetricsData = {
-          totalCollectionTarget: trendData.totalLiters * 1.1, // Assuming 10% buffer as target
-          actualCollectionVolume: trendData.totalLiters,
-          totalFarmers: 150, // This would need to come from a service
-          activeFarmers: 142, // This would need to come from a service
-          farmersAtPeriodStart: 140, // This would need to come from a service
-          farmersAtPeriodEnd: 142, // This would need to come from a service
-          totalOperatingCosts: trendData.totalRevenue * 0.7, // Assuming 70% of revenue as costs
-          totalRevenue: trendData.totalRevenue,
-          totalQualityTests: trendData.totalCollections, // Using collections as proxy for tests
-          passedQualityTests: trendData.totalCollections * 0.92, // Assuming 92% pass rate
-          currentPeriodVolume: trendData.totalLiters,
-          previousPeriodVolume: trendData.totalLiters / (1 + trendData.litersTrend.value / 100),
-          costPerLiter: costPerLiterMetric ? parseFloat(costPerLiterMetric.value.toString().replace('KES ', '')) : 0,
-          revenuePerFarmer: revenuePerFarmerMetric ? parseFloat(revenuePerFarmerMetric.value.toString().replace('KES ', '').replace(/,/g, '')) : 0,
-          collectionEfficiency: collectionEfficiencyMetric ? parseFloat(collectionEfficiencyMetric.value.toString().replace('%', '')) : 0,
-          qualityIndex: qualityIndexMetric ? parseFloat(qualityIndexMetric.value.toString()) : 0,
-          farmerRetention: 95, // Percentage - would need real data
-          seasonalTrend: trendData.litersTrend.value // Percentage
-        };
-        
-        setDetailedMetrics(detailedMetricsData);
-      } catch (error) {
-        console.error('Error fetching detailed business insights:', error);
+        // Also fetch the current admin rate for more detailed information
+        const currentRate = await milkRateService.getCurrentRate();
+        setDetailedMetrics(prev => ({
+          ...prev,
+          costPerLiter: currentRate
+        }));
+      } catch (err) {
+        console.error('Error fetching detailed metrics:', err);
+        setError('Failed to load detailed business insights');
       } finally {
-        setLoading(false);
+        setIsLoading(false);
       }
     };
 
     fetchDetailedMetrics();
-  }, [metrics, timeRange]);
+  }, [selectedTimeRange]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-KE', {
@@ -83,7 +74,7 @@ const DetailedBusinessInsights = ({ metrics, timeRange = 'week' }: DetailedBusin
     return `${value.toFixed(1)}%`;
   };
 
-  if (loading || !detailedMetrics) {
+  if (isLoading) {
     return (
       <Card className="shadow-xl">
         <CardHeader>
@@ -121,11 +112,11 @@ const DetailedBusinessInsights = ({ metrics, timeRange = 'week' }: DetailedBusin
     : 0;
 
   const profitMargin = detailedMetrics.totalRevenue > 0
-    ? ((detailedMetrics.totalRevenue - detailedMetrics.totalOperatingCosts) / detailedMetrics.totalRevenue) * 100
+    ? ((detailedMetrics.totalRevenue - (detailedMetrics.actualCollectionVolume * detailedMetrics.costPerLiter)) / detailedMetrics.totalRevenue) * 100
     : 0;
 
   const roi = detailedMetrics.totalOperatingCosts > 0
-    ? ((detailedMetrics.totalRevenue - detailedMetrics.totalOperatingCosts) / detailedMetrics.totalOperatingCosts) * 100
+    ? ((detailedMetrics.totalRevenue - (detailedMetrics.actualCollectionVolume * detailedMetrics.costPerLiter)) / detailedMetrics.totalOperatingCosts) * 100
     : 0;
 
   const revenuePerLiter = detailedMetrics.actualCollectionVolume > 0
@@ -255,7 +246,7 @@ const DetailedBusinessInsights = ({ metrics, timeRange = 'week' }: DetailedBusin
                   </thead>
                   <tbody>
                     <tr className="border-b hover:bg-gray-50 transition-colors">
-                      <td className="py-3 px-4 font-medium">Cost per Liter</td>
+                      <td className="py-3 px-4 font-medium">Admin Rate per Liter</td>
                       <td className="py-3 px-4">{formatCurrency(detailedMetrics.costPerLiter)}</td>
                       <td className="py-3 px-4 text-muted-foreground">KES 45-55</td>
                     </tr>

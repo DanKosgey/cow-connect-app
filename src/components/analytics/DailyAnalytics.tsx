@@ -91,7 +91,7 @@ const DailyAnalytics = () => {
         .from('collections')
         .select(`
           *,
-          farmers!inner (
+          farmers!fk_collections_farmer_id!inner (
             farmer_id,
             profiles!inner (
               full_name

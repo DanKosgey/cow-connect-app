@@ -1,0 +1,171 @@
+/* Custom Navigation Styles */
+
+/* Enhanced sidebar navigation styles */
+.sidebar-nav {
+  background: linear-gradient(to bottom, hsl(var(--card)), hsl(var(--secondary)));
+}
+
+.sidebar-nav-item {
+  transition: all 0.2s ease-in-out;
+  border-radius: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.sidebar-nav-item:hover {
+  transform: translateX(2px);
+}
+
+.sidebar-nav-item.active {
+  background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-light)));
+  color: hsl(var(--primary-foreground));
+  box-shadow: var(--shadow-medium);
+}
+
+.sidebar-nav-item.active svg {
+  color: hsl(var(--primary-foreground));
+}
+
+/* Category headers */
+.nav-category-header {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.5rem 0.75rem;
+  margin: 0.5rem 0;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+/* Collapsed sidebar styles */
+.sidebar-collapsed .sidebar-nav-item span {
+  display: none;
+}
+
+.sidebar-collapsed .sidebar-nav-item {
+  justify-content: center;
+}
+
+.sidebar-collapsed .nav-category-header {
+  display: none;
+}
+
+/* Mobile navigation overlay */
+.nav-overlay {
+  background-color: hsl(var(--background) / 0.8);
+  backdrop-filter: blur(4px);
+}
+
+/* Navigation item animations */
+@keyframes navItemAppear {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.nav-item-animation {
+  animation: navItemAppear 0.3s ease-out forwards;
+}
+
+/* Navigation group spacing */
+.nav-group {
+  margin-bottom: 1rem;
+}
+
+.nav-group:last-child {
+  margin-bottom: 0;
+}
+
+/* Active item glow effect */
+.nav-item-active-glow {
+  box-shadow: 0 0 0 2px hsl(var(--primary)), 0 0 12px hsl(var(--primary) / 0.3);
+}
+
+/* Navigation icon styles */
+.nav-icon-primary {
+  color: hsl(var(--primary));
+}
+
+.nav-icon-accent {
+  color: hsl(var(--accent));
+}
+
+.nav-icon-success {
+  color: hsl(var(--success));
+}
+
+.nav-icon-warning {
+  color: hsl(var(--warning));
+}
+
+.nav-icon-destructive {
+  color: hsl(var(--destructive));
+}
+
+/* Hover effects for different categories */
+.nav-item-operations:hover {
+  background-color: hsl(var(--accent) / 0.1);
+  border-left: 3px solid hsl(var(--accent));
+}
+
+.nav-item-finance:hover {
+  background-color: hsl(var(--success) / 0.1);
+  border-left: 3px solid hsl(var(--success));
+}
+
+.nav-item-analytics:hover {
+  background-color: hsl(var(--warning) / 0.1);
+  border-left: 3px solid hsl(var(--warning));
+}
+
+.nav-item-kyc:hover {
+  background-color: hsl(var(--purple-500) / 0.1);
+  border-left: 3px solid hsl(var(--purple-500));
+}
+
+.nav-item-management:hover {
+  background-color: hsl(var(--blue-500) / 0.1);
+  border-left: 3px solid hsl(var(--blue-500));
+}
+
+.nav-item-settings:hover {
+  background-color: hsl(var(--gray-500) / 0.1);
+  border-left: 3px solid hsl(var(--gray-500));
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .mobile-nav-header {
+    box-shadow: var(--shadow-medium);
+  }
+  
+  .mobile-nav-toggle {
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+    border-radius: 0.5rem;
+  }
+}
+
+/* Navigation scrollbar styling */
+.sidebar-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-track {
+  background: hsl(var(--secondary));
+  border-radius: 3px;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-thumb {
+  background: hsl(var(--primary) / 0.3);
+  border-radius: 3px;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--primary) / 0.5);
+}

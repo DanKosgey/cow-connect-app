@@ -18,6 +18,7 @@ const TestDBConnection = lazy(() => import("../pages/TestDBConnection"));
 const TestAuthFlow = lazy(() => import("../pages/TestAuthFlow"));
 const AuthCallback = lazy(() => import("../pages/AuthCallback"));
 const EmailVerificationCallback = lazy(() => import("../pages/farmer/EmailVerificationCallback"));
+const AcceptInvitePage = lazy(() => import("../pages/accept-invite"));
 const NotFound = lazy(() => import("../pages/NotFound"));
 
 export default function PublicRoutes() {
@@ -95,6 +96,11 @@ export default function PublicRoutes() {
         <Route path="/test-auth" element={
           <PageTransition>
             <TestAuthFlow />
+          </PageTransition>
+        } />
+        <Route path="/accept-invite" element={
+          <PageTransition>
+            <AcceptInvitePage />
           </PageTransition>
         } />
         

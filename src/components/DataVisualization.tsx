@@ -57,13 +57,18 @@ export const EnhancedBarChart = ({
   title?: string;
   height?: number;
 }) => {
+  // Ensure we have data to display
+  const finalData = data && data.length > 0 
+    ? data 
+    : [{ name: 'No Data', [dataKey]: 0 }];
+    
   return (
     <div className="w-full">
       {title && <h3 className="text-lg font-semibold mb-4">{title}</h3>}
       <div className="h-80">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart
-            data={data}
+            data={finalData}
             margin={{
               top: 20,
               right: 30,
@@ -108,13 +113,18 @@ export const EnhancedLineChart = ({
   title?: string;
   height?: number;
 }) => {
+  // Ensure we have data to display
+  const finalData = data && data.length > 0 
+    ? data 
+    : [{ name: 'No Data', ...dataKeys.reduce((acc, key) => ({ ...acc, [key]: 0 }), {}) }];
+    
   return (
     <div className="w-full">
       {title && <h3 className="text-lg font-semibold mb-4">{title}</h3>}
       <div className="h-80">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart
-            data={data}
+            data={finalData}
             margin={{
               top: 20,
               right: 30,
@@ -165,32 +175,45 @@ export const EnhancedAreaChart = ({
   title?: string;
   height?: number;
 }) => {
+  // Ensure we have data to display
+  const finalData = data && data.length > 0 
+    ? data 
+    : [{ name: 'No Data', [dataKey]: 0 }];
+    
   return (
     <div className="w-full">
       {title && <h3 className="text-lg font-semibold mb-4">{title}</h3>}
       <div className="h-80">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart
-            data={data}
+            data={finalData}
             margin={{
-              top: 20,
-              right: 30,
-              left: 20,
-              bottom: 50,
+              top: 10,
+              right: 10,
+              left: 0,
+              bottom: 0,
             }}
           >
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
             <XAxis 
               dataKey="name" 
               stroke="#6b7280"
-              tick={{ fontSize: 12 }}
+              tick={{ fontSize: 10 }}
+              tickLine={false}
+              axisLine={false}
+              hide={height < 100} // Hide X-axis for mini charts
             />
             <YAxis 
               stroke="#6b7280"
-              tick={{ fontSize: 12 }}
+              tick={{ fontSize: 10 }}
+              tickLine={false}
+              axisLine={false}
+              hide={height < 100} // Hide Y-axis for mini charts
             />
-            <Tooltip content={<CustomTooltip />} />
-            <Legend />
+            <Tooltip 
+              content={<CustomTooltip />} 
+              wrapperStyle={height < 100 ? { display: 'none' } : {}} // Hide tooltip for mini charts
+            />
             <Area
               type="monotone"
               dataKey={dataKey}
@@ -198,6 +221,7 @@ export const EnhancedAreaChart = ({
               fill={COLORS[0]}
               fillOpacity={0.2}
               name={dataKey}
+              strokeWidth={height < 100 ? 1 : 2} // Thinner line for mini charts
             />
           </AreaChart>
         </ResponsiveContainer>
@@ -220,6 +244,11 @@ export const EnhancedPieChart = ({
   title?: string;
   height?: number;
 }) => {
+  // Ensure we have data to display
+  const finalData = data && data.length > 0 
+    ? data 
+    : [{ [nameKey]: 'No Data', [dataKey]: 1 }];
+    
   return (
     <div className="w-full">
       {title && <h3 className="text-lg font-semibold mb-4">{title}</h3>}
@@ -227,7 +256,7 @@ export const EnhancedPieChart = ({
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
-              data={data}
+              data={finalData}
               cx="50%"
               cy="50%"
               labelLine={true}
@@ -237,7 +266,7 @@ export const EnhancedPieChart = ({
               dataKey={dataKey}
               nameKey={nameKey}
             >
-              {data.map((entry, index) => (
+              {finalData.map((entry, index) => (
                 <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
               ))}
             </Pie>
@@ -344,7 +373,7 @@ export const EnhancedScatterChart = ({
 };
 
 // Data visualization container with multiple chart types
-export const DataVisualizationContainer = ({ 
+export const DataVisualizationContainer = React.memo(({ 
   data, 
   chartType,
   title,
@@ -355,20 +384,24 @@ export const DataVisualizationContainer = ({
   title?: string;
   options?: any;
 }) => {
-  switch (chartType) {
-    case 'bar':
-      return <EnhancedBarChart data={data} dataKey={options.dataKey} title={title} />;
-    case 'line':
-      return <EnhancedLineChart data={data} dataKeys={options.dataKeys} title={title} />;
-    case 'area':
-      return <EnhancedAreaChart data={data} dataKey={options.dataKey} title={title} />;
-    case 'pie':
-      return <EnhancedPieChart data={data} dataKey={options.dataKey} nameKey={options.nameKey} title={title} />;
-    case 'radar':
-      return <EnhancedRadarChart data={data} dataKeys={options.dataKeys} title={title} />;
-    case 'scatter':
-      return <EnhancedScatterChart data={data} dataKeys={options.dataKeys} title={title} />;
-    default:
-      return <div>Unsupported chart type</div>;
-  }
-};
+  const renderChart = () => {
+    switch (chartType) {
+      case 'bar':
+        return <EnhancedBarChart data={data} dataKey={options.dataKey} title={title} />;
+      case 'line':
+        return <EnhancedLineChart data={data} dataKeys={options.dataKeys} title={title} />;
+      case 'area':
+        return <EnhancedAreaChart data={data} dataKey={options.dataKey} title={title} />;
+      case 'pie':
+        return <EnhancedPieChart data={data} dataKey={options.dataKey} nameKey={options.nameKey} title={title} />;
+      case 'radar':
+        return <EnhancedRadarChart data={data} dataKeys={options.dataKeys} title={title} />;
+      case 'scatter':
+        return <EnhancedScatterChart data={data} dataKeys={options.dataKeys} title={title} />;
+      default:
+        return <div>Unsupported chart type</div>;
+    }
+  };
+
+  return renderChart();
+});

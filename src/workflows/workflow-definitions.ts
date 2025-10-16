@@ -44,7 +44,7 @@ export const kycWorkflow: WorkflowDefinition = {
     event: 'document_submitted',
     conditions: {
       documentTypes: ['id_document', 'proof_of_address', 'bank_statement'],
-      farmerStatus: 'pending' as ProfileStatus
+      farmerStatus: 'pending_verification' as ProfileStatus
     },
     source: 'farmer_documents'
   },

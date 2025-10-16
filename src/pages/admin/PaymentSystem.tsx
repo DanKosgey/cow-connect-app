@@ -192,12 +192,11 @@ const PaymentSystem = () => {
   const fetchCollections = async () => {
     await measureOperation('fetchCollections', async () => {
       try {
-        // Build the base query
         let query = supabase
           .from('collections')
           .select(`
             *,
-            farmers!fk_collections_farmer_id (
+            farmers (
               id,
               user_id,
               bank_account_name,
@@ -224,7 +223,7 @@ const PaymentSystem = () => {
         const countQuery = supabase
           .from('collections')
           .select('*', { count: 'exact', head: true });
-          
+        
         // Apply same filters to count query
         if (activeTab === 'pending') {
           countQuery.neq('status', 'Paid');
@@ -241,8 +240,43 @@ const PaymentSystem = () => {
           .range((currentPage - 1) * pageSize, currentPage * pageSize - 1);
 
         if (error) throw error;
-        setCollections(data || []);
-        calculateAnalytics(data || []);
+        
+        // Extract unique staff IDs from collections
+        const staffIds = new Set<string>();
+        data?.forEach(collection => {
+          if (collection.staff_id) staffIds.add(collection.staff_id);
+        });
+
+        // Fetch staff profiles if we have staff IDs
+        let enrichedCollections = data || [];
+        if (data && staffIds.size > 0) {
+          const { data: staffProfiles, error: profilesError } = await supabase
+            .from('staff')
+            .select(`
+              id,
+              profiles!user_id (
+                full_name
+              )
+            `)
+            .in('id', Array.from(staffIds));
+
+          if (!profilesError && staffProfiles) {
+            // Create a map of staff ID to profile
+            const staffProfileMap = new Map<string, any>();
+            staffProfiles.forEach(staff => {
+              staffProfileMap.set(staff.id, staff.profiles);
+            });
+
+            // Enrich collections with staff names
+            enrichedCollections = data.map(collection => ({
+              ...collection,
+              staff: collection.staff_id ? { profiles: staffProfileMap.get(collection.staff_id) } : null
+            }));
+          }
+        }
+        
+        setCollections(enrichedCollections);
+        calculateAnalytics(enrichedCollections);
       } catch (error: any) {
         console.error('Error fetching collections:', error);
         console.error('Error details:', JSON.stringify(error, null, 2));
@@ -325,16 +359,54 @@ const PaymentSystem = () => {
           .order('created_at', { ascending: false });
 
         if (error) throw error;
-        // Extract payment data from the nested structure
-        const paymentData = data?.map((item: any) => ({
-          ...item,
-          ...(item['collections!collection_payments_collection_id_fkey'] || {}), // Spread the collection data
-          payment_id: item.id, // Use collection_payment id
-          collection_id: item.collection_id,
-          rate_applied: item.rate_applied,
-          created_at: item.created_at,
-          paid_at: item.paid_at
-        })) || [];
+        
+        // Extract collection data from the nested structure
+        const paymentData = data?.map((item: any) => {
+          const collectionData = item['collections!collection_payments_collection_id_fkey'] || {};
+          
+          // Extract unique staff IDs from collections
+          const staffIds = new Set<string>();
+          if (collectionData.staff_id) staffIds.add(collectionData.staff_id);
+
+          // Fetch staff profiles if we have staff IDs
+          let enrichedCollection = collectionData;
+          if (staffIds.size > 0) {
+            const { data: staffProfiles, error: profilesError } = supabase
+              .from('staff')
+              .select(`
+                id,
+                profiles!user_id (
+                  full_name
+                )
+              `)
+              .in('id', Array.from(staffIds));
+
+            if (!profilesError && staffProfiles) {
+              // Create a map of staff ID to profile
+              const staffProfileMap = new Map<string, any>();
+              staffProfiles.forEach(staff => {
+                staffProfileMap.set(staff.id, staff.profiles);
+              });
+
+              // Enrich collection with staff names
+              enrichedCollection = {
+                ...collectionData,
+                staff: collectionData.staff_id ? { profiles: staffProfileMap.get(collectionData.staff_id) } : null
+              };
+            }
+          }
+          
+          return {
+            ...item,
+            ...enrichedCollection, // Spread the enriched collection data
+            payment_id: item.id, // Use collection_payment id
+            collection_id: item.collection_id,
+            rate_applied: item.rate_applied,
+            created_at: item.created_at,
+            paid_at: item.paid_at
+          };
+        }) || [];
+        
         setPayments(paymentData);
       } catch (error: any) {
         console.error('Error fetching payments:', error);

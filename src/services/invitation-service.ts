@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import type { Database } from '@/types/database.types';
+import { emailService } from './email-service';
 
 export interface InvitationData {
   email: string;
@@ -31,12 +32,78 @@ export interface InvitationRecord {
 
 export class InvitationService {
   /**
+   * Generate a cryptographically secure token for the invitation
+   * @returns A secure unique token
+   */
+  private generateToken(): string {
+    // Use crypto.randomUUID for better security and uniqueness
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+    
+    // Fallback to a more secure random string
+    const array = new Uint8Array(32);
+    crypto.getRandomValues(array);
+    return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+  }
+
+  /**
+   * Validate email format
+   * @param email - Email address to validate
+   * @returns True if valid, false otherwise
+   */
+  private isValidEmail(email: string): boolean {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  }
+
+  /**
    * Create a new invitation
    * @param invitationData - The invitation data
    * @returns The created invitation or null if failed
    */
   async createInvitation(invitationData: InvitationData): Promise<Invitation | null> {
     try {
+      // Validate email
+      if (!this.isValidEmail(invitationData.email)) {
+        console.error('[INVITATION] Invalid email format:', invitationData.email);
+        return null;
+      }
+
+      // Check if there's already a pending invitation for this email
+      const { data: existingInvitation, error: checkError } = await supabase
+        .from('invitations')
+        .select('id, expires_at, accepted')
+        .eq('email', invitationData.email)
+        .eq('accepted', false)
+        .gt('expires_at', new Date().toISOString())
+        .maybeSingle();
+
+      if (existingInvitation) {
+        console.warn('[INVITATION] Active invitation already exists for:', invitationData.email);
+        // Return the existing invitation instead of creating a new one
+        const { data: fullInvitation } = await supabase
+          .from('invitations')
+          .select('*')
+          .eq('id', existingInvitation.id)
+          .single();
+        
+        if (fullInvitation) {
+          return {
+            id: fullInvitation.id,
+            email: fullInvitation.email,
+            role: fullInvitation.role,
+            message: fullInvitation.message,
+            invitedBy: fullInvitation.invited_by,
+            created_at: fullInvitation.created_at,
+            expires_at: fullInvitation.expires_at,
+            token: fullInvitation.token,
+            accepted: fullInvitation.accepted,
+            accepted_at: fullInvitation.accepted_at
+          };
+        }
+      }
+
       // Generate a unique token for the invitation
       const token = this.generateToken();
       
@@ -44,104 +111,81 @@ export class InvitationService {
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + 7);
       
-      // In a real implementation with an invitations table, you would do something like:
-      // const { data, error } = await supabase
-      //   .from('invitations')
-      //   .insert({
-      //     email: invitationData.email,
-      //     role: invitationData.role,
-      //     message: invitationData.message,
-      //     invited_by: invitationData.invitedBy,
-      //     token: token,
-      //     expires_at: expiresAt.toISOString(),
-      //     accepted: false
-      //   })
-      //   .select()
-      //   .single();
-      
-      // Since we don't have an invitations table, we'll simulate the process
-      // and store the role in user_roles table with a temporary user_id
-      const tempUserId = `invite_${token.substring(0, 8)}`;
-      
-      const { data: roleData, error: roleError } = await supabase
-        .from('user_roles')
+      console.log('[INVITATION] Creating invitation for:', invitationData.email);
+
+      // Insert the invitation into the database
+      const { data, error } = await supabase
+        .from('invitations')
         .insert({
-          user_id: tempUserId,
+          email: invitationData.email.toLowerCase().trim(),
           role: invitationData.role,
-          created_at: new Date().toISOString()
+          message: invitationData.message?.trim() || null,
+          invited_by: invitationData.invitedBy,
+          token: token,
+          expires_at: expiresAt.toISOString(),
+          accepted: false
         })
         .select()
         .single();
 
-      if (roleError) {
-        console.error('Error creating user role:', roleError);
+      if (error) {
+        console.error('[INVITATION] Error creating invitation:', error);
         return null;
       }
 
-      // Create a mock invitation object
+      console.log('[INVITATION] Invitation created successfully:', data.id);
+
+      // Convert the database record to our Invitation interface
       const invitation: Invitation = {
-        id: roleData.id,
-        email: invitationData.email,
-        role: invitationData.role,
-        message: invitationData.message,
-        invitedBy: invitationData.invitedBy,
-        created_at: new Date().toISOString(),
-        expires_at: expiresAt.toISOString(),
-        token,
-        accepted: false
+        id: data.id,
+        email: data.email,
+        role: data.role as 'admin' | 'staff' | 'farmer',
+        message: data.message,
+        invitedBy: data.invited_by,
+        created_at: data.created_at,
+        expires_at: data.expires_at,
+        token: data.token,
+        accepted: data.accepted,
+        accepted_at: data.accepted_at
       };
 
       return invitation;
     } catch (error) {
-      console.error('Error creating invitation:', error);
+      console.error('[INVITATION] Unexpected error creating invitation:', error);
       return null;
     }
   }
 
   /**
-   * Send invitation email using a simulated email service
-   * In a real implementation, you would integrate with an actual email service
+   * Send invitation email using the email service
    * @param invitation - The invitation to send
    * @returns True if successful, false otherwise
    */
   async sendInvitationEmail(invitation: Invitation): Promise<boolean> {
     try {
-      // Simulate email sending by logging to console
-      if (import.meta.env.DEV) {
-        console.log(`Sending invitation email to ${invitation.email}`);
-        console.log(`Invitation link: ${window.location.origin}/accept-invite?token=[REDACTED]`);
+      console.log('[INVITATION] Sending invitation email to:', invitation.email);
+
+      // Use the email service to send the invitation
+      const success = await emailService.sendInvitationEmail(
+        {
+          email: invitation.email,
+          role: invitation.role,
+          message: invitation.message
+        },
+        invitation.token
+      );
+      
+      if (success) {
+        console.log('[INVITATION] Email sent successfully to:', invitation.email);
+      } else {
+        console.error('[INVITATION] Failed to send email to:', invitation.email);
       }
       
-      if (invitation.message && import.meta.env.DEV) {
-        console.log(`Custom message: ${invitation.message}`);
-      }
-      
-      // In a real implementation, you could integrate with:
-      // 1. Supabase Functions (if you set up a function to send emails)
-      // 2. Third-party service like SendGrid, Mailgun, etc.
-      
-      // Example of how you might call a Supabase function:
-      // const { data, error } = await supabase.functions.invoke('send-invitation-email', {
-      //   body: {
-      //     to: invitation.email,
-      //     subject: 'You\'ve been invited to join our system',
-      //     template: 'invitation',
-      //     data: {
-      //       invitationLink: `${window.location.origin}/accept-invite?token=[REDACTED]`,
-      //       roleName: invitation.role,
-      //       customMessage: invitation.message
-      //     }
-      //   }
-      // });
-      
-      // For now, we'll simulate email sending delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      return true;
+      return success;
     } catch (error) {
-      if (import.meta.env.DEV) {
-        console.error('Error sending invitation email:', error instanceof Error ? error.message : 'Unknown error');
-      }
+      console.error('[INVITATION] Error sending invitation email:', 
+        error instanceof Error ? error.message : 'Unknown error'
+      );
       return false;
     }
   }
@@ -154,56 +198,80 @@ export class InvitationService {
    */
   async acceptInvitation(token: string, userId: string): Promise<boolean> {
     try {
-      // In a real implementation with an invitations table, you would:
-      // 1. Find the invitation by token
-      // 2. Check if it's expired
-      // 3. Update the user_roles table with the actual user_id
-      // 4. Mark the invitation as accepted
-      // 5. Update the invitation's accepted_at timestamp
-      
-      // Since we're simulating, we'll just update the user_roles table
-      // Find the temporary user role entry
-      const tempUserId = `invite_${token.substring(0, 8)}`;
-      
-      const { data: roleData, error: fetchError } = await supabase
-        .from('user_roles')
+      console.log('[INVITATION] Accepting invitation with token:', token.substring(0, 8) + '...');
+
+      // Find the invitation by token
+      const { data: invitationData, error: fetchError } = await supabase
+        .from('invitations')
         .select('*')
-        .eq('user_id', tempUserId)
+        .eq('token', token)
         .single();
 
-      if (fetchError || !roleData) {
-        console.error('Invitation not found or already accepted');
+      if (fetchError || !invitationData) {
+        console.error('[INVITATION] Invitation not found:', fetchError);
         return false;
       }
 
-      // Update the user role with the actual user ID
+      // Check if invitation is expired
+      const now = new Date();
+      const expiresAt = new Date(invitationData.expires_at);
+      if (now > expiresAt) {
+        console.error('[INVITATION] Invitation has expired');
+        return false;
+      }
+
+      // Check if invitation is already accepted
+      if (invitationData.accepted) {
+        console.error('[INVITATION] Invitation already accepted');
+        return false;
+      }
+
+      console.log('[INVITATION] Assigning role:', invitationData.role);
+
+      // Assign the role to the user using the Edge Function
+      const { data: functionData, error: functionError } = await supabase
+        .functions
+        .invoke('assign-role', {
+          body: {
+            userId: userId,
+            role: invitationData.role
+          }
+        });
+
+      if (functionError) {
+        console.error('[INVITATION] Error assigning role via Edge Function:', functionError);
+        return false;
+      }
+
+      if (!functionData?.success) {
+        console.error('[INVITATION] Role assignment failed:', functionData?.error);
+        return false;
+      }
+
+      console.log('[INVITATION] Role assigned successfully, updating invitation status');
+
+      // Update the invitation as accepted
       const { error: updateError } = await supabase
-        .from('user_roles')
+        .from('invitations')
         .update({ 
-          user_id: userId,
-          created_at: new Date().toISOString()
+          accepted: true,
+          accepted_at: new Date().toISOString()
         })
-        .eq('id', roleData.id);
+        .eq('id', invitationData.id);
 
       if (updateError) {
-        console.error('Error updating user role:', updateError);
-        return false;
+        console.error('[INVITATION] Error updating invitation:', updateError);
+        // Role was assigned but we couldn't update the invitation status
+        // This is not critical, so we still return true
+        return true;
       }
 
+      console.log('[INVITATION] Invitation accepted successfully');
       return true;
     } catch (error) {
-      console.error('Error accepting invitation:', error);
+      console.error('[INVITATION] Unexpected error accepting invitation:', error);
       return false;
     }
-  }
-
-  /**
-   * Generate a unique token for the invitation
-   * @returns A unique token
-   */
-  private generateToken(): string {
-    return Math.random().toString(36).substring(2, 15) + 
-           Math.random().toString(36).substring(2, 15);
   }
 
   /**
@@ -213,23 +281,79 @@ export class InvitationService {
    */
   async validateInvitationToken(token: string): Promise<boolean> {
     try {
-      // In a real implementation, you would check the database for the token
-      // and verify it hasn't expired and hasn't been used
-      
-      // Since we're simulating, we'll just check if the temp user exists
-      const tempUserId = `invite_${token.substring(0, 8)}`;
-      
+      // Find the invitation by token
       const { data, error } = await supabase
-        .from('user_roles')
-        .select('id')
-        .eq('user_id', tempUserId)
+        .from('invitations')
+        .select('expires_at, accepted')
+        .eq('token', token)
         .single();
 
-      // If we found the temp user, the invitation is still valid
-      return !error && !!data;
+      // If invitation not found, it's invalid
+      if (error || !data) {
+        console.log('[INVITATION] Token validation failed: not found');
+        return false;
+      }
+
+      // Check if invitation is expired
+      const now = new Date();
+      const expiresAt = new Date(data.expires_at);
+      if (now > expiresAt) {
+        console.log('[INVITATION] Token validation failed: expired');
+        return false;
+      }
+
+      // Check if invitation is already accepted
+      if (data.accepted) {
+        console.log('[INVITATION] Token validation failed: already accepted');
+        return false;
+      }
+
+      // Invitation is valid
+      return true;
     } catch (error) {
-      console.error('Error validating invitation token:', error);
+      console.error('[INVITATION] Error validating invitation token:', error);
       return false;
+    }
+  }
+  
+  /**
+   * Get invitation details by token
+   * @param token - The invitation token
+   * @returns Invitation details or null if not found
+   */
+  async getInvitationByToken(token: string): Promise<Invitation | null> {
+    try {
+      // Find the invitation by token
+      const { data, error } = await supabase
+        .from('invitations')
+        .select('*')
+        .eq('token', token)
+        .single();
+
+      // If invitation not found, return null
+      if (error || !data) {
+        console.log('[INVITATION] Invitation not found for token');
+        return null;
+      }
+
+      // Convert the database record to our Invitation interface
+      const invitation: Invitation = {
+        id: data.id,
+        email: data.email,
+        role: data.role as 'admin' | 'staff' | 'farmer',
+        message: data.message,
+        invitedBy: data.invited_by,
+        created_at: data.created_at,
+        expires_at: data.expires_at,
+        token: data.token,
+        accepted: data.accepted,
+        accepted_at: data.accepted_at
+      };
+
+      return invitation;
+    } catch (error) {
+      console.error('[INVITATION] Error fetching invitation by token:', error);
+      return null;
     }
   }
   
@@ -240,49 +364,32 @@ export class InvitationService {
    */
   async getPendingInvitations(adminId: string): Promise<InvitationRecord[]> {
     try {
-      // In a real implementation with an invitations table, you would:
-      // const { data, error } = await supabase
-      //   .from('invitations')
-      //   .select(`
-      //     id,
-      //     email,
-      //     role,
-      //     created_at,
-      //     expires_at,
-      //     accepted,
-      //     accepted_at,
-      //     invited_by:profiles(full_name)
-      //   `)
-      //   .eq('invited_by', adminId)
-      //   .eq('accepted', false)
-      //   .gt('expires_at', new Date().toISOString())
-      //   .order('created_at', { ascending: false });
-      
-      // Since we're simulating, we'll return mock data
-      const mockInvitations: InvitationRecord[] = [
-        {
-          id: '1',
-          email: 'john.doe@example.com',
-          role: 'staff',
-          created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(), // 2 days ago
-          expires_at: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(), // 5 days from now
-          accepted: false,
-          invited_by: adminId
-        },
-        {
-          id: '2',
-          email: 'jane.smith@example.com',
-          role: 'admin',
-          created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(), // 5 days ago
-          expires_at: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(), // 2 days from now
-          accepted: false,
-          invited_by: adminId
-        }
-      ];
-      
-      return mockInvitations;
+      const { data, error } = await supabase
+        .from('invitations')
+        .select('*')
+        .eq('invited_by', adminId)
+        .eq('accepted', false)
+        .gt('expires_at', new Date().toISOString())
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('[INVITATION] Error fetching pending invitations:', error);
+        return [];
+      }
+
+      // Transform the data to match InvitationRecord interface
+      return (data || []).map(inv => ({
+        id: inv.id,
+        email: inv.email,
+        role: inv.role,
+        created_at: inv.created_at,
+        expires_at: inv.expires_at,
+        accepted: inv.accepted,
+        accepted_at: inv.accepted_at,
+        invited_by: inv.invited_by,
+      }));
     } catch (error) {
-      console.error('Error fetching pending invitations:', error);
+      console.error('[INVITATION] Error fetching pending invitations:', error);
       return [];
     }
   }
@@ -294,61 +401,90 @@ export class InvitationService {
    */
   async getAllInvitations(adminId: string): Promise<InvitationRecord[]> {
     try {
-      // In a real implementation with an invitations table, you would:
-      // const { data, error } = await supabase
-      //   .from('invitations')
-      //   .select(`
-      //     id,
-      //     email,
-      //     role,
-      //     created_at,
-      //     expires_at,
-      //     accepted,
-      //     accepted_at,
-      //     invited_by:profiles(full_name)
-      //   `)
-      //   .eq('invited_by', adminId)
-      //   .order('created_at', { ascending: false });
-      
-      // Since we're simulating, we'll return mock data
-      const mockInvitations: InvitationRecord[] = [
-        {
-          id: '1',
-          email: 'john.doe@example.com',
-          role: 'staff',
-          created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(), // 2 days ago
-          expires_at: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(), // 5 days from now
-          accepted: false,
-          invited_by: adminId
-        },
-        {
-          id: '2',
-          email: 'jane.smith@example.com',
-          role: 'admin',
-          created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(), // 5 days ago
-          expires_at: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(), // 2 days from now
-          accepted: false,
-          invited_by: adminId
-        },
-        {
-          id: '3',
-          email: 'bob.johnson@example.com',
-          role: 'staff',
-          created_at: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(), // 10 days ago
-          expires_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(), // 3 days ago (expired)
-          accepted: true,
-          accepted_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(), // 2 days ago
-          invited_by: adminId
-        }
-      ];
-      
-      return mockInvitations;
+      const { data, error } = await supabase
+        .from('invitations')
+        .select('*')
+        .eq('invited_by', adminId)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('[INVITATION] Error fetching all invitations:', error);
+        return [];
+      }
+
+      // Transform the data to match InvitationRecord interface
+      return (data || []).map(inv => ({
+        id: inv.id,
+        email: inv.email,
+        role: inv.role,
+        created_at: inv.created_at,
+        expires_at: inv.expires_at,
+        accepted: inv.accepted,
+        accepted_at: inv.accepted_at,
+        invited_by: inv.invited_by,
+      }));
     } catch (error) {
-      console.error('Error fetching all invitations:', error);
+      console.error('[INVITATION] Error fetching all invitations:', error);
       return [];
     }
   }
   
+  /**
+   * Resend an invitation email
+   * @param invitationId - The invitation ID
+   * @returns True if successful, false otherwise
+   */
+  async resendInvitation(invitationId: string): Promise<boolean> {
+    try {
+      console.log('[INVITATION] Resending invitation:', invitationId);
+
+      // Get the invitation details
+      const { data, error } = await supabase
+        .from('invitations')
+        .select('*')
+        .eq('id', invitationId)
+        .single();
+
+      if (error || !data) {
+        console.error('[INVITATION] Error fetching invitation for resend:', error);
+        return false;
+      }
+
+      // Check if invitation is still valid
+      const now = new Date();
+      const expiresAt = new Date(data.expires_at);
+      
+      if (data.accepted) {
+        console.error('[INVITATION] Cannot resend: invitation already accepted');
+        return false;
+      }
+
+      if (now > expiresAt) {
+        console.error('[INVITATION] Cannot resend: invitation has expired');
+        return false;
+      }
+
+      // Send the invitation email
+      const invitation: Invitation = {
+        id: data.id,
+        email: data.email,
+        role: data.role as 'admin' | 'staff' | 'farmer',
+        message: data.message,
+        invitedBy: data.invited_by,
+        created_at: data.created_at,
+        expires_at: data.expires_at,
+        token: data.token,
+        accepted: data.accepted,
+        accepted_at: data.accepted_at
+      };
+
+      return await this.sendInvitationEmail(invitation);
+    } catch (error) {
+      console.error('[INVITATION] Error resending invitation:', error);
+      return false;
+    }
+  }
+
   /**
    * Revoke an invitation
    * @param invitationId - The invitation ID
@@ -356,119 +492,51 @@ export class InvitationService {
    */
   async revokeInvitation(invitationId: string): Promise<boolean> {
     try {
-      // In a real implementation with an invitations table, you would:
-      // const { error } = await supabase
-      //   .from('invitations')
-      //   .delete()
-      //   .eq('id', invitationId);
-      
-      // Since we're simulating, we'll just return true
+      console.log('[INVITATION] Revoking invitation:', invitationId);
+
+      const { error } = await supabase
+        .from('invitations')
+        .delete()
+        .eq('id', invitationId);
+
+      if (error) {
+        console.error('[INVITATION] Error revoking invitation:', error);
+        return false;
+      }
+
+      console.log('[INVITATION] Invitation revoked successfully');
       return true;
     } catch (error) {
-      console.error('Error revoking invitation:', error);
+      console.error('[INVITATION] Error revoking invitation:', error);
       return false;
     }
   }
-  
+
   /**
-   * Send email using a third-party email service
-   * This is an example of how you might integrate with SendGrid or similar
-   * @param to - Recipient email address
-   * @param subject - Email subject
-   * @param html - HTML content of the email
-   * @returns True if successful, false otherwise
+   * Clean up expired invitations (for maintenance)
+   * @returns Number of invitations deleted
    */
-  async sendEmailWithService(to: string, subject: string, html: string): Promise<boolean> {
+  async cleanupExpiredInvitations(): Promise<number> {
     try {
-      // This is a placeholder for actual email service integration
-      // You would typically make an API call to your email service here
-      
-      // Example using fetch to call an email service API:
-      // const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
-      //   method: 'POST',
-      //   headers: {
-      //     'Authorization': `Bearer ${import.meta.env.VITE_SENDGRID_API_KEY}`,
-      //     'Content-Type': 'application/json'
-      //   },
-      //   body: JSON.stringify({
-      //     personalizations: [{
-      //       to: [{ email: to }],
-      //       subject: subject
-      //     }],
-      //     from: {
-      //       email: 'noreply@yourcompany.com'
-      //     },
-      //     content: [{
-      //       type: 'text/html',
-      //       value: html
-      //     }]
-      //   })
-      // });
-      
-      // For now, we'll just log to console
-      console.log(`Sending email to ${to} with subject: ${subject}`);
-      console.log(`Email content: ${html}`);
-      
-      return true;
+      const { data, error } = await supabase
+        .from('invitations')
+        .delete()
+        .lt('expires_at', new Date().toISOString())
+        .eq('accepted', false)
+        .select('id');
+
+      if (error) {
+        console.error('[INVITATION] Error cleaning up expired invitations:', error);
+        return 0;
+      }
+
+      const count = data?.length || 0;
+      console.log(`[INVITATION] Cleaned up ${count} expired invitations`);
+      return count;
     } catch (error) {
-      console.error('Error sending email:', error);
-      return false;
+      console.error('[INVITATION] Error cleaning up expired invitations:', error);
+      return 0;
     }
-  }
-  
-  /**
-   * Generate HTML email template for invitations
-   * @param invitation - The invitation data
-   * @returns HTML email template
-   */
-  generateInvitationEmailTemplate(invitation: Invitation): string {
-    const invitationLink = `${window.location.origin}/accept-invite?token=${invitation.token}`;
-    
-    return `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="utf-8">
-          <title>You've been invited to join our system</title>
-        </head>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-          <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-            <h1 style="color: #2563eb;">You've been invited to join our system</h1>
-            
-            <p>Hello,</p>
-            
-            <p>You've been invited to join our system as a <strong>${invitation.role}</strong>.</p>
-            
-            ${invitation.message ? `<p><strong>Message from the sender:</strong></p>
-            <blockquote style="border-left: 4px solid #2563eb; padding-left: 16px; margin: 16px 0;">
-              ${invitation.message}
-            </blockquote>` : ''}
-            
-            <p>To accept this invitation, please click the button below:</p>
-            
-            <div style="text-align: center; margin: 30px 0;">
-              <a href="${invitationLink}" 
-                 style="background-color: #2563eb; color: white; padding: 12px 24px; 
-                        text-decoration: none; border-radius: 6px; display: inline-block;
-                        font-weight: bold;">
-                Accept Invitation
-              </a>
-            </div>
-            
-            <p>Or copy and paste this link into your browser:</p>
-            <p style="word-break: break-all; color: #2563eb;">${invitationLink}</p>
-            
-            <p>This invitation will expire in 7 days.</p>
-            
-            <hr style="margin: 30px 0; border: 0; border-top: 1px solid #e5e7eb;">
-            
-            <p style="font-size: 14px; color: #6b7280;">
-              If you didn't expect this invitation, you can safely ignore this email.
-            </p>
-          </div>
-        </body>
-      </html>
-    `;
   }
 }
 
