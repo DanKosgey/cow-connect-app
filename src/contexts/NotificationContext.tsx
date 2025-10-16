@@ -1,4 +1,4 @@
-import { createContext, useContext, useReducer, ReactNode } from 'react';
+import React, { createContext, useContext, useReducer, ReactNode } from 'react';
 import useToastNotifications from '@/hooks/useToastNotifications';
 
 type NotificationType = 'success' | 'error' | 'warning' | 'info';
