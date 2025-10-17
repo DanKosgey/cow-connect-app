@@ -93,10 +93,17 @@ const PaymentsPage = () => {
             transaction_id: payment.transaction_id
           })));
         } else {
-          // Fetch payments
+          // Fetch payments from the correct farmer_payments table
           const { data: paymentsData, error } = await supabase
-            .from('payments')
-            .select('*')
+            .from('farmer_payments')
+            .select(`
+              id,
+              total_amount,
+              approval_status,
+              created_at,
+              paid_at,
+              notes
+            `)
             .eq('farmer_id', farmerData.id)
             .order('created_at', { ascending: false });
 
@@ -106,7 +113,19 @@ const PaymentsPage = () => {
             setLoading(false);
             return;
           }
-          setPayments(paymentsData || []);
+          
+          // Transform the data to match the existing interface
+          const transformedPayments = paymentsData?.map(payment => ({
+            id: payment.id,
+            amount: payment.total_amount,
+            status: payment.approval_status,
+            created_at: payment.created_at,
+            processed_at: payment.paid_at,
+            payment_method: 'Bank Transfer', // Default payment method
+            transaction_id: payment.id // Use payment ID as transaction ID
+          })) || [];
+          
+          setPayments(transformedPayments);
         }
       } catch (err) {
         console.error('Error fetching payments:', err);

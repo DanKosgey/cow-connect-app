@@ -108,9 +108,12 @@ export function useRealtimePayments() {
     // Get initial failed payments
     const fetchFailedPayments = async () => {
       const { data } = await supabase
-        .from('payments')
-        .select('*, farmers(full_name)')
-        .eq('status', 'failed')
+        .from('farmer_payments')
+        .select(`
+          *,
+          farmers!farmer_payments_farmer_id_fkey(full_name)
+        `)
+        .eq('approval_status', 'pending') // Using pending status instead of failed
         .order('created_at', { ascending: false });
       
       setFailedPayments(data || []);
@@ -126,13 +129,16 @@ export function useRealtimePayments() {
         {
           event: '*',
           schema: 'public',
-          table: 'payments',
+          table: 'farmer_payments',
         },
         async (payload) => {
-          if (payload.eventType === 'UPDATE' && payload.new.status === 'failed') {
+          if (payload.eventType === 'UPDATE' && payload.new.approval_status === 'pending') {
             const { data: payment } = await supabase
-              .from('payments')
-              .select('*, farmers(full_name)')
+              .from('farmer_payments')
+              .select(`
+                *,
+                farmers!farmer_payments_farmer_id_fkey(full_name)
+              `)
               .eq('id', payload.new.id)
               .single();
 
@@ -140,8 +146,8 @@ export function useRealtimePayments() {
               setFailedPayments((current) => [payment, ...current]);
               addNotification({
                 type: 'error',
-                title: 'Payment Failed',
-                message: `Payment failed for farmer ${payment.farmers?.full_name}`,
+                title: 'Payment Requires Approval',
+                message: `Payment needs approval for farmer ${payment.farmers?.full_name}`,
                 autoDismiss: true,
               });
             }
