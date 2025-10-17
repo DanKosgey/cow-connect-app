@@ -101,25 +101,24 @@ export function useRealtimeKYC() {
 }
 
 export function useRealtimePayments() {
-  const [failedPayments, setFailedPayments] = useState<any[]>([]);
+  const [payments, setPayments] = useState<any[]>([]);
   const { addNotification } = useNotification();
 
   useEffect(() => {
-    // Get initial failed payments
-    const fetchFailedPayments = async () => {
+    // Get initial payments
+    const fetchPayments = async () => {
       const { data } = await supabase
         .from('farmer_payments')
         .select(`
           *,
           farmers!farmer_payments_farmer_id_fkey(full_name)
         `)
-        .eq('approval_status', 'pending') // Using pending status instead of failed
         .order('created_at', { ascending: false });
       
-      setFailedPayments(data || []);
+      setPayments(data || []);
     };
 
-    fetchFailedPayments();
+    fetchPayments();
 
     // Subscribe to payment changes
     const subscription = supabase
@@ -132,7 +131,8 @@ export function useRealtimePayments() {
           table: 'farmer_payments',
         },
         async (payload) => {
-          if (payload.eventType === 'UPDATE' && payload.new.approval_status === 'pending') {
+          // Handle all payment changes
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
             const { data: payment } = await supabase
               .from('farmer_payments')
               .select(`
@@ -143,14 +143,25 @@ export function useRealtimePayments() {
               .single();
 
             if (payment) {
-              setFailedPayments((current) => [payment, ...current]);
-              addNotification({
-                type: 'error',
-                title: 'Payment Requires Approval',
-                message: `Payment needs approval for farmer ${payment.farmers?.full_name}`,
-                autoDismiss: true,
+              setPayments((current) => {
+                // Remove existing payment if it exists
+                const filtered = current.filter(p => p.id !== payment.id);
+                // Add the updated payment to the beginning
+                return [payment, ...filtered];
               });
+              
+              // Send notification for status changes
+              if (payload.eventType === 'UPDATE' && payload.old.approval_status !== payload.new.approval_status) {
+                addNotification({
+                  type: 'info',
+                  title: 'Payment Status Updated',
+                  message: `Payment status changed to ${payment.approval_status} for farmer ${payment.farmers?.full_name}`,
+                  autoDismiss: true,
+                });
+              }
             }
+          } else if (payload.eventType === 'DELETE') {
+            setPayments((current) => current.filter(p => p.id !== payload.old.id));
           }
         }
       )
@@ -161,5 +172,5 @@ export function useRealtimePayments() {
     };
   }, [addNotification]);
 
-  return failedPayments;
+  return payments;
 }

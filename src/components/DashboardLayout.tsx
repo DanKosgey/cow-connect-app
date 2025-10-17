@@ -24,7 +24,8 @@ import {
   ArrowLeft,
   ArrowRight,
   RotateCw,
-  Activity
+  Activity,
+  DollarSign
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
@@ -78,6 +79,7 @@ const roleNavigation: Record<string, NavItem[]> = {
     { label: 'Dashboard', path: '/admin/dashboard', icon: <LayoutDashboard className="h-5 w-5" />, category: 'main' },
     { label: 'Checkpoints', path: '/admin/checkpoints', icon: <Target className="h-5 w-5" />, category: 'operations' },
     { label: 'Collections', path: '/admin/collections', icon: <Milk className="h-5 w-5" />, category: 'operations' },
+    { label: 'Payments', path: '/admin/payments', icon: <DollarSign className="h-5 w-5" />, category: 'finance' },
     { label: 'Analytics', path: '/admin/analytics', icon: <BarChart3 className="h-5 w-5" />, category: 'analytics' },
     { label: 'Farmer Performance', path: '/admin/farmer-performance', icon: <Activity className="h-5 w-5" />, category: 'analytics' },
     { label: 'KYC Approvals', path: '/admin/kyc-pending-farmers', icon: <CheckCircle className="h-5 w-5" />, category: 'kyc' },

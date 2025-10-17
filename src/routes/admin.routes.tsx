@@ -53,7 +53,6 @@ export const adminRoutes = [
   { path: '/admin/*', element: <AdminPortalLayout><div>Placeholder</div></AdminPortalLayout> },
   { path: '/admin/farmers', element: <Farmers /> },
   { path: '/admin/staff', element: <Staff /> },
-  { path: '/admin/payments', element: <PaymentSystem /> },
   { path: '/admin/collections', element: <CollectionsAnalyticsDashboard /> },
   { path: '/admin/kyc', element: <KYCAdminDashboard /> },
   { path: '/admin/kyc-pending-farmers', element: <KYCPendingFarmersDashboard /> },

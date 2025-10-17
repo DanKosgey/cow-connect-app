@@ -12,7 +12,8 @@ import {
   ChevronUp,
   ChevronDown,
   Users,
-  BarChart3
+  BarChart3,
+  AlertCircle
 } from 'lucide-react';
 import { businessIntelligenceService } from '@/services/business-intelligence-service';
 
@@ -30,11 +31,15 @@ const BusinessIntelligenceMetrics = ({ timeRange = 'week' }: { timeRange?: strin
   const [metrics, setMetrics] = useState<BusinessIntelligenceMetric[]>([]);
   const [loading, setLoading] = useState(true);
 
+  console.log('BusinessIntelligenceMetrics component rendered with timeRange:', timeRange);
+
   useEffect(() => {
     const fetchMetrics = async () => {
       try {
         setLoading(true);
+        console.log('Fetching business intelligence metrics for time range:', timeRange);
         const data = await businessIntelligenceService.calculateBusinessIntelligenceMetrics(timeRange);
+        console.log('Business intelligence metrics fetched:', data);
         setMetrics(data);
       } catch (error) {
         console.error('Error fetching business intelligence metrics:', error);
@@ -47,18 +52,34 @@ const BusinessIntelligenceMetrics = ({ timeRange = 'week' }: { timeRange?: strin
   }, [timeRange]);
 
   const getIconComponent = (iconName: string) => {
+    console.log('Getting icon component for:', iconName);
     switch (iconName) {
-      case 'DollarSign': return DollarSign;
-      case 'TrendingUp': return TrendingUp;
-      case 'Activity': return Activity;
-      case 'Award': return Award;
-      case 'Users': return Users;
-      case 'BarChart3': return BarChart3;
-      default: return TrendingUp;
+      case 'DollarSign': 
+        console.log('Returning DollarSign icon');
+        return DollarSign;
+      case 'TrendingUp': 
+        console.log('Returning TrendingUp icon');
+        return TrendingUp;
+      case 'Activity': 
+        console.log('Returning Activity icon');
+        return Activity;
+      case 'Award': 
+        console.log('Returning Award icon');
+        return Award;
+      case 'Users': 
+        console.log('Returning Users icon');
+        return Users;
+      case 'BarChart3': 
+        console.log('Returning BarChart3 icon');
+        return BarChart3;
+      default: 
+        console.log('Returning default TrendingUp icon');
+        return TrendingUp;
     }
   };
 
   if (loading) {
+    console.log('BusinessIntelligenceMetrics is loading');
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {[1, 2, 3, 4].map((i) => (
@@ -78,7 +99,21 @@ const BusinessIntelligenceMetrics = ({ timeRange = 'week' }: { timeRange?: strin
     );
   }
 
+  // Check if metrics are empty
+  if (!metrics || metrics.length === 0) {
+    console.log('BusinessIntelligenceMetrics has no data');
+    return (
+      <div className="text-center py-8">
+        <AlertCircle className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
+        <h3 className="text-lg font-medium text-gray-900 mb-2">No Data Available</h3>
+        <p className="text-gray-500">Business intelligence metrics could not be calculated.</p>
+      </div>
+    );
+  }
+
   const BusinessIntelligenceCard = ({ metric }: { metric: BusinessIntelligenceMetric }) => {
+    console.log('BusinessIntelligenceCard rendering metric:', metric);
+    
     const IconComponent = getIconComponent(metric.icon);
     
     // Determine gradient based on metric type
@@ -94,6 +129,8 @@ const BusinessIntelligenceMetrics = ({ timeRange = 'week' }: { timeRange?: strin
     } else if (metric.id.includes('profit')) {
       gradientClass = "from-teal-500 to-teal-700";
     }
+    
+    console.log('Icon component:', IconComponent, 'Gradient class:', gradientClass);
     
     return (
       <Card className="hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 border-0 shadow-lg">
@@ -122,9 +159,18 @@ const BusinessIntelligenceMetrics = ({ timeRange = 'week' }: { timeRange?: strin
   };
 
   // Determine grid columns based on number of metrics (max 4 per row)
-  const gridColsClass = metrics.length <= 4 
-    ? `grid-cols-1 md:grid-cols-2 lg:grid-cols-${Math.min(metrics.length, 4)}`
-    : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4';
+  let gridColsClass = '';
+  if (metrics.length === 1) {
+    gridColsClass = 'grid-cols-1';
+  } else if (metrics.length === 2) {
+    gridColsClass = 'grid-cols-1 md:grid-cols-2';
+  } else if (metrics.length === 3) {
+    gridColsClass = 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3';
+  } else {
+    gridColsClass = 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4';
+  }
+
+  console.log('Grid columns class:', gridColsClass, 'Metrics count:', metrics.length, 'Metrics:', metrics);
 
   return (
     <div className={`grid ${gridColsClass} gap-6`}>

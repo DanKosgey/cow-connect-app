@@ -95,6 +95,35 @@ export class PaymentService {
 
       if (collectionError) throw collectionError;
 
+      // Find and update any related farmer_payments records
+      // First, find farmer_payments that include this collection
+      const { data: relatedPayments, error: findPaymentsError } = await supabase
+        .from('farmer_payments')
+        .select('id, collection_ids, approval_status')
+        .contains('collection_ids', [collectionId]);
+
+      if (findPaymentsError) {
+        console.warn('Warning: Error finding related farmer payments', findPaymentsError);
+      } else if (relatedPayments && relatedPayments.length > 0) {
+        // Update all related farmer_payments to mark as paid
+        for (const payment of relatedPayments) {
+          // Only update if the payment is not already paid
+          if (payment.approval_status !== 'paid') {
+            const { error: updatePaymentError } = await supabase
+              .from('farmer_payments')
+              .update({ 
+                approval_status: 'paid',
+                paid_at: new Date().toISOString()
+              })
+              .eq('id', payment.id);
+
+            if (updatePaymentError) {
+              console.warn('Warning: Error updating farmer payment status', updatePaymentError);
+            }
+          }
+        }
+      }
+
       // Send notification
       if (farmerId) {
         try {
@@ -230,6 +259,29 @@ export class PaymentService {
       return { success: true, data };
     } catch (error) {
       console.error('Error marking payment as paid:', error);
+      return { success: false, error };
+    }
+  }
+
+  // Mark all payments for a farmer as paid
+  static async markAllFarmerPaymentsAsPaid(farmerId: string, collections: Collection[]) {
+    try {
+      // Mark each collection as paid
+      const results = await Promise.all(
+        collections.map(collection => 
+          this.markCollectionAsPaid(collection.id, farmerId, collection)
+        )
+      );
+      
+      // Check if all operations were successful
+      const failedOperations = results.filter(result => !result.success);
+      if (failedOperations.length > 0) {
+        throw new Error(`Failed to mark ${failedOperations.length} payments as paid`);
+      }
+      
+      return { success: true, data: results };
+    } catch (error) {
+      console.error('Error marking all farmer payments as paid:', error);
       return { success: false, error };
     }
   }

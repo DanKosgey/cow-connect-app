@@ -81,52 +81,39 @@ const PaymentsPage = () => {
 
         setFarmer(farmerData);
 
-        // Use real-time payments if available, otherwise fetch from database
-        if (realtimePayments.length > 0) {
-          setPayments(realtimePayments.map(payment => ({
-            id: payment.id,
-            amount: payment.amount,
-            status: payment.status,
-            created_at: payment.created_at,
-            processed_at: payment.processed_at,
-            payment_method: payment.payment_method,
-            transaction_id: payment.transaction_id
-          })));
-        } else {
-          // Fetch payments from the correct farmer_payments table
-          const { data: paymentsData, error } = await supabase
-            .from('farmer_payments')
-            .select(`
-              id,
-              total_amount,
-              approval_status,
-              created_at,
-              paid_at,
-              notes
-            `)
-            .eq('farmer_id', farmerData.id)
-            .order('created_at', { ascending: false });
+        // Fetch payments from the farmer_payments table
+        const { data: paymentsData, error } = await supabase
+          .from('farmer_payments')
+          .select(`
+            id,
+            total_amount,
+            approval_status,
+            created_at,
+            paid_at,
+            notes
+          `)
+          .eq('farmer_id', farmerData.id)
+          .order('created_at', { ascending: false });
 
-          if (error) {
-            console.error('Error fetching payments:', error);
-            toastRef.current.error('Error', 'Failed to load payments data');
-            setLoading(false);
-            return;
-          }
-          
-          // Transform the data to match the existing interface
-          const transformedPayments = paymentsData?.map(payment => ({
-            id: payment.id,
-            amount: payment.total_amount,
-            status: payment.approval_status,
-            created_at: payment.created_at,
-            processed_at: payment.paid_at,
-            payment_method: 'Bank Transfer', // Default payment method
-            transaction_id: payment.id // Use payment ID as transaction ID
-          })) || [];
-          
-          setPayments(transformedPayments);
+        if (error) {
+          console.error('Error fetching payments:', error);
+          toastRef.current.error('Error', 'Failed to load payments data');
+          setLoading(false);
+          return;
         }
+        
+        // Transform the data to match the existing interface
+        const transformedPayments = paymentsData?.map(payment => ({
+          id: payment.id,
+          amount: payment.total_amount,
+          status: payment.approval_status,
+          created_at: payment.created_at,
+          processed_at: payment.paid_at,
+          payment_method: 'Bank Transfer', // Default payment method
+          transaction_id: payment.id // Use payment ID as transaction ID
+        })) || [];
+        
+        setPayments(transformedPayments);
       } catch (err) {
         console.error('Error fetching payments:', err);
         toastRef.current.error('Error', 'Failed to load payments data');
@@ -136,7 +123,7 @@ const PaymentsPage = () => {
     };
 
     fetchPayments();
-  }, []); // Removed realtimePayments and toast from dependencies to prevent infinite loop
+  }, []);
 
   // Filter payments based on search and filters
   useEffect(() => {
@@ -150,11 +137,19 @@ const PaymentsPage = () => {
       );
     }
     
-    // Apply status filter
+    // Apply status filter (map farmer_payments statuses to the expected values)
     if (statusFilter) {
-      result = result.filter(payment => 
-        payment.status === statusFilter
-      );
+      result = result.filter(payment => {
+        // Map farmer_payments approval_status to expected status values
+        if (statusFilter === 'completed') {
+          return payment.status === 'paid';
+        } else if (statusFilter === 'processing') {
+          return payment.status === 'approved';
+        } else if (statusFilter === 'failed') {
+          return payment.status === 'pending';
+        }
+        return payment.status === statusFilter;
+      });
     }
     
     // Apply date filter
@@ -173,10 +168,10 @@ const PaymentsPage = () => {
     amount: payment.amount
   }));
 
-  // Calculate payment statistics
+  // Calculate payment statistics (map farmer_payments statuses correctly)
   const totalPayments = payments.reduce((sum, payment) => sum + payment.amount, 0);
-  const completedPayments = payments.filter(p => p.status === 'completed').reduce((sum, payment) => sum + payment.amount, 0);
-  const pendingPayments = payments.filter(p => p.status === 'processing').reduce((sum, payment) => sum + payment.amount, 0);
+  const completedPayments = payments.filter(p => p.status === 'paid').reduce((sum, payment) => sum + payment.amount, 0);
+  const pendingPayments = payments.filter(p => p.status === 'pending' || p.status === 'approved').reduce((sum, payment) => sum + payment.amount, 0);
 
   const exportPayments = (format: 'csv' | 'json') => {
     try {
@@ -336,18 +331,24 @@ const PaymentsPage = () => {
                 </td>
                 <td className="px-4 py-4 whitespace-nowrap">
                   <span className={`inline-flex items-center px-2.5 py-0.5 text-xs font-medium rounded-full ${
-                    payment.status === 'completed' ? 'bg-green-100 text-green-800' :
-                    payment.status === 'processing' ? 'bg-yellow-100 text-yellow-800' :
+                    payment.status === 'paid' ? 'bg-green-100 text-green-800' :
+                    payment.status === 'approved' ? 'bg-blue-100 text-blue-800' :
+                    payment.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
                     'bg-red-100 text-red-800'
                   }`}>
-                    {payment.status === 'completed' ? (
+                    {payment.status === 'paid' ? (
                       <CheckCircle className="w-3 h-3 mr-1" />
-                    ) : payment.status === 'processing' ? (
+                    ) : payment.status === 'approved' ? (
+                      <Clock className="w-3 h-3 mr-1" />
+                    ) : payment.status === 'pending' ? (
                       <Clock className="w-3 h-3 mr-1" />
                     ) : (
                       <XCircle className="w-3 h-3 mr-1" />
                     )}
-                    {payment.status.charAt(0).toUpperCase() + payment.status.slice(1)}
+                    {payment.status === 'paid' ? 'Completed' : 
+                     payment.status === 'approved' ? 'Processing' : 
+                     payment.status === 'pending' ? 'Pending' : 
+                     payment.status.charAt(0).toUpperCase() + payment.status.slice(1)}
                   </span>
                 </td>
                 <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">

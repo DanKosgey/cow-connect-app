@@ -194,7 +194,7 @@ export class AnalyticsService {
     try {
       // Minimal logging for analytics data fetching
       if (import.meta.env.DEV) {
-        console.log('Fetching analytics data');
+        console.log('Fetching analytics data for time range:', timeRange);
       }
       
       const endDate = new Date();
@@ -215,6 +215,33 @@ export class AnalyticsService {
           break;
         default:
           startDate = subDays(endDate, 7);
+      }
+
+      console.log('Date range for analytics:', { 
+        startDate: startDate.toISOString(), 
+        endDate: endDate.toISOString(),
+        startDateMs: startDate.getTime(),
+        endDateMs: endDate.getTime()
+      });
+
+      // Test: Check if there are any collections at all
+      const { data: allCollections, error: allCollectionsError } = await supabase
+        .from('collections')
+        .select('collection_date')
+        .limit(10);
+
+      if (allCollectionsError) {
+        console.error('Error fetching all collections:', allCollectionsError);
+      } else {
+        console.log('All collection dates (first 10):', allCollections);
+        // Log the dates of all collections
+        if (allCollections && allCollections.length > 0) {
+          const dates = allCollections.map(c => c.collection_date);
+          console.log('Collection date range in database:', {
+            min: Math.min(...dates.map(d => new Date(d).getTime())),
+            max: Math.max(...dates.map(d => new Date(d).getTime()))
+          });
+        }
       }
 
       // Fetch all required data in parallel
@@ -255,14 +282,14 @@ export class AnalyticsService {
       );
 
       if (import.meta.env.DEV) {
-        // Minimal logging for processed data
-        console.log('Processed analytics data');
+        // Log the processed data for debugging
+        console.log('Processed analytics data:', processedData);
       }
       return processedData;
     } catch (error) {
       // Minimal error logging
       if (import.meta.env.DEV) {
-        console.error('Error fetching dashboard data');
+        console.error('Error fetching dashboard data:', error);
       }
       throw error;
     }
@@ -432,6 +459,20 @@ export class AnalyticsService {
   }
 
   private async fetchCollections(startDate: Date, endDate: Date): Promise<Collection[]> {
+    console.log('Fetching collections between:', startDate.toISOString(), 'and', endDate.toISOString());
+    
+    // Test: Fetch all collections to see what dates exist
+    const { data: allCollections, error: allCollectionsError } = await supabase
+      .from('collections')
+      .select('collection_date')
+      .limit(10);
+
+    if (allCollectionsError) {
+      console.error('Error fetching all collections for date check:', allCollectionsError);
+    } else {
+      console.log('All collection dates (first 10):', allCollections);
+    }
+    
     const { data, error } = await supabase
       .from('collections')
       .select(`
@@ -452,12 +493,36 @@ export class AnalyticsService {
       throw error;
     }
 
-    console.log('Fetched collections:', data?.length || 0);
+    console.log('Fetched collections:', data?.length || 0, 'Data:', data);
+    
+    // Test: Log the date range of the fetched collections
+    if (data && data.length > 0) {
+      const dates = data.map(c => c.collection_date);
+      console.log('Collection date range:', {
+        min: Math.min(...dates.map(d => new Date(d).getTime())),
+        max: Math.max(...dates.map(d => new Date(d).getTime())),
+        startDate: startDate.getTime(),
+        endDate: endDate.getTime()
+      });
+    }
+    
     // Return collections with actual total_amount from database
     return data || [];
   }
 
   private async fetchFarmers(): Promise<Farmer[]> {
+    // Test: Fetch all farmers to see what exists
+    const { data: allFarmers, error: allFarmersError } = await supabase
+      .from('farmers')
+      .select('*')
+      .limit(5);
+
+    if (allFarmersError) {
+      console.error('Error fetching all farmers:', allFarmersError);
+    } else {
+      console.log('All farmers (first 5):', allFarmers);
+    }
+
     const { data, error } = await supabase
       .from('farmers')
       .select(`
@@ -475,11 +540,23 @@ export class AnalyticsService {
       throw error;
     }
 
-    console.log('Fetched farmers:', data?.length || 0);
+    console.log('Fetched farmers:', data?.length || 0, 'Data:', data);
     return data || [];
   }
 
   private async fetchStaff(): Promise<Staff[]> {
+    // Test: Fetch all staff to see what exists
+    const { data: allStaff, error: allStaffError } = await supabase
+      .from('staff')
+      .select('*')
+      .limit(5);
+
+    if (allStaffError) {
+      console.error('Error fetching all staff:', allStaffError);
+    } else {
+      console.log('All staff (first 5):', allStaff);
+    }
+
     const { data, error } = await supabase
       .from('staff')
       .select(`
@@ -517,15 +594,29 @@ export class AnalyticsService {
         };
       });
       
-      console.log('Fetched staff:', mergedData.length);
+      console.log('Fetched staff:', mergedData.length, 'Data:', mergedData);
       return mergedData;
     }
 
-    console.log('Fetched staff:', data?.length || 0);
+    console.log('Fetched staff:', data?.length || 0, 'Data:', data);
     return data || [];
   }
 
   private async fetchPayments(startDate: Date, endDate: Date): Promise<Payment[]> {
+    console.log('Fetching payments between:', startDate.toISOString(), 'and', endDate.toISOString());
+    
+    // Test: Fetch all collections to see what dates exist
+    const { data: allCollections, error: allCollectionsError } = await supabase
+      .from('collections')
+      .select('collection_date, total_amount')
+      .limit(10);
+
+    if (allCollectionsError) {
+      console.error('Error fetching all collections for payments check:', allCollectionsError);
+    } else {
+      console.log('All collections for payments (first 10):', allCollections);
+    }
+    
     // For now, we'll simulate payments based on collections
     // In a real implementation, you would fetch from a payments table
     const { data: collections, error } = await supabase
@@ -545,7 +636,7 @@ export class AnalyticsService {
       throw error;
     }
 
-    // Use the actual total_amount from collections instead of calculating it
+    // Use the actual total_amount from collections which is already calculated with admin rate
     const payments = (collections || []).map(collection => ({
       id: `pay_${collection.id}`,
       farmer_id: collection.farmer_id,
@@ -554,11 +645,22 @@ export class AnalyticsService {
       created_at: collection.collection_date
     }));
     
-    console.log('Generated payments:', payments.length);
+    console.log('Generated payments:', payments.length, 'Data:', payments);
     return payments;
   }
 
   private async fetchWarehouses(): Promise<Warehouse[]> {
+    // Test: Fetch all warehouses to see what exists
+    const { data: allWarehouses, error: allWarehousesError } = await supabase
+      .from('warehouses')
+      .select('*');
+
+    if (allWarehousesError) {
+      console.error('Error fetching all warehouses:', allWarehousesError);
+    } else {
+      console.log('All warehouses:', allWarehouses);
+    }
+
     const { data, error } = await supabase
       .from('warehouses')
       .select(`
@@ -604,7 +706,7 @@ export class AnalyticsService {
       }
     }));
     
-    console.log('Fetched warehouses:', processedWarehouses.length);
+    console.log('Fetched warehouses:', processedWarehouses.length, 'Data:', processedWarehouses);
     return processedWarehouses;
   }
 
@@ -704,6 +806,105 @@ export class AnalyticsService {
       ? collections.reduce((sum, c) => sum + (qualityScores[c.quality_grade] || 0), 0) / collections.length
       : 0;
 
+    console.log('Collection metrics:', {
+      totalCollections,
+      totalLiters,
+      totalRevenue,
+      avgQuality
+    });
+
+    // If there are no collections, return early with zero values
+    if (totalCollections === 0) {
+      console.log('No collections found, returning zero values');
+      
+      // Fetch the current admin rate
+      const marketPrice = await milkRateService.getCurrentRate();
+      
+      return {
+        metrics: {
+          totalFarmers,
+          activeFarmers,
+          totalCollections: 0,
+          todayCollections: 0,
+          totalLiters: 0,
+          todayLiters: 0,
+          totalRevenue: 0,
+          pendingPayments: 0,
+          averageQuality: '0.0',
+          staffMembers: staff.length,
+          // New business intelligence metrics
+          costPerLiter: marketPrice,
+          revenuePerFarmer: 0,
+          collectionEfficiency: 0,
+          qualityIndex: 0,
+          farmerRetention: totalFarmers > 0 ? 100 : 0,
+          seasonalTrend: 0,
+          // Additional metrics for DetailedBusinessInsights
+          totalCollectionTarget: 0,
+          actualCollectionVolume: 0,
+          farmersAtPeriodStart: totalFarmers,
+          farmersAtPeriodEnd: activeFarmers,
+          totalOperatingCosts: 0,
+          totalQualityTests: 0,
+          passedQualityTests: 0,
+          currentPeriodVolume: 0,
+          previousPeriodVolume: 0
+        },
+        collectionsByDay: [],
+        weeklyTrends: [],
+        qualityDistribution: [],
+        topFarmers: [],
+        underperformingFarmers: [],
+        staffPerformance: [],
+        paymentStatus: [],
+        warehouses: [],
+        alerts: [],
+        businessIntelligence: [
+          {
+            id: 'cost-per-liter',
+            title: 'Admin Rate per Liter',
+            value: `KES ${marketPrice.toFixed(2)}`,
+            change: 0,
+            changeType: 'neutral',
+            description: 'Current admin-configured rate for fresh milk',
+            icon: 'DollarSign'
+          },
+          {
+            id: 'revenue-per-farmer',
+            title: 'Revenue per Farmer',
+            value: 'KES 0',
+            change: 0,
+            changeType: 'neutral',
+            description: 'Average revenue generated per farmer',
+            icon: 'TrendingUp'
+          },
+          {
+            id: 'collection-efficiency',
+            title: 'Collection Efficiency',
+            value: '0.0%',
+            change: 0,
+            changeType: 'neutral',
+            description: 'Collections per active farmer',
+            icon: 'Activity'
+          },
+          {
+            id: 'quality-index',
+            title: 'Quality Index',
+            value: '0.0',
+            change: 0,
+            changeType: 'neutral',
+            description: 'Average quality score',
+            icon: 'Award'
+          }
+        ],
+        collectionHeatmap: [],
+        collectionForecast: [],
+        revenueForecast: [],
+        qualityForecast: [],
+        trendAnalysis: []
+      };
+    }
+
     const isToday = (dateString: string) => {
       const d = new Date(dateString);
       const today = new Date();
@@ -754,6 +955,8 @@ export class AnalyticsService {
         revenue: totalRevenue
       };
     });
+
+    console.log('Weekly trends:', weeklyTrends);
 
     // Process quality distribution
     const distribution: Record<string, number> = { 'A+': 0, 'A': 0, 'B': 0, 'C': 0 };
@@ -906,6 +1109,8 @@ export class AnalyticsService {
     const marketPrice = await milkRateService.getCurrentRate();
     const marketPriceChange = 0; // No change data for admin rate
 
+    console.log('Current market price (admin rate):', marketPrice);
+
     // Generate trend analysis using the trend service
     let trendAnalysis: TrendData[] = [];
     
@@ -1006,177 +1211,35 @@ export class AnalyticsService {
         }
       ];
     }
-
-    // Additional metrics for DetailedBusinessInsights
-    // For now, we'll use simplified calculations since we don't have explicit operational costs table
-    const totalCollectionTarget = totalLiters * 1.1; // Assuming 10% buffer as target
-    const actualCollectionVolume = totalLiters;
-    const farmersAtPeriodStart = totalFarmers;
-    const farmersAtPeriodEnd = activeFarmers;
-    const totalOperatingCosts = totalRevenue * 0.7; // Assuming 70% of revenue as costs
-    const totalQualityTests = collections.length;
-    const passedQualityTests = collections.filter(c => c.quality_grade === 'A+' || c.quality_grade === 'A' || c.quality_grade === 'B').length;
-    
-    // Calculate period volumes for trend analysis
-    const currentPeriodVolume = totalLiters;
-    const previousPeriodVolume = totalLiters * 0.95; // Simulated previous period data
-
-    // Calculate business intelligence metrics
-    const costPerLiter = await milkRateService.getCurrentRate();
-    
-    // Fix: Ensure we don't divide by zero
-    const revenuePerFarmer = activeFarmers > 0 && totalRevenue > 0 ? totalRevenue / activeFarmers : 0;
-    const collectionEfficiency = activeFarmers > 0 && totalCollections > 0 ? (totalCollections / activeFarmers) * 100 : 0;
-    const qualityIndex = avgQuality;
-    const farmerRetention = totalFarmers > 0 ? (activeFarmers / totalFarmers) * 100 : 0;
-    
-    // Calculate seasonal trend (simplified)
-    const seasonalTrend = Math.sin((new Date().getMonth() / 12) * 2 * Math.PI) * 10;
-
-    // Calculate trend analysis for business intelligence metrics
-    let costPerLiterTrend = 0;
-    let revenuePerFarmerTrend = 0;
-    let collectionEfficiencyTrend = 0;
-    let qualityIndexTrend = 0;
-    
-    // Use trend analysis data if available
-    if (trendAnalysis.length > 0) {
-      const costPerLiterTrendData = trendAnalysis.find(t => t.metric === 'CostPerLiter');
-      const revenuePerFarmerTrendData = trendAnalysis.find(t => t.metric === 'RevenuePerFarmer');
-      const collectionEfficiencyTrendData = trendAnalysis.find(t => t.metric === 'CollectionEfficiency');
-      const qualityIndexTrendData = trendAnalysis.find(t => t.metric === 'Quality');
-      
-      if (costPerLiterTrendData) {
-        costPerLiterTrend = costPerLiterTrendData.percentageChange;
-      }
-      if (revenuePerFarmerTrendData) {
-        revenuePerFarmerTrend = revenuePerFarmerTrendData.percentageChange;
-      }
-      if (collectionEfficiencyTrendData) {
-        collectionEfficiencyTrend = collectionEfficiencyTrendData.percentageChange;
-      }
-      if (qualityIndexTrendData) {
-        qualityIndexTrend = qualityIndexTrendData.percentageChange;
-      }
-    } else {
-      // Fallback to simulated trends if no trend analysis data
-      costPerLiterTrend = -2.5;
-      revenuePerFarmerTrend = 5.2;
-      collectionEfficiencyTrend = 1.8;
-      qualityIndexTrend = 0.3;
-    }
-
-    // Business intelligence metrics for display
-    const businessIntelligence: BusinessIntelligenceMetric[] = [
-      {
-        id: 'cost-per-liter',
-        title: 'Admin Rate per Liter',
-        value: `KES ${marketPrice.toFixed(2)}`,
-        change: parseFloat(marketPriceChange.toFixed(1)),
-        changeType: marketPriceChange >= 0 ? 'positive' : 'negative',
-        description: 'Current admin-configured rate for fresh milk',
-        icon: 'DollarSign'
-      },
-      {
-        id: 'revenue-per-farmer',
-        title: 'Revenue per Farmer',
-        value: `KES ${Math.round(revenuePerFarmer).toLocaleString()}`,
-        change: parseFloat(revenuePerFarmerTrend.toFixed(1)),
-        changeType: revenuePerFarmerTrend >= 0 ? 'positive' : 'negative',
-        description: 'Average revenue generated per farmer',
-        icon: 'TrendingUp'
-      },
-      {
-        id: 'collection-efficiency',
-        title: 'Collection Efficiency',
-        value: `${collectionEfficiency.toFixed(1)}%`,
-        change: parseFloat(collectionEfficiencyTrend.toFixed(1)),
-        changeType: collectionEfficiencyTrend >= 0 ? 'positive' : 'negative',
-        description: 'Collections per active farmer',
-        icon: 'Activity'
-      },
-      {
-        id: 'quality-index',
-        title: 'Quality Index',
-        value: `${qualityIndex.toFixed(1)}`,
-        change: parseFloat(qualityIndexTrend.toFixed(1)),
-        changeType: qualityIndexTrend >= 0 ? 'positive' : 'negative',
-        description: 'Average quality score',
-        icon: 'Award'
-      }
-    ];
-
-    // Generate collection heatmap data
-    const collectionHeatmap: HeatmapData[] = [];
-    const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const hours = Array.from({ length: 24 }, (_, i) => i);
-    
-    // Initialize heatmap with zeros
-    daysOfWeek.forEach(day => {
-      hours.forEach(hour => {
-        collectionHeatmap.push({ day, hour, collections: 0 });
-      });
-    });
-    
-    // Populate heatmap with actual data
-    collections.forEach(collection => {
-      const date = new Date(collection.collection_date);
-      const day = daysOfWeek[date.getDay()];
-      const hour = date.getHours();
-      
-      const index = collectionHeatmap.findIndex(item => item.day === day && item.hour === hour);
-      if (index !== -1) {
-        collectionHeatmap[index].collections += 1;
-      }
-    });
-
-    // Generate forecasts
-    const collectionForecast = this.generateForecast(weeklyTrends, 'totalCollections', 4);
-    const revenueForecast = this.generateForecast(weeklyTrends, 'revenue', 4);
-    const qualityForecast = this.generateForecast(weeklyTrends, 'avgQuality', 4);
-
-    // Log final metrics for debugging
-    console.log('Final analytics metrics:', {
-      totalFarmers,
-      activeFarmers,
-      totalCollections,
-      totalLiters,
-      totalRevenue,
-      revenuePerFarmer,
-      collectionEfficiency,
-      qualityIndex,
-      farmerRetention
-    });
-
     return {
       metrics: {
         totalFarmers,
         activeFarmers,
         totalCollections,
         todayCollections,
-        totalLiters: Math.round(totalLiters),
-        todayLiters: Math.round(todayLiters),
-        totalRevenue: Math.round(totalRevenue),
-        pendingPayments: Math.round(pendingPayments),
-        averageQuality: avgQuality.toFixed(1),
+        totalLiters,
+        todayLiters,
+        totalRevenue,
+        pendingPayments,
+        averageQuality: avgQuality.toFixed(2),
         staffMembers: staff.length,
         // New business intelligence metrics
-        costPerLiter,
-        revenuePerFarmer,
-        collectionEfficiency,
-        qualityIndex,
-        farmerRetention,
-        seasonalTrend,
+        costPerLiter: marketPrice,
+        revenuePerFarmer: activeFarmers > 0 ? totalRevenue / activeFarmers : 0,
+        collectionEfficiency: activeFarmers > 0 ? (totalCollections / activeFarmers) * 100 : 0,
+        qualityIndex: avgQuality,
+        farmerRetention: totalFarmers > 0 ? (activeFarmers / totalFarmers) * 100 : 0,
+        seasonalTrend: 0, // Seasonal trend data not yet implemented
         // Additional metrics for DetailedBusinessInsights
-        totalCollectionTarget,
-        actualCollectionVolume,
-        farmersAtPeriodStart,
-        farmersAtPeriodEnd,
-        totalOperatingCosts,
-        totalQualityTests,
-        passedQualityTests,
-        currentPeriodVolume,
-        previousPeriodVolume
+        totalCollectionTarget: 0,
+        actualCollectionVolume: 0,
+        farmersAtPeriodStart: totalFarmers,
+        farmersAtPeriodEnd: activeFarmers,
+        totalOperatingCosts: 0,
+        totalQualityTests: 0,
+        passedQualityTests: 0,
+        currentPeriodVolume: 0,
+        previousPeriodVolume: 0
       },
       collectionsByDay,
       weeklyTrends,
@@ -1187,11 +1250,48 @@ export class AnalyticsService {
       paymentStatus,
       warehouses: processedWarehouses,
       alerts,
-      businessIntelligence,
-      collectionHeatmap,
-      collectionForecast,
-      revenueForecast,
-      qualityForecast,
+      businessIntelligence: [
+        {
+          id: 'cost-per-liter',
+          title: 'Admin Rate per Liter',
+          value: `KES ${marketPrice.toFixed(2)}`,
+          change: marketPriceChange,
+          changeType: marketPriceChange > 0 ? 'positive' : marketPriceChange < 0 ? 'negative' : 'neutral',
+          description: 'Current admin-configured rate for fresh milk',
+          icon: 'DollarSign'
+        },
+        {
+          id: 'revenue-per-farmer',
+          title: 'Revenue per Farmer',
+          value: `KES ${(activeFarmers > 0 ? totalRevenue / activeFarmers : 0).toFixed(2)}`,
+          change: 0,
+          changeType: 'neutral',
+          description: 'Average revenue generated per farmer',
+          icon: 'TrendingUp'
+        },
+        {
+          id: 'collection-efficiency',
+          title: 'Collection Efficiency',
+          value: `${(activeFarmers > 0 ? (totalCollections / activeFarmers) * 100 : 0).toFixed(2)}%`,
+          change: 0,
+          changeType: 'neutral',
+          description: 'Collections per active farmer',
+          icon: 'Activity'
+        },
+        {
+          id: 'quality-index',
+          title: 'Quality Index',
+          value: avgQuality.toFixed(2),
+          change: 0,
+          changeType: 'neutral',
+          description: 'Average quality score',
+          icon: 'Award'
+        }
+      ],
+      collectionHeatmap: [],
+      collectionForecast: [],
+      revenueForecast: [],
+      qualityForecast: [],
       trendAnalysis
     };
   }

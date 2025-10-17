@@ -35,7 +35,19 @@ class MilkRateService {
       // Check if we have a cached rate that's still valid
       const now = Date.now();
       if (this.currentRate !== null && this.lastFetchTime && (now - this.lastFetchTime) < this.cacheDuration) {
+        console.log('Returning cached milk rate:', this.currentRate);
         return this.currentRate;
+      }
+
+      // Test: Fetch all milk rates to see what exists
+      const { data: allRates, error: allRatesError } = await supabase
+        .from('milk_rates')
+        .select('*');
+
+      if (allRatesError) {
+        console.error('Error fetching all milk rates:', allRatesError);
+      } else {
+        console.log('All milk rates:', allRates);
       }
 
       const { data, error } = await supabase
@@ -50,18 +62,23 @@ class MilkRateService {
         throw error;
       }
 
+      console.log('Fetched milk rates data:', data);
+
       if (data && data.length > 0) {
         const rate = data[0].rate_per_liter;
+        console.log('Found active milk rate:', rate);
         this.currentRate = rate;
         this.lastFetchTime = now;
         this.notifyListeners(rate);
         return rate;
       }
 
+      console.log('No active milk rate found, returning default rate');
       // Return a default rate if no active rate is found
       return 0;
     } catch (error) {
       logger.errorWithContext('MilkRateService - getCurrentRate exception', error);
+      console.error('Error fetching milk rate:', error);
       // Return a default rate if there's an error
       return 0;
     }

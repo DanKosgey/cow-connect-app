@@ -502,6 +502,46 @@ const PaymentSystem = () => {
     });
   };
 
+  const markAllFarmerPaymentsAsPaid = async (farmerId: string) => {
+    await measureOperation('markAllFarmerPaymentsAsPaid', async () => {
+      try {
+        // Get all pending collections for this farmer
+        const pendingCollections = collections.filter(
+          c => c.farmer_id === farmerId && c.status !== 'Paid'
+        );
+        
+        if (pendingCollections.length === 0) {
+          toast.show({ title: 'Info', description: 'No pending payments for this farmer' });
+          return;
+        }
+        
+        // Use the unified payment service to mark all payments as paid
+        const result = await PaymentService.markAllFarmerPaymentsAsPaid(farmerId, pendingCollections);
+      
+        if (!result.success) {
+          throw result.error || new Error('Unknown error occurred');
+        }
+
+        toast.success('Success', `Marked ${pendingCollections.length} payments as paid successfully!`);
+        
+        // Optimistically update the UI
+        setCollections(prevCollections => 
+          prevCollections.map(c => 
+            c.farmer_id === farmerId && c.status !== 'Paid' 
+              ? { ...c, status: 'Paid' } 
+              : c
+          )
+        );
+        
+        // Refresh the data to ensure consistency
+        await fetchAllData();
+      } catch (error: any) {
+        console.error('Error marking all farmer payments as paid:', error);
+        toast.error('Error', 'Failed to mark all payments as paid: ' + (error.message || 'Unknown error'));
+      }
+    });
+  };
+
   const exportToCSV = () => {
     measureOperation('exportToCSV', () => {
       const filteredCollections = collections.filter(c => {
@@ -700,10 +740,10 @@ const PaymentSystem = () => {
             </div>
           </div>
 
-          {/* Navigation Tabs */}
+          {/* Navigation Tabs - Add analytics tab after overview */}
           <div className="bg-white rounded-xl shadow-lg mb-6">
             <div className="flex border-b">
-              {['overview', 'pending', 'paid', 'analytics', 'settings'].map((tab) => (
+              {['overview', 'analytics', 'pending', 'paid', 'settings'].map((tab) => (
                 <button
                   key={tab}
                   onClick={() => {
@@ -717,15 +757,82 @@ const PaymentSystem = () => {
                   }`}
                 >
                   {tab === 'overview' && <BarChart3 className="w-4 h-4 inline mr-2" />}
+                  {tab === 'analytics' && <TrendingUp className="w-4 h-4 inline mr-2" />}
                   {tab === 'pending' && <Clock className="w-4 h-4 inline mr-2" />}
                   {tab === 'paid' && <CheckCircle className="w-4 h-4 inline mr-2" />}
-                  {tab === 'analytics' && <TrendingUp className="w-4 h-4 inline mr-2" />}
                   {tab === 'settings' && <Settings className="w-4 h-4 inline mr-2" />}
                   {tab}
                 </button>
               ))}
             </div>
           </div>
+
+          {/* Analytics Tab - Moved after overview */}
+          {activeTab === 'analytics' && (
+            <div className="space-y-6">
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <h2 className="text-2xl font-bold text-gray-900 mb-6">Farmer Payment Summary</h2>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Farmer</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Collections</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Liters</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pending</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Paid</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {Object.values(groupedByFarmer).map((farmerData: any, idx: number) => (
+                        <tr key={idx} className="hover:bg-gray-50">
+                          <td className="px-6 py-4">
+                            <div className="font-medium text-gray-900">
+                              {farmerData.farmer?.profiles?.full_name || 'Unknown'}
+                            </div>
+                            <div className="text-sm text-gray-500">
+                              {farmerData.farmer?.bank_name || 'No bank info'}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-gray-900">{farmerData.collections.length}</td>
+                          <td className="px-6 py-4 text-gray-900">{farmerData.totalLiters.toFixed(2)}L</td>
+                          <td className="px-6 py-4">
+                            <span className="text-yellow-600 font-semibold">
+                              KES {farmerData.pendingAmount.toFixed(2)}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="text-green-600 font-semibold">
+                              KES {farmerData.paidAmount.toFixed(2)}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="font-bold text-gray-900">
+                              KES {farmerData.totalAmount.toFixed(2)}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            {farmerData.pendingAmount > 0 ? (
+                              <Button
+                                onClick={() => markAllFarmerPaymentsAsPaid(farmerData.farmer.id)}
+                                className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors"
+                              >
+                                Mark All Paid
+                              </Button>
+                            ) : (
+                              <span className="text-green-600 font-medium text-sm">✓ All Paid</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Settings Tab */}
           {activeTab === 'settings' && (
@@ -769,60 +876,6 @@ const PaymentSystem = () => {
                   KES {milkRates[0]?.rate_per_liter || 0} per liter
                   {milkRates[0] && ` (Effective from ${new Date(milkRates[0].effective_from).toLocaleDateString()})`}
                 </p>
-              </div>
-            </div>
-          )}
-
-          {/* Analytics Tab */}
-          {activeTab === 'analytics' && (
-            <div className="space-y-6">
-              <div className="bg-white rounded-xl shadow-lg p-6">
-                <h2 className="text-2xl font-bold text-gray-900 mb-6">Farmer Summary</h2>
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Farmer</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Collections</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Liters</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pending</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Paid</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200">
-                      {Object.values(groupedByFarmer).map((farmerData: any, idx: number) => (
-                        <tr key={idx} className="hover:bg-gray-50">
-                          <td className="px-6 py-4">
-                            <div className="font-medium text-gray-900">
-                              {farmerData.farmer?.profiles?.full_name || 'Unknown'}
-                            </div>
-                            <div className="text-sm text-gray-500">
-                              {farmerData.farmer?.bank_name || 'No bank info'}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 text-gray-900">{farmerData.collections.length}</td>
-                          <td className="px-6 py-4 text-gray-900">{farmerData.totalLiters.toFixed(2)}L</td>
-                          <td className="px-6 py-4">
-                            <span className="text-yellow-600 font-semibold">
-                              KES {farmerData.pendingAmount.toFixed(2)}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4">
-                            <span className="text-green-600 font-semibold">
-                              KES {farmerData.paidAmount.toFixed(2)}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4">
-                            <span className="font-bold text-gray-900">
-                              KES {farmerData.totalAmount.toFixed(2)}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
               </div>
             </div>
           )}

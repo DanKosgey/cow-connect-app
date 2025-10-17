@@ -120,7 +120,6 @@ const TodaysCollectionsCard = memo(({ collections }: { collections: any[] }) => 
   // Calculate today's metrics
   const totalCollections = todaysCollections.length;
   const totalLiters = todaysCollections.reduce((sum, c) => sum + (c.liters || 0), 0);
-  const totalAmount = todaysCollections.reduce((sum, c) => sum + (c.total_amount || 0), 0);
   
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-KE', {
@@ -136,7 +135,7 @@ const TodaysCollectionsCard = memo(({ collections }: { collections: any[] }) => 
         <Calendar className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
       </CardHeader>
       <CardContent className="flex flex-col h-full">
-        <div className="grid grid-cols-3 gap-2 flex-grow">
+        <div className="grid grid-cols-2 gap-2 flex-grow">
           <div className="flex flex-col items-center justify-center p-2 bg-white/50 dark:bg-gray-700/50 rounded-lg shadow-sm">
             <div className="text-xl font-bold text-indigo-900 dark:text-indigo-100 truncate">{totalCollections}</div>
             <p className="text-xs text-indigo-700 dark:text-indigo-300 text-center">Collections</p>
@@ -144,10 +143,6 @@ const TodaysCollectionsCard = memo(({ collections }: { collections: any[] }) => 
           <div className="flex flex-col items-center justify-center p-2 bg-white/50 dark:bg-gray-700/50 rounded-lg shadow-sm">
             <div className="text-xl font-bold text-indigo-900 dark:text-indigo-100 truncate">{totalLiters.toFixed(0)}L</div>
             <p className="text-xs text-indigo-700 dark:text-indigo-300 text-center">Volume</p>
-          </div>
-          <div className="flex flex-col items-center justify-center p-2 bg-white/50 dark:bg-gray-700/50 rounded-lg shadow-sm">
-            <div className="text-xl font-bold text-indigo-900 dark:text-indigo-100 truncate">{formatCurrency(totalAmount)}</div>
-            <p className="text-xs text-indigo-700 dark:text-indigo-300 text-center">Revenue</p>
           </div>
         </div>
         <div className="mt-3 text-center">
