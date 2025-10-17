@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { 
@@ -22,7 +22,63 @@ interface StaffViewProps {
   setSelectedStaff: (staffId: string) => void;
 }
 
-const StaffView: React.FC<StaffViewProps> = ({
+// Memoized chart components to prevent unnecessary re-renders
+const CollectionsPerformanceChart = memo(({ data }: { data: any[] }) => {
+  if (data.length === 0) return <div className="flex items-center justify-center h-full text-gray-500">No data available</div>;
+  
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <BarChart data={data}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+        <XAxis dataKey="name" stroke="#9ca3af" />
+        <YAxis stroke="#9ca3af" />
+        <Tooltip 
+          contentStyle={{ backgroundColor: '#1f2937', border: 'none' }} 
+          formatter={(value) => [value, 'Collections']}
+        />
+        <Bar dataKey="collections" fill="#3b82f6" name="Collections" />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+});
+
+const VolumeVsFarmersChart = memo(({ data }: { data: any[] }) => {
+  if (data.length === 0) return <div className="flex items-center justify-center h-full text-gray-500">No data available</div>;
+  
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <LineChart data={data}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+        <XAxis dataKey="name" stroke="#9ca3af" />
+        <YAxis stroke="#9ca3af" />
+        <Tooltip 
+          contentStyle={{ backgroundColor: '#1f2937', border: 'none' }} 
+        />
+        <Legend />
+        <Line 
+          type="monotone" 
+          dataKey="liters" 
+          stroke="#10b981" 
+          strokeWidth={3} 
+          dot={{ fill: '#10b981', r: 5 }} 
+          activeDot={{ r: 8 }} 
+          name="Volume (Liters)"
+        />
+        <Line 
+          type="monotone" 
+          dataKey="farmers" 
+          stroke="#8b5cf6" 
+          strokeWidth={3} 
+          dot={{ fill: '#8b5cf6', r: 5 }} 
+          activeDot={{ r: 8 }} 
+          name="Farmers Served"
+        />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+});
+
+const StaffView: React.FC<StaffViewProps> = memo(({
   staffPerformance,
   staff,
   selectedStaff,
@@ -106,18 +162,7 @@ const StaffView: React.FC<StaffViewProps> = ({
                 </CardTitle>
               </CardHeader>
               <CardContent className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={staffPerformance.slice(0, 10)}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                    <XAxis dataKey="name" stroke="#9ca3af" />
-                    <YAxis stroke="#9ca3af" />
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: '#1f2937', border: 'none' }} 
-                      formatter={(value) => [value, 'Collections']}
-                    />
-                    <Bar dataKey="collections" fill="#3b82f6" name="Collections" />
-                  </BarChart>
-                </ResponsiveContainer>
+                <CollectionsPerformanceChart data={staffPerformance.slice(0, 10)} />
               </CardContent>
             </Card>
 
@@ -130,35 +175,7 @@ const StaffView: React.FC<StaffViewProps> = ({
                 </CardTitle>
               </CardHeader>
               <CardContent className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={staffPerformance.slice(0, 10)}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                    <XAxis dataKey="name" stroke="#9ca3af" />
-                    <YAxis stroke="#9ca3af" />
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: '#1f2937', border: 'none' }} 
-                    />
-                    <Legend />
-                    <Line 
-                      type="monotone" 
-                      dataKey="liters" 
-                      stroke="#10b981" 
-                      strokeWidth={3} 
-                      dot={{ fill: '#10b981', r: 5 }} 
-                      activeDot={{ r: 8 }} 
-                      name="Volume (Liters)"
-                    />
-                    <Line 
-                      type="monotone" 
-                      dataKey="farmers" 
-                      stroke="#8b5cf6" 
-                      strokeWidth={3} 
-                      dot={{ fill: '#8b5cf6', r: 5 }} 
-                      activeDot={{ r: 8 }} 
-                      name="Farmers Served"
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
+                <VolumeVsFarmersChart data={staffPerformance.slice(0, 10)} />
               </CardContent>
             </Card>
           </div>
@@ -204,6 +221,6 @@ const StaffView: React.FC<StaffViewProps> = ({
       </Card>
     </div>
   );
-};
+});
 
 export default StaffView;

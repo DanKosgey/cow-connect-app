@@ -13,6 +13,8 @@ class MilkRateService {
   private static instance: MilkRateService;
   private currentRate: number | null = null;
   private listeners: Array<(rate: number) => void> = [];
+  private lastFetchTime: number | null = null;
+  private cacheDuration: number = 5 * 60 * 1000; // 5 minutes cache
 
   private constructor() {
     // Private constructor to prevent direct instantiation
@@ -30,6 +32,12 @@ class MilkRateService {
    */
   async getCurrentRate(): Promise<number> {
     try {
+      // Check if we have a cached rate that's still valid
+      const now = Date.now();
+      if (this.currentRate !== null && this.lastFetchTime && (now - this.lastFetchTime) < this.cacheDuration) {
+        return this.currentRate;
+      }
+
       const { data, error } = await supabase
         .from('milk_rates')
         .select('rate_per_liter')
@@ -45,6 +53,7 @@ class MilkRateService {
       if (data && data.length > 0) {
         const rate = data[0].rate_per_liter;
         this.currentRate = rate;
+        this.lastFetchTime = now;
         this.notifyListeners(rate);
         return rate;
       }
@@ -125,6 +134,7 @@ class MilkRateService {
 
       // Update the current rate and notify listeners
       this.currentRate = newRate;
+      this.lastFetchTime = Date.now();
       this.notifyListeners(newRate);
 
       return true;
@@ -132,6 +142,14 @@ class MilkRateService {
       logger.errorWithContext('MilkRateService - updateRate exception', error);
       return false;
     }
+  }
+
+  /**
+   * Clear the cache to force a fresh fetch
+   */
+  clearCache(): void {
+    this.currentRate = null;
+    this.lastFetchTime = null;
   }
 }
 

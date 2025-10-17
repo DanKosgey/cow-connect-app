@@ -15,7 +15,6 @@ const PaymentsPage = lazy(() => import("../pages/farmer-portal/PaymentsPage"));
 // MarketPricesPage removed as requested
 const CommunityForumPage = lazy(() => import("../pages/farmer-portal/CommunityForumPage"));
 const AnalyticsPage = lazy(() => import("../pages/farmer-portal/AnalyticsPage"));
-const QualityReportsPage = lazy(() => import("../pages/farmer-portal/QualityReportsPage"));
 const ProfilePage = lazy(() => import("../pages/farmer-portal/ProfilePage"));
 const NotificationsPage = lazy(() => import("../pages/farmer-portal/NotificationsPage"));
 const EnhancedKYCDocumentUpload = lazy(() => import("../pages/farmer/EnhancedKYCDocumentUpload"));
@@ -136,15 +135,6 @@ const FarmerRoutes = () => {
             <DashboardLayout>
               <PageTransition>
                 <AnalyticsPage />
-              </PageTransition>
-            </DashboardLayout>
-          </ProtectedRoute>
-        } />
-        <Route path="quality" element={
-          <ProtectedRoute requiredRole={UserRole.FARMER}>
-            <DashboardLayout>
-              <PageTransition>
-                <QualityReportsPage />
               </PageTransition>
             </DashboardLayout>
           </ProtectedRoute>

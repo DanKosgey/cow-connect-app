@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
   DollarSign, 
@@ -21,28 +21,48 @@ interface BusinessIntelligenceMetric {
   icon: string;
 }
 
+// Memoized skeleton component to prevent re-creation
+const BusinessIntelligenceSkeleton = React.memo(() => (
+  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+    {[1, 2, 3, 4].map((i) => (
+      <Card key={i} className="hover:shadow-lg transition-shadow">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <Skeleton className="h-4 w-24" />
+          <Skeleton className="h-8 w-8 rounded-full" />
+        </CardHeader>
+        <CardContent>
+          <Skeleton className="h-8 w-20 mb-2" />
+          <Skeleton className="h-4 w-16" />
+          <Skeleton className="h-3 w-32 mt-2" />
+        </CardContent>
+      </Card>
+    ))}
+  </div>
+));
+
 const BusinessIntelligenceDashboard = ({ timeRange = 'week' }: { timeRange?: string }) => {
   const [metrics, setMetrics] = useState<BusinessIntelligenceMetric[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchMetrics = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const data = await businessIntelligenceService.calculateBusinessIntelligenceMetrics(timeRange);
-        setMetrics(data);
-      } catch (err) {
-        console.error('Error fetching business intelligence metrics:', err);
-        setError('Failed to load business intelligence data');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchMetrics();
+  // Memoize the fetch function to prevent unnecessary re-renders
+  const fetchMetrics = useMemo(() => async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await businessIntelligenceService.calculateBusinessIntelligenceMetrics(timeRange);
+      setMetrics(data);
+    } catch (err) {
+      console.error('Error fetching business intelligence metrics:', err);
+      setError('Failed to load business intelligence data');
+    } finally {
+      setLoading(false);
+    }
   }, [timeRange]);
+
+  useEffect(() => {
+    fetchMetrics();
+  }, [fetchMetrics]);
 
   const getIconComponent = (iconName: string) => {
     switch (iconName) {
@@ -54,35 +74,20 @@ const BusinessIntelligenceDashboard = ({ timeRange = 'week' }: { timeRange?: str
     }
   };
 
-  if (loading) {
-    return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {[1, 2, 3, 4].map((i) => (
-          <Card key={i} className="hover:shadow-lg transition-shadow">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <Skeleton className="h-4 w-24" />
-              <Skeleton className="h-8 w-8 rounded-full" />
-            </CardHeader>
-            <CardContent>
-              <Skeleton className="h-8 w-20 mb-2" />
-              <Skeleton className="h-4 w-16" />
-              <Skeleton className="h-3 w-32 mt-2" />
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
+  // Memoize the error component
+  const ErrorComponent = useMemo(() => (
+    error ? (
       <div className="bg-red-50 border border-red-200 rounded-lg p-4">
         <p className="text-red-800">{error}</p>
       </div>
-    );
-  }
+    ) : null
+  ), [error]);
 
-  const BusinessIntelligenceCard = ({ metric }: { metric: BusinessIntelligenceMetric }) => {
+  // Memoize the loading skeleton
+  const LoadingSkeleton = useMemo(() => loading ? <BusinessIntelligenceSkeleton /> : null, [loading]);
+
+  // Memoize the business intelligence card component
+  const BusinessIntelligenceCard = useMemo(() => React.memo(({ metric }: { metric: BusinessIntelligenceMetric }) => {
     const IconComponent = getIconComponent(metric.icon);
     return (
       <Card className="hover:shadow-lg transition-shadow">
@@ -108,7 +113,19 @@ const BusinessIntelligenceDashboard = ({ timeRange = 'week' }: { timeRange?: str
         </CardContent>
       </Card>
     );
-  };
+  }), [getIconComponent]);
+
+  if (loading) {
+    return <BusinessIntelligenceSkeleton />;
+  }
+
+  if (error) {
+    return (
+      <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+        <p className="text-red-800">{error}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -119,4 +136,4 @@ const BusinessIntelligenceDashboard = ({ timeRange = 'week' }: { timeRange?: str
   );
 };
 
-export default BusinessIntelligenceDashboard;
+export default React.memo(BusinessIntelligenceDashboard);

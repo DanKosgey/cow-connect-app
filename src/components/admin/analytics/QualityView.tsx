@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
   BarChart, 
@@ -19,10 +19,70 @@ interface QualityViewProps {
   dailyTrends: any[];
 }
 
-export function QualityView({
+// Memoized chart components to prevent unnecessary re-renders
+const QualityDistributionChart = memo(({ data }: { data: any[] }) => {
+  const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444'];
+  
+  if (data.length === 0) return <div className="flex items-center justify-center h-full text-gray-500">No data available</div>;
+  
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <PieChart>
+        <Pie
+          data={data}
+          cx="50%"
+          cy="50%"
+          labelLine={true}
+          label={({ name, percentage }) => `${name}: ${percentage}%`}
+          outerRadius={100}
+          fill="#8884d8"
+          dataKey="value"
+          stroke="#fff"
+          strokeWidth={2}
+        >
+          {data.map((entry, index) => (
+            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+          ))}
+        </Pie>
+        <Tooltip 
+          formatter={(value) => [value, 'Collections']} 
+          contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: '8px' }} 
+          labelStyle={{ color: '#f3f4f6' }}
+        />
+      </PieChart>
+    </ResponsiveContainer>
+  );
+});
+
+const QualityTrendsChart = memo(({ data }: { data: any[] }) => {
+  const GRADE_COLORS = { 'A+': '#10b981', 'A': '#3b82f6', 'B': '#f59e0b', 'C': '#ef4444' };
+  
+  if (data.length === 0) return <div className="flex items-center justify-center h-full text-gray-500">No data available</div>;
+  
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <BarChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+        <XAxis dataKey="date" stroke="#9ca3af" />
+        <YAxis stroke="#9ca3af" />
+        <Tooltip 
+          contentStyle={{ backgroundColor: '#1f2937', border: 'none', borderRadius: '8px' }} 
+          formatter={(value) => [value, 'Collections']}
+          labelStyle={{ color: '#f3f4f6' }}
+        />
+        <Bar dataKey="A+" fill={GRADE_COLORS['A+']} name="Grade A+" stackId="a" radius={[4, 4, 0, 0]} />
+        <Bar dataKey="A" fill={GRADE_COLORS['A']} name="Grade A" stackId="a" radius={[4, 4, 0, 0]} />
+        <Bar dataKey="B" fill={GRADE_COLORS['B']} name="Grade B" stackId="a" radius={[4, 4, 0, 0]} />
+        <Bar dataKey="C" fill={GRADE_COLORS['C']} name="Grade C" stackId="a" radius={[4, 4, 0, 0]} />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+});
+
+export const QualityView = memo(({ 
   qualityDistribution,
   dailyTrends
-}: QualityViewProps) {
+}: QualityViewProps) => {
   const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444'];
   const GRADE_COLORS = { 'A+': '#10b981', 'A': '#3b82f6', 'B': '#f59e0b', 'C': '#ef4444' };
 
@@ -36,108 +96,31 @@ export function QualityView({
   }));
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Quality Distribution */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card className="bg-card-light dark:bg-card-dark border border-border-light dark:border-border-dark">
-          <CardHeader>
-            <CardTitle className="text-text-light dark:text-text-dark flex items-center gap-2">
-              <Award className="h-5 w-5 text-amber-500" />
-              Quality Distribution
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={qualityDistribution}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={true}
-                  label={({ name, percentage }) => `${name}: ${percentage}%`}
-                  outerRadius={100}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {qualityDistribution.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip 
-                  formatter={(value) => [value, 'Collections']} 
-                  contentStyle={{ backgroundColor: '#1f2937', border: 'none' }} 
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-card-light dark:bg-card-dark border border-border-light dark:border-border-dark">
-          <CardHeader>
-            <CardTitle className="text-text-light dark:text-text-dark flex items-center gap-2">
-              <BarChart3 className="h-5 w-5 text-blue-500" />
-              Quality Insights
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {qualityDistribution.map((grade, idx) => (
-              <div key={idx} className="border-l-4 pl-4 py-2" style={{ borderColor: COLORS[idx % COLORS.length] }}>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-medium text-text-light dark:text-text-dark">{grade.name}</span>
-                  <span className="text-sm text-subtle-text-light dark:text-subtle-text-dark">{grade.value} collections</span>
-                </div>
-                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                  <div 
-                    className="h-2 rounded-full transition-all duration-500"
-                    style={{ 
-                      width: `${grade.percentage}%`,
-                      backgroundColor: COLORS[idx % COLORS.length]
-                    }}
-                  ></div>
-                </div>
-                <span className="text-xs text-subtle-text-light dark:text-subtle-text-dark">{grade.percentage}% of total</span>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      </div>
-
+      
       {/* Quality Trends Over Time */}
-      <Card className="bg-card-light dark:bg-card-dark border border-border-light dark:border-border-dark">
-        <CardHeader>
-          <CardTitle className="text-text-light dark:text-text-dark flex items-center gap-2">
+      <Card className="bg-card-light dark:bg-card-dark border border-border-light dark:border-border-dark rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-text-light dark:text-text-dark flex items-center gap-2 text-lg">
             <TrendingUp className="h-5 w-5 text-green-500" />
             Quality Trends Over Time
           </CardTitle>
         </CardHeader>
         <CardContent className="h-80">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={dailyTrends}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-              <XAxis dataKey="date" stroke="#9ca3af" />
-              <YAxis stroke="#9ca3af" />
-              <Tooltip 
-                contentStyle={{ backgroundColor: '#1f2937', border: 'none' }} 
-                formatter={(value) => [value, 'Collections']}
-              />
-              <Bar dataKey="A+" fill={GRADE_COLORS['A+']} name="Grade A+" stackId="a" />
-              <Bar dataKey="A" fill={GRADE_COLORS['A']} name="Grade A" stackId="a" />
-              <Bar dataKey="B" fill={GRADE_COLORS['B']} name="Grade B" stackId="a" />
-              <Bar dataKey="C" fill={GRADE_COLORS['C']} name="Grade C" stackId="a" />
-            </BarChart>
-          </ResponsiveContainer>
+          <QualityTrendsChart data={dailyTrends} />
         </CardContent>
       </Card>
 
       {/* Quality Statistics */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {qualityDistribution.map((grade, idx) => (
           <Card 
             key={idx} 
-            className="bg-card-light dark:bg-card-dark border border-border-light dark:border-border-dark"
+            className="bg-card-light dark:bg-card-dark border border-border-light dark:border-border-dark rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1"
             style={{ borderLeft: `4px solid ${COLORS[idx % COLORS.length]}` }}
           >
-            <CardHeader>
+            <CardHeader className="pb-3">
               <CardTitle className="text-text-light dark:text-text-dark">{grade.name}</CardTitle>
             </CardHeader>
             <CardContent>
@@ -153,4 +136,4 @@ export function QualityView({
       </div>
     </div>
   );
-}
+});

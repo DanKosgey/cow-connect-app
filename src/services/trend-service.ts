@@ -35,6 +35,10 @@ interface TrendData {
   percentageChange: number;
 }
 
+// Cache for trend data to prevent unnecessary recalculations
+const trendsCache = new Map<string, { data: any, timestamp: number }>();
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes cache
+
 export class TrendService {
   /**
    * Get date range for current period based on time range
@@ -149,7 +153,8 @@ export class TrendService {
       `)
       .gte('collection_date', startDate)
       .lte('collection_date', endDate)
-      .order('collection_date', { ascending: true });
+      .order('collection_date', { ascending: true })
+      .limit(200); // Limit for performance
 
     if (error) {
       console.error('Error fetching collections:', error);
@@ -173,7 +178,8 @@ export class TrendService {
       `)
       .gte('created_at', startDate)
       .lte('created_at', endDate)
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true })
+      .limit(100); // Limit for performance
 
     if (error) {
       console.error('Error fetching farmers:', error);
@@ -196,7 +202,8 @@ export class TrendService {
         collection_date
       `)
       .gte('collection_date', startDate)
-      .lte('collection_date', endDate);
+      .lte('collection_date', endDate)
+      .limit(200); // Limit for performance
 
     if (error) {
       console.error('Error fetching payments:', error);
@@ -235,6 +242,13 @@ export class TrendService {
    * Calculate trends for collections analytics dashboard
    */
   async calculateCollectionsTrends(timeRange: string) {
+    // Check cache first
+    const cacheKey = `collections-trends-${timeRange}`;
+    const cached = trendsCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+      return cached.data;
+    }
+
     try {
       // Get date ranges
       const currentPeriod = this.getCurrentPeriodFilter(timeRange);
@@ -282,7 +296,7 @@ export class TrendService {
       const revenueTrend = this.calculateTrendPercentage(currentTotalRevenue, previousTotalRevenue);
       const qualityTrend = this.calculateTrendPercentage(currentAvgQuality, previousAvgQuality);
 
-      return {
+      const result = {
         totalCollections: currentTotalCollections,
         totalLiters: currentTotalLiters,
         totalRevenue: currentTotalRevenue,
@@ -292,6 +306,11 @@ export class TrendService {
         revenueTrend,
         qualityTrend
       };
+
+      // Cache the result
+      trendsCache.set(cacheKey, { data: result, timestamp: Date.now() });
+
+      return result;
     } catch (error) {
       console.error('Error calculating collections trends:', error);
       throw error;
@@ -302,6 +321,13 @@ export class TrendService {
    * Calculate trends for payment system
    */
   async calculatePaymentTrends(timeRange: string) {
+    // Check cache first
+    const cacheKey = `payment-trends-${timeRange}`;
+    const cached = trendsCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+      return cached.data;
+    }
+
     try {
       // Get date ranges
       const currentPeriod = this.getCurrentPeriodFilter(timeRange);
@@ -340,7 +366,7 @@ export class TrendService {
       const revenueTrend = this.calculateTrendPercentage(currentTotalRevenue, previousTotalRevenue);
       const pendingPaymentsTrend = this.calculateTrendPercentage(currentPendingPayments, previousPendingPayments);
 
-      return {
+      const result = {
         totalCollections: currentTotalCollections,
         totalLiters: currentTotalLiters,
         totalRevenue: currentTotalRevenue,
@@ -351,10 +377,22 @@ export class TrendService {
         revenueTrend,
         pendingPaymentsTrend
       };
+
+      // Cache the result
+      trendsCache.set(cacheKey, { data: result, timestamp: Date.now() });
+
+      return result;
     } catch (error) {
       console.error('Error calculating payment trends:', error);
       throw error;
     }
+  }
+
+  /**
+   * Clear the trends cache
+   */
+  clearCache() {
+    trendsCache.clear();
   }
 }
 

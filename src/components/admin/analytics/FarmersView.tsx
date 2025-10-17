@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { 
@@ -22,7 +22,67 @@ interface FarmersViewProps {
   setSelectedFarmer: (farmerId: string) => void;
 }
 
-const FarmersView: React.FC<FarmersViewProps> = ({
+// Memoized chart components to prevent unnecessary re-renders
+const CollectionsOverTimeChart = memo(({ data }: { data: any[] }) => {
+  if (data.length === 0) return <div className="flex items-center justify-center h-full text-gray-500">No data available</div>;
+  
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <BarChart data={data}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+        <XAxis dataKey="name" stroke="#9ca3af" />
+        <YAxis stroke="#9ca3af" />
+        <Tooltip 
+          contentStyle={{ backgroundColor: '#1f2937', border: 'none' }} 
+          formatter={(value) => [value, 'Collections']}
+        />
+        <Bar dataKey="collections" fill="#3b82f6" name="Collections" />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+});
+
+const VolumeVsRevenueChart = memo(({ data, formatCurrency }: { data: any[]; formatCurrency: (amount: number) => string }) => {
+  if (data.length === 0) return <div className="flex items-center justify-center h-full text-gray-500">No data available</div>;
+  
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <LineChart data={data}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+        <XAxis dataKey="name" stroke="#9ca3af" />
+        <YAxis stroke="#9ca3af" />
+        <Tooltip 
+          contentStyle={{ backgroundColor: '#1f2937', border: 'none' }} 
+          formatter={(value, name) => [
+            name === 'liters' ? `${value}L` : formatCurrency(Number(value)),
+            name === 'liters' ? 'Volume' : 'Revenue'
+          ]}
+        />
+        <Legend />
+        <Line 
+          type="monotone" 
+          dataKey="liters" 
+          stroke="#10b981" 
+          strokeWidth={3} 
+          dot={{ fill: '#10b981', r: 5 }} 
+          activeDot={{ r: 8 }} 
+          name="Volume (Liters)"
+        />
+        <Line 
+          type="monotone" 
+          dataKey="amount" 
+          stroke="#f59e0b" 
+          strokeWidth={3} 
+          dot={{ fill: '#f59e0b', r: 5 }} 
+          activeDot={{ r: 8 }} 
+          name="Revenue (KES)"
+        />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+});
+
+const FarmersView: React.FC<FarmersViewProps> = memo(({
   topFarmers,
   farmers,
   selectedFarmer,
@@ -124,18 +184,7 @@ const FarmersView: React.FC<FarmersViewProps> = ({
                 </CardTitle>
               </CardHeader>
               <CardContent className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={topFarmers.slice(0, 10)}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                    <XAxis dataKey="name" stroke="#9ca3af" />
-                    <YAxis stroke="#9ca3af" />
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: '#1f2937', border: 'none' }} 
-                      formatter={(value) => [value, 'Collections']}
-                    />
-                    <Bar dataKey="collections" fill="#3b82f6" name="Collections" />
-                  </BarChart>
-                </ResponsiveContainer>
+                <CollectionsOverTimeChart data={topFarmers.slice(0, 10)} />
               </CardContent>
             </Card>
 
@@ -148,39 +197,7 @@ const FarmersView: React.FC<FarmersViewProps> = ({
                 </CardTitle>
               </CardHeader>
               <CardContent className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={topFarmers.slice(0, 10)}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                    <XAxis dataKey="name" stroke="#9ca3af" />
-                    <YAxis stroke="#9ca3af" />
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: '#1f2937', border: 'none' }} 
-                      formatter={(value, name) => [
-                        name === 'liters' ? `${value}L` : formatCurrency(Number(value)),
-                        name === 'liters' ? 'Volume' : 'Revenue'
-                      ]}
-                    />
-                    <Legend />
-                    <Line 
-                      type="monotone" 
-                      dataKey="liters" 
-                      stroke="#10b981" 
-                      strokeWidth={3} 
-                      dot={{ fill: '#10b981', r: 5 }} 
-                      activeDot={{ r: 8 }} 
-                      name="Volume (Liters)"
-                    />
-                    <Line 
-                      type="monotone" 
-                      dataKey="amount" 
-                      stroke="#f59e0b" 
-                      strokeWidth={3} 
-                      dot={{ fill: '#f59e0b', r: 5 }} 
-                      activeDot={{ r: 8 }} 
-                      name="Revenue (KES)"
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
+                <VolumeVsRevenueChart data={topFarmers.slice(0, 10)} formatCurrency={formatCurrency} />
               </CardContent>
             </Card>
           </div>
@@ -230,6 +247,6 @@ const FarmersView: React.FC<FarmersViewProps> = ({
       </Card>
     </div>
   );
-};
+});
 
 export default FarmersView;

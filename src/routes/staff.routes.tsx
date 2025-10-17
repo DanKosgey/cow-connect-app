@@ -14,20 +14,16 @@ const StaffDashboard = lazy(() => {
   setTimeout(() => {
     preloadRouteWhenIdle(() => import("../components/staff/EnhancedCollectionForm"));
     preloadRouteWhenIdle(() => import("../components/staff/EnhancedFarmerDirectory"));
-    preloadRouteWhenIdle(() => import("../components/staff/EnhancedPaymentApproval"));
   }, 1000);
   return promise;
 });
 
 const StaffLogin = lazy(() => import("../pages/auth/StaffLogin"));
-const PaymentApproval = lazy(() => import("../components/staff/EnhancedPaymentApproval"));
-const PaymentHistory = lazy(() => import("../pages/staff-portal/PaymentHistory"));
 const CollectionForm = lazy(() => import("../components/staff/EnhancedCollectionForm"));
 const CollectionHistory = lazy(() => import("../components/staff/CollectionHistoryPage"));
 const DetailedAnalytics = lazy(() => import("../components/staff/DetailedAnalyticsDashboard"));
 const FarmerDirectory = lazy(() => import("../components/staff/EnhancedFarmerDirectory"));
 const PerformanceDashboard = lazy(() => import("../components/staff/EnhancedPerformanceDashboard"));
-const RouteManagement = lazy(() => import("../components/staff/RouteManagement"));
 const StaffPortalLanding = lazy(() => import("../pages/staff-portal/StaffPortalLanding"));
 const StaffPerformanceTracking = lazy(() => import("../components/staff/StaffPerformanceTracking"));
 const QualityControlManagement = lazy(() => import("../components/staff/QualityControlManagement"));
@@ -39,7 +35,6 @@ const StaffNotifications = lazy(() => import("../components/staff/StaffNotificat
 const StaffQuickActions = lazy(() => import("../components/staff/StaffQuickActions"));
 const FarmerVisitsTracker = lazy(() => import("../components/staff/FarmerVisitsTracker"));
 const QualityReports = lazy(() => import("../components/staff/QualityReports"));
-const RouteOptimization = lazy(() => import("../components/staff/RouteOptimization"));
 const PerformanceInsights = lazy(() => import("../components/staff/PerformanceInsights"));
 
 export default function StaffRoutes() {
@@ -50,7 +45,6 @@ export default function StaffRoutes() {
     if (location.pathname.includes('dashboard')) {
       preloadRouteWhenIdle(() => import("../components/staff/EnhancedCollectionForm"));
       preloadRouteWhenIdle(() => import("../components/staff/EnhancedFarmerDirectory"));
-      preloadRouteWhenIdle(() => import("../components/staff/EnhancedPaymentApproval"));
     }
     
     // Preload the dashboard when on other pages
@@ -71,20 +65,16 @@ export default function StaffRoutes() {
                 <Route path="collections/new" element={<CollectionForm />} />
                 <Route path="collections" element={<CollectionHistory />} />
                 <Route path="farmers" element={<FarmerDirectory />} />
-                <Route path="payments/approval" element={<PaymentApproval />} />
-                <Route path="payments/history" element={<PaymentHistory />} />
                 <Route path="performance" element={<PerformanceDashboard />} />
                 <Route path="analytics" element={<DetailedAnalytics />} />
                 <Route path="performance-tracking" element={<StaffPerformanceTracking />} />
                 <Route path="quality-control" element={<QualityControlManagement />} />
                 <Route path="inventory" element={<InventoryManagement />} />
                 <Route path="reports" element={<ComprehensiveReporting />} />
-                <Route path="routes" element={<RouteManagement />} />
                 <Route path="notifications" element={<StaffNotifications />} />
                 <Route path="quick-actions" element={<StaffQuickActions />} />
                 <Route path="farmer-visits" element={<FarmerVisitsTracker />} />
                 <Route path="quality-reports" element={<QualityReports />} />
-                <Route path="route-optimization" element={<RouteOptimization />} />
                 <Route path="performance-insights" element={<PerformanceInsights />} />
                 <Route index element={<StaffPortalLanding />} />
                 <Route path="*" element={<Navigate to="/staff" replace />} />

@@ -80,8 +80,8 @@ const Landing = () => {
   ];
 
   const stats = [
-    { number: "5000+", label: "Active Farmers" },
-    { number: "50M+", label: "Liters Processed" },
+    { number: "500+", label: "Active Farmers" },
+    { number: "500k+", label: "Liters Processed" },
     { number: "99.9%", label: "Uptime" },
     { number: "24/7", label: "Support" }
   ];
@@ -114,34 +114,39 @@ const Landing = () => {
           {/* Logo */}
           <div className="flex justify-center mb-8 animate-float">
             <div className="relative">
-              <div className="absolute inset-0 bg-gradient-to-r from-green-500 to-emerald-600 rounded-3xl blur-2xl opacity-30 animate-pulse"></div>
+              <div className="absolute inset-0 bg-gradient-to-r from-green-500 to-emerald-500 rounded-3xl blur-2xl opacity-30 animate-pulse"></div>
               <div className="relative w-20 h-20 bg-gradient-to-br from-green-500 to-emerald-600 rounded-3xl flex items-center justify-center shadow-2xl transform hover:scale-110 transition-transform duration-300">
                 <Milk className="w-10 h-10 text-white" />
               </div>
             </div>
           </div>
 
-          {/* Main Heading */}
+          {/* Main Heading - Updated with Cherengany Dairies */}
           <h1 className="text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-extrabold tracking-tight mb-6 animate-fade-in-up">
             <span className="bg-gradient-to-r from-white via-slate-100 to-white bg-clip-text text-transparent">
-              Modern{" "}
+              Welcome to
             </span>
+            <br />
             <span className="bg-gradient-to-r from-green-400 via-emerald-300 to-teal-400 bg-clip-text text-transparent">
-              Dairy
+              Cherengany
             </span>
             <br />
             <span className="bg-gradient-to-r from-white via-slate-100 to-white bg-clip-text text-transparent">
-              Management
+              Dairies
             </span>
           </h1>
 
-          {/* Subtitle */}
-          <p className="mt-6 text-xl md:text-2xl text-slate-200 max-w-3xl mx-auto leading-relaxed animate-fade-in-up delay-200">
-            Streamline your dairy operations with our comprehensive platform designed for{" "}
-            <span className="font-semibold text-green-300">farmers</span>,{" "}
-            <span className="font-semibold text-blue-300">staff</span>, and{" "}
-            <span className="font-semibold text-purple-300">administrators</span>.
-          </p>
+          {/* Animated Subtitle */}
+          <div className="mt-6 text-xl md:text-2xl text-slate-200 max-w-3xl mx-auto leading-relaxed animate-fade-in-up delay-200">
+            <p className="mb-4">
+              <span className="inline-block animate-pulse">
+                <span className="font-semibold text-green-300">Premium</span> dairy management
+              </span>
+            </p>
+            <p>
+              Serving the <span className="font-semibold text-blue-300">Trans Nzoia</span> region with excellence
+            </p>
+          </div>
 
           {/* CTA Buttons */}
           <div className="mt-12 flex flex-col sm:flex-row gap-4 justify-center items-center animate-fade-in-up delay-400">
@@ -291,7 +296,7 @@ const Landing = () => {
             Ready to Transform Your Dairy Operations?
           </h2>
           <p className="text-xl text-green-50 mb-10 max-w-2xl mx-auto leading-relaxed">
-            Join thousands of dairy professionals who trust DAIRY FARMERS OF TRANS-NZOIA to streamline their operations.
+            Join thousands of dairy professionals who trust Cherengany Dairies to streamline their operations.
           </p>
           <Button 
             size="lg"
@@ -313,15 +318,15 @@ const Landing = () => {
                 <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center">
                   <Milk className="w-6 h-6 text-white" />
                 </div>
-                <span className="text-xl font-bold">DAIRY FARMERS OF TRANS-NZOIA</span>
+                <span className="text-xl font-bold">CHERENGANY DAIRIES</span>
               </div>
               <p className="text-slate-400 text-sm">
-                Modern dairy management simplified
+                Premium dairy management for Trans Nzoia
               </p>
             </div>
             <div className="text-center md:text-right">
               <p className="text-slate-400 text-sm">
-                © {new Date().getFullYear()} DAIRY FARMERS OF TRANS-NZOIA. All rights reserved.
+                © {new Date().getFullYear()} CHERENGANY DAIRIES. All rights reserved.
               </p>
             </div>
           </div>

@@ -7,7 +7,6 @@ import {
   LayoutDashboard, 
   Users, 
   Milk, 
-  DollarSign, 
   BarChart3, 
   Settings,
   LogOut,
@@ -16,11 +15,9 @@ import {
   FileText,
   Menu,
   X,
-  Route,
   Target,
   ClipboardList,
   Bell,
-  MapPin,
   Wifi,
   TrendingUp,
   MessageCircle,
@@ -52,10 +49,9 @@ const roleNavigation: Record<string, NavItem[]> = {
     
     // Operations - Core farming activities
     { label: 'My Collections', path: '/farmer/collections', icon: <Milk className="h-5 w-5" />, category: 'operations' },
-    { label: 'Quality Reports', path: '/farmer/quality', icon: <CheckCircle className="h-5 w-5" />, category: 'operations' },
     
     // Finance - Payments and earnings
-    { label: 'Payments', path: '/farmer/payments', icon: <DollarSign className="h-5 w-5" />, category: 'finance' },
+    { label: 'Payments', path: '/farmer/payments', icon: <Activity className="h-5 w-5" />, category: 'finance' },
     { label: 'Analytics', path: '/farmer/analytics', icon: <BarChart3 className="h-5 w-5" />, category: 'finance' },
     
     // Communication & Community
@@ -75,16 +71,13 @@ const roleNavigation: Record<string, NavItem[]> = {
     { label: 'New Collection', path: '/staff/collections/new', icon: <ClipboardList className="h-5 w-5" />, category: 'operations' },
     { label: 'Collections', path: '/staff/collections', icon: <Milk className="h-5 w-5" />, category: 'operations' },
     { label: 'Farmers', path: '/staff/farmers', icon: <Users className="h-5 w-5" />, category: 'management' },
-    { label: 'Payments', path: '/staff/payments/approval', icon: <DollarSign className="h-5 w-5" />, category: 'finance' },
     { label: 'Performance', path: '/staff/performance', icon: <BarChart3 className="h-5 w-5" />, category: 'analytics' },
-    { label: 'Routes', path: '/staff/routes', icon: <Route className="h-5 w-5" />, category: 'operations' },
     { label: 'Profile', path: '/staff/profile', icon: <UserCog className="h-5 w-5" />, category: 'settings' },
   ],
   admin: [
     { label: 'Dashboard', path: '/admin/dashboard', icon: <LayoutDashboard className="h-5 w-5" />, category: 'main' },
-    { label: 'Checkpoints', path: '/admin/checkpoints', icon: <MapPin className="h-5 w-5" />, category: 'operations' },
+    { label: 'Checkpoints', path: '/admin/checkpoints', icon: <Target className="h-5 w-5" />, category: 'operations' },
     { label: 'Collections', path: '/admin/collections', icon: <Milk className="h-5 w-5" />, category: 'operations' },
-    { label: 'Payments', path: '/admin/payments', icon: <DollarSign className="h-5 w-5" />, category: 'finance' },
     { label: 'Analytics', path: '/admin/analytics', icon: <BarChart3 className="h-5 w-5" />, category: 'analytics' },
     { label: 'Farmer Performance', path: '/admin/farmer-performance', icon: <Activity className="h-5 w-5" />, category: 'analytics' },
     { label: 'KYC Approvals', path: '/admin/kyc-pending-farmers', icon: <CheckCircle className="h-5 w-5" />, category: 'kyc' },

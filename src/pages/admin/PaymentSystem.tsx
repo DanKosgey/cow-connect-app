@@ -371,7 +371,8 @@ const PaymentSystem = () => {
           // Fetch staff profiles if we have staff IDs
           let enrichedCollection = collectionData;
           if (staffIds.size > 0) {
-            const { data: staffProfiles, error: profilesError } = supabase
+            // Use async/await pattern correctly
+            supabase
               .from('staff')
               .select(`
                 id,
@@ -379,21 +380,22 @@ const PaymentSystem = () => {
                   full_name
                 )
               `)
-              .in('id', Array.from(staffIds));
+              .in('id', Array.from(staffIds))
+              .then(({ data: staffProfiles, error: profilesError }) => {
+                if (!profilesError && staffProfiles) {
+                  // Create a map of staff ID to profile
+                  const staffProfileMap = new Map<string, any>();
+                  staffProfiles.forEach(staff => {
+                    staffProfileMap.set(staff.id, staff.profiles);
+                  });
 
-            if (!profilesError && staffProfiles) {
-              // Create a map of staff ID to profile
-              const staffProfileMap = new Map<string, any>();
-              staffProfiles.forEach(staff => {
-                staffProfileMap.set(staff.id, staff.profiles);
+                  // Enrich collection with staff names
+                  enrichedCollection = {
+                    ...collectionData,
+                    staff: collectionData.staff_id ? { profiles: staffProfileMap.get(collectionData.staff_id) } : null
+                  };
+                }
               });
-
-              // Enrich collection with staff names
-              enrichedCollection = {
-                ...collectionData,
-                staff: collectionData.staff_id ? { profiles: staffProfileMap.get(collectionData.staff_id) } : null
-              };
-            }
           }
           
           return {
@@ -417,10 +419,12 @@ const PaymentSystem = () => {
   };
 
   const calculateAnalytics = (collectionsData: Collection[]) => {
-    const unpaidCollections = collectionsData.filter(c => c.status !== 'Paid');
+    // Fix: Only collections with status 'Collected' should be considered pending payments
+    // Collections with status 'Paid' are already paid
+    const pendingCollections = collectionsData.filter(c => c.status === 'Collected');
     const paidCollections = collectionsData.filter(c => c.status === 'Paid');
     
-    const totalPending = unpaidCollections.reduce((sum, c) => sum + parseFloat(c.total_amount?.toString() || '0'), 0);
+    const totalPending = pendingCollections.reduce((sum, c) => sum + parseFloat(c.total_amount?.toString() || '0'), 0);
     const totalPaid = paidCollections.reduce((sum, c) => sum + parseFloat(c.total_amount?.toString() || '0'), 0);
     const uniqueFarmers = new Set(collectionsData.map(c => c.farmer_id)).size;
     
@@ -635,7 +639,7 @@ const PaymentSystem = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-600 mb-1">Pending Payments</p>
-                  <p className="text-2xl font-bold text-gray-900">KES {trends.pendingPayments.toFixed(2)}</p>
+                  <p className="text-2xl font-bold text-gray-900">KES {analytics.totalPending.toFixed(2)}</p>
                   {trends.pendingPaymentsTrend ? (
                     <p className={`text-xs ${trends.pendingPaymentsTrend.isPositive ? 'text-green-600' : 'text-red-600'}`}>
                       {trends.pendingPaymentsTrend.isPositive ? '↑' : '↓'} {trends.pendingPaymentsTrend.value}% from last period
@@ -654,7 +658,7 @@ const PaymentSystem = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-600 mb-1">Total Paid</p>
-                  <p className="text-2xl font-bold text-gray-900">KES {trends.totalRevenue.toFixed(2)}</p>
+                  <p className="text-2xl font-bold text-gray-900">KES {analytics.totalPaid.toFixed(2)}</p>
                   {trends.revenueTrend ? (
                     <p className={`text-xs ${trends.revenueTrend.isPositive ? 'text-green-600' : 'text-red-600'}`}>
                       {trends.revenueTrend.isPositive ? '↑' : '↓'} {trends.revenueTrend.value}% from last period

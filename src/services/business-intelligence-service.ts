@@ -25,6 +25,12 @@ interface PeriodData {
   farmerRetentionRate: number;
 }
 
+// Cache for period data to prevent unnecessary recalculations
+const periodDataCache = new Map<string, { data: PeriodData, timestamp: number }>();
+// Cache for business intelligence metrics
+const metricsCache = new Map<string, { data: BusinessIntelligenceMetric[], timestamp: number }>();
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes cache
+
 export class BusinessIntelligenceService {
   /**
    * Get date range for current period based on time range
@@ -128,6 +134,13 @@ export class BusinessIntelligenceService {
    */
   private async fetchPeriodData(startDate: string, endDate: string): Promise<PeriodData> {
     try {
+      // Check if we have cached data for this period
+      const cacheKey = `${startDate}-${endDate}`;
+      const cached = periodDataCache.get(cacheKey);
+      if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+        return cached.data;
+      }
+
       // Fetch collections for the period with reduced data
       const { data: collections, error: collectionsError } = await supabase
         .from('collections')
@@ -201,7 +214,7 @@ export class BusinessIntelligenceService {
       // Calculate farmer retention rate (simplified)
       const farmerRetentionRate = activeFarmers ? (activeFarmers / (activeFarmers + 10)) * 100 : 0;
 
-      return {
+      const result = {
         totalCollections,
         totalLiters,
         totalRevenue,
@@ -212,6 +225,11 @@ export class BusinessIntelligenceService {
         passedQualityTests,
         farmerRetentionRate
       };
+
+      // Cache the result
+      periodDataCache.set(cacheKey, { data: result, timestamp: Date.now() });
+
+      return result;
     } catch (error) {
       console.error('Error fetching period data:', error);
       // Return zero values to handle gracefully
@@ -256,6 +274,13 @@ export class BusinessIntelligenceService {
    * Calculate business intelligence metrics for a given time range - OPTIMIZED VERSION
    */
   async calculateBusinessIntelligenceMetrics(timeRange: string = 'week'): Promise<BusinessIntelligenceMetric[]> {
+    // Check cache first
+    const cacheKey = `metrics-${timeRange}`;
+    const cached = metricsCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+      return cached.data;
+    }
+
     try {
       // Get date ranges
       const currentPeriod = this.getCurrentPeriodFilter(timeRange);
@@ -378,6 +403,9 @@ export class BusinessIntelligenceService {
         }
       ];
 
+      // Cache the result
+      metricsCache.set(cacheKey, { data: metrics, timestamp: Date.now() });
+
       return metrics;
     } catch (error) {
       console.error('Error calculating business intelligence metrics:', error);
@@ -440,6 +468,14 @@ export class BusinessIntelligenceService {
         }
       ];
     }
+  }
+
+  /**
+   * Clear the metrics cache
+   */
+  clearCache() {
+    periodDataCache.clear();
+    metricsCache.clear();
   }
 }
 

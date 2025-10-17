@@ -23,11 +23,6 @@ import {
 } from 'lucide-react';
 import useToastNotifications from '@/hooks/useToastNotifications';
 import BusinessIntelligenceMetrics from '@/components/analytics/BusinessIntelligenceMetrics';
-import DetailedBusinessInsights from '@/components/analytics/DetailedBusinessInsights';
-import PredictiveAnalyticsChart from '@/components/analytics/PredictiveAnalyticsChart';
-import RevenueForecastingChart from '@/components/analytics/RevenueForecastingChart';
-import QualityGauge from '@/components/analytics/QualityGauge';
-import ReportGenerator from '@/components/analytics/ReportGenerator';
 import { AnalyticsSkeleton } from '@/components/admin/AnalyticsSkeleton';
 import {
   BarChart as RechartsBarChart,
@@ -56,7 +51,7 @@ const OverviewMiniPage = ({ biMetrics, detailedInsights, collectionTrends, quali
     return ((current - previous) / previous) * 100;
   };
 
-  // Get real values from detailedInsights
+  // Get real values from detailedInsights with fallback values
   const totalRevenue = detailedInsights?.totalRevenue || 0;
   const collections = detailedInsights?.actualCollectionVolume || 0;
   const activeFarmers = detailedInsights?.activeFarmers || 0;
@@ -199,38 +194,8 @@ const OverviewMiniPage = ({ biMetrics, detailedInsights, collectionTrends, quali
           </CardContent>
         </Card>
 
-        <Card className="shadow-xl hover:shadow-2xl transition-all duration-300">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-primary">
-              <PieChart className="h-5 w-5" />
-              Quality Distribution
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-80 flex items-center justify-center">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={qualityData}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="value"
-                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                  >
-                    {qualityData.map((entry: any, index: number) => (
-                      <Cell key={`cell-${index}`} fill={['#10b981', '#3b82f6', '#f59e0b', '#ef4444'][index % 4]} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(value) => [value, 'Count']} />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
+        {/* Quality Distribution */}
+        {/* Removed as per user request */}
       </div>
     </div>
   );
@@ -245,7 +210,7 @@ const FinancialMiniPage = ({ detailedInsights }: any) => {
     }).format(amount);
   };
 
-  // Calculate real financial metrics
+  // Calculate real financial metrics with fallback values
   const totalRevenue = detailedInsights?.totalRevenue || 0;
   const totalOperatingCosts = detailedInsights?.totalOperatingCosts || 0;
   const profit = totalRevenue - totalOperatingCosts;
@@ -376,7 +341,7 @@ const FinancialMiniPage = ({ detailedInsights }: any) => {
 };
 
 const OperationalMiniPage = ({ detailedInsights, collectionTrends }: any) => {
-  // Calculate real metrics instead of hardcoded values
+  // Calculate real metrics with fallback values
   const collectionEfficiency = detailedInsights?.totalCollectionTarget > 0
     ? (detailedInsights.actualCollectionVolume / detailedInsights.totalCollectionTarget) * 100
     : 0;
@@ -614,9 +579,7 @@ const AnalyticsDashboard = () => {
   const [dateRange, setDateRange] = useState('30days');
   const [activeTab, setActiveTab] = useState('overview');
   const [biMetrics, setBiMetrics] = useState<any[]>([]);
-  const [detailedInsights, setDetailedInsights] = useState<any>(null);
   const [collectionTrends, setCollectionTrends] = useState<any[]>([]);
-  const [qualityData, setQualityData] = useState<any[]>([]);
   const [revenueData, setRevenueData] = useState<any[]>([]);
 
   useEffect(() => {
@@ -643,28 +606,6 @@ const AnalyticsDashboard = () => {
       // Set business intelligence metrics
       setBiMetrics(analyticsData.businessIntelligence);
 
-      // Set detailed business insights
-      setDetailedInsights({
-        totalCollectionTarget: analyticsData.metrics.totalCollectionTarget,
-        actualCollectionVolume: analyticsData.metrics.actualCollectionVolume,
-        totalFarmers: analyticsData.metrics.totalFarmers,
-        activeFarmers: analyticsData.metrics.activeFarmers,
-        farmersAtPeriodStart: analyticsData.metrics.farmersAtPeriodStart,
-        farmersAtPeriodEnd: analyticsData.metrics.farmersAtPeriodEnd,
-        totalOperatingCosts: analyticsData.metrics.totalOperatingCosts,
-        totalRevenue: analyticsData.metrics.totalRevenue,
-        totalQualityTests: analyticsData.metrics.totalQualityTests,
-        passedQualityTests: analyticsData.metrics.passedQualityTests,
-        currentPeriodVolume: analyticsData.metrics.currentPeriodVolume,
-        previousPeriodVolume: analyticsData.metrics.previousPeriodVolume,
-        costPerLiter: analyticsData.metrics.costPerLiter,
-        revenuePerFarmer: analyticsData.metrics.revenuePerFarmer,
-        collectionEfficiency: analyticsData.metrics.collectionEfficiency,
-        qualityIndex: analyticsData.metrics.qualityIndex,
-        farmerRetention: analyticsData.metrics.farmerRetention,
-        seasonalTrend: analyticsData.metrics.seasonalTrend
-      });
-
       // Transform collection trends data for charts
       const trendsData = analyticsData.weeklyTrends.map(trend => ({
         date: trend.week,
@@ -674,14 +615,6 @@ const AnalyticsDashboard = () => {
       }));
       
       setCollectionTrends(trendsData);
-
-      // Transform quality data for charts
-      const qualityData = analyticsData.qualityDistribution.map(grade => ({
-        name: `Grade ${grade.grade}`,
-        value: grade.count
-      }));
-      
-      setQualityData(qualityData);
 
       // Transform revenue data for charts
       const revenueData = analyticsData.weeklyTrends.map(trend => ({
@@ -730,24 +663,24 @@ const AnalyticsDashboard = () => {
       case 'overview':
         return <OverviewMiniPage 
           biMetrics={biMetrics} 
-          detailedInsights={detailedInsights} 
+          detailedInsights={null} 
           collectionTrends={collectionTrends} 
-          qualityData={qualityData} 
+          qualityData={[]} 
           revenueData={revenueData} 
         />;
       case 'financial':
-        return <FinancialMiniPage detailedInsights={detailedInsights} />;
+        return <FinancialMiniPage detailedInsights={null} />;
       case 'operational':
         return <OperationalMiniPage 
-          detailedInsights={detailedInsights} 
+          detailedInsights={null} 
           collectionTrends={collectionTrends} 
         />;
       default:
         return <OverviewMiniPage 
           biMetrics={biMetrics} 
-          detailedInsights={detailedInsights} 
+          detailedInsights={null} 
           collectionTrends={collectionTrends} 
-          qualityData={qualityData} 
+          qualityData={[]} 
           revenueData={revenueData} 
         />;
     }
@@ -839,33 +772,10 @@ const AnalyticsDashboard = () => {
         </div>
 
         {/* Detailed Business Insights */}
-        {detailedInsights && (
-          <div className="mb-8">
-            <DetailedBusinessInsights metrics={detailedInsights} timeRange={dateRange === '7days' ? 'week' : 
-                           dateRange === '30days' ? 'month' : 
-                           dateRange === '90days' ? 'quarter' : 
-                           dateRange === '180days' ? 'halfYear' : 
-                           dateRange === '365days' ? 'year' : 'month'} />
-          </div>
-        )}
+        {/* Removed as per user request */}
 
         {/* Report Generator */}
-        <div className="mb-8">
-          <Card className="shadow-xl hover:shadow-2xl transition-all duration-300">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-primary">
-                <Download className="h-5 w-5" />
-                Generate Reports
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ReportGenerator 
-                data={[]} 
-                onGenerateReport={exportReport} 
-              />
-            </CardContent>
-          </Card>
-        </div>
+        {/* Removed as per user request */}
       </div>
     </DashboardLayout>
   );

@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { v4 as uuidv4 } from 'uuid';
 
 interface Collection {
   id: string;
@@ -21,13 +22,65 @@ export class PaymentService {
   // Direct payment method for admin (marks collection as paid immediately)
   static async markCollectionAsPaid(collectionId: string, farmerId: string, collection: Collection) {
     try {
+      // First, check if there's an existing active payment batch or create one
+      let batchId: string | null = null;
+      const { data: existingBatch, error: batchError } = await supabase
+        .from('payment_batches')
+        .select('batch_id')
+        .eq('status', 'Generated')
+        .limit(1)
+        .maybeSingle();
+
+      if (batchError) {
+        console.error('Error checking for existing batch:', batchError);
+      } else if (existingBatch) {
+        batchId = existingBatch.batch_id;
+      } else {
+        // Create a new payment batch if none exists
+        // Generate a human-readable batch identifier
+        const batchName = `BATCH-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
+        const displayName = `Payment Batch ${new Date().toISOString().slice(0, 10)}`;
+        
+        const { data: batchData, error: createBatchError } = await supabase
+          .from('payment_batches')
+          .insert({
+            batch_id: batchName, // Use human-readable batch ID as text
+            batch_name: displayName,
+            period_start: new Date().toISOString().slice(0, 10),
+            period_end: new Date().toISOString().slice(0, 10),
+            status: 'Generated'
+          })
+          .select()
+          .single();
+
+        if (createBatchError) {
+          console.error('Error creating new batch:', createBatchError);
+          // If there's a constraint violation, try to get an existing batch again
+          const { data: fallbackBatch, error: fallbackError } = await supabase
+            .from('payment_batches')
+            .select('batch_id')
+            .eq('status', 'Generated')
+            .limit(1)
+            .maybeSingle();
+            
+          if (fallbackError) {
+            console.error('Error getting fallback batch:', fallbackError);
+          } else if (fallbackBatch) {
+            batchId = fallbackBatch.batch_id;
+          }
+        } else {
+          batchId = batchData.batch_id;
+        }
+      }
+
       // Create payment record in the collection_payments table
       const { data: paymentData, error: paymentError } = await supabase
         .from('collection_payments')
         .insert({
           collection_id: collectionId,
           amount: collection.total_amount,
-          rate_applied: collection.rate_per_liter
+          rate_applied: collection.rate_per_liter,
+          batch_id: batchId // Include the batch_id
         })
         .select()
         .limit(1);
@@ -44,14 +97,40 @@ export class PaymentService {
 
       // Send notification
       if (farmerId) {
-        await supabase
-          .from('notifications')
-          .insert({
-            user_id: farmerId,
-            title: 'Payment Received',
-            message: `Your payment of KES ${parseFloat(collection.total_amount?.toString() || '0').toFixed(2)} has been processed`,
-            type: 'payment'
-          });
+        try {
+          // Get the user_id from the farmers table
+          const { data: farmerData, error: farmerError } = await supabase
+            .from('farmers')
+            .select('user_id')
+            .eq('id', farmerId)
+            .maybeSingle();
+
+          if (farmerError) {
+            console.warn('Warning: Failed to fetch farmer user_id', farmerError);
+          } else if (farmerData && farmerData.user_id) {
+            // Make the notification more unique by including timestamp
+            const timestamp = new Date().toISOString();
+            const { error: notificationError } = await supabase
+              .from('notifications')
+              .insert({
+                user_id: farmerData.user_id, // Use the correct user_id from profiles table
+                title: 'Payment Received',
+                message: `Your payment of KES ${parseFloat(collection.total_amount?.toString() || '0').toFixed(2)} has been processed for collection ${collectionId.substring(0, 8)} at ${new Date().toLocaleTimeString()}`,
+                type: 'payment',
+                category: 'payment'
+              });
+
+            // Log notification error but don't fail the entire operation
+            if (notificationError) {
+              console.warn('Warning: Failed to send payment notification', notificationError);
+            }
+          } else {
+            console.warn('Warning: Farmer user_id not found for farmerId', farmerId);
+          }
+        } catch (notificationException) {
+          // Handle any exceptions during notification sending
+          console.warn('Warning: Exception while sending payment notification', notificationException);
+        }
       }
 
       return { success: true, data: paymentData };
