@@ -192,7 +192,10 @@ const COLORS = { 'A+': '#10b981', 'A': '#3b82f6', 'B': '#f59e0b', 'C': '#ef4444'
 export class AnalyticsService {
   async fetchDashboardData(timeRange: string): Promise<AnalyticsData | null> {
     try {
-      console.log('Fetching analytics data for time range:', timeRange);
+      // Minimal logging for analytics data fetching
+      if (import.meta.env.DEV) {
+        console.log('Fetching analytics data');
+      }
       
       const endDate = new Date();
       let startDate = new Date();
@@ -229,14 +232,16 @@ export class AnalyticsService {
         this.fetchWarehouses()
       ]);
 
-      // Log data for debugging
-      console.log('Fetched data:', {
-        collectionsCount: collectionsData.length,
-        farmersCount: farmersData.length,
-        staffCount: staffData.length,
-        paymentsCount: paymentsData.length,
-        warehousesCount: warehousesData.length
-      });
+      // Minimal data logging for debugging
+      if (import.meta.env.DEV) {
+        console.log('Fetched data counts:', {
+          collections: collectionsData.length,
+          farmers: farmersData.length,
+          staff: staffData.length,
+          payments: paymentsData.length,
+          warehouses: warehousesData.length
+        });
+      }
 
       // Process the data
       const processedData = this.processAllData(
@@ -249,10 +254,16 @@ export class AnalyticsService {
         endDate
       );
 
-      console.log('Processed analytics data:', processedData);
+      if (import.meta.env.DEV) {
+        // Minimal logging for processed data
+        console.log('Processed analytics data');
+      }
       return processedData;
     } catch (error) {
-      console.error('Error fetching dashboard data:', error);
+      // Minimal error logging
+      if (import.meta.env.DEV) {
+        console.error('Error fetching dashboard data');
+      }
       throw error;
     }
   }

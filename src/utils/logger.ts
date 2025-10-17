@@ -78,16 +78,18 @@ class Logger {
       console.group(`[${this.appName}] ERROR in ${context}`);
       console.error('Message:', errorMessage);
       
-      if (additionalInfo) {
+      // Only log additional info in development
+      if (import.meta.env.DEV && additionalInfo) {
         console.log('Additional Info:', additionalInfo);
       }
       
-      if (errorStack) {
+      // Only log stack trace in development
+      if (import.meta.env.DEV && errorStack) {
         console.log('Stack Trace:', errorStack);
       }
       
-      // Add more detailed error information
-      if (error && typeof error === 'object') {
+      // Only log error object details in development
+      if (import.meta.env.DEV && error && typeof error === 'object') {
         console.log('Error Object:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
       }
       
@@ -98,15 +100,21 @@ class Logger {
   // Log a performance metric
   metric(name: string, value: number, unit: string = ''): void {
     if (this.shouldLog(LogLevel.INFO)) {
-      console.log(`[${this.appName}] METRIC: ${name} = ${value}${unit}`);
+      // Only log metrics in development
+      if (import.meta.env.DEV) {
+        console.log(`[${this.appName}] METRIC: ${name} = ${value}${unit}`);
+      }
     }
   }
 
   // Log an event
   event(name: string, data?: Record<string, any>): void {
     if (this.shouldLog(LogLevel.INFO)) {
-      const eventData = data ? JSON.stringify(data) : '';
-      console.log(`[${this.appName}] EVENT: ${name}${eventData ? ` - ${eventData}` : ''}`);
+      // Only log events in development with minimal info
+      if (import.meta.env.DEV) {
+        const eventData = data ? `Data present: ${Object.keys(data).length} keys` : 'No data';
+        console.log(`[${this.appName}] EVENT: ${name} - ${eventData}`);
+      }
     }
   }
 

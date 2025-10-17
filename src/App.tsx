@@ -41,9 +41,9 @@ const queryClient = new QueryClient({
 const App = () => {
   // Clear authentication cache on app startup to prevent stale session issues
   useEffect(() => {
-    // Only in development mode to help with debugging
+    // Only minimal logging in development mode
     if (import.meta.env.DEV) {
-      console.log('App starting, clearing potential stale auth cache');
+      console.log('App starting');
     }
     
     // Clear expired cache items
@@ -80,23 +80,12 @@ const App = () => {
       }
     }
     
-    // Log current auth state for debugging
+    // Minimal auth state logging for debugging
     if (import.meta.env.DEV) {
-      console.log('Current auth state:', {
-        cachedUser: localStorage.getItem('cached_user'),
-        cachedRole: localStorage.getItem('cached_role'),
-        cacheTimestamp: localStorage.getItem('auth_cache_timestamp'),
-        pendingProfile: localStorage.getItem('pending_profile')
-      });
-      
-      // Log any Supabase-specific items
-      const supabaseItems: Record<string, string> = {};
-      Object.keys(localStorage).forEach(key => {
-        if (key.startsWith('sb-') || key.startsWith('supabase-')) {
-          supabaseItems[key] = localStorage.getItem(key) || '';
-        }
-      });
-      console.log('Supabase items:', supabaseItems);
+      const hasCachedData = localStorage.getItem('cached_user') || localStorage.getItem('cached_role');
+      if (hasCachedData) {
+        console.log('Auth cache present');
+      }
     }
   }, []);
 

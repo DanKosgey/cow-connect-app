@@ -114,7 +114,10 @@ export const cleanupOldStorageItems = (maxAgeInHours: number = 24): void => {
               const itemAge = now - new Date(parsed.createdAt).getTime();
               if (itemAge > maxAgeInMs) {
                 localStorage.removeItem(key);
-                console.log(`Cleaned up old localStorage item: ${key}`);
+                // Only log cleanup in development
+                if (import.meta.env.DEV) {
+                  console.log(`Cleaned up old localStorage item: ${key}`);
+                }
               }
             }
           }

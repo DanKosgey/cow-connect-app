@@ -59,8 +59,6 @@ import { useSessionRefresh } from '@/hooks/useSessionRefresh';
 
 // Lazy load analytics view components
 const OverviewView = lazy(() => import('@/components/admin/analytics/OverviewView'));
-const FarmersView = lazy(() => import('@/components/admin/analytics/FarmersView'));
-const StaffView = lazy(() => import('@/components/admin/analytics/StaffView'));
 const QualityView = lazy(() => import('@/components/admin/analytics/QualityView').then(module => ({ default: module.QualityView })));
 const CollectionsView = lazy(() => import('@/components/admin/analytics/CollectionsView').then(module => ({ default: module.CollectionsView })));
 
@@ -133,9 +131,7 @@ const CollectionsAnalyticsDashboard = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [selectedCollection, setSelectedCollection] = useState<Collection | null>(null);
-  const [dateRange, setDateRange] = useState('7days'); // Changed default to 7 days for daily view
-  const [selectedFarmer, setSelectedFarmer] = useState('all');
-  const [selectedStaff, setSelectedStaff] = useState('all');
+  const [dateRange, setDateRange] = useState('daily'); // Changed default to daily collections
   const [currentView, setCurrentView] = useState('overview');
   const [farmers, setFarmers] = useState<any[]>([]);
   const [staff, setStaff] = useState<any[]>([]);
@@ -166,7 +162,7 @@ const CollectionsAnalyticsDashboard = () => {
   useEffect(() => {
     filterCollections();
     calculateAnalytics();
-  }, [collections, searchTerm, filterStatus, selectedFarmer, selectedStaff, dateRange]); // Added dateRange dependency
+  }, [collections, searchTerm, filterStatus, dateRange]); // Removed selectedFarmer and selectedStaff dependencies
 
   const { refreshSession } = useSessionRefresh({ refreshInterval: 10 * 60 * 1000 }); // Refresh every 10 minutes
 
@@ -404,13 +400,14 @@ const CollectionsAnalyticsDashboard = () => {
   const getDateFilter = () => {
     const now = new Date();
     const ranges: Record<string, Date> = {
+      'daily': new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1), // Last 24 hours
       '7days': new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7),
       '30days': new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30),
       '90days': new Date(now.getFullYear(), now.getMonth(), now.getDate() - 90),
       '180days': new Date(now.getFullYear(), now.getMonth(), now.getDate() - 180),
       'all': new Date('2020-01-01')
     };
-    return ranges[dateRange]?.toISOString() || ranges['7days'].toISOString(); // Default to 7 days
+    return ranges[dateRange]?.toISOString() || ranges['daily'].toISOString(); // Default to daily
   };
 
   const filterCollections = () => {
@@ -426,14 +423,6 @@ const CollectionsAnalyticsDashboard = () => {
 
     if (filterStatus !== 'all') {
       filtered = filtered.filter(c => c.status === filterStatus);
-    }
-
-    if (selectedFarmer !== 'all') {
-      filtered = filtered.filter(c => c.farmer_id === selectedFarmer);
-    }
-
-    if (selectedStaff !== 'all') {
-      filtered = filtered.filter(c => c.staff?.id === selectedStaff);
     }
 
     setFilteredCollections(filtered);
@@ -636,8 +625,6 @@ const CollectionsAnalyticsDashboard = () => {
         <div className="flex flex-wrap gap-2 mb-6">
           {[
             { id: 'overview', label: 'Overview', icon: BarChart3 },
-            { id: 'farmers', label: 'Farmers', icon: Users },
-            { id: 'staff', label: 'Staff', icon: UserCog },
             { id: 'quality', label: 'Quality', icon: Award },
             { id: 'collections', label: 'Collections', icon: Droplet }
           ].map((view) => {
@@ -690,6 +677,7 @@ const CollectionsAnalyticsDashboard = () => {
                 onChange={(e) => setDateRange(e.target.value)}
                 className="bg-input-light dark:bg-input-dark border border-border-light dark:border-border-dark text-text-light dark:text-text-dark rounded-md px-3 py-2"
               >
+                <option value="daily">Daily Collections</option>
                 <option value="7days">Last 7 Days</option>
                 <option value="30days">Last 30 Days</option>
                 <option value="90days">Last 90 Days</option>
@@ -702,9 +690,7 @@ const CollectionsAnalyticsDashboard = () => {
                   onClick={() => {
                     setSearchTerm('');
                     setFilterStatus('all');
-                    setDateRange('7days'); // Reset to 7 days (daily view)
-                    setSelectedFarmer('all');
-                    setSelectedStaff('all');
+                    setDateRange('daily'); // Reset to daily collections
                   }}
                   variant="outline"
                   className="border-border-light dark:border-border-dark text-text-light dark:text-text-dark hover:bg-gray-100 dark:hover:bg-gray-700"
@@ -714,51 +700,7 @@ const CollectionsAnalyticsDashboard = () => {
               </div>
             </div>
             
-            {currentView === 'farmers' && (
-              <div className="mt-4 pt-4 border-t border-border-light dark:border-border-dark">
-                <select
-                  value={selectedFarmer}
-                  onChange={(e) => {
-                    setSelectedFarmer(e.target.value);
-                    // Reset staff filter when farmer is selected
-                    if (e.target.value !== 'all') {
-                      setSelectedStaff('all');
-                    }
-                  }}
-                  className="bg-input-light dark:bg-input-dark border border-border-light dark:border-border-dark text-text-light dark:text-text-dark rounded-md px-3 py-2"
-                >
-                  <option value="all">All Farmers</option>
-                  {farmers.map(farmer => (
-                    <option key={farmer.id} value={farmer.id}>
-                      {farmer.profiles?.full_name || 'Unknown'}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-            
-            {currentView === 'staff' && (
-              <div className="mt-4 pt-4 border-t border-border-light dark:border-border-dark">
-                <select
-                  value={selectedStaff}
-                  onChange={(e) => {
-                    setSelectedStaff(e.target.value);
-                    // Reset farmer filter when staff is selected
-                    if (e.target.value !== 'all') {
-                      setSelectedFarmer('all');
-                    }
-                  }}
-                  className="bg-input-light dark:bg-input-dark border border-border-light dark:border-border-dark text-text-light dark:text-text-dark rounded-md px-3 py-2"
-                >
-                  <option value="all">All Staff</option>
-                  {staff.map(staffMember => (
-                    <option key={staffMember.id} value={staffMember.id}>
-                      {staffMember.profiles?.full_name || 'Unknown'}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
+            {/* Removed individual farmer/staff selection filters */}
           </CardContent>
         </Card>
 
@@ -783,24 +725,6 @@ const CollectionsAnalyticsDashboard = () => {
                 litersTrend={trends.litersTrend}
                 revenueTrend={trends.revenueTrend}
                 qualityTrend={trends.qualityTrend}
-              />
-            )}
-            
-            {currentView === 'farmers' && (
-              <FarmersView
-                topFarmers={topFarmers}
-                farmers={farmers}
-                selectedFarmer={selectedFarmer === 'all' ? (topFarmers[0]?.id || '') : selectedFarmer}
-                setSelectedFarmer={setSelectedFarmer}
-              />
-            )}
-            
-            {currentView === 'staff' && (
-              <StaffView
-                staffPerformance={staffPerformance}
-                staff={staff}
-                selectedStaff={selectedStaff === 'all' ? (staffPerformance[0]?.id || '') : selectedStaff}
-                setSelectedStaff={setSelectedStaff}
               />
             )}
             

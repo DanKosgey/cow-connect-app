@@ -205,43 +205,22 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
     }
   }, [userRole, user, location.pathname, navigate, signOut]);
 
-  // Log component mount/unmount
+  // Minimal component mount/unmount logging
   useEffect(() => {
-    console.log('[DashboardLayout] Component mounted', { userRole });
-    console.log('[PortalAccess] User accessing portal', {
-      userRole,
-      userId: user?.id,
-      timestamp: new Date().toISOString(),
-      path: location.pathname
-    });
+    if (import.meta.env.DEV) {
+      // Only minimal logging for component lifecycle
+    }
     
     return () => {
-      console.log('[DashboardLayout] Component unmounting', { userRole });
-      console.log('[PortalAccess] User leaving portal', {
-        userRole,
-        userId: user?.id,
-        timestamp: new Date().toISOString(),
-        path: location.pathname
-      });
+      // Cleanup
     };
   }, [userRole, user, location.pathname]);
 
-  // Log location changes for debugging
+  // Minimal location changes logging
   useEffect(() => {
     if (import.meta.env.DEV) {
-      console.log('[DashboardLayout] Location changed', { 
-        pathname: location.pathname,
-        userRole,
-        user: user?.id
-      });
+      // Only minimal logging for navigation
     }
-    
-    console.log('[PortalNavigation] User navigated to', {
-      path: location.pathname,
-      userRole,
-      userId: user?.id,
-      timestamp: new Date().toISOString()
-    });
   }, [location.pathname, userRole, user]);
 
   // Memoize navigation to prevent unnecessary re-renders
@@ -272,37 +251,25 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
     setSidebarOpen(false);
   }, [location.pathname]);
 
-  // Navigation controls functions
+  // Navigation controls functions with reduced logging
   const handleBack = () => {
-    console.log('[DashboardLayout] Back button clicked');
-    console.log('[PortalNavigation] User clicked back button', {
-      from: location.pathname,
-      userRole,
-      userId: user?.id,
-      timestamp: new Date().toISOString()
-    });
+    if (import.meta.env.DEV) {
+      // Minimal logging for navigation actions
+    }
     navigate(-1);
   };
 
   const handleForward = () => {
-    console.log('[DashboardLayout] Forward button clicked');
-    console.log('[PortalNavigation] User clicked forward button', {
-      from: location.pathname,
-      userRole,
-      userId: user?.id,
-      timestamp: new Date().toISOString()
-    });
+    if (import.meta.env.DEV) {
+      // Minimal logging for navigation actions
+    }
     navigate(1);
   };
 
   const handleRefresh = () => {
-    console.log('[DashboardLayout] Refresh button clicked');
-    console.log('[PortalNavigation] User clicked refresh button', {
-      path: location.pathname,
-      userRole,
-      userId: user?.id,
-      timestamp: new Date().toISOString()
-    });
+    if (import.meta.env.DEV) {
+      // Minimal logging for refresh action
+    }
     // Reload the current page
     window.location.reload();
   };

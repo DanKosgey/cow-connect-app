@@ -73,7 +73,10 @@ class PerformanceMonitor {
     if (timing) {
       timing.endTime = performance.now();
       const duration = timing.endTime - timing.startTime;
-      console.log(`[Performance] ${timing.name}: ${duration.toFixed(2)}ms`);
+      // Only log performance metrics in development
+      if (import.meta.env.DEV) {
+        console.log(`[Performance] ${timing.name}: ${duration.toFixed(2)}ms`);
+      }
       return duration;
     }
     return null;
@@ -110,12 +113,15 @@ class PerformanceMonitor {
 
   logMetrics(componentName: string) {
     const metrics = this.getMetrics();
-    console.log(`[${componentName}] Performance Metrics:`, {
-      fetch: metrics.fetchDuration ? `${metrics.fetchDuration.toFixed(2)}ms` : 'N/A',
-      process: metrics.processDuration ? `${metrics.processDuration.toFixed(2)}ms` : 'N/A',
-      render: metrics.renderDuration ? `${metrics.renderDuration.toFixed(2)}ms` : 'N/A',
-      total: metrics.totalDuration ? `${metrics.totalDuration.toFixed(2)}ms` : 'N/A'
-    });
+    // Only log metrics in development
+    if (import.meta.env.DEV) {
+      console.log(`[${componentName}] Performance Metrics:`, {
+        fetch: metrics.fetchDuration ? `${metrics.fetchDuration.toFixed(2)}ms` : 'N/A',
+        process: metrics.processDuration ? `${metrics.processDuration.toFixed(2)}ms` : 'N/A',
+        render: metrics.renderDuration ? `${metrics.renderDuration.toFixed(2)}ms` : 'N/A',
+        total: metrics.totalDuration ? `${metrics.totalDuration.toFixed(2)}ms` : 'N/A'
+      });
+    }
   }
 }
 

@@ -15,15 +15,13 @@ export const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) 
   const [showLoader, setShowLoader] = useState(false);
   const [loadingTimeout, setLoadingTimeout] = useState(false);
   
-  // Log component mount/unmount
+  // Minimal component mount/unmount logging
   useEffect(() => {
     if (import.meta.env.DEV) {
-      console.log('ProtectedRoute: Component mounted', { requiredRole });
+      // Only log component lifecycle in development
     }
     return () => {
-      if (import.meta.env.DEV) {
-        console.log('ProtectedRoute: Component unmounting', { requiredRole });
-      }
+      // Cleanup
     };
   }, [requiredRole]);
   
@@ -32,11 +30,7 @@ export const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) 
     if (loading) {
       const timeout = setTimeout(() => {
         if (import.meta.env.DEV) {
-          console.log('ProtectedRoute: Loading timeout reached', { 
-            userId: user?.id,
-            requiredRole,
-            cachedRole: localStorage.getItem('cached_role')
-          });
+          console.log('ProtectedRoute: Loading timeout');
         }
         setLoadingTimeout(true);
       }, 5000);
@@ -47,17 +41,10 @@ export const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) 
     }
   }, [loading, user?.id, requiredRole]);
 
-  // Log authentication state changes for debugging
+  // Minimal authentication state changes logging
   useEffect(() => {
     if (import.meta.env.DEV) {
-      console.log('ProtectedRoute auth state changed', { 
-        user: user?.id, 
-        userRole, 
-        loading,
-        requiredRole,
-        pathname: location.pathname,
-        search: location.search
-      });
+      // Only log minimal auth state for debugging
     }
   }, [user?.id, userRole, loading, requiredRole, location.pathname, location.search]);
 
@@ -97,7 +84,7 @@ export const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) 
     };
     
     if (import.meta.env.DEV) {
-      console.log('ProtectedRoute: Redirecting to login. Required role:', requiredRole);
+      // Minimal logging for redirects
     }
     
     return <Navigate to={loginRoutes[requiredRole]} state={{ from: location }} replace />;
@@ -106,7 +93,7 @@ export const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) 
   // If user has a different role than required, redirect to their dashboard
   if (userRole && userRole !== requiredRole) {
     if (import.meta.env.DEV) {
-      console.log('ProtectedRoute: Role mismatch. User role:', userRole, 'Required role:', requiredRole);
+      // Minimal logging for role mismatch
     }
     
     const dashboardRoutes = {
@@ -126,21 +113,14 @@ export const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) 
       // If cached role matches required role, allow access
       if (cachedInfo.cachedRole === requiredRole) {
         if (import.meta.env.DEV) {
-          console.log('ProtectedRoute: Allowing access with valid cached role', { 
-            user: user.id, 
-            cachedRole: cachedInfo.cachedRole,
-            requiredRole 
-          });
+          // Minimal logging for cached role access
         }
         return <>{children}</>;
       }
       
       // If cached role doesn't match, redirect to correct dashboard
       if (import.meta.env.DEV) {
-        console.log('ProtectedRoute: Cached role mismatch', { 
-          cachedRole: cachedInfo.cachedRole, 
-          requiredRole 
-        });
+        // Minimal logging for cached role mismatch
       }
       
       const dashboardRoutes = {
@@ -156,7 +136,7 @@ export const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) 
   // Handle loading state
   if (loading && !loadingTimeout) {
     if (import.meta.env.DEV) {
-      console.log('ProtectedRoute: Loading, showing loader');
+      // Minimal logging for loading state
     }
     return <PageLoader type="dashboard" />;
   }
@@ -167,29 +147,21 @@ export const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) 
     
     if (cachedInfo?.isValid && cachedInfo.cachedRole === requiredRole) {
       if (import.meta.env.DEV) {
-        console.log('ProtectedRoute: Allowing access with cached role after timeout', { 
-          user: user.id, 
-          cachedRole: cachedInfo.cachedRole,
-          requiredRole 
-        });
+        // Minimal logging for cached role access after timeout
       }
       return <>{children}</>;
     }
     
     // No valid cached role, continue showing loader
     if (import.meta.env.DEV) {
-      console.log('ProtectedRoute: Timeout reached but no valid cached role');
+      // Minimal logging for timeout
     }
     return <PageLoader type="dashboard" />;
   }
 
   // User is authenticated and has the correct role
   if (import.meta.env.DEV) {
-    console.log('ProtectedRoute: Allowing access to protected route', { 
-      user: user.id, 
-      userRole, 
-      requiredRole 
-    });
+    // Minimal logging for access granted
   }
   
   return <>{children}</>;

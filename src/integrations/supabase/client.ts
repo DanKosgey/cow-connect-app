@@ -53,50 +53,39 @@ const options = {
       // Add retry logic for failed requests
       const fetchWithRetry = async (input: RequestInfo, init?: RequestInit, retries = 3): Promise<Response> => {
         try {
-          console.log('Supabase client: Making request', { input, retries });
+          // Only log in development and with reduced verbosity
+          if (import.meta.env.DEV) {
+            // Removed detailed request logging to reduce sensitive info exposure
+          }
           
           const response = await fetch(input, { 
             ...init, 
             signal: AbortSignal.timeout(60000) // 60 second timeout
           });
           
-          console.log('Supabase client: Response received', { 
-            status: response.status, 
-            statusText: response.statusText,
-            url: typeof input === 'string' ? input : 'REQUEST_OBJECT'
-          });
+          // Only log in development and with reduced verbosity
+          if (import.meta.env.DEV) {
+            // Removed detailed response logging to reduce sensitive info exposure
+          }
           
           // If we get a 400 error, it might be due to an expired session
           if (response.status === 400) {
             if (import.meta.env.DEV) {
-              console.warn('Received 400 error from Supabase, may be due to expired session or malformed request', {
-                url: typeof input === 'string' ? input : 'REQUEST_OBJECT',
-                status: response.status,
-                statusText: response.statusText
-              });
+              console.warn('Received 400 error from Supabase, may be due to expired session');
             }
           }
           
           // If we get a 401 error, it's likely an auth issue
           if (response.status === 401) {
             if (import.meta.env.DEV) {
-              console.warn('Received 401 Unauthorized error from Supabase, session may be invalid', {
-                url: typeof input === 'string' ? input : 'REQUEST_OBJECT',
-                status: response.status,
-                statusText: response.statusText
-              });
+              console.warn('Received 401 Unauthorized error from Supabase, session may be invalid');
             }
           }
           
           // If we get a 406 error, log it for debugging
           if (response.status === 406) {
             if (import.meta.env.DEV) {
-              console.warn('Received 406 Not Acceptable error from Supabase', {
-                url: typeof input === 'string' ? input : 'REQUEST_OBJECT',
-                status: response.status,
-                statusText: response.statusText,
-                headers: init?.headers
-              });
+              console.warn('Received 406 Not Acceptable error from Supabase');
             }
           }
           
@@ -104,7 +93,7 @@ const options = {
         } catch (error) {
           if (retries > 0) {
             if (import.meta.env.DEV) {
-              console.warn(`Fetch failed, retrying... (${retries} retries left)`, error);
+              console.warn(`Fetch failed, retrying... (${retries} retries left)`);
             }
             // Wait before retrying
             await new Promise(resolve => setTimeout(resolve, 1000 * (4 - retries)));
@@ -131,13 +120,24 @@ if (import.meta.env.DEV) {
   console.log('SUPABASE_PUBLISHABLE_KEY:', SUPABASE_PUBLISHABLE_KEY ? '[REDACTED]' : 'MISSING');
 }
 
-// Validate configuration
+// Validate configuration and provide clear error messages
 if (!SUPABASE_URL) {
-  console.error('Missing VITE_SUPABASE_URL environment variable');
+  const errorMessage = 'CRITICAL ERROR: Missing VITE_SUPABASE_URL environment variable. Application will not be able to connect to Supabase.';
+  console.error(errorMessage);
+  throw new Error(errorMessage);
 }
 
 if (!SUPABASE_PUBLISHABLE_KEY) {
-  console.error('Missing VITE_SUPABASE_PUBLISHABLE_KEY environment variable');
+  const errorMessage = 'CRITICAL ERROR: Missing VITE_SUPABASE_PUBLISHABLE_KEY environment variable. Application will not be able to connect to Supabase.';
+  console.error(errorMessage);
+  throw new Error(errorMessage);
+}
+
+// Additional validation to prevent localhost connections in production
+if (SUPABASE_URL.includes('localhost') && !import.meta.env.DEV) {
+  const errorMessage = 'SECURITY WARNING: Using localhost Supabase URL in production environment. This will not work.';
+  console.error(errorMessage);
+  throw new Error(errorMessage);
 }
 
 // Create client with enhanced error handling
@@ -147,20 +147,11 @@ const client = createClient<Database>(
   options
 );
 
-// Add connection state monitoring (only in development)
+// Add connection state monitoring (only minimal logging in development)
 if (import.meta.env.DEV) {
   client.auth.onAuthStateChange((event, session) => {
-    console.log('Supabase auth state change:', { event, session: session?.user?.id });
-    
-    if (event === 'SIGNED_IN') {
-      console.log('User signed in, session established');
-    } else if (event === 'SIGNED_OUT') {
-      console.log('User signed out, session cleared');
-    } else if (event === 'TOKEN_REFRESHED') {
-      console.log('Token refreshed, connection maintained');
-    } else if (event === 'USER_UPDATED') {
-      console.log('User updated');
-    }
+    // Reduced logging to only show event type
+    console.log('Supabase auth state change:', { event });
   });
 }
 
