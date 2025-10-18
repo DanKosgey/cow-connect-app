@@ -30,3 +30,5 @@ export { default as Eye } from 'lucide-react/dist/esm/icons/eye';
 export { default as Target } from 'lucide-react/dist/esm/icons/target';
 export { default as Award } from 'lucide-react/dist/esm/icons/award';
 export { default as Droplet } from 'lucide-react/dist/esm/icons/droplet';
+export { default as ArrowLeft } from 'lucide-react/dist/esm/icons/arrow-left';
+export { default as User } from 'lucide-react/dist/esm/icons/user';

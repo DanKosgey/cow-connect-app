@@ -41,22 +41,15 @@ export class PaymentManagementService {
       if (findPaymentsError) {
         console.warn('Warning: Error finding related farmer payments', findPaymentsError);
       } else if (relatedPayments && relatedPayments.length > 0) {
-        // Update all related farmer_payments to mark as paid
+        // Update all related farmer_payments to mark as approved (since 'paid' is not a valid enum value)
         for (const payment of relatedPayments) {
-          // Only update if the payment is not already paid
-          if (payment.approval_status !== 'paid') {
-            // Check if all collections in this payment are now paid
-            const allPaid = payment.collection_ids.every(cid => {
-              const coll = collectionId === cid ? { status: 'Paid' } : 
-                collections.find(c => c.id === cid) || { status: 'Collected' };
-              return coll.status === 'Paid';
-            });
-
+          // Only update if the payment is not already approved
+          if (payment.approval_status !== 'approved') {
             const { error: updatePaymentError } = await supabase
               .from('farmer_payments')
               .update({ 
-                approval_status: allPaid ? 'paid' : 'approved',
-                paid_at: allPaid ? new Date().toISOString() : undefined
+                approval_status: 'approved',
+                paid_at: new Date().toISOString()
               })
               .eq('id', payment.id);
 
@@ -250,9 +243,9 @@ export class PaymentManagementService {
       }, {} as Record<string, { name: string; value: number }>) || {};
       
       const farmerDistribution = Object.values(farmerPayments)
-        .sort((a, b) => b.value - a.value)
+        .sort((a, b) => (b as { name: string; value: number }).value - (a as { name: string; value: number }).value)
         .slice(0, 5);
-      
+
       return { 
         success: true, 
         data: {

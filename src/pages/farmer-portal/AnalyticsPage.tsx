@@ -946,51 +946,6 @@ const AnalyticsPage = () => {
           </CardContent>
         </Card>
 
-        {/* Quality Score Trend */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <LineChart className="h-5 w-5 text-primary" />
-              Quality Score Trend
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <RechartsLineChart data={timeSeriesData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis 
-                    dataKey="date" 
-                    tickFormatter={(value) => format(new Date(value), 'MMM dd')}
-                  />
-                  <YAxis 
-                    domain={[0, 10]} 
-                    label={{ 
-                      value: 'Quality Score', 
-                      angle: -90, 
-                      position: 'insideLeft',
-                      style: { textAnchor: 'middle' }
-                    }}
-                  />
-                  <Tooltip 
-                    formatter={(value) => [value, 'Quality Score']}
-                    labelFormatter={(value) => format(new Date(value), 'MMM dd, yyyy')}
-                  />
-                  <Legend />
-                  <Line 
-                    type="monotone" 
-                    dataKey="qualityScore" 
-                    stroke="#8b5cf6" 
-                    strokeWidth={2} 
-                    dot={{ fill: '#8b5cf6', r: 3 }} 
-                    activeDot={{ r: 5 }} 
-                    name="Quality Score"
-                  />
-                </RechartsLineChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
       </div>
 
       {/* Quality Metrics with Enhanced Insights */}
