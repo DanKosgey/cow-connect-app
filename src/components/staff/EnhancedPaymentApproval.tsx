@@ -48,6 +48,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { UserRole } from '@/types/auth.types';
 
 // Define interfaces at the top of the file
 interface Collection {
@@ -105,7 +106,7 @@ interface PaymentStats {
 }
 
 const EnhancedPaymentApproval: React.FC = () => {
-  const { user } = useAuth();
+  const { user, userRole } = useAuth();
   const { show, error: showError } = useToastNotifications();
   const [collections, setCollections] = useState<Collection[]>([]);
   const [farmerPayments, setFarmerPayments] = useState<FarmerPaymentWithFarmers[]>([]);
@@ -117,6 +118,13 @@ const EnhancedPaymentApproval: React.FC = () => {
   const [viewingCollection, setViewingCollection] = useState<Collection | null>(null);
   const [stats, setStats] = useState<PaymentStats | null>(null);
   const [subscription, setSubscription] = useState<any>(null);
+
+  // Redirect or show error if user is not admin
+  useEffect(() => {
+    if (userRole && userRole !== UserRole.ADMIN) {
+      showError('Access Denied', 'Only administrators can access the payment approval system');
+    }
+  }, [userRole, showError]);
 
   // Refs to prevent state closure issues
   const collectionsRef = useRef(collections);
@@ -152,7 +160,7 @@ const EnhancedPaymentApproval: React.FC = () => {
 
   // Fetch data function with proper error handling
   const fetchData = useCallback(async () => {
-    if (!user?.id) return;
+    if (!user?.id || userRole !== UserRole.ADMIN) return;
 
     try {
       setLoadingData(true);
@@ -243,11 +251,11 @@ const EnhancedPaymentApproval: React.FC = () => {
     } finally {
       setLoadingData(false);
     }
-  }, [user?.id]);
+  }, [user?.id, userRole]);
 
   // Setup real-time subscriptions
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id || userRole !== UserRole.ADMIN) return;
 
     let isSubscribed = true;
 
@@ -336,10 +344,15 @@ const EnhancedPaymentApproval: React.FC = () => {
         supabase.removeChannel(paymentsSubscription);
       }
     };
-  }, [user?.id, fetchData]);
+  }, [user?.id, fetchData, userRole]);
 
   // Add a manual refresh function for when subscriptions fail
   const handleManualRefresh = useCallback(async () => {
+    if (userRole !== UserRole.ADMIN) {
+      showError('Access Denied', 'Only administrators can refresh payment data');
+      return;
+    }
+
     try {
       show({
         title: 'Refreshing Data',
@@ -356,17 +369,27 @@ const EnhancedPaymentApproval: React.FC = () => {
       console.error('Error during manual refresh:', error);
       showError('Refresh Failed', 'Failed to refresh data. Please try again.');
     }
-  }, [fetchData, show, showError]);
+  }, [fetchData, show, showError, userRole]);
 
   const handleCollectionSelect = useCallback((collectionId: string) => {
+    if (userRole !== UserRole.ADMIN) {
+      showError('Access Denied', 'Only administrators can select collections for payment');
+      return;
+    }
+
     setSelectedCollections(prev => 
       prev.includes(collectionId) 
         ? prev.filter(id => id !== collectionId)
         : [...prev, collectionId]
     );
-  }, []);
+  }, [userRole, showError]);
 
   const handleSelectAll = useCallback(() => {
+    if (userRole !== UserRole.ADMIN) {
+      showError('Access Denied', 'Only administrators can select collections for payment');
+      return;
+    }
+
     if (selectedCollections.length === filteredCollections.length) {
       // Deselect all
       setSelectedCollections([]);
@@ -374,9 +397,14 @@ const EnhancedPaymentApproval: React.FC = () => {
       // Select all visible collections
       setSelectedCollections(filteredCollections.map(c => c.id));
     }
-  }, [filteredCollections, selectedCollections.length]);
+  }, [filteredCollections, selectedCollections.length, userRole, showError]);
 
   const handleApproveForPayment = useCallback(async () => {
+    if (userRole !== UserRole.ADMIN) {
+      showError('Access Denied', 'Only administrators can approve payments');
+      return;
+    }
+
     if (selectedCollections.length === 0) {
       showError('No collections selected', 'Please select at least one collection to approve');
       return;
@@ -439,9 +467,14 @@ const EnhancedPaymentApproval: React.FC = () => {
       console.error('Error approving collections:', error);
       showError('Error', String(error?.message || 'Failed to approve collections for payment'));
     }
-  }, [collections, notes, selectedCollections, show, showError, user?.id, fetchData]);
+  }, [collections, notes, selectedCollections, show, showError, user?.id, fetchData, userRole]);
 
   const handleMarkAsPaid = useCallback(async (paymentId: string) => {
+    if (userRole !== UserRole.ADMIN) {
+      showError('Access Denied', 'Only administrators can mark payments as paid');
+      return;
+    }
+
     if (!user?.id) {
       showError('Authentication Error', 'User not authenticated');
       return;
@@ -465,9 +498,14 @@ const EnhancedPaymentApproval: React.FC = () => {
       console.error('Error marking payment as paid:', error);
       showError('Error', String(error?.message || 'Failed to mark payment as paid'));
     }
-  }, [show, showError, user?.id, fetchData]);
+  }, [show, showError, user?.id, fetchData, userRole]);
 
   const exportToCSV = useCallback(() => {
+    if (userRole !== UserRole.ADMIN) {
+      showError('Access Denied', 'Only administrators can export payment data');
+      return;
+    }
+
     // Create CSV content
     const headers = [
       'Collection ID',
@@ -505,7 +543,7 @@ const EnhancedPaymentApproval: React.FC = () => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  }, [filteredCollections]);
+  }, [filteredCollections, userRole, showError]);
 
   const totalSelectedAmount = React.useMemo(() => {
     return collections
@@ -531,6 +569,21 @@ const EnhancedPaymentApproval: React.FC = () => {
       default: return 'bg-gray-100 text-gray-800';
     }
   }, []);
+
+  if (userRole !== UserRole.ADMIN) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center p-8 bg-red-50 rounded-lg border border-red-200">
+          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-red-800 mb-2">Access Denied</h2>
+          <p className="text-red-600 mb-4">Only administrators can access the payment approval system.</p>
+          <Button onClick={() => window.history.back()}>
+            Go Back
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   if (loadingData) {
     return (

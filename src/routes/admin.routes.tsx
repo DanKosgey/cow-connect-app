@@ -26,6 +26,9 @@ const ConnectionTestPage = lazy(() => import("../pages/admin/ConnectionTestPage"
 const Farmers = lazy(() => import("../pages/admin/Farmers"));
 const Staff = lazy(() => import("../pages/admin/Staff"));
 const PaymentSystem = lazy(() => import("../pages/admin/PaymentSystem"));
+const FarmerPaymentDetails = lazy(() => import("../pages/admin/FarmerPaymentDetails"));
+const PaymentBatchManagement = lazy(() => import("../pages/admin/PaymentBatchManagement"));
+const PaymentReports = lazy(() => import("../pages/admin/PaymentReports"));
 const CollectionsAnalyticsDashboard = lazy(() => import("../pages/admin/CollectionsAnalyticsDashboard"));
 const KYCAdminDashboard = lazy(() => import("../pages/admin/KYCAdminDashboard"));
 const KYCPendingFarmersDashboard = lazy(() => import("../pages/admin/KYCPendingFarmersDashboard"));
@@ -53,6 +56,10 @@ export const adminRoutes = [
   { path: '/admin/*', element: <AdminPortalLayout><div>Placeholder</div></AdminPortalLayout> },
   { path: '/admin/farmers', element: <Farmers /> },
   { path: '/admin/staff', element: <Staff /> },
+  { path: '/admin/payments', element: <PaymentSystem /> },
+  { path: '/admin/payments/farmer/:farmerId', element: <FarmerPaymentDetails /> },
+  { path: '/admin/payments/batches', element: <PaymentBatchManagement /> },
+  { path: '/admin/payments/reports', element: <PaymentReports /> },
   { path: '/admin/collections', element: <CollectionsAnalyticsDashboard /> },
   { path: '/admin/kyc', element: <KYCAdminDashboard /> },
   { path: '/admin/kyc-pending-farmers', element: <KYCPendingFarmersDashboard /> },
@@ -113,6 +120,9 @@ export default function AdminRoutes() {
                 <Route path="farmers" element={<Farmers />} />
                 <Route path="staff" element={<Staff />} />
                 <Route path="payments" element={<PaymentSystem />} />
+                <Route path="payments/farmer/:farmerId" element={<FarmerPaymentDetails />} />
+                <Route path="payments/batches" element={<PaymentBatchManagement />} />
+                <Route path="payments/reports" element={<PaymentReports />} />
                 <Route path="collections" element={<CollectionsAnalyticsDashboard />} />
                 <Route path="kyc" element={<KYCAdminDashboard />} />
                 <Route path="kyc-pending-farmers" element={<KYCPendingFarmersDashboard />} />
@@ -146,6 +156,27 @@ export default function AdminRoutes() {
           <ProtectedRoute requiredRole={UserRole.ADMIN}>
             <PageTransition>
               <PaymentSystem />
+            </PageTransition>
+          </ProtectedRoute>
+        } />
+        <Route path="payments/farmer/:farmerId" element={
+          <ProtectedRoute requiredRole={UserRole.ADMIN}>
+            <PageTransition>
+              <FarmerPaymentDetails />
+            </PageTransition>
+          </ProtectedRoute>
+        } />
+        <Route path="payments/batches" element={
+          <ProtectedRoute requiredRole={UserRole.ADMIN}>
+            <PageTransition>
+              <PaymentBatchManagement />
+            </PageTransition>
+          </ProtectedRoute>
+        } />
+        <Route path="payments/reports" element={
+          <ProtectedRoute requiredRole={UserRole.ADMIN}>
+            <PageTransition>
+              <PaymentReports />
             </PageTransition>
           </ProtectedRoute>
         } />

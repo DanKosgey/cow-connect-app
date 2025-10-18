@@ -42,31 +42,111 @@ CREATE INDEX IF NOT EXISTS idx_inventory_transactions_created_at ON public.inven
 ALTER TABLE public.inventory_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.inventory_transactions ENABLE ROW LEVEL SECURITY;
 
--- RLS policies for inventory_items
-CREATE POLICY "Staff can view inventory items" ON public.inventory_items
-    FOR SELECT TO authenticated USING (true);
+-- RLS policies for inventory_items using safe approach
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policy pol
+    JOIN pg_class pc ON pc.oid = pol.polrelid
+    WHERE pol.polname = 'Staff can view inventory items' 
+    AND pc.relname = 'inventory_items'
+  ) THEN
+    CREATE POLICY "Staff can view inventory items" ON public.inventory_items
+        FOR SELECT TO authenticated USING (true);
+  END IF;
+END $$;
 
-CREATE POLICY "Staff can insert inventory items" ON public.inventory_items
-    FOR INSERT TO authenticated WITH CHECK (true);
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policy pol
+    JOIN pg_class pc ON pc.oid = pol.polrelid
+    WHERE pol.polname = 'Staff can insert inventory items' 
+    AND pc.relname = 'inventory_items'
+  ) THEN
+    CREATE POLICY "Staff can insert inventory items" ON public.inventory_items
+        FOR INSERT TO authenticated WITH CHECK (true);
+  END IF;
+END $$;
 
-CREATE POLICY "Staff can update inventory items" ON public.inventory_items
-    FOR UPDATE TO authenticated USING (true);
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policy pol
+    JOIN pg_class pc ON pc.oid = pol.polrelid
+    WHERE pol.polname = 'Staff can update inventory items' 
+    AND pc.relname = 'inventory_items'
+  ) THEN
+    CREATE POLICY "Staff can update inventory items" ON public.inventory_items
+        FOR UPDATE TO authenticated USING (true);
+  END IF;
+END $$;
 
-CREATE POLICY "Staff can delete inventory items" ON public.inventory_items
-    FOR DELETE TO authenticated USING (true);
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policy pol
+    JOIN pg_class pc ON pc.oid = pol.polrelid
+    WHERE pol.polname = 'Staff can delete inventory items' 
+    AND pc.relname = 'inventory_items'
+  ) THEN
+    CREATE POLICY "Staff can delete inventory items" ON public.inventory_items
+        FOR DELETE TO authenticated USING (true);
+  END IF;
+END $$;
 
--- RLS policies for inventory_transactions
-CREATE POLICY "Staff can view inventory transactions" ON public.inventory_transactions
-    FOR SELECT TO authenticated USING (true);
+-- RLS policies for inventory_transactions using safe approach
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policy pol
+    JOIN pg_class pc ON pc.oid = pol.polrelid
+    WHERE pol.polname = 'Staff can view inventory transactions' 
+    AND pc.relname = 'inventory_transactions'
+  ) THEN
+    CREATE POLICY "Staff can view inventory transactions" ON public.inventory_transactions
+        FOR SELECT TO authenticated USING (true);
+  END IF;
+END $$;
 
-CREATE POLICY "Staff can insert inventory transactions" ON public.inventory_transactions
-    FOR INSERT TO authenticated WITH CHECK (true);
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policy pol
+    JOIN pg_class pc ON pc.oid = pol.polrelid
+    WHERE pol.polname = 'Staff can insert inventory transactions' 
+    AND pc.relname = 'inventory_transactions'
+  ) THEN
+    CREATE POLICY "Staff can insert inventory transactions" ON public.inventory_transactions
+        FOR INSERT TO authenticated WITH CHECK (true);
+  END IF;
+END $$;
 
-CREATE POLICY "Staff can update inventory transactions" ON public.inventory_transactions
-    FOR UPDATE TO authenticated USING (true);
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policy pol
+    JOIN pg_class pc ON pc.oid = pol.polrelid
+    WHERE pol.polname = 'Staff can update inventory transactions' 
+    AND pc.relname = 'inventory_transactions'
+  ) THEN
+    CREATE POLICY "Staff can update inventory transactions" ON public.inventory_transactions
+        FOR UPDATE TO authenticated USING (true);
+  END IF;
+END $$;
 
-CREATE POLICY "Staff can delete inventory transactions" ON public.inventory_transactions
-    FOR DELETE TO authenticated USING (true);
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policy pol
+    JOIN pg_class pc ON pc.oid = pol.polrelid
+    WHERE pol.polname = 'Staff can delete inventory transactions' 
+    AND pc.relname = 'inventory_transactions'
+  ) THEN
+    CREATE POLICY "Staff can delete inventory transactions" ON public.inventory_transactions
+        FOR DELETE TO authenticated USING (true);
+  END IF;
+END $$;
 
 -- Grant permissions
 GRANT ALL ON public.inventory_items TO authenticated;

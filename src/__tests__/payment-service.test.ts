@@ -95,7 +95,7 @@ describe('PaymentService', () => {
       const paymentId = 'payment1';
       const mockPayment = {
         id: paymentId,
-        approval_status: 'paid',
+        approval_status: 'approved',
         paid_at: '2023-01-01T00:00:00Z'
       };
 
@@ -109,7 +109,7 @@ describe('PaymentService', () => {
 
       expect(result.success).toBe(true);
       expect(mockSupabase.update).toHaveBeenCalledWith({
-        approval_status: 'paid',
+        approval_status: 'approved',
         paid_at: expect.any(String),
         paid_by: null
       });
@@ -162,7 +162,7 @@ describe('PaymentService', () => {
           farmer_id: 'farmer1',
           collection_ids: ['1', '2'],
           total_amount: 800,
-          approval_status: 'paid',
+          approval_status: 'approved',
           approved_at: '2023-01-01T00:00:00Z',
           paid_at: '2023-01-02T00:00:00Z',
           notes: null,
@@ -187,7 +187,7 @@ describe('PaymentService', () => {
           farmer_id: 'farmer1',
           collection_ids: ['1', '2'],
           total_amount: 800,
-          approval_status: 'paid',
+          approval_status: 'approved',
           approved_at: '2023-01-01T00:00:00Z',
           paid_at: '2023-01-02T00:00:00Z',
           notes: null,
@@ -224,7 +224,7 @@ describe('PaymentService', () => {
       const result = await PaymentService.getAllPayments('paid');
 
       expect(result.success).toBe(true);
-      expect(mockSupabase.eq).toHaveBeenCalledWith('approval_status', 'paid');
+      expect(mockSupabase.eq).toHaveBeenCalledWith('approval_status', 'approved');
     });
   });
 });

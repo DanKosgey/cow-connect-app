@@ -89,11 +89,18 @@ const options = {
             }
           }
           
+          // If we get a 404 error when trying to access collections, it might be due to session issues
+          if (response.status === 404 && typeof input === 'string' && input.includes('/collections')) {
+            if (import.meta.env.DEV) {
+              console.warn('Received 404 error when accessing collections, may be due to session or permissions');
+            }
+          }
+          
           return response;
         } catch (error) {
           if (retries > 0) {
             if (import.meta.env.DEV) {
-              console.warn(`Fetch failed, retrying... (${retries} retries left)`);
+              console.warn(`Fetch failed, retrying... (${retries} retries left)`, error);
             }
             // Wait before retrying
             await new Promise(resolve => setTimeout(resolve, 1000 * (4 - retries)));
@@ -152,6 +159,12 @@ if (import.meta.env.DEV) {
   client.auth.onAuthStateChange((event, session) => {
     // Reduced logging to only show event type
     console.log('Supabase auth state change:', { event });
+    
+    // If we detect a SIGNED_OUT event, we might want to redirect to login
+    if (event === 'SIGNED_OUT') {
+      console.log('User signed out, redirecting to login');
+      // We could trigger a redirect here if needed
+    }
   });
 }
 

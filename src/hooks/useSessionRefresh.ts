@@ -70,6 +70,12 @@ export function useSessionRefresh(options: UseSessionRefreshOptions = {}) {
       
       logger.errorWithContext('Auto session refresh exception', error);
       refreshAttemptCountRef.current++;
+      
+      // If it's a network error, we might want to retry
+      if (error instanceof Error && (error.message.includes('NetworkError') || error.message.includes('Failed to fetch'))) {
+        logger.warn('Network error during session refresh, will retry on next attempt');
+      }
+      
       return { success: false, error };
     }
   }, []);

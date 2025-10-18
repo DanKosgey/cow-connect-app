@@ -1,5 +1,5 @@
 -- Migration: 20251015000200_create_farmer_payments_table.sql
--- Description: Create farmer_payments table with proper RLS policies for staff payment management
+-- Description: Create farmer_payments table with proper RLS policies for admin-only payment management
 
 BEGIN;
 
@@ -29,46 +29,77 @@ CREATE INDEX IF NOT EXISTS idx_farmer_payments_paid_by ON public.farmer_payments
 -- Enable RLS
 ALTER TABLE public.farmer_payments ENABLE ROW LEVEL SECURITY;
 
--- Create policies for farmer_payments
--- Staff and admins can view all payments
-CREATE POLICY "Staff and admins can view all farmer payments" 
-  ON public.farmer_payments FOR SELECT 
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.user_roles ur 
-      WHERE ur.user_id = auth.uid() AND ur.role IN ('staff', 'admin')
-    )
-  );
+-- Create policies for farmer_payments using safe approach
+DO $$ 
+BEGIN
+  -- Only admins can view all payments
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policy pol
+    JOIN pg_class pc ON pc.oid = pol.polrelid
+    WHERE pol.polname = 'Admins can view all farmer payments' 
+    AND pc.relname = 'farmer_payments'
+  ) THEN
+    CREATE POLICY "Admins can view all farmer payments" 
+      ON public.farmer_payments FOR SELECT 
+      USING (
+        EXISTS (
+          SELECT 1 FROM public.user_roles ur 
+          WHERE ur.user_id = auth.uid() AND ur.role = 'admin'
+        )
+      );
+  END IF;
 
--- Staff and admins can create payments
-CREATE POLICY "Staff and admins can create farmer payments" 
-  ON public.farmer_payments FOR INSERT 
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM public.user_roles ur 
-      WHERE ur.user_id = auth.uid() AND ur.role IN ('staff', 'admin')
-    )
-  );
+  -- Only admins can create payments
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policy pol
+    JOIN pg_class pc ON pc.oid = pol.polrelid
+    WHERE pol.polname = 'Admins can create farmer payments' 
+    AND pc.relname = 'farmer_payments'
+  ) THEN
+    CREATE POLICY "Admins can create farmer payments" 
+      ON public.farmer_payments FOR INSERT 
+      WITH CHECK (
+        EXISTS (
+          SELECT 1 FROM public.user_roles ur 
+          WHERE ur.user_id = auth.uid() AND ur.role = 'admin'
+        )
+      );
+  END IF;
 
--- Staff and admins can update payments
-CREATE POLICY "Staff and admins can update farmer payments" 
-  ON public.farmer_payments FOR UPDATE 
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.user_roles ur 
-      WHERE ur.user_id = auth.uid() AND ur.role IN ('staff', 'admin')
-    )
-  );
+  -- Only admins can update payments
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policy pol
+    JOIN pg_class pc ON pc.oid = pol.polrelid
+    WHERE pol.polname = 'Admins can update farmer payments' 
+    AND pc.relname = 'farmer_payments'
+  ) THEN
+    CREATE POLICY "Admins can update farmer payments" 
+      ON public.farmer_payments FOR UPDATE 
+      USING (
+        EXISTS (
+          SELECT 1 FROM public.user_roles ur 
+          WHERE ur.user_id = auth.uid() AND ur.role = 'admin'
+        )
+      );
+  END IF;
 
--- Farmers can only view their own payments
-CREATE POLICY "Farmers can view their own payments" 
-  ON public.farmer_payments FOR SELECT 
-  USING (
-    farmer_id IN (
-      SELECT f.id FROM public.farmers f 
-      WHERE f.user_id = auth.uid()
-    )
-  );
+  -- Farmers can only view their own payments
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policy pol
+    JOIN pg_class pc ON pc.oid = pol.polrelid
+    WHERE pol.polname = 'Farmers can view their own payments' 
+    AND pc.relname = 'farmer_payments'
+  ) THEN
+    CREATE POLICY "Farmers can view their own payments" 
+      ON public.farmer_payments FOR SELECT 
+      USING (
+        farmer_id IN (
+          SELECT f.id FROM public.farmers f 
+          WHERE f.user_id = auth.uid()
+        )
+      );
+  END IF;
+END $$;
 
 -- Create trigger for updated_at
 CREATE OR REPLACE FUNCTION public.update_updated_at_column()

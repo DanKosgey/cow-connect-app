@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { v4 as uuidv4 } from 'uuid';
+import { logger } from '@/utils/logger';
 
 interface Collection {
   id: string;
@@ -32,7 +33,7 @@ export class PaymentService {
         .maybeSingle();
 
       if (batchError) {
-        console.error('Error checking for existing batch:', batchError);
+        logger.errorWithContext('PaymentService - checking for existing batch', batchError);
       } else if (existingBatch) {
         batchId = existingBatch.batch_id;
       } else {
@@ -54,7 +55,7 @@ export class PaymentService {
           .single();
 
         if (createBatchError) {
-          console.error('Error creating new batch:', createBatchError);
+          logger.errorWithContext('PaymentService - creating new batch', createBatchError);
           // If there's a constraint violation, try to get an existing batch again
           const { data: fallbackBatch, error: fallbackError } = await supabase
             .from('payment_batches')
@@ -64,13 +65,39 @@ export class PaymentService {
             .maybeSingle();
             
           if (fallbackError) {
-            console.error('Error getting fallback batch:', fallbackError);
+            logger.errorWithContext('PaymentService - getting fallback batch', fallbackError);
           } else if (fallbackBatch) {
             batchId = fallbackBatch.batch_id;
+          } else {
+            // If we still can't get a batch, create a default one
+            const defaultBatchName = `DEFAULT-BATCH-${Date.now()}`;
+            const { data: defaultBatch, error: defaultBatchError } = await supabase
+              .from('payment_batches')
+              .insert({
+                batch_id: defaultBatchName,
+                batch_name: `Default Batch ${new Date().toISOString().slice(0, 10)}`,
+                period_start: new Date().toISOString().slice(0, 10),
+                period_end: new Date().toISOString().slice(0, 10),
+                status: 'Generated'
+              })
+              .select()
+              .single();
+              
+            if (defaultBatchError) {
+              logger.errorWithContext('PaymentService - creating default batch', defaultBatchError);
+              throw new Error('Unable to create or retrieve payment batch');
+            } else {
+              batchId = defaultBatch.batch_id;
+            }
           }
         } else {
           batchId = batchData.batch_id;
         }
+      }
+
+      // Ensure we have a valid batchId before proceeding
+      if (!batchId) {
+        throw new Error('Unable to obtain valid batch ID for payment processing');
       }
 
       // Create payment record in the collection_payments table
@@ -85,15 +112,24 @@ export class PaymentService {
         .select()
         .limit(1);
 
-      if (paymentError) throw paymentError;
+      if (paymentError) {
+        logger.errorWithContext('PaymentService - creating payment record', paymentError);
+        throw paymentError;
+      }
       
-      // Update collection status
+      // Update collection status to 'Paid'
       const { error: collectionError } = await supabase
         .from('collections')
-        .update({ status: 'Paid' })
+        .update({ 
+          status: 'Paid',
+          updated_at: new Date().toISOString()
+        })
         .eq('id', collectionId);
 
-      if (collectionError) throw collectionError;
+      if (collectionError) {
+        logger.errorWithContext('PaymentService - updating collection status', collectionError);
+        throw collectionError;
+      }
 
       // Find and update any related farmer_payments records
       // First, find farmer_payments that include this collection
@@ -103,22 +139,22 @@ export class PaymentService {
         .contains('collection_ids', [collectionId]);
 
       if (findPaymentsError) {
-        console.warn('Warning: Error finding related farmer payments', findPaymentsError);
+        logger.warn('Warning: Error finding related farmer payments', findPaymentsError);
       } else if (relatedPayments && relatedPayments.length > 0) {
-        // Update all related farmer_payments to mark as paid
+        // Update all related farmer_payments to mark as approved (since 'paid' is not a valid enum value)
         for (const payment of relatedPayments) {
-          // Only update if the payment is not already paid
-          if (payment.approval_status !== 'paid') {
+          // Only update if the payment is not already approved/paid
+          if (payment.approval_status !== 'approved') {
             const { error: updatePaymentError } = await supabase
               .from('farmer_payments')
               .update({ 
-                approval_status: 'paid',
+                approval_status: 'approved',
                 paid_at: new Date().toISOString()
               })
               .eq('id', payment.id);
 
             if (updatePaymentError) {
-              console.warn('Warning: Error updating farmer payment status', updatePaymentError);
+              logger.warn('Warning: Error updating farmer payment status', updatePaymentError);
             }
           }
         }
@@ -135,7 +171,7 @@ export class PaymentService {
             .maybeSingle();
 
           if (farmerError) {
-            console.warn('Warning: Failed to fetch farmer user_id', farmerError);
+            logger.warn('Warning: Failed to fetch farmer user_id', farmerError);
           } else if (farmerData && farmerData.user_id) {
             // Make the notification more unique by including timestamp
             const timestamp = new Date().toISOString();
@@ -151,25 +187,25 @@ export class PaymentService {
 
             // Log notification error but don't fail the entire operation
             if (notificationError) {
-              console.warn('Warning: Failed to send payment notification', notificationError);
+              logger.warn('Warning: Failed to send payment notification', notificationError);
             }
           } else {
-            console.warn('Warning: Farmer user_id not found for farmerId', farmerId);
+            logger.warn('Warning: Farmer user_id not found for farmerId', farmerId);
           }
         } catch (notificationException) {
           // Handle any exceptions during notification sending
-          console.warn('Warning: Exception while sending payment notification', notificationException);
+          logger.warn('Warning: Exception while sending payment notification', notificationException);
         }
       }
 
       return { success: true, data: paymentData };
     } catch (error) {
-      console.error('Error marking collection as paid:', error);
+      logger.errorWithContext('PaymentService - markCollectionAsPaid', error);
       return { success: false, error };
     }
   }
 
-  // Approval workflow method for staff (creates payment record for approval)
+  // Approval workflow method for admins (creates payment record for approval)
   static async createPaymentForApproval(farmerId: string, collectionIds: string[], totalAmount: number, notes?: string, approvedBy?: string) {
     try {
       // First, get the staff ID from the staff table using the user ID
@@ -182,7 +218,7 @@ export class PaymentService {
           .maybeSingle();
           
         if (staffError) {
-          console.error('Error fetching staff data:', staffError);
+          logger.errorWithContext('PaymentService - fetching staff data', staffError);
           throw staffError;
         }
         
@@ -203,7 +239,10 @@ export class PaymentService {
         .select()
         .limit(1);
 
-      if (error) throw error;
+      if (error) {
+        logger.errorWithContext('PaymentService - creating payment for approval', error);
+        throw error;
+      }
       
       // Update collections to mark them as approved for payment
       const { error: updateError } = await supabase
@@ -215,16 +254,19 @@ export class PaymentService {
         })
         .in('id', collectionIds);
 
-      if (updateError) throw updateError;
+      if (updateError) {
+        logger.errorWithContext('PaymentService - updating collections for approval', updateError);
+        throw updateError;
+      }
 
       return { success: true, data };
     } catch (error) {
-      console.error('Error creating payment for approval:', error);
+      logger.errorWithContext('PaymentService - createPaymentForApproval', error);
       return { success: false, error };
     }
   }
 
-  // Mark payment as paid (for staff to finalize approved payments)
+  // Mark payment as paid (for admins to finalize approved payments)
   static async markPaymentAsPaid(paymentId: string, paidBy?: string) {
     try {
       // First, get the staff ID from the staff table using the user ID
@@ -237,7 +279,7 @@ export class PaymentService {
           .maybeSingle();
           
         if (staffError) {
-          console.error('Error fetching staff data:', staffError);
+          logger.errorWithContext('PaymentService - fetching staff data for markPaymentAsPaid', staffError);
           throw staffError;
         }
         
@@ -247,7 +289,7 @@ export class PaymentService {
       const { data, error } = await supabase
         .from('farmer_payments')
         .update({
-          approval_status: 'paid',
+          approval_status: 'approved', // Changed from 'paid' to 'approved' since 'paid' is not a valid enum value
           paid_at: new Date().toISOString(),
           paid_by: staffId // Use the staff ID instead of user ID
         })
@@ -255,10 +297,13 @@ export class PaymentService {
         .select()
         .limit(1);
 
-      if (error) throw error;
+      if (error) {
+        logger.errorWithContext('PaymentService - marking payment as paid', error);
+        throw error;
+      }
       return { success: true, data };
     } catch (error) {
-      console.error('Error marking payment as paid:', error);
+      logger.errorWithContext('PaymentService - markPaymentAsPaid', error);
       return { success: false, error };
     }
   }
@@ -276,12 +321,14 @@ export class PaymentService {
       // Check if all operations were successful
       const failedOperations = results.filter(result => !result.success);
       if (failedOperations.length > 0) {
-        throw new Error(`Failed to mark ${failedOperations.length} payments as paid`);
+        const error = new Error(`Failed to mark ${failedOperations.length} payments as paid`);
+        logger.errorWithContext('PaymentService - markAllFarmerPaymentsAsPaid', error);
+        throw error;
       }
       
       return { success: true, data: results };
     } catch (error) {
-      console.error('Error marking all farmer payments as paid:', error);
+      logger.errorWithContext('PaymentService - markAllFarmerPaymentsAsPaid', error);
       return { success: false, error };
     }
   }
@@ -310,10 +357,13 @@ export class PaymentService {
         .eq('farmer_id', farmerId)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        logger.errorWithContext('PaymentService - fetching farmer payment history', error);
+        throw error;
+      }
       return { success: true, data };
     } catch (error) {
-      console.error('Error fetching farmer payment history:', error);
+      logger.errorWithContext('PaymentService - getFarmerPaymentHistory', error);
       return { success: false, error };
     }
   }
@@ -347,10 +397,13 @@ export class PaymentService {
 
       const { data, error } = await query;
 
-      if (error) throw error;
+      if (error) {
+        logger.errorWithContext('PaymentService - fetching all payments', error);
+        throw error;
+      }
       return { success: true, data };
     } catch (error) {
-      console.error('Error fetching payments:', error);
+      logger.errorWithContext('PaymentService - getAllPayments', error);
       return { success: false, error };
     }
   }

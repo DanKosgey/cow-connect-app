@@ -36,31 +36,111 @@ CREATE INDEX IF NOT EXISTS idx_forum_comments_created_at ON public.forum_comment
 ALTER TABLE public.forum_posts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.forum_comments ENABLE ROW LEVEL SECURITY;
 
--- Forum posts policies
-CREATE POLICY "Users can view all forum posts" ON public.forum_posts
-  FOR SELECT USING (true);
+-- Forum posts policies using safe approach
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policy pol
+    JOIN pg_class pc ON pc.oid = pol.polrelid
+    WHERE pol.polname = 'Users can view all forum posts' 
+    AND pc.relname = 'forum_posts'
+  ) THEN
+    CREATE POLICY "Users can view all forum posts" ON public.forum_posts
+      FOR SELECT USING (true);
+  END IF;
+END $$;
 
-CREATE POLICY "Users can create their own forum posts" ON public.forum_posts
-  FOR INSERT WITH CHECK (auth.uid() = author_id);
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policy pol
+    JOIN pg_class pc ON pc.oid = pol.polrelid
+    WHERE pol.polname = 'Users can create their own forum posts' 
+    AND pc.relname = 'forum_posts'
+  ) THEN
+    CREATE POLICY "Users can create their own forum posts" ON public.forum_posts
+      FOR INSERT WITH CHECK (auth.uid() = author_id);
+  END IF;
+END $$;
 
-CREATE POLICY "Users can update their own forum posts" ON public.forum_posts
-  FOR UPDATE USING (auth.uid() = author_id);
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policy pol
+    JOIN pg_class pc ON pc.oid = pol.polrelid
+    WHERE pol.polname = 'Users can update their own forum posts' 
+    AND pc.relname = 'forum_posts'
+  ) THEN
+    CREATE POLICY "Users can update their own forum posts" ON public.forum_posts
+      FOR UPDATE USING (auth.uid() = author_id);
+  END IF;
+END $$;
 
-CREATE POLICY "Users can delete their own forum posts" ON public.forum_posts
-  FOR DELETE USING (auth.uid() = author_id);
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policy pol
+    JOIN pg_class pc ON pc.oid = pol.polrelid
+    WHERE pol.polname = 'Users can delete their own forum posts' 
+    AND pc.relname = 'forum_posts'
+  ) THEN
+    CREATE POLICY "Users can delete their own forum posts" ON public.forum_posts
+      FOR DELETE USING (auth.uid() = author_id);
+  END IF;
+END $$;
 
--- Forum comments policies
-CREATE POLICY "Users can view all forum comments" ON public.forum_comments
-  FOR SELECT USING (true);
+-- Forum comments policies using safe approach
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policy pol
+    JOIN pg_class pc ON pc.oid = pol.polrelid
+    WHERE pol.polname = 'Users can view all forum comments' 
+    AND pc.relname = 'forum_comments'
+  ) THEN
+    CREATE POLICY "Users can view all forum comments" ON public.forum_comments
+      FOR SELECT USING (true);
+  END IF;
+END $$;
 
-CREATE POLICY "Users can create their own forum comments" ON public.forum_comments
-  FOR INSERT WITH CHECK (auth.uid() = author_id);
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policy pol
+    JOIN pg_class pc ON pc.oid = pol.polrelid
+    WHERE pol.polname = 'Users can create their own forum comments' 
+    AND pc.relname = 'forum_comments'
+  ) THEN
+    CREATE POLICY "Users can create their own forum comments" ON public.forum_comments
+      FOR INSERT WITH CHECK (auth.uid() = author_id);
+  END IF;
+END $$;
 
-CREATE POLICY "Users can update their own forum comments" ON public.forum_comments
-  FOR UPDATE USING (auth.uid() = author_id);
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policy pol
+    JOIN pg_class pc ON pc.oid = pol.polrelid
+    WHERE pol.polname = 'Users can update their own forum comments' 
+    AND pc.relname = 'forum_comments'
+  ) THEN
+    CREATE POLICY "Users can update their own forum comments" ON public.forum_comments
+      FOR UPDATE USING (auth.uid() = author_id);
+  END IF;
+END $$;
 
-CREATE POLICY "Users can delete their own forum comments" ON public.forum_comments
-  FOR DELETE USING (auth.uid() = author_id);
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policy pol
+    JOIN pg_class pc ON pc.oid = pol.polrelid
+    WHERE pol.polname = 'Users can delete their own forum comments' 
+    AND pc.relname = 'forum_comments'
+  ) THEN
+    CREATE POLICY "Users can delete their own forum comments" ON public.forum_comments
+      FOR DELETE USING (auth.uid() = author_id);
+  END IF;
+END $$;
 
 -- Grant permissions
 GRANT ALL ON public.forum_posts TO authenticated;

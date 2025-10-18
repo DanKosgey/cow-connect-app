@@ -15,50 +15,48 @@ import {
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { supabase } from "@/integrations/supabase/client";
 import useToastNotifications from "@/hooks/useToastNotifications";
-import { useRealtimePayments } from "@/hooks/use-realtime";
 import { exportToCSV, exportToJSON } from "@/utils/exportUtils";
 import { PageHeader } from "@/components/PageHeader";
 import { FilterBar } from "@/components/FilterBar";
 import { DataTable } from "@/components/DataTable";
 import { StatCard } from "@/components/StatCard";
 
-interface Payment {
+interface Collection {
   id: string;
-  amount: number;
+  collection_id: string;
+  liters: number;
+  rate_per_liter: number;
+  total_amount: number;
+  collection_date: string;
   status: string;
-  created_at: string;
-  processed_at: string | null;
-  payment_method: string;
-  transaction_id: string;
 }
 
 const PaymentsPage = () => {
   const toast = useToastNotifications();
   const toastRef = useRef(toast);
   const [loading, setLoading] = useState(true);
-  const [payments, setPayments] = useState<Payment[]>([]);
-  const [filteredPayments, setFilteredPayments] = useState<Payment[]>([]);
+  const [collections, setCollections] = useState<Collection[]>([]);
+  const [filteredCollections, setFilteredCollections] = useState<Collection[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [dateFilter, setDateFilter] = useState("");
   const [farmer, setFarmer] = useState<any>(null);
-  const realtimePayments = useRealtimePayments();
 
   // Update toast ref whenever toast changes
   useEffect(() => {
     toastRef.current = toast;
   }, []);
 
-  // Fetch payments data
+  // Fetch collections data for the logged-in farmer
   useEffect(() => {
-    const fetchPayments = async () => {
+    const fetchCollections = async () => {
       try {
         setLoading(true);
         const { data: { user } } = await supabase.auth.getUser();
         
         if (!user) return;
 
-        // Fetch farmer profile with better error handling
+        // Fetch farmer profile
         const { data: farmerData, error: farmerError } = await supabase
           .from('farmers')
           .select('id')
@@ -81,119 +79,99 @@ const PaymentsPage = () => {
 
         setFarmer(farmerData);
 
-        // Fetch payments from the farmer_payments table
-        const { data: paymentsData, error } = await supabase
-          .from('farmer_payments')
+        // Fetch collections from the collections table for this farmer
+        const { data: collectionsData, error } = await supabase
+          .from('collections')
           .select(`
             id,
+            collection_id,
+            liters,
+            rate_per_liter,
             total_amount,
-            approval_status,
-            created_at,
-            paid_at,
-            notes
+            collection_date,
+            status
           `)
           .eq('farmer_id', farmerData.id)
-          .order('created_at', { ascending: false });
+          .order('collection_date', { ascending: false });
 
         if (error) {
-          console.error('Error fetching payments:', error);
-          toastRef.current.error('Error', 'Failed to load payments data');
+          console.error('Error fetching collections:', error);
+          toastRef.current.error('Error', 'Failed to load collections data');
           setLoading(false);
           return;
         }
         
-        // Transform the data to match the existing interface
-        const transformedPayments = paymentsData?.map(payment => ({
-          id: payment.id,
-          amount: payment.total_amount,
-          status: payment.approval_status,
-          created_at: payment.created_at,
-          processed_at: payment.paid_at,
-          payment_method: 'Bank Transfer', // Default payment method
-          transaction_id: payment.id // Use payment ID as transaction ID
-        })) || [];
-        
-        setPayments(transformedPayments);
+        setCollections(collectionsData || []);
       } catch (err) {
-        console.error('Error fetching payments:', err);
-        toastRef.current.error('Error', 'Failed to load payments data');
+        console.error('Error fetching collections:', err);
+        toastRef.current.error('Error', 'Failed to load collections data');
       } finally {
         setLoading(false);
       }
     };
 
-    fetchPayments();
+    fetchCollections();
   }, []);
 
-  // Filter payments based on search and filters
+  // Filter collections based on search and filters
   useEffect(() => {
-    let result = [...payments];
+    let result = [...collections];
     
     // Apply search filter
     if (searchTerm) {
-      result = result.filter(payment => 
-        payment.amount.toString().includes(searchTerm) ||
-        payment.transaction_id.toLowerCase().includes(searchTerm.toLowerCase())
+      result = result.filter(collection => 
+        collection.total_amount.toString().includes(searchTerm) ||
+        collection.collection_id.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
     
-    // Apply status filter (map farmer_payments statuses to the expected values)
+    // Apply status filter
     if (statusFilter) {
-      result = result.filter(payment => {
-        // Map farmer_payments approval_status to expected status values
-        if (statusFilter === 'completed') {
-          return payment.status === 'paid';
-        } else if (statusFilter === 'processing') {
-          return payment.status === 'approved';
-        } else if (statusFilter === 'failed') {
-          return payment.status === 'pending';
-        }
-        return payment.status === statusFilter;
-      });
+      result = result.filter(collection => collection.status === statusFilter);
     }
     
     // Apply date filter
     if (dateFilter) {
-      result = result.filter(payment => 
-        new Date(payment.created_at).toDateString() === new Date(dateFilter).toDateString()
+      result = result.filter(collection => 
+        new Date(collection.collection_date).toDateString() === new Date(dateFilter).toDateString()
       );
     }
     
-    setFilteredPayments(result);
-  }, [searchTerm, statusFilter, dateFilter, payments]);
+    setFilteredCollections(result);
+  }, [searchTerm, statusFilter, dateFilter, collections]);
 
   // Prepare chart data
-  const chartData = filteredPayments.slice(0, 10).reverse().map(payment => ({
-    date: new Date(payment.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-    amount: payment.amount
+  const chartData = filteredCollections.slice(0, 10).reverse().map(collection => ({
+    date: new Date(collection.collection_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+    amount: collection.total_amount
   }));
 
-  // Calculate payment statistics (map farmer_payments statuses correctly)
-  const totalPayments = payments.reduce((sum, payment) => sum + payment.amount, 0);
-  const completedPayments = payments.filter(p => p.status === 'paid').reduce((sum, payment) => sum + payment.amount, 0);
-  const pendingPayments = payments.filter(p => p.status === 'pending' || p.status === 'approved').reduce((sum, payment) => sum + payment.amount, 0);
+  // Calculate payment statistics
+  const totalCollections = collections.reduce((sum, collection) => sum + collection.total_amount, 0);
+  const paidCollections = collections.filter(c => c.status === 'Paid').reduce((sum, collection) => sum + collection.total_amount, 0);
+  const pendingCollections = collections.filter(c => c.status !== 'Paid').reduce((sum, collection) => sum + collection.total_amount, 0);
 
-  const exportPayments = (format: 'csv' | 'json') => {
+  const exportCollections = (format: 'csv' | 'json') => {
     try {
-      const exportData = filteredPayments.map(payment => ({
-        date: new Date(payment.created_at).toLocaleDateString(),
-        amount: payment.amount,
-        status: payment.status,
-        payment_method: payment.payment_method || 'N/A',
-        transaction_id: payment.transaction_id || 'N/A',
-        processed_at: payment.processed_at ? new Date(payment.processed_at).toLocaleDateString() : 'N/A'
+      const exportData = filteredCollections.map(collection => ({
+        date: new Date(collection.collection_date).toLocaleDateString(),
+        amount: collection.total_amount,
+        status: collection.status,
+        liters: collection.liters,
+        rate: collection.rate_per_liter,
+        collection_id: collection.collection_id || 'N/A'
       }));
       
       if (format === 'csv') {
-        exportToCSV(exportData, 'payments-report');
-        toastRef.current.success('Success', 'Payments exported as CSV');
+        exportToCSV(exportData, 'collections-report');
+        toastRef.current.success('Success', 'Collections exported as CSV');
       } else {
-        exportToJSON(exportData, 'payments-report');
-        toastRef.current.success('Success', 'Payments exported as JSON');
+        exportToJSON(exportData, 'collections-report');
+        toastRef.current.success('Success', 'Collections exported as JSON');
       }
     } catch (err) {
-      console.error('Error exporting payments:', err);
-      toastRef.current.error('Error', 'Failed to export payments');
+      console.error('Error exporting collections:', err);
+      toastRef.current.error('Error', 'Failed to export collections');
     }
   };
 
@@ -211,14 +189,14 @@ const PaymentsPage = () => {
     <div className="container mx-auto py-6">
       <PageHeader
         title="Payment History"
-        description="Track all your payments and disbursements"
+        description="Track all your milk collections and payment status"
         actions={
           <div className="flex space-x-3">
-            <Button variant="outline" className="flex items-center gap-2" onClick={() => exportPayments('csv')}>
+            <Button variant="outline" className="flex items-center gap-2" onClick={() => exportCollections('csv')}>
               <Download className="h-4 w-4" />
               CSV
             </Button>
-            <Button variant="outline" className="flex items-center gap-2" onClick={() => exportPayments('json')}>
+            <Button variant="outline" className="flex items-center gap-2" onClick={() => exportCollections('json')}>
               <Download className="h-4 w-4" />
               JSON
             </Button>
@@ -229,20 +207,20 @@ const PaymentsPage = () => {
       {/* Payment Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <StatCard
-          title="Total Payments"
-          value={`KSh ${totalPayments.toFixed(2)}`}
+          title="Total Collections"
+          value={`KSh ${totalCollections.toFixed(2)}`}
           icon={<DollarSign className="h-6 w-6 text-green-600" />}
           color="bg-green-100"
         />
         <StatCard
-          title="Completed"
-          value={`KSh ${completedPayments.toFixed(2)}`}
+          title="Paid"
+          value={`KSh ${paidCollections.toFixed(2)}`}
           icon={<CheckCircle className="h-6 w-6 text-blue-600" />}
           color="bg-blue-100"
         />
         <StatCard
           title="Pending"
-          value={`KSh ${pendingPayments.toFixed(2)}`}
+          value={`KSh ${pendingCollections.toFixed(2)}`}
           icon={<Clock className="h-6 w-6 text-yellow-600" />}
           color="bg-yellow-100"
         />
@@ -253,7 +231,7 @@ const PaymentsPage = () => {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <DollarSign className="h-5 w-5 text-primary" />
-            Payment Trend
+            Collection Trend
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -284,7 +262,7 @@ const PaymentsPage = () => {
           <FilterBar
             searchTerm={searchTerm}
             onSearchChange={setSearchTerm}
-            searchPlaceholder="Search payments..."
+            searchPlaceholder="Search collections..."
           >
             <div>
               <select
@@ -293,9 +271,10 @@ const PaymentsPage = () => {
                 className="w-full h-10 px-3 py-2 border border-input rounded-md text-sm"
               >
                 <option value="">All Statuses</option>
-                <option value="completed">Completed</option>
-                <option value="processing">Processing</option>
-                <option value="failed">Failed</option>
+                <option value="Collected">Collected</option>
+                <option value="Verified">Verified</option>
+                <option value="Paid">Paid</option>
+                <option value="Cancelled">Cancelled</option>
               </select>
             </div>
             <div>
@@ -309,53 +288,53 @@ const PaymentsPage = () => {
         </CardContent>
       </Card>
 
-      {/* Payments Table */}
+      {/* Collections Table */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <DollarSign className="h-5 w-5 text-primary" />
-            Payment Records
+            Collection Records
           </CardTitle>
         </CardHeader>
         <CardContent>
           <DataTable
-            headers={["Date", "Amount", "Status", "Payment Method", "Transaction ID"]}
-            data={filteredPayments}
-            renderRow={(payment) => (
-              <tr key={payment.id} className="hover:bg-muted/50">
+            headers={["Date", "Liters", "Rate", "Amount", "Status", "Collection ID"]}
+            data={filteredCollections}
+            renderRow={(collection) => (
+              <tr key={collection.id} className="hover:bg-muted/50">
                 <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {new Date(payment.created_at).toLocaleDateString()}
+                  {new Date(collection.collection_date).toLocaleDateString()}
+                </td>
+                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                  {collection.liters.toFixed(2)}L
+                </td>
+                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                  KSh {collection.rate_per_liter.toFixed(2)}
                 </td>
                 <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                  KSh {payment.amount.toFixed(2)}
+                  KSh {collection.total_amount.toFixed(2)}
                 </td>
                 <td className="px-4 py-4 whitespace-nowrap">
                   <span className={`inline-flex items-center px-2.5 py-0.5 text-xs font-medium rounded-full ${
-                    payment.status === 'paid' ? 'bg-green-100 text-green-800' :
-                    payment.status === 'approved' ? 'bg-blue-100 text-blue-800' :
-                    payment.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                    'bg-red-100 text-red-800'
+                    collection.status === 'Paid' ? 'bg-green-100 text-green-800' :
+                    collection.status === 'Verified' ? 'bg-blue-100 text-blue-800' :
+                    collection.status === 'Cancelled' ? 'bg-red-100 text-red-800' :
+                    'bg-yellow-100 text-yellow-800'
                   }`}>
-                    {payment.status === 'paid' ? (
+                    {collection.status === 'Paid' ? (
                       <CheckCircle className="w-3 h-3 mr-1" />
-                    ) : payment.status === 'approved' ? (
-                      <Clock className="w-3 h-3 mr-1" />
-                    ) : payment.status === 'pending' ? (
-                      <Clock className="w-3 h-3 mr-1" />
-                    ) : (
+                    ) : collection.status === 'Verified' ? (
+                      <CheckCircle className="w-3 h-3 mr-1" />
+                    ) : collection.status === 'Cancelled' ? (
                       <XCircle className="w-3 h-3 mr-1" />
+                    ) : (
+                      <Clock className="w-3 h-3 mr-1" />
                     )}
-                    {payment.status === 'paid' ? 'Completed' : 
-                     payment.status === 'approved' ? 'Processing' : 
-                     payment.status === 'pending' ? 'Pending' : 
-                     payment.status.charAt(0).toUpperCase() + payment.status.slice(1)}
+                    {collection.status}
                   </span>
                 </td>
                 <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {payment.payment_method || 'N/A'}
-                </td>
-                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {payment.transaction_id || 'N/A'}
+                  {collection.collection_id || 'N/A'}
                 </td>
               </tr>
             )}
