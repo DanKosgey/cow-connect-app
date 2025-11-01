@@ -48,7 +48,7 @@ interface DashboardLayoutProps {
 const roleNavigation: Record<string, NavItem[]> = {
   farmer: [
     // Main Dashboard
-    { label: 'Dashboard', path: '/farmer/enhanced-dashboard', icon: <LayoutDashboard className="h-5 w-5" />, category: 'main' },
+    { label: 'Dashboard', path: '/farmer/dashboard', icon: <LayoutDashboard className="h-5 w-5" />, category: 'main' },
     
     // Operations - Core farming activities
     { label: 'My Collections', path: '/farmer/collections', icon: <Milk className="h-5 w-5" />, category: 'operations' },

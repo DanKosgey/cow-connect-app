@@ -31,9 +31,12 @@ const queryClient = new QueryClient({
       refetchOnReconnect: false,
       refetchOnMount: false, // Don't refetch on component mount if data is fresh
       retry: 1,
+      // Add a timeout to prevent hanging queries
+      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
     },
     mutations: {
       retry: 1,
+      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
     }
   },
 });

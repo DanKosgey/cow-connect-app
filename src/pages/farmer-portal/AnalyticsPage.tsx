@@ -67,16 +67,13 @@ interface AnalyticsData {
   totalLiters: number;
   totalEarnings: number;
   avgDailyProduction: number;
-  avgQualityScore: number;
   bestCollectionDay: string;
   collectionsGrowth: number;
   earningsGrowth: number;
-  qualityGrowth: number;
   // New predictive insights
   predictedNextCollection: number;
   predictedNextEarnings: number;
   productionTrend: 'increasing' | 'decreasing' | 'stable';
-  qualityTrend: 'improving' | 'declining' | 'stable';
 }
 
 interface TimeSeriesData {
@@ -84,7 +81,6 @@ interface TimeSeriesData {
   liters: number;
   earnings: number;
   collections: number;
-  qualityScore: number;
   // Moving averages for trend analysis
   litersMA7: number;
   earningsMA7: number;
@@ -358,45 +354,36 @@ const AnalyticsPage = () => {
       totalLiters,
       totalEarnings,
       avgDailyProduction,
-      avgQualityScore: 0,
       bestCollectionDay,
       collectionsGrowth,
       earningsGrowth,
-      qualityGrowth: 0,
       predictedNextCollection,
       predictedNextEarnings,
-      productionTrend,
-      qualityTrend: 'stable'
+      productionTrend
     });
 
     // Time series data with moving averages
     const timeSeries: TimeSeriesData[] = [];
-    const dateMap = new Map<string, { liters: number; earnings: number; collections: number; qualityScores: number[] }>();
+    const dateMap = new Map<string, { liters: number; earnings: number; collections: number }>();
     
     // Group collections by date
     collectionsData.forEach(collection => {
       const dateKey = format(new Date(collection.collection_date), 'yyyy-MM-dd');
-      const existing = dateMap.get(dateKey) || { liters: 0, earnings: 0, collections: 0, qualityScores: [] };
+      const existing = dateMap.get(dateKey) || { liters: 0, earnings: 0, collections: 0 };
       dateMap.set(dateKey, {
         liters: existing.liters + (collection.liters || 0),
         earnings: existing.earnings + (collection.total_amount || 0),
-        collections: existing.collections + 1,
-        qualityScores: existing.qualityScores
+        collections: existing.collections + 1
       });
     });
     
     // Convert to time series format
     Array.from(dateMap.entries()).forEach(([date, data]) => {
-      const avgQualityScore = data.qualityScores.length > 0 
-        ? data.qualityScores.reduce((sum, score) => sum + score, 0) / data.qualityScores.length 
-        : 0;
-      
       timeSeries.push({
         date,
         liters: data.liters,
         earnings: data.earnings,
         collections: data.collections,
-        qualityScore: avgQualityScore,
         litersMA7: 0, // Will be calculated with moving averages
         earningsMA7: 0 // Will be calculated with moving averages
       });

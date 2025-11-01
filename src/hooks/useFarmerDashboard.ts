@@ -68,18 +68,6 @@ export const useFarmerDashboard = (timeframe: string = 'month') => {
       // Calculate today's stats
       const todayLiters = todayCollections ? todayCollections.reduce((sum, collection) => sum + (collection.liters || 0), 0) : 0;
       const todayEarnings = todayCollections ? todayCollections.reduce((sum, collection) => sum + (collection.total_amount || 0), 0) : 0;
-      
-      // Convert quality grades to numerical values for averaging
-      const gradeValues: Record<string, number> = {
-        'A+': 4,
-        'A': 3,
-        'B': 2,
-        'C': 1
-      };
-      
-      const todayAvgQuality = todayCollections && todayCollections.length > 0 
-        ? todayCollections.reduce((sum, collection) => sum + (gradeValues[collection.quality_grade] || 0), 0) / todayCollections.length 
-        : 0;
 
       // Fetch collections within the selected timeframe
       const { data: timeframeCollections, error: timeframeCollectionsError } = await supabase
@@ -95,18 +83,6 @@ export const useFarmerDashboard = (timeframe: string = 'month') => {
       // Calculate timeframe stats
       const timeframeLiters = timeframeCollections ? timeframeCollections.reduce((sum, collection) => sum + (collection.liters || 0), 0) : 0;
       const timeframeEarnings = timeframeCollections ? timeframeCollections.reduce((sum, collection) => sum + (collection.total_amount || 0), 0) : 0;
-      const timeframeAvgQuality = timeframeCollections && timeframeCollections.length > 0 
-        ? timeframeCollections.reduce((sum, collection) => sum + (gradeValues[collection.quality_grade] || 0), 0) / timeframeCollections.length 
-        : 0;
-
-      // Calculate quality distribution
-      const qualityDistribution: Record<string, number> = {};
-      if (timeframeCollections) {
-        timeframeCollections.forEach(collection => {
-          const grade = collection.quality_grade;
-          qualityDistribution[grade] = (qualityDistribution[grade] || 0) + 1;
-        });
-      }
 
       // Fetch recent collections for activity feed (last 10 within timeframe)
       const { data: recentCollections, error: recentCollectionsError } = await supabase
@@ -120,72 +96,49 @@ export const useFarmerDashboard = (timeframe: string = 'month') => {
 
       if (recentCollectionsError) throw recentCollectionsError;
 
-      // Fetch quality trend data within the selected timeframe
-      const { data: qualityTrendData, error: qualityTrendError } = await supabase
+      // Fetch collection trend data within the selected timeframe
+      const { data: collectionTrendData, error: collectionTrendError } = await supabase
         .from('collections')
-        .select('collection_date, quality_grade, liters')
+        .select('collection_date, liters')
         .eq('farmer_id', farmer.id)
         .gte('collection_date', startDate.toISOString())
         .lte('collection_date', now.toISOString())
         .order('collection_date', { ascending: true });
 
-      if (qualityTrendError) throw qualityTrendError;
+      if (collectionTrendError) throw collectionTrendError;
 
       // Group by date for trend chart
-      const dailyStats: Record<string, { liters: number; qualityGrades: string[]; count: number }> = {};
-      if (qualityTrendData) {
-        qualityTrendData.forEach(collection => {
+      const dailyStats: Record<string, { liters: number; count: number }> = {};
+      if (collectionTrendData) {
+        collectionTrendData.forEach(collection => {
           const date = new Date(collection.collection_date).toISOString().split('T')[0];
           if (!dailyStats[date]) {
-            dailyStats[date] = { liters: 0, qualityGrades: [], count: 0 };
+            dailyStats[date] = { liters: 0, count: 0 };
           }
           dailyStats[date].liters += collection.liters || 0;
-          if (collection.quality_grade) {
-            dailyStats[date].qualityGrades.push(collection.quality_grade);
-          }
           dailyStats[date].count += 1;
         });
       }
 
-      // Convert quality grades to numerical values for averaging
-      const qualityTrend = Object.entries(dailyStats).map(([date, stats]) => {
-        let avgQuality = 0;
-        if (stats.qualityGrades.length > 0) {
-          const gradeValues: Record<string, number> = {
-            'A+': 4,
-            'A': 3,
-            'B': 2,
-            'C': 1
-          };
-          
-          const totalValue = stats.qualityGrades.reduce((sum, grade) => sum + (gradeValues[grade] || 0), 0);
-          avgQuality = totalValue / stats.qualityGrades.length;
-        }
-        
-        return {
-          date,
-          avgQuality,
-          liters: stats.liters
-        };
-      });
+      // Convert to collection trend format
+      const collectionTrend = Object.entries(dailyStats).map(([date, stats]) => ({
+        date,
+        liters: stats.liters
+      }));
 
       // Fetch all-time stats (within timeframe)
       const { data: timeframeAllCollections, error: timeframeAllCollectionsError } = await supabase
         .from('collections')
-        .select('liters, quality_grade, total_amount')
+        .select('liters, total_amount')
         .eq('farmer_id', farmer.id)
         .gte('collection_date', startDate.toISOString())
         .lte('collection_date', now.toISOString());
 
       if (timeframeAllCollectionsError) throw timeframeAllCollectionsError;
 
-      // Convert quality grades to numerical values for averaging
       const timeframeStats = {
         totalLiters: timeframeAllCollections ? timeframeAllCollections.reduce((sum, collection) => sum + (collection.liters || 0), 0) : 0,
         totalCollections: timeframeAllCollections ? timeframeAllCollections.length : 0,
-        avgQualityScore: timeframeAllCollections && timeframeAllCollections.length > 0 
-          ? timeframeAllCollections.reduce((sum, collection) => sum + (gradeValues[collection.quality_grade] || 0), 0) / timeframeAllCollections.length 
-          : 0,
         totalEarnings: timeframeAllCollections ? timeframeAllCollections.reduce((sum, collection) => sum + (collection.total_amount || 0), 0) : 0
       };
 
@@ -194,18 +147,15 @@ export const useFarmerDashboard = (timeframe: string = 'month') => {
         today: {
           collections: todayCollections ? todayCollections.length : 0,
           liters: todayLiters,
-          earnings: todayEarnings,
-          avgQuality: todayAvgQuality
+          earnings: todayEarnings
         },
         thisMonth: {
           collections: timeframeCollections ? timeframeCollections.length : 0,
           liters: timeframeLiters,
-          earnings: timeframeEarnings,
-          avgQuality: timeframeAvgQuality,
-          qualityDistribution: qualityDistribution || {}
+          earnings: timeframeEarnings
         },
         recentCollections: recentCollections || [],
-        qualityTrend: qualityTrend || [],
+        collectionTrend: collectionTrend || [],
         allTime: timeframeStats
       };
     },

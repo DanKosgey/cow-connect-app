@@ -9,7 +9,6 @@ import { DashboardLayout } from '@/components/DashboardLayout';
 // Lazy load farmer components
 const FarmerLogin = lazy(() => import("../pages/auth/FarmerLogin"));
 const FarmerDashboard = lazy(() => import("../pages/farmer-portal/FarmerDashboard"));
-const EnhancedFarmerDashboard = lazy(() => import("../pages/farmer-portal/EnhancedFarmerDashboard"));
 const CollectionsPage = lazy(() => import("../pages/farmer-portal/CollectionsPage"));
 const PaymentsPage = lazy(() => import("../pages/farmer-portal/PaymentsPage"));
 const CreditDashboardEssentials = lazy(() => import("../pages/farmer-portal/CreditDashboardEssentials"));
@@ -90,15 +89,6 @@ const FarmerRoutes = () => {
             <DashboardLayout>
               <PageTransition>
                 <FarmerDashboard />
-              </PageTransition>
-            </DashboardLayout>
-          </ProtectedRoute>
-        } />
-        <Route path="enhanced-dashboard" element={
-          <ProtectedRoute requiredRole={UserRole.FARMER}>
-            <DashboardLayout>
-              <PageTransition>
-                <EnhancedFarmerDashboard />
               </PageTransition>
             </DashboardLayout>
           </ProtectedRoute>
@@ -194,7 +184,7 @@ const FarmerRoutes = () => {
             </DashboardLayout>
           </ProtectedRoute>
         } />
-        <Route path="/" element={<Navigate to="/farmer/enhanced-dashboard" replace />} />
+        <Route path="/" element={<Navigate to="/farmer/dashboard" replace />} />
       </Routes>
     </Suspense>
   );

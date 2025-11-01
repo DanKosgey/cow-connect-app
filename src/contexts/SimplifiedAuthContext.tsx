@@ -621,6 +621,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           return;
         }
         
+        // Handle SIGNED_IN event
         if (event === 'SIGNED_IN') {
           if (session?.user) {
             setSession(session);
@@ -640,6 +641,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           return;
         }
         
+        // Handle SIGNED_OUT event
         if (event === 'SIGNED_OUT') {
           setSession(null);
           setUser(null);
@@ -651,6 +653,27 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           return;
         }
 
+        // Handle INITIAL_SESSION event - this is just initialization, don't reset state
+        if (event === 'INITIAL_SESSION') {
+          // Only update state if we don't already have valid data
+          if (session?.user && !user) {
+            setSession(session);
+            setUser(session.user);
+
+            try {
+              const role = await getUserRole(session.user.id);
+              if (role) {
+                setUserRole(role);
+              }
+            } catch (error) {
+              logger.errorWithContext('getUserRole', error);
+              // Don't clear session on role fetch error
+            }
+          }
+          return;
+        }
+
+        // For other events, update session if it exists
         if (session?.user) {
           setSession(session);
           setUser(session.user);

@@ -20,7 +20,7 @@ export const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) 
     if (loading) {
       const timeout = setTimeout(() => {
         setLoadingTimeout(true);
-      }, 10000); // Increased timeout to 10 seconds
+      }, 15000); // Increased timeout to 15 seconds
       
       return () => clearTimeout(timeout);
     } else {
@@ -33,7 +33,7 @@ export const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) 
     if (loading) {
       const timer = setTimeout(() => {
         setShowLoader(true);
-      }, 300); // Increased debounce time to 300ms
+      }, 500); // Increased debounce time to 500ms
       return () => clearTimeout(timer);
     } else {
       setShowLoader(false);
@@ -69,17 +69,17 @@ export const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) 
   }), []);
 
   // If user is not authenticated, redirect to appropriate login page
-  if (!user) {
+  if (!user && !loading) {
     return <Navigate to={loginRoutes[requiredRole]} state={{ from: location }} replace />;
   }
 
   // If user has a different role than required, redirect to their dashboard
-  if (userRole && userRole !== requiredRole) {
+  if (userRole && userRole !== requiredRole && !loading) {
     return <Navigate to={dashboardRoutes[userRole]} replace />;
   }
   
   // If we don't have a userRole yet, check cached role
-  if (!userRole) {
+  if (!userRole && !loading) {
     const cachedInfo = getCachedRoleInfo();
     
     if (cachedInfo?.isValid) {

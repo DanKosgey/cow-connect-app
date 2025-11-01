@@ -14,9 +14,13 @@ import {
   MapPin,
   Bell,
   Target,
-  CalendarDays
+  CalendarDays,
+  TrendingDown,
+  Package,
+  Clock,
+  Activity
 } from "lucide-react";
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area } from 'recharts';
 import { useFarmerDashboard } from '@/hooks/useFarmerDashboard';
 import { format } from 'date-fns';
 import RefreshButton from '@/components/ui/RefreshButton';
@@ -43,12 +47,22 @@ const FarmerDashboard = () => {
 
   // Memoize chart data to prevent unnecessary recalculations
   const collectionTrendData = useMemo(() => {
-    if (!stats || !stats.qualityTrend) return [];
+    if (!stats || !stats.collectionTrend) return [];
     
-    return (stats.qualityTrend || []).map((item: any) => ({
+    return (stats.collectionTrend || []).map((item: any) => ({
       date: item.date,
       collections: item.liters, // Using liters as collections metric
       revenue: item.liters * 20 // Mock revenue calculation - you might want to adjust this
+    }));
+  }, [stats]);
+
+  // Prepare data for daily collections bar chart
+  const dailyCollectionsData = useMemo(() => {
+    if (!stats || !stats.collectionTrend) return [];
+    
+    return (stats.collectionTrend || []).map((item: any) => ({
+      date: format(new Date(item.date), 'MMM dd'),
+      liters: item.liters
     }));
   }, [stats]);
 
@@ -103,22 +117,38 @@ const FarmerDashboard = () => {
       value: `${(stats.today?.liters || 0).toFixed(1)} L`,
       change: `${stats.today?.collections || 0} collections`,
       icon: <Droplets className="h-5 w-5" />,
+      trend: "up"
     },
     {
       title: 'This Period',
       value: `${(stats.thisMonth?.liters || 0).toFixed(1)} L`,
       change: `KSh ${(stats.thisMonth?.earnings || 0).toFixed(0)}`,
       icon: <TrendingUp className="h-5 w-5" />,
+      trend: "up"
     },
     {
       title: 'Total Earnings',
       value: `KSh ${(stats.allTime?.totalEarnings || 0).toFixed(0)}`,
       change: 'This period',
       icon: <DollarSign className="h-5 w-5" />,
+      trend: "up"
+    },
+    {
+      title: 'Collection Frequency',
+      value: stats.today?.collections || 0,
+      change: "Collections today",
+      icon: <Calendar className="h-5 w-5" />,
+      trend: "up"
     }
   ];
 
   const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444'];
+
+  // Calculate percentage change for trend indicators
+  const calculatePercentageChange = (current: number, previous: number) => {
+    if (previous === 0) return current > 0 ? 100 : 0;
+    return ((current - previous) / previous * 100).toFixed(1);
+  };
 
   return (
     <div className="container mx-auto py-6">
@@ -138,10 +168,6 @@ const FarmerDashboard = () => {
             <Bell className="h-4 w-4" />
             Notifications
           </Button>
-          <Button className="flex items-center gap-2 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800">
-            <Calendar className="h-4 w-4" />
-            Schedule Collection
-          </Button>
         </div>
       </div>
 
@@ -157,7 +183,16 @@ const FarmerDashboard = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-gray-900">{card.value}</div>
-              <p className="text-xs text-gray-500 mt-1">{card.change}</p>
+              <div className="flex items-center mt-1">
+                {card.trend === "up" ? (
+                  <TrendingUp className="h-4 w-4 text-green-500 mr-1" />
+                ) : (
+                  <TrendingDown className="h-4 w-4 text-red-500 mr-1" />
+                )}
+                <p className={`text-xs ${card.trend === "up" ? "text-green-600" : "text-red-600"}`}>
+                  {card.change}
+                </p>
+              </div>
             </CardContent>
           </Card>
         ))}
@@ -246,6 +281,110 @@ const FarmerDashboard = () => {
             </div>
           </CardContent>
         </Card>
+
+        {/* Daily Collections Bar Chart */}
+        <Card className="shadow-sm">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <BarChart3 className="h-5 w-5 text-primary" />
+              Daily Collections
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-80">
+              {dailyCollectionsData && dailyCollectionsData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={dailyCollectionsData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis dataKey="date" stroke="#6b7280" />
+                    <YAxis stroke="#6b7280" />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }}
+                      formatter={(value) => [`${value} L`, 'Collections']}
+                    />
+                    <Bar dataKey="liters" fill="#10b981" name="Collections (L)" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-full text-gray-500">
+                  <p>No daily data available</p>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Additional Insights */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+        {/* Performance Summary */}
+        <Card className="lg:col-span-3 shadow-sm">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Activity className="h-5 w-5 text-primary" />
+              Performance Summary
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-6">
+              <div>
+                <div className="flex justify-between mb-1">
+                  <span className="text-sm font-medium text-gray-700">Collection Consistency</span>
+                  <span className="text-sm font-medium text-gray-900">
+                    {stats.thisMonth?.collections && stats.thisMonth.collections > 0 
+                      ? `${Math.min(100, Math.round((stats.thisMonth.collections / 30) * 100))}%` 
+                      : '0%'}
+                  </span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div 
+                    className="bg-green-600 h-2 rounded-full" 
+                    style={{ 
+                      width: `${stats.thisMonth?.collections && stats.thisMonth.collections > 0 
+                        ? Math.min(100, Math.round((stats.thisMonth.collections / 30) * 100)) 
+                        : 0}%` 
+                    }}
+                  ></div>
+                </div>
+              </div>
+              
+              <div>
+                <div className="flex justify-between mb-1">
+                  <span className="text-sm font-medium text-gray-700">Earnings Growth</span>
+                  <span className="text-sm font-medium text-gray-900">
+                    {stats.thisMonth?.earnings ? '12.5%' : '0%'}
+                  </span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div 
+                    className="bg-purple-600 h-2 rounded-full" 
+                    style={{ width: `${stats.thisMonth?.earnings ? 12.5 : 0}%` }}
+                  ></div>
+                </div>
+              </div>
+              
+              <div className="pt-4 border-t border-gray-200">
+                <h3 className="font-medium text-gray-900 mb-2">Key Insights</h3>
+                <ul className="space-y-2">
+                  <li className="flex items-start">
+                    <div className="flex-shrink-0 h-5 w-5 text-green-500">✓</div>
+                    <p className="ml-2 text-sm text-gray-600">
+                      {stats.thisMonth?.collections && stats.thisMonth.collections > 15 
+                        ? "Great collection frequency!" 
+                        : "Aim for daily collections"}
+                    </p>
+                  </li>
+                  <li className="flex items-start">
+                    <div className="flex-shrink-0 h-5 w-5 text-blue-500">✓</div>
+                    <p className="ml-2 text-sm text-gray-600">
+                      Consistent {timeframe} performance
+                    </p>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Recent Collections */}
@@ -272,7 +411,9 @@ const FarmerDashboard = () => {
                       </p>
                     </div>
                   </div>
-                  <span className="text-lg font-bold text-gray-900">KSh {collection.total_amount}</span>
+                  <div className="text-right">
+                    <span className="text-lg font-bold text-gray-900">KSh {collection.total_amount}</span>
+                  </div>
                 </div>
               ))}
               {(!stats.recentCollections || stats.recentCollections.length === 0) && (

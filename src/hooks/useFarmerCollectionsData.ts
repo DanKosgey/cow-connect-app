@@ -7,7 +7,6 @@ interface Collection {
   id: string;
   collection_date: string;
   liters: number;
-  quality_grade: string;
   total_amount: number;
   status: string;
   rate_per_liter: number;
