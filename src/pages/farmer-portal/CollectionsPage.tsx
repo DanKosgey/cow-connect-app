@@ -148,8 +148,6 @@ const CollectionsPage = () => {
     }));
   }, [filteredCollections]);
 
-
-
   const exportCollections = (format: 'csv' | 'json') => {
     try {
       const exportData = filteredCollections.map(collection => ({
@@ -173,6 +171,30 @@ const CollectionsPage = () => {
     }
   };
 
+  // Get timeframe label
+  const getTimeframeLabel = () => {
+    switch (timeframe) {
+      case 'day': return 'Today';
+      case 'week': return 'This Week';
+      case 'month': return 'This Month';
+      case 'quarter': return 'This Quarter';
+      case 'year': return 'This Year';
+      default: return 'This Period';
+    }
+  };
+
+  // Get timeframe description
+  const getTimeframeDescription = () => {
+    switch (timeframe) {
+      case 'day': return 'Collections today';
+      case 'week': return 'Collections this week';
+      case 'month': return 'Collections this month';
+      case 'quarter': return 'Collections this quarter';
+      case 'year': return 'Collections this year';
+      default: return 'Collections this period';
+    }
+  };
+
   if (loading) {
     return (
       <div className="container mx-auto py-6">
@@ -182,6 +204,9 @@ const CollectionsPage = () => {
       </div>
     );
   }
+
+  const timeframeLabel = getTimeframeLabel();
+  const timeframeDescription = getTimeframeDescription();
 
   return (
     <div className="container mx-auto py-6">
@@ -212,16 +237,16 @@ const CollectionsPage = () => {
       {/* Stats Summary */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
         <StatCard
-          title="Today's Collections"
+          title={`${timeframeLabel}'s Collections`}
           value={collections.filter(c => new Date(c.collection_date).toDateString() === new Date().toDateString()).length}
-          description="Collections today"
+          description={timeframeDescription}
           icon={<Milk className="h-6 w-6 text-blue-500" />}
           color="bg-blue-100"
         />
         <StatCard
-          title="This Month"
+          title={`${timeframeLabel}`}
           value={`${collections.reduce((sum, c) => sum + c.liters, 0)} L`}
-          description="Total liters collected"
+          description={`Total liters collected ${timeframe === 'month' ? 'this month' : timeframe === 'week' ? 'this week' : timeframe === 'day' ? 'today' : timeframe === 'quarter' ? 'this quarter' : timeframe === 'year' ? 'this year' : 'this period'}`}
           icon={<Droplets className="h-6 w-6 text-green-500" />}
           color="bg-green-100"
         />
@@ -229,7 +254,7 @@ const CollectionsPage = () => {
         <StatCard
           title="Total Earnings"
           value={`KSh ${collections.reduce((sum, c) => sum + (c.total_amount || 0), 0).toFixed(2)}`}
-          description="Total earnings"
+          description={`${timeframeLabel} earnings`}
           icon={<Calendar className="h-6 w-6 text-yellow-500" />}
           color="bg-yellow-100"
         />
