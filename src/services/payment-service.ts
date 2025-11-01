@@ -1,6 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '@/utils/logger';
+import { CreditService } from './credit-service';
 
 interface Collection {
   id: string;
@@ -100,6 +101,11 @@ export class PaymentService {
         throw new Error('Unable to obtain valid batch ID for payment processing');
       }
 
+      // Calculate credit deduction for this payment
+      const creditInfo = await CreditService.calculateAvailableCredit(farmerId);
+      const creditUsed = Math.min(creditInfo.availableCredit, collection.total_amount);
+      const netPayment = collection.total_amount - creditUsed;
+
       // Create payment record in the collection_payments table
       const { data: paymentData, error: paymentError } = await supabase
         .from('collection_payments')
@@ -107,7 +113,9 @@ export class PaymentService {
           collection_id: collectionId,
           amount: collection.total_amount,
           rate_applied: collection.rate_per_liter,
-          batch_id: batchId // Include the batch_id
+          batch_id: batchId, // Include the batch_id
+          credit_used: creditUsed,
+          net_payment: netPayment
         })
         .select()
         .limit(1);
@@ -131,6 +139,62 @@ export class PaymentService {
         throw collectionError;
       }
 
+      // If credit was used, deduct it from the farmer's credit balance
+      if (creditUsed > 0) {
+        // Get current credit limit record
+        const { data: creditLimitData, error: creditLimitError } = await supabase
+          .from('farmer_credit_limits')
+          .select('*')
+          .eq('farmer_id', farmerId)
+          .eq('is_active', true)
+          .maybeSingle();
+
+        if (creditLimitError) {
+          logger.errorWithContext('PaymentService - fetching credit limit for deduction', creditLimitError);
+          throw creditLimitError;
+        }
+
+        if (creditLimitData) {
+          const creditLimitRecord = creditLimitData as any;
+          
+          // Calculate new balance
+          const newBalance = Math.max(0, creditLimitRecord.current_credit_balance - creditUsed);
+          const newTotalUsed = creditLimitRecord.total_credit_used + creditUsed;
+
+          // Update credit limit
+          const { error: updateError } = await supabase
+            .from('farmer_credit_limits')
+            .update({
+              current_credit_balance: newBalance,
+              total_credit_used: newTotalUsed,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', creditLimitRecord.id);
+
+          if (updateError) {
+            logger.errorWithContext('PaymentService - updating credit limit for deduction', updateError);
+            throw updateError;
+          }
+
+          // Create credit transaction record for the deduction
+          const { error: transactionError } = await supabase
+            .from('farmer_credit_transactions')
+            .insert({
+              farmer_id: farmerId,
+              transaction_type: 'credit_repaid',
+              amount: creditUsed,
+              balance_after: newBalance,
+              reference_type: 'payment_deduction',
+              reference_id: collectionId,
+              description: `Credit used to offset payment of KES ${collection.total_amount.toFixed(2)}`
+            });
+
+          if (transactionError) {
+            logger.warn('Warning: Failed to create credit deduction transaction', transactionError);
+          }
+        }
+      }
+
       // Find and update any related farmer_payments records
       // First, find farmer_payments that include this collection
       const { data: relatedPayments, error: findPaymentsError } = await supabase
@@ -149,7 +213,9 @@ export class PaymentService {
               .from('farmer_payments')
               .update({ 
                 approval_status: 'approved',
-                paid_at: new Date().toISOString()
+                paid_at: new Date().toISOString(),
+                credit_used: creditUsed,
+                net_payment: netPayment
               })
               .eq('id', payment.id);
 
@@ -180,7 +246,7 @@ export class PaymentService {
               .insert({
                 user_id: farmerData.user_id, // Use the correct user_id from profiles table
                 title: 'Payment Received',
-                message: `Your payment of KES ${parseFloat(collection.total_amount?.toString() || '0').toFixed(2)} has been processed for collection ${collectionId.substring(0, 8)} at ${new Date().toLocaleTimeString()}`,
+                message: `Your payment of KES ${parseFloat(collection.total_amount?.toString() || '0').toFixed(2)} has been processed for collection ${collectionId.substring(0, 8)} at ${new Date().toLocaleTimeString()}. Credit used: KES ${creditUsed.toFixed(2)}, Net payment: KES ${netPayment.toFixed(2)}`,
                 type: 'payment',
                 category: 'payment'
               });
@@ -225,6 +291,11 @@ export class PaymentService {
         staffId = staffData?.id || null;
       }
 
+      // Calculate credit deduction for this payment
+      const creditInfo = await CreditService.calculateAvailableCredit(farmerId);
+      const creditUsed = Math.min(creditInfo.availableCredit, totalAmount);
+      const netPayment = totalAmount - creditUsed;
+
       const { data, error } = await supabase
         .from('farmer_payments')
         .insert({
@@ -234,7 +305,9 @@ export class PaymentService {
           approval_status: 'approved',
           approved_at: new Date().toISOString(),
           approved_by: staffId, // Use the staff ID instead of user ID
-          notes: notes || null
+          notes: notes || null,
+          credit_used: creditUsed,
+          net_payment: netPayment
         })
         .select()
         .limit(1);
@@ -286,12 +359,38 @@ export class PaymentService {
         staffId = staffData?.id || null;
       }
 
+      // Get the payment details to calculate credit deduction
+      const { data: paymentData, error: fetchError } = await supabase
+        .from('farmer_payments')
+        .select('farmer_id, total_amount, collection_ids')
+        .eq('id', paymentId)
+        .maybeSingle();
+
+      if (fetchError) {
+        logger.errorWithContext('PaymentService - fetching payment data', fetchError);
+        throw fetchError;
+      }
+
+      if (!paymentData) {
+        throw new Error('Payment not found');
+      }
+
+      const farmerId = paymentData.farmer_id;
+      const totalAmount = paymentData.total_amount;
+
+      // Calculate credit deduction for this payment
+      const creditInfo = await CreditService.calculateAvailableCredit(farmerId);
+      const creditUsed = Math.min(creditInfo.availableCredit, totalAmount);
+      const netPayment = totalAmount - creditUsed;
+
       const { data, error } = await supabase
         .from('farmer_payments')
         .update({
           approval_status: 'approved', // Changed from 'paid' to 'approved' since 'paid' is not a valid enum value
           paid_at: new Date().toISOString(),
-          paid_by: staffId // Use the staff ID instead of user ID
+          paid_by: staffId, // Use the staff ID instead of user ID
+          credit_used: creditUsed,
+          net_payment: netPayment
         })
         .eq('id', paymentId)
         .select()
@@ -301,6 +400,77 @@ export class PaymentService {
         logger.errorWithContext('PaymentService - marking payment as paid', error);
         throw error;
       }
+
+      // If credit was used, deduct it from the farmer's credit balance
+      if (creditUsed > 0) {
+        // Get current credit limit record
+        const { data: creditLimitData, error: creditLimitError } = await supabase
+          .from('farmer_credit_limits')
+          .select('*')
+          .eq('farmer_id', farmerId)
+          .eq('is_active', true)
+          .maybeSingle();
+
+        if (creditLimitError) {
+          logger.errorWithContext('PaymentService - fetching credit limit for deduction', creditLimitError);
+          throw creditLimitError;
+        }
+
+        if (creditLimitData) {
+          const creditLimitRecord = creditLimitData as any;
+          
+          // Calculate new balance
+          const newBalance = Math.max(0, creditLimitRecord.current_credit_balance - creditUsed);
+          const newTotalUsed = creditLimitRecord.total_credit_used + creditUsed;
+
+          // Update credit limit
+          const { error: updateError } = await supabase
+            .from('farmer_credit_limits')
+            .update({
+              current_credit_balance: newBalance,
+              total_credit_used: newTotalUsed,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', creditLimitRecord.id);
+
+          if (updateError) {
+            logger.errorWithContext('PaymentService - updating credit limit for deduction', updateError);
+            throw updateError;
+          }
+
+          // Create credit transaction record for the deduction
+          const { error: transactionError } = await supabase
+            .from('farmer_credit_transactions')
+            .insert({
+              farmer_id: farmerId,
+              transaction_type: 'credit_repaid',
+              amount: creditUsed,
+              balance_after: newBalance,
+              reference_type: 'payment_deduction',
+              reference_id: paymentId,
+              description: `Credit used to offset bulk payment of KES ${totalAmount.toFixed(2)}`
+            });
+
+          if (transactionError) {
+            logger.warn('Warning: Failed to create credit deduction transaction', transactionError);
+          }
+        }
+      }
+
+      // Update collections to mark them as paid
+      const { error: updateCollectionsError } = await supabase
+        .from('collections')
+        .update({ 
+          status: 'Paid',
+          updated_at: new Date().toISOString()
+        })
+        .in('id', paymentData.collection_ids);
+
+      if (updateCollectionsError) {
+        logger.errorWithContext('PaymentService - updating collections to paid', updateCollectionsError);
+        throw updateCollectionsError;
+      }
+
       return { success: true, data };
     } catch (error) {
       logger.errorWithContext('PaymentService - markPaymentAsPaid', error);
@@ -348,6 +518,8 @@ export class PaymentService {
           paid_at,
           notes,
           created_at,
+          credit_used,
+          net_payment,
           farmers!farmer_payments_farmer_id_fkey (
             full_name,
             id,
@@ -383,6 +555,8 @@ export class PaymentService {
           paid_at,
           notes,
           created_at,
+          credit_used,
+          net_payment,
           farmers!farmer_payments_farmer_id_fkey (
             full_name,
             id,
@@ -404,6 +578,77 @@ export class PaymentService {
       return { success: true, data };
     } catch (error) {
       logger.errorWithContext('PaymentService - getAllPayments', error);
+      return { success: false, error };
+    }
+  }
+
+  // Calculate net payment including credit deductions
+  static async calculateNetPayment(farmerId: string, collections: any[]) {
+    try {
+      // Calculate total pending payments from collections
+      const totalPending = collections.reduce((sum, collection) => 
+        sum + (collection.total_amount || 0), 0);
+
+      // Get credit information for the farmer
+      const creditInfo = await CreditService.calculateAvailableCredit(farmerId);
+      const creditUsed = Math.min(creditInfo.availableCredit, totalPending);
+
+      // Calculate net payment (total pending - credit used)
+      const netPayment = totalPending - creditUsed;
+
+      return {
+        totalPending: parseFloat(totalPending.toFixed(2)),
+        creditUsed: parseFloat(creditUsed.toFixed(2)),
+        netPayment: parseFloat(netPayment.toFixed(2)),
+        creditInfo
+      };
+    } catch (error) {
+      logger.errorWithContext('PaymentService - calculateNetPayment', error);
+      return { 
+        totalPending: 0, 
+        creditUsed: 0, 
+        netPayment: 0,
+        creditInfo: null,
+        error 
+      };
+    }
+  }
+
+  // Get detailed payment statement for a farmer
+  static async getFarmerPaymentStatement(farmerId: string) {
+    try {
+      // Get pending collections
+      const { data: pendingCollections, error: collectionsError } = await supabase
+        .from('collections')
+        .select('*')
+        .eq('farmer_id', farmerId)
+        .neq('status', 'Paid');
+
+      if (collectionsError) {
+        logger.errorWithContext('PaymentService - fetching pending collections', collectionsError);
+        throw collectionsError;
+      }
+
+      // Calculate payment details
+      const paymentDetails = await this.calculateNetPayment(farmerId, pendingCollections || []);
+
+      // Get credit history
+      const creditHistory = await CreditService.getCreditHistory(farmerId);
+
+      // Get agrovet purchase history
+      const purchaseHistory = await CreditService.getPurchaseHistory(farmerId);
+
+      return {
+        success: true,
+        data: {
+          collections: pendingCollections,
+          paymentDetails,
+          creditHistory,
+          purchaseHistory
+        }
+      };
+    } catch (error) {
+      logger.errorWithContext('PaymentService - getFarmerPaymentStatement', error);
       return { success: false, error };
     }
   }

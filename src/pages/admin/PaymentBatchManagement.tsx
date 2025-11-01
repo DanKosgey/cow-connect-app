@@ -14,6 +14,8 @@ import {
 } from '@/utils/iconImports';
 import useToastNotifications from '@/hooks/useToastNotifications';
 import { formatCurrency } from '@/utils/formatters';
+import { CreditService } from '@/services/credit-service';
+import { logger } from '@/utils/logger';
 
 interface PaymentBatch {
   batch_id: string;
@@ -27,6 +29,8 @@ interface PaymentBatch {
   created_at: string;
   processed_at: string;
   completed_at: string;
+  total_credit_used?: number;
+  total_net_payment?: number;
 }
 
 interface BatchCollection {
@@ -38,6 +42,8 @@ interface BatchCollection {
   rate_per_liter: number;
   total_amount: number;
   status: string;
+  credit_used?: number;
+  net_payment?: number;
 }
 
 const PaymentBatchManagement = () => {
@@ -83,6 +89,8 @@ const PaymentBatchManagement = () => {
           collection_id,
           amount,
           rate_applied,
+          credit_used,
+          net_payment,
           collections (
             id,
             collection_id,
@@ -111,7 +119,9 @@ const PaymentBatchManagement = () => {
         liters: item.collections?.liters || 0,
         rate_per_liter: item.collections?.rate_per_liter || 0,
         total_amount: item.collections?.total_amount || 0,
-        status: item.collections?.status || 'Unknown'
+        status: item.collections?.status || 'Unknown',
+        credit_used: item.credit_used || 0,
+        net_payment: item.net_payment || (item.collections?.total_amount || 0)
       })) || [];
 
       setBatchCollections(collections);
@@ -168,22 +178,191 @@ const PaymentBatchManagement = () => {
 
       if (updateError) throw updateError;
 
-      // Here you would typically integrate with a payment provider
-      // For now, we'll simulate the process
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Fetch all collections in this batch
+      const { data: batchCollections, error: collectionsError } = await supabase
+        .from('collection_payments')
+        .select(`
+          id,
+          collection_id,
+          amount,
+          rate_applied,
+          collections (
+            id,
+            farmer_id,
+            total_amount,
+            status
+          )
+        `)
+        .eq('batch_id', batchId);
 
-      // Update batch status to Completed
-      const { error: completeError } = await supabase
+      if (collectionsError) throw collectionsError;
+
+      // Group collections by farmer
+      const farmerCollections: Record<string, any[]> = {};
+      batchCollections?.forEach((item: any) => {
+        const farmerId = item.collections?.farmer_id;
+        if (farmerId) {
+          if (!farmerCollections[farmerId]) {
+            farmerCollections[farmerId] = [];
+          }
+          farmerCollections[farmerId].push(item);
+        }
+      });
+
+      // Process each farmer's collections with credit deduction
+      let totalCreditUsedInBatch = 0;
+      let totalNetPaymentInBatch = 0;
+
+      for (const [farmerId, collections] of Object.entries(farmerCollections)) {
+        try {
+          // Calculate available credit for this farmer
+          const creditInfo = await CreditService.calculateAvailableCredit(farmerId);
+          let farmerCreditUsed = 0;
+          let farmerNetPayment = 0;
+          
+          // Process each collection for this farmer
+          for (const collectionItem of collections) {
+            const collection = collectionItem.collections;
+            const collectionAmount = collection.total_amount || 0;
+            
+            // Calculate credit to use for this collection (minimum of available credit and collection amount)
+            const creditUsed = Math.min(creditInfo.availableCredit - farmerCreditUsed, collectionAmount);
+            const netPayment = collectionAmount - creditUsed;
+            
+            // Update the collection payment record with credit information
+            const { error: updatePaymentError } = await supabase
+              .from('collection_payments')
+              .update({
+                credit_used: creditUsed,
+                net_payment: netPayment
+              })
+              .eq('id', collectionItem.id);
+
+            if (updatePaymentError) {
+              logger.warn('Warning: Failed to update collection payment with credit info', updatePaymentError);
+            }
+
+            // Update collection status to Paid
+            const { error: updateCollectionError } = await supabase
+              .from('collections')
+              .update({ 
+                status: 'Paid',
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', collection.id);
+
+            if (updateCollectionError) {
+              logger.warn('Warning: Failed to update collection status', updateCollectionError);
+            }
+
+            // Track credit used and net payment
+            farmerCreditUsed += creditUsed;
+            farmerNetPayment += netPayment;
+            totalCreditUsedInBatch += creditUsed;
+            totalNetPaymentInBatch += netPayment;
+
+            // If credit was used, deduct it from the farmer's credit balance and record transaction
+            if (creditUsed > 0) {
+              // Get current credit limit record
+              const { data: creditLimitData, error: creditLimitError } = await supabase
+                .from('farmer_credit_limits')
+                .select('*')
+                .eq('farmer_id', farmerId)
+                .eq('is_active', true)
+                .maybeSingle();
+
+              if (creditLimitError) {
+                logger.warn('Warning: Error fetching credit limit', creditLimitError);
+              } else if (creditLimitData) {
+                const creditLimitRecord = creditLimitData as any;
+                
+                // Calculate new balance
+                const newBalance = Math.max(0, creditLimitRecord.current_credit_balance - creditUsed);
+                const newTotalUsed = creditLimitRecord.total_credit_used + creditUsed;
+
+                // Update credit limit
+                const { error: updateError } = await supabase
+                  .from('farmer_credit_limits')
+                  .update({
+                    current_credit_balance: newBalance,
+                    total_credit_used: newTotalUsed,
+                    updated_at: new Date().toISOString()
+                  })
+                  .eq('id', creditLimitRecord.id);
+
+                if (updateError) {
+                  logger.warn('Warning: Failed to update credit limit', updateError);
+                }
+
+                // Create credit transaction record for the deduction
+                const { error: transactionError } = await supabase
+                  .from('farmer_credit_transactions')
+                  .insert({
+                    farmer_id: farmerId,
+                    transaction_type: 'credit_repaid',
+                    amount: creditUsed,
+                    balance_after: newBalance,
+                    reference_type: 'batch_payment_deduction',
+                    reference_id: collection.id,
+                    description: `Credit used to offset batch payment of KES ${collectionAmount.toFixed(2)}`
+                  });
+
+                if (transactionError) {
+                  logger.warn('Warning: Failed to create credit deduction transaction', transactionError);
+                }
+              }
+            }
+          }
+
+          // Update farmer_payments records for this farmer
+          // Find farmer_payments that include any of these collections
+          const collectionIds = collections.map((item: any) => item.collection_id);
+          const { data: relatedPayments, error: findPaymentsError } = await supabase
+            .from('farmer_payments')
+            .select('id, collection_ids, total_amount')
+            .contains('collection_ids', collectionIds)
+            .eq('farmer_id', farmerId);
+
+          if (findPaymentsError) {
+            logger.warn('Warning: Error finding related farmer payments', findPaymentsError);
+          } else if (relatedPayments && relatedPayments.length > 0) {
+            // Update all related farmer_payments with credit information
+            for (const payment of relatedPayments) {
+              const { error: updatePaymentError } = await supabase
+                .from('farmer_payments')
+                .update({ 
+                  approval_status: 'approved',
+                  paid_at: new Date().toISOString(),
+                  credit_used: farmerCreditUsed,
+                  net_payment: farmerNetPayment
+                })
+                .eq('id', payment.id);
+
+              if (updatePaymentError) {
+                logger.warn('Warning: Error updating farmer payment with credit info', updatePaymentError);
+              }
+            }
+          }
+        } catch (farmerError) {
+          logger.error('Error processing farmer collections', farmerError);
+          // Continue processing other farmers even if one fails
+        }
+      }
+
+      // Update batch with credit summary
+      const { error: updateBatchError } = await supabase
         .from('payment_batches')
-        .update({ 
+        .update({
+          total_credit_used: totalCreditUsedInBatch,
+          total_net_payment: totalNetPaymentInBatch,
           status: 'Completed',
           completed_at: new Date().toISOString()
         })
         .eq('batch_id', batchId);
 
-      if (completeError) throw completeError;
+      if (updateBatchError) throw updateBatchError;
 
-      toast.success('Success', 'Payment batch processed successfully!');
+      toast.success('Success', 'Payment batch processed successfully with credit deductions!');
       fetchBatches();
     } catch (error: any) {
       console.error('Error processing batch:', error);
@@ -410,6 +589,19 @@ const PaymentBatchManagement = () => {
                     <p className="text-sm text-gray-600">Status</p>
                     <p className="text-2xl font-bold text-gray-900">{selectedBatch.status}</p>
                   </div>
+                  {/* Add credit information display */}
+                  {selectedBatch.total_credit_used > 0 && (
+                    <>
+                      <div className="bg-indigo-50 p-4 rounded-lg">
+                        <p className="text-sm text-gray-600">Total Credit Used</p>
+                        <p className="text-2xl font-bold text-gray-900">{formatCurrency(selectedBatch.total_credit_used || 0)}</p>
+                      </div>
+                      <div className="bg-teal-50 p-4 rounded-lg">
+                        <p className="text-sm text-gray-600">Net Payment</p>
+                        <p className="text-2xl font-bold text-gray-900">{formatCurrency(selectedBatch.total_net_payment || 0)}</p>
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 <h3 className="text-lg font-semibold mb-4">Collections in Batch</h3>
@@ -422,6 +614,8 @@ const PaymentBatchManagement = () => {
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Liters</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rate</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Credit Used</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Net Payment</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                       </tr>
                     </thead>
@@ -445,6 +639,12 @@ const PaymentBatchManagement = () => {
                           </td>
                           <td className="px-6 py-4 font-semibold text-gray-900">
                             {formatCurrency(collection.total_amount || 0)}
+                          </td>
+                          <td className="px-6 py-4 text-gray-900">
+                            {formatCurrency(collection.credit_used || 0)}
+                          </td>
+                          <td className="px-6 py-4 font-semibold text-gray-900">
+                            {formatCurrency(collection.net_payment || (collection.total_amount || 0))}
                           </td>
                           <td className="px-6 py-4">
                             <span className={`px-3 py-1 rounded-full text-xs font-semibold ${

@@ -10,7 +10,8 @@ import {
   Download,
   CheckCircle,
   Clock,
-  XCircle
+  XCircle,
+  CreditCard
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { supabase } from "@/integrations/supabase/client";
@@ -20,6 +21,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { FilterBar } from "@/components/FilterBar";
 import { DataTable } from "@/components/DataTable";
 import { StatCard } from "@/components/StatCard";
+import { formatCurrency } from "@/utils/formatters";
 
 interface Collection {
   id: string;
@@ -41,6 +43,7 @@ const PaymentsPage = () => {
   const [statusFilter, setStatusFilter] = useState("");
   const [dateFilter, setDateFilter] = useState("");
   const [farmer, setFarmer] = useState<any>(null);
+  const [creditInfo, setCreditInfo] = useState<any>(null);
 
   // Update toast ref whenever toast changes
   useEffect(() => {
@@ -78,6 +81,18 @@ const PaymentsPage = () => {
         }
 
         setFarmer(farmerData);
+
+        // Fetch credit information
+        const { data: creditData, error: creditError } = await supabase
+          .from('farmer_credit_limits')
+          .select('*')
+          .eq('farmer_id', farmerData.id)
+          .eq('is_active', true)
+          .maybeSingle();
+
+        if (!creditError && creditData) {
+          setCreditInfo(creditData);
+        }
 
         // Fetch collections from the collections table for this farmer
         const { data: collectionsData, error } = await supabase
@@ -150,6 +165,8 @@ const PaymentsPage = () => {
   const totalCollections = collections.reduce((sum, collection) => sum + collection.total_amount, 0);
   const paidCollections = collections.filter(c => c.status === 'Paid').reduce((sum, collection) => sum + collection.total_amount, 0);
   const pendingCollections = collections.filter(c => c.status !== 'Paid').reduce((sum, collection) => sum + collection.total_amount, 0);
+  const availableCredit = creditInfo?.current_credit_balance || 0;
+  const creditLimit = creditInfo?.max_credit_amount || 0;
 
   const exportCollections = (format: 'csv' | 'json') => {
     try {
@@ -205,7 +222,7 @@ const PaymentsPage = () => {
       />
 
       {/* Payment Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
         <StatCard
           title="Total Collections"
           value={`KSh ${totalCollections.toFixed(2)}`}
@@ -224,7 +241,52 @@ const PaymentsPage = () => {
           icon={<Clock className="h-6 w-6 text-yellow-600" />}
           color="bg-yellow-100"
         />
+        <StatCard
+          title="Available Credit"
+          value={`KSh ${availableCredit.toFixed(2)}`}
+          icon={<CreditCard className="h-6 w-6 text-purple-600" />}
+          color="bg-purple-100"
+        />
       </div>
+
+      {/* Credit Information Card */}
+      {creditInfo && (
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <CreditCard className="h-5 w-5 text-primary" />
+              Credit Information
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-blue-50 p-4 rounded-lg">
+                <p className="text-sm text-blue-700 font-medium">Credit Limit</p>
+                <p className="text-xl font-bold text-blue-900">{formatCurrency(creditLimit)}</p>
+                <p className="text-xs text-blue-600 mt-1">
+                  {creditInfo.credit_limit_percentage}% of pending payments
+                </p>
+              </div>
+              <div className="bg-green-50 p-4 rounded-lg">
+                <p className="text-sm text-green-700 font-medium">Available Credit</p>
+                <p className="text-xl font-bold text-green-900">{formatCurrency(availableCredit)}</p>
+                <p className="text-xs text-green-600 mt-1">
+                  {creditLimit > 0 ? ((availableCredit / creditLimit) * 100).toFixed(1) : 0}% of limit
+                </p>
+              </div>
+              <div className="bg-amber-50 p-4 rounded-lg">
+                <p className="text-sm text-amber-700 font-medium">Credit Used</p>
+                <p className="text-xl font-bold text-amber-900">
+                  {formatCurrency(creditInfo.total_credit_used)}
+                </p>
+                <p className="text-xs text-amber-600 mt-1">
+                  Total credit utilized
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Payment Trend Chart */}
       <Card className="mb-8">

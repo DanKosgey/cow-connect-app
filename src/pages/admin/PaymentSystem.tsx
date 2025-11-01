@@ -19,7 +19,8 @@ import {
   BarChart3,
   PieChart,
   List,
-  Grid
+  Grid,
+  CreditCard
 } from 'lucide-react';
 import useToastNotifications from '@/hooks/useToastNotifications';
 import { trendService } from '@/services/trend-service';
@@ -35,15 +36,27 @@ import {
   Pie, Cell
 } from 'recharts';
 
+import PaymentOverviewChart from '@/components/admin/PaymentOverviewChart';
+
 interface Collection {
   id: string;
-  collection_id: string;
   farmer_id: string;
+  collection_id: string;
+  collection_date: string;
   liters: number;
   rate_per_liter: number;
   total_amount: number;
-  collection_date: string;
   status: string;
+  approved_for_payment?: boolean;
+  approved_at?: string;
+  approved_by?: string;
+  staff_id?: string;
+  created_at: string;
+  updated_at: string;
+  credit_used?: number;
+  collection_payments?: {
+    credit_used?: number;
+  }[];
   farmers: {
     id: string;
     user_id: string;
@@ -67,6 +80,8 @@ interface FarmerPaymentSummary {
   paid_amount: number;
   pending_amount: number;
   bank_info: string;
+  credit_used: number;
+  net_payment: number;
 }
 
 interface PaymentAnalytics {
@@ -74,8 +89,10 @@ interface PaymentAnalytics {
   total_paid: number;
   total_farmers: number;
   avg_payment: number;
-  daily_trend: { date: string; collections: number; paidAmount: number; pendingAmount: number }[];
+  daily_trend: { date: string; collections: number; paidAmount: number; pendingAmount: number; creditUsed: number }[];
   farmer_distribution: { name: string; value: number }[];
+  total_credit_used: number;
+  total_net_payment: number;
 }
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
@@ -93,7 +110,9 @@ const PaymentSystem = () => {
     total_farmers: 0,
     avg_payment: 0,
     daily_trend: [],
-    farmer_distribution: []
+    farmer_distribution: [],
+    total_credit_used: 0,
+    total_net_payment: 0
   });
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -184,6 +203,9 @@ const PaymentSystem = () => {
                 full_name,
                 phone
               )
+            ),
+            collection_payments!collection_payments_collection_id_fkey (
+              credit_used
             )
           `)
           .order('collection_date', { ascending: false });
@@ -312,9 +334,20 @@ const PaymentSystem = () => {
     const pendingCollections = filteredData.filter(c => c.status !== 'Paid');
     const paidCollections = filteredData.filter(c => c.status === 'Paid');
     
-    const totalPending = pendingCollections.reduce((sum, c) => sum + (c.total_amount || 0), 0);
+    // Calculate gross pending and paid amounts
+    const grossPending = pendingCollections.reduce((sum, c) => sum + (c.total_amount || 0), 0);
     const totalPaid = paidCollections.reduce((sum, c) => sum + (c.total_amount || 0), 0);
     const uniqueFarmers = new Set(filteredData.map(c => c.farmer_id)).size;
+    
+    // Calculate credit usage from collection payments
+    const totalCreditUsed = filteredData.reduce((sum, c) => {
+      const collectionCredit = c.collection_payments?.[0]?.credit_used || 0;
+      return sum + collectionCredit;
+    }, 0);
+    
+    // Calculate net pending (gross pending - credit used)
+    const netPending = Math.max(0, grossPending - totalCreditUsed);
+    const totalNetPayment = totalPaid + netPending;
     
     // Calculate daily trend based on time frame
     const dailyTrend = [];
@@ -362,15 +395,28 @@ const PaymentSystem = () => {
         .filter(c => c.status === 'Paid' && c.collection_date?.startsWith(dateString))
         .reduce((sum, c) => sum + (c.total_amount || 0), 0);
       
-      const pendingAmount = filteredData
+      // Calculate gross pending amount for this date
+      const grossPendingAmount = filteredData
         .filter(c => c.status !== 'Paid' && c.collection_date?.startsWith(dateString))
         .reduce((sum, c) => sum + (c.total_amount || 0), 0);
+      
+      // Calculate credit used for this date
+      const creditUsed = filteredData
+        .filter(c => c.collection_date?.startsWith(dateString))
+        .reduce((sum, c) => {
+          const collectionCredit = c.collection_payments?.[0]?.credit_used || 0;
+          return sum + collectionCredit;
+        }, 0);
+      
+      // Calculate net pending amount (gross pending - credit used)
+      const netPendingAmount = Math.max(0, grossPendingAmount - creditUsed);
       
       dailyTrend.push({ 
         date: dateString, 
         collections: collectionsCount,
         paidAmount,
-        pendingAmount
+        pendingAmount: netPendingAmount, // Use net pending instead of gross pending
+        creditUsed
       });
     }
     
@@ -406,53 +452,97 @@ const PaymentSystem = () => {
       .slice(0, 5);
     
     setAnalytics({
-      total_pending: totalPending,
+      total_pending: netPending, // Use net pending instead of gross pending
       total_paid: totalPaid,
       total_farmers: uniqueFarmers,
-      avg_payment: uniqueFarmers > 0 ? (totalPending + totalPaid) / uniqueFarmers : 0,
+      avg_payment: uniqueFarmers > 0 ? (netPending + totalPaid) / uniqueFarmers : 0, // Use net pending
       daily_trend: dailyTrend,
-      farmer_distribution: farmerDistribution
+      farmer_distribution: farmerDistribution,
+      total_credit_used: totalCreditUsed,
+      total_net_payment: totalNetPayment
     });
   };
 
   // Modified calculateFarmerSummaries to work with filtered data
-  const calculateFarmerSummaries = (collectionsData: Collection[]) => {
+  const calculateFarmerSummaries = async (collectionsData: Collection[]) => {
     // Apply time frame filtering
     const filteredData = filterCollectionsByTimeFrame(collectionsData);
     
-    const farmerSummaries = filteredData.reduce((acc, collection) => {
+    // Group collections by farmer
+    const farmerCollections = filteredData.reduce((acc, collection) => {
       const farmerId = collection.farmer_id;
-      // Skip collections without farmer_id
       if (!farmerId) return acc;
       
       if (!acc[farmerId]) {
-        acc[farmerId] = {
-          farmer_id: farmerId,
-          farmer_name: collection.farmers?.profiles?.full_name || 'Unknown Farmer',
-          farmer_phone: collection.farmers?.profiles?.phone || 'No phone',
-          total_collections: 0,
-          total_liters: 0,
-          total_amount: 0,
-          paid_amount: 0,
-          pending_amount: 0,
-          bank_info: `${collection.farmers?.bank_name || 'N/A'} - ${collection.farmers?.bank_account_number || 'No account'}`
-        };
+        acc[farmerId] = [];
       }
-      
-      acc[farmerId].total_collections += 1;
-      acc[farmerId].total_liters += collection.liters || 0;
-      acc[farmerId].total_amount += collection.total_amount || 0;
-      
-      if (collection.status === 'Paid') {
-        acc[farmerId].paid_amount += collection.total_amount || 0;
-      } else {
-        acc[farmerId].pending_amount += collection.total_amount || 0;
-      }
-      
+      acc[farmerId].push(collection);
       return acc;
-    }, {} as Record<string, FarmerPaymentSummary>);
+    }, {} as Record<string, Collection[]>);
     
-    setFarmerPaymentSummaries(Object.values(farmerSummaries));
+    // Calculate summaries for each farmer
+    const farmerSummaries: FarmerPaymentSummary[] = [];
+    
+    for (const farmerId of Object.keys(farmerCollections)) {
+      const farmerCollectionsList = farmerCollections[farmerId];
+      const firstCollection = farmerCollectionsList[0];
+      
+      // Calculate totals
+      const totalCollections = farmerCollectionsList.length;
+      const totalLiters = farmerCollectionsList.reduce((sum, c) => sum + (c.liters || 0), 0);
+      const totalAmount = farmerCollectionsList.reduce((sum, c) => sum + (c.total_amount || 0), 0);
+      const paidAmount = farmerCollectionsList
+        .filter(c => c.status === 'Paid')
+        .reduce((sum, c) => sum + (c.total_amount || 0), 0);
+      const grossPendingAmount = totalAmount - paidAmount;
+      
+      // Calculate credit used and net payment from collection payments
+      let creditUsed = 0;
+      
+      // Sum credit used from all collections for this farmer
+      creditUsed = farmerCollectionsList.reduce((sum, c) => {
+        const collectionCredit = c.collection_payments?.[0]?.credit_used || 0;
+        return sum + collectionCredit;
+      }, 0);
+      
+      // Fetch credit data for the farmer
+      try {
+        const { data: creditData, error: creditError } = await supabase
+          .from('farmer_credit_limits')
+          .select('current_credit_balance, total_credit_used')
+          .eq('farmer_id', farmerId)
+          .eq('is_active', true)
+          .maybeSingle();
+        
+        if (!creditError && creditData) {
+          creditUsed = creditData.total_credit_used || 0;
+        }
+      } catch (error) {
+        console.warn('Error fetching credit data for farmer:', farmerId, error);
+      }
+
+      // Calculate net pending amount (gross pending - credit used)
+      const netPendingAmount = Math.max(0, grossPendingAmount - creditUsed);
+      
+      // Calculate net payment (same as paid amount since we're looking at what's actually paid)
+      const netPayment = paidAmount;
+      
+      farmerSummaries.push({
+        farmer_id: farmerId,
+        farmer_name: firstCollection.farmers?.profiles?.full_name || 'Unknown Farmer',
+        farmer_phone: firstCollection.farmers?.profiles?.phone || 'No phone',
+        total_collections: totalCollections,
+        total_liters: totalLiters,
+        total_amount: totalAmount,
+        paid_amount: paidAmount,
+        pending_amount: netPendingAmount, // Use net pending instead of gross pending
+        bank_info: `${firstCollection.farmers?.bank_name || 'N/A'} - ${firstCollection.farmers?.bank_account_number || 'No account'}`,
+        credit_used: creditUsed,
+        net_payment: netPayment
+      });
+    }
+    
+    setFarmerPaymentSummaries(farmerSummaries);
   };
 
   const updateMilkRate = async () => {
@@ -697,7 +787,7 @@ const PaymentSystem = () => {
           </div>
 
           {/* Analytics Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
             <div className="bg-white rounded-xl shadow-lg p-6 border-l-4 border-yellow-500">
               <div className="flex items-center justify-between">
                 <div>
@@ -740,12 +830,25 @@ const PaymentSystem = () => {
             <div className="bg-white rounded-xl shadow-lg p-6 border-l-4 border-purple-500">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-gray-600 mb-1">Avg Payment</p>
-                  <p className="text-2xl font-bold text-gray-900">{formatCurrency(analytics.avg_payment)}</p>
-                  <p className="text-xs text-gray-500">Per farmer</p>
+                  <p className="text-sm text-gray-600 mb-1">Credit Used</p>
+                  <p className="text-2xl font-bold text-gray-900">{formatCurrency(analytics.total_credit_used)}</p>
+                  <p className="text-xs text-gray-500">From pending payments</p>
                 </div>
                 <div className="bg-purple-100 p-3 rounded-lg">
-                  <TrendingUp className="w-6 h-6 text-purple-600" />
+                  <CreditCard className="w-6 h-6 text-purple-600" />
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl shadow-lg p-6 border-l-4 border-indigo-500">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600 mb-1">Net Payment</p>
+                  <p className="text-2xl font-bold text-gray-900">{formatCurrency(analytics.total_net_payment)}</p>
+                  <p className="text-xs text-gray-500">After credit deductions</p>
+                </div>
+                <div className="bg-indigo-100 p-3 rounded-lg">
+                  <DollarSign className="w-6 h-6 text-indigo-600" />
                 </div>
               </div>
             </div>
@@ -870,95 +973,43 @@ const PaymentSystem = () => {
                 <CardContent className="p-0">
                   <div className="h-80">
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart
-                        data={analytics.daily_trend}
-                        margin={{ top: 20, right: 30, left: 20, bottom: 30 }}
+                      <AreaChart
+                        data={analytics.daily_trend.map(item => ({
+                          date: item.date,
+                          paid: item.paidAmount,
+                          pending: item.pendingAmount,
+                          credit: item.creditUsed
+                        }))}
+                        margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
                       >
-                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                        <CartesianGrid strokeDasharray="3 3" />
                         <XAxis 
                           dataKey="date" 
-                          tick={{ fontSize: 12 }}
-                          tickFormatter={(value) => {
-                            const date = new Date(value);
-                            return `${date.getDate()}/${date.getMonth() + 1}`;
-                          }}
+                          tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                         />
-                        <YAxis 
-                          yAxisId="left" 
-                          tick={{ fontSize: 12 }}
-                          tickFormatter={(value) => value.toString()}
-                          label={{ 
-                            value: 'Collections', 
-                            angle: -90, 
-                            position: 'insideLeft',
-                            style: { textAnchor: 'middle' }
-                          }}
-                        />
-                        <YAxis 
-                          yAxisId="right" 
-                          orientation="right" 
-                          tick={{ fontSize: 12 }}
-                          tickFormatter={(value) => `KES ${value.toLocaleString()}`}
-                          label={{ 
-                            value: 'Amount (KES)', 
-                            angle: 90, 
-                            position: 'insideRight',
-                            style: { textAnchor: 'middle' }
-                          }}
-                        />
+                        <YAxis tickFormatter={(value) => `KSh${(value / 1000).toFixed(0)}k`} />
                         <Tooltip 
-                          formatter={(value, name) => {
-                            if (name === 'collections') return [value, 'Collections'];
-                            if (name === 'paidAmount') return [`KES ${formatCurrency(Number(value))}`, 'Paid Amount'];
-                            if (name === 'pendingAmount') return [`KES ${formatCurrency(Number(value))}`, 'Pending Amount'];
-                            return [value, name];
-                          }}
-                          labelFormatter={(value) => {
-                            const date = new Date(value);
-                            return date.toLocaleDateString('en-US', { 
-                              weekday: 'short', 
-                              year: 'numeric', 
-                              month: 'short', 
-                              day: 'numeric' 
-                            });
-                          }}
+                          formatter={(value) => formatCurrency(Number(value))}
+                          labelFormatter={(label) => new Date(label).toLocaleDateString()}
                         />
-                        <Legend />
-                        <Line
-                          yAxisId="left"
-                          type="monotone"
-                          dataKey="collections"
-                          name="Collections"
-                          stroke="#3b82f6"
-                          strokeWidth={2}
-                          dot={{ r: 4 }}
-                          activeDot={{ r: 6 }}
-                        />
-                        <Line
-                          yAxisId="right"
-                          type="monotone"
-                          dataKey="paidAmount"
-                          name="Paid Amount"
-                          stroke="#10b981"
-                          strokeWidth={2}
-                          dot={{ r: 4 }}
-                          activeDot={{ r: 6 }}
-                        />
-                        <Line
-                          yAxisId="right"
-                          type="monotone"
-                          dataKey="pendingAmount"
-                          name="Pending Amount"
-                          stroke="#f59e0b"
-                          strokeWidth={2}
-                          dot={{ r: 4 }}
-                          activeDot={{ r: 6 }}
-                        />
-                      </LineChart>
+                        <Area type="monotone" dataKey="paid" stackId="1" stroke="#10b981" fill="#10b981" name="Paid" />
+                        <Area type="monotone" dataKey="pending" stackId="1" stroke="#f59e0b" fill="#f59e0b" name="Pending" />
+                        <Area type="monotone" dataKey="credit" stackId="1" stroke="#8b5cf6" fill="#8b5cf6" name="Credit Used" />
+                      </AreaChart>
                     </ResponsiveContainer>
                   </div>
                 </CardContent>
               </div>
+
+              {/* New Payment Overview Chart */}
+              <PaymentOverviewChart 
+                data={analytics.daily_trend.map(item => ({
+                  date: item.date,
+                  collections: item.collections,
+                  pendingAmount: item.pendingAmount,
+                  paidAmount: item.paidAmount
+                }))}
+              />
 
               {/* Farmer Payment Summary */}
               <div className="bg-white rounded-xl shadow-lg p-6">
@@ -994,112 +1045,130 @@ const PaymentSystem = () => {
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Liters</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pending</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Paid</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Credit Used</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Net Payment</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-gray-200">
-                        {farmerPaymentSummaries.map((farmerData, idx) => (
-                          <tr key={idx} className="hover:bg-gray-50">
-                            <td className="px-6 py-4">
-                              <div className="font-medium text-gray-900">
-                                {farmerData.farmer_name}
-                              </div>
-                              <div className="text-sm text-gray-500">
-                                {farmerData.farmer_phone}
-                              </div>
-                              <div className="text-sm text-gray-500">
-                                {farmerData.bank_info}
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 text-gray-900">{farmerData.total_collections}</td>
-                            <td className="px-6 py-4 text-gray-900">{farmerData.total_liters.toFixed(2)}L</td>
-                            <td className="px-6 py-4">
-                              <span className="text-yellow-600 font-semibold">
-                                {formatCurrency(farmerData.pending_amount)}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4">
-                              <span className="text-green-600 font-semibold">
-                                {formatCurrency(farmerData.paid_amount)}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4">
-                              <span className="font-bold text-gray-900">
-                                {formatCurrency(farmerData.total_amount)}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4">
-                              {farmerData.pending_amount > 0 ? (
+                      <tbody>
+                        {farmerPaymentSummaries.map((farmer) => {
+                          const hasCredit = farmer.credit_used > 0;
+                          return (
+                            <tr key={farmer.farmer_id} className="hover:bg-gray-50">
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm font-medium text-gray-900">{farmer.farmer_name}</div>
+                                <div className="text-sm text-gray-500">{farmer.farmer_phone}</div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {farmer.total_collections}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {farmer.total_liters.toFixed(2)}L
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {formatCurrency(farmer.pending_amount)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {formatCurrency(farmer.paid_amount)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className={`text-sm font-medium ${hasCredit ? 'text-purple-600' : 'text-gray-500'}`}>
+                                  {formatCurrency(farmer.credit_used)}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className="text-sm font-medium text-green-600">
+                                  {formatCurrency(farmer.net_payment)}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                {formatCurrency(farmer.total_amount)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                 <Button
-                                  onClick={() => markAllFarmerPaymentsAsPaid(farmerData.farmer_id)}
-                                  className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors"
+                                  size="sm"
+                                  onClick={() => markAllFarmerPaymentsAsPaid(farmer.farmer_id)}
+                                  disabled={farmer.pending_amount <= 0}
                                 >
-                                  Mark All Paid
+                                  Mark Paid
                                 </Button>
-                              ) : (
-                                <span className="text-green-600 font-medium text-sm">✓ All Paid</span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {farmerPaymentSummaries.map((farmerData, idx) => (
-                      <Card key={idx} className="hover:shadow-lg transition-shadow">
+                  // Grid view
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {farmerPaymentSummaries.map((farmer) => (
+                      <Card key={farmer.farmer_id} className="hover:shadow-lg transition-shadow">
                         <CardHeader>
-                          <CardTitle className="text-lg">{farmerData.farmer_name}</CardTitle>
-                          <p className="text-sm text-gray-500">{farmerData.farmer_phone}</p>
+                          <CardTitle className="text-lg">{farmer.farmer_name}</CardTitle>
+                          <p className="text-sm text-gray-500">{farmer.farmer_phone}</p>
                         </CardHeader>
                         <CardContent>
-                          <div className="space-y-2">
+                          <div className="space-y-3">
                             <div className="flex justify-between">
-                              <span className="text-gray-600">Collections:</span>
-                              <span className="font-medium">{farmerData.total_collections}</span>
+                              <span className="text-sm text-gray-600">Collections:</span>
+                              <span className="text-sm font-medium">{farmer.total_collections}</span>
                             </div>
                             <div className="flex justify-between">
-                              <span className="text-gray-600">Liters:</span>
-                              <span className="font-medium">{farmerData.total_liters.toFixed(2)}L</span>
+                              <span className="text-sm text-gray-600">Total Liters:</span>
+                              <span className="text-sm font-medium">{farmer.total_liters.toFixed(2)}L</span>
                             </div>
                             <div className="flex justify-between">
-                              <span className="text-gray-600">Pending:</span>
-                              <span className="font-medium text-yellow-600">
-                                {formatCurrency(farmerData.pending_amount)}
+                              <span className="text-sm text-gray-600">Pending:</span>
+                              <span className="text-sm font-medium text-yellow-600">
+                                {formatCurrency(farmer.pending_amount)}
                               </span>
                             </div>
                             <div className="flex justify-between">
-                              <span className="text-gray-600">Paid:</span>
-                              <span className="font-medium text-green-600">
-                                {formatCurrency(farmerData.paid_amount)}
+                              <span className="text-sm text-gray-600">Paid:</span>
+                              <span className="text-sm font-medium text-green-600">
+                                {formatCurrency(farmer.paid_amount)}
                               </span>
                             </div>
                             <div className="flex justify-between">
-                              <span className="text-gray-600">Total:</span>
-                              <span className="font-bold">
-                                {formatCurrency(farmerData.total_amount)}
+                              <span className="text-sm text-gray-600">Credit Used:</span>
+                              <span className="text-sm font-medium text-purple-600">
+                                {formatCurrency(farmer.credit_used)}
                               </span>
                             </div>
-                            <div className="pt-2">
-                              {farmerData.pending_amount > 0 ? (
-                                <Button
-                                  onClick={() => markAllFarmerPaymentsAsPaid(farmerData.farmer_id)}
-                                  className="w-full bg-green-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors"
-                                >
-                                  Mark All Paid
-                                </Button>
-                              ) : (
-                                <span className="text-green-600 font-medium text-sm flex justify-center items-center">
-                                  <CheckCircle className="w-4 h-4 mr-1" /> All Paid
-                                </span>
-                              )}
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Net Payment:</span>
+                              <span className="text-sm font-medium text-blue-600">
+                                {formatCurrency(farmer.net_payment)}
+                              </span>
                             </div>
+                            <div className="flex justify-between pt-2 border-t">
+                              <span className="text-sm font-medium">Total:</span>
+                              <span className="text-sm font-bold">
+                                {formatCurrency(farmer.total_amount)}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="mt-4">
+                            <Button
+                              className="w-full"
+                              onClick={() => markAllFarmerPaymentsAsPaid(farmer.farmer_id)}
+                              disabled={farmer.pending_amount <= 0}
+                            >
+                              Mark Paid
+                            </Button>
                           </div>
                         </CardContent>
                       </Card>
                     ))}
+                  </div>
+                )}
+                
+                {farmerPaymentSummaries.length === 0 && (
+                  <div className="text-center py-8 text-gray-500">
+                    <Users className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                    <p>No farmer payment data available</p>
                   </div>
                 )}
               </div>
@@ -1109,268 +1178,403 @@ const PaymentSystem = () => {
           {/* Analytics Tab */}
           {activeTab === 'analytics' && (
             <div className="space-y-6">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Daily Payment Trend */}
-                <Card className="bg-white rounded-xl shadow-lg">
+              {/* Credit Analytics Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <BarChart3 className="w-5 h-5 text-primary" />
-                      Daily Payment Trend
+                      <CreditCard className="w-5 h-5 text-purple-600" />
+                      Credit Utilization
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="h-80">
+                    <div className="h-64">
                       <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart
-                          data={analytics.daily_trend}
-                          margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
+                        <BarChart
+                          data={farmerPaymentSummaries
+                            .filter(f => f.credit_used > 0)
+                            .slice(0, 10)
+                            .map(f => ({
+                              name: f.farmer_name.split(' ')[0],
+                              credit: f.credit_used,
+                              total: f.total_amount
+                            }))}
                         >
                           <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="date" />
+                          <XAxis dataKey="name" />
                           <YAxis />
                           <Tooltip formatter={(value) => formatCurrency(Number(value))} />
-                          <Area type="monotone" dataKey="paidAmount" stackId="1" stroke="#10B981" fill="#10B981" name="Paid" />
-                          <Area type="monotone" dataKey="pendingAmount" stackId="1" stroke="#F59E0B" fill="#F59E0B" name="Pending" />
                           <Legend />
-                        </AreaChart>
+                          <Bar dataKey="credit" name="Credit Used" fill="#8b5cf6" />
+                          <Bar dataKey="total" name="Total Amount" fill="#3b82f6" />
+                        </BarChart>
                       </ResponsiveContainer>
                     </div>
                   </CardContent>
                 </Card>
 
-                {/* Farmer Distribution */}
-                <Card className="bg-white rounded-xl shadow-lg">
+                <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <PieChart className="w-5 h-5 text-primary" />
-                      Top Farmers by Payments
+                      <PieChart className="w-5 h-5 text-blue-600" />
+                      Payment Distribution
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="h-80">
+                    <div className="h-64">
                       <ResponsiveContainer width="100%" height="100%">
                         <RechartsPieChart>
                           <Pie
-                            data={analytics.farmer_distribution}
+                            data={[
+                              { name: 'Paid', value: analytics.total_paid },
+                              { name: 'Pending', value: analytics.total_pending },
+                              { name: 'Credit Used', value: analytics.total_credit_used }
+                            ]}
                             cx="50%"
                             cy="50%"
-                            labelLine={true}
+                            labelLine={false}
                             outerRadius={80}
                             fill="#8884d8"
                             dataKey="value"
                             nameKey="name"
                             label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
                           >
-                            {analytics.farmer_distribution.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                            ))}
+                            <Cell key="cell-0" fill="#10b981" />
+                            <Cell key="cell-1" fill="#f59e0b" />
+                            <Cell key="cell-2" fill="#8b5cf6" />
                           </Pie>
                           <Tooltip formatter={(value) => formatCurrency(Number(value))} />
-                          <Legend />
                         </RechartsPieChart>
                       </ResponsiveContainer>
                     </div>
                   </CardContent>
                 </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <TrendingUp className="w-5 h-5 text-green-600" />
+                      Credit Impact
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      <div>
+                        <div className="flex justify-between mb-1">
+                          <span className="text-sm text-gray-600">Gross Payments</span>
+                          <span className="text-sm font-medium">{formatCurrency(analytics.total_paid + analytics.total_pending)}</span>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div 
+                            className="bg-blue-600 h-2 rounded-full" 
+                            style={{ width: '100%' }}
+                          ></div>
+                        </div>
+                      </div>
+                      <div>
+                        <div className="flex justify-between mb-1">
+                          <span className="text-sm text-gray-600">Credit Deductions</span>
+                          <span className="text-sm font-medium text-purple-600">
+                            {formatCurrency(analytics.total_credit_used)}
+                          </span>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div 
+                            className="bg-purple-600 h-2 rounded-full" 
+                            style={{ 
+                              width: `${(analytics.total_credit_used / (analytics.total_paid + analytics.total_pending)) * 100 || 0}%` 
+                            }}
+                          ></div>
+                        </div>
+                      </div>
+                      <div>
+                        <div className="flex justify-between mb-1">
+                          <span className="text-sm text-gray-600">Net Payments</span>
+                          <span className="text-sm font-medium text-green-600">
+                            {formatCurrency(analytics.total_net_payment)}
+                          </span>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div 
+                            className="bg-green-600 h-2 rounded-full" 
+                            style={{ 
+                              width: `${(analytics.total_net_payment / (analytics.total_paid + analytics.total_pending)) * 100 || 0}%` 
+                            }}
+                          ></div>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
 
-              {/* Detailed Analytics */}
-              <Card className="bg-white rounded-xl shadow-lg">
+              {/* Detailed Credit Analytics */}
+              <Card>
                 <CardHeader>
-                  <CardTitle>Payment Analytics</CardTitle>
+                  <CardTitle className="flex items-center gap-2">
+                    <BarChart3 className="w-5 h-5 text-indigo-600" />
+                    Credit Analytics by Farmer
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="text-center p-4 bg-blue-50 rounded-lg">
-                      <p className="text-3xl font-bold text-blue-600">
-                        {analytics.total_farmers}
-                      </p>
-                      <p className="text-gray-600">Active Farmers</p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Farmer</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Amount</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Credit Used</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Net Payment</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Credit %</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {farmerPaymentSummaries
+                          .filter(f => f.credit_used > 0)
+                          .map((farmer) => {
+                            const creditPercentage = farmer.total_amount > 0 
+                              ? (farmer.credit_used / farmer.total_amount) * 100 
+                              : 0;
+                            return (
+                              <tr key={farmer.farmer_id} className="hover:bg-gray-50">
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                  <div className="text-sm font-medium text-gray-900">{farmer.farmer_name}</div>
+                                  <div className="text-sm text-gray-500">{farmer.farmer_phone}</div>
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                  {formatCurrency(farmer.total_amount)}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-purple-600 font-medium">
+                                  {formatCurrency(farmer.credit_used)}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium">
+                                  {formatCurrency(farmer.net_payment)}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                    creditPercentage > 50 
+                                      ? 'bg-red-100 text-red-800' 
+                                      : creditPercentage > 25 
+                                        ? 'bg-yellow-100 text-yellow-800' 
+                                        : 'bg-green-100 text-green-800'
+                                  }`}>
+                                    {creditPercentage.toFixed(1)}%
+                                  </span>
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                    Active
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                      </tbody>
+                    </table>
+                  </div>
+                  
+                  {farmerPaymentSummaries.filter(f => f.credit_used > 0).length === 0 && (
+                    <div className="text-center py-8 text-gray-500">
+                      <CreditCard className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                      <p>No credit usage data available</p>
                     </div>
-                    <div className="text-center p-4 bg-green-50 rounded-lg">
-                      <p className="text-3xl font-bold text-green-600">
-                        {formatCurrency(analytics.total_paid)}
-                      </p>
-                      <p className="text-gray-600">Total Paid</p>
-                    </div>
-                    <div className="text-center p-4 bg-yellow-50 rounded-lg">
-                      <p className="text-3xl font-bold text-yellow-600">
-                        {formatCurrency(analytics.total_pending)}
-                      </p>
-                      <p className="text-gray-600">Pending Payments</p>
-                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* Pending Tab */}
+          {activeTab === 'pending' && (
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Clock className="w-5 h-5 text-yellow-600" />
+                    Pending Collections
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Farmer</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Liters</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rate</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Credit Used</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Net Payment</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredCollections
+                          .filter(c => c.status !== 'Paid')
+                          .map((collection) => (
+                            <tr key={collection.id} className="hover:bg-gray-50">
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm font-medium text-gray-900">
+                                  {collection.farmers?.profiles?.full_name || 'Unknown Farmer'}
+                                </div>
+                                <div className="text-sm text-gray-500">
+                                  {collection.farmers?.profiles?.phone || 'No phone'}
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {new Date(collection.collection_date).toLocaleDateString()}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {collection.liters.toFixed(2)}L
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                KSh {collection.rate_per_liter.toFixed(2)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                {formatCurrency(collection.total_amount)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-purple-600 font-medium">
+                                {formatCurrency(collection.collection_payments?.[0]?.credit_used || 0)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium">
+                                {formatCurrency(collection.total_amount - (collection.collection_payments?.[0]?.credit_used || 0))}
+                              </td>
+
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                <Button
+                                  size="sm"
+                                  onClick={() => markAsPaid(collection.id, collection.farmer_id)}
+                                >
+                                  Mark Paid
+                                </Button>
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
                   </div>
                 </CardContent>
               </Card>
             </div>
           )}
 
-          {/* Pending and Paid Tabs */}
-          {(activeTab === 'pending' || activeTab === 'paid') && (
-            <div className="bg-white rounded-xl shadow-lg p-6">
-              {/* Search and Filter */}
-              <div className="flex flex-col md:flex-row gap-4 mb-6">
-                <div className="flex-1 relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                  <Input
-                    type="text"
-                    placeholder="Search farmer name or collection ID..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  />
-                </div>
-                <select
-                  value={filterStatus}
-                  onChange={(e) => setFilterStatus(e.target.value)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                >
-                  <option value="all">All Status</option>
-                  <option value="Collected">Collected</option>
-                  <option value="Verified">Verified</option>
-                  <option value="Paid">Paid</option>
-                  <option value="Cancelled">Cancelled</option>
-                </select>
-                <Button
-                  onClick={() => {}}
-                  className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
-                >
-                  <Download className="w-4 h-4" />
-                  Export CSV
-                </Button>
-              </div>
+          {/* Paid Tab */}
+          {activeTab === 'paid' && (
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <CheckCircle className="w-5 h-5 text-green-600" />
+                    Paid Collections
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Farmer</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Liters</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rate</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Credit Used</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Net Payment</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredCollections
+                          .filter(c => c.status === 'Paid')
+                          .map((collection) => (
+                            <tr key={collection.id} className="hover:bg-gray-50">
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm font-medium text-gray-900">
+                                  {collection.farmers?.profiles?.full_name || 'Unknown Farmer'}
+                                </div>
+                                <div className="text-sm text-gray-500">
+                                  {collection.farmers?.profiles?.phone || 'No phone'}
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {new Date(collection.collection_date).toLocaleDateString()}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {collection.liters.toFixed(2)}L
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                KSh {collection.rate_per_liter.toFixed(2)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                {formatCurrency(collection.total_amount)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-purple-600 font-medium">
+                                {formatCurrency(collection.collection_payments?.[0]?.credit_used || 0)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium">
+                                {formatCurrency(collection.total_amount - (collection.collection_payments?.[0]?.credit_used || 0))}
+                              </td>
 
-              {/* Collections Table */}
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Farmer</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Liters</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rate</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Bank Details</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
-                    {filteredCollections.map((collection) => (
-                      <tr key={collection.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 text-sm text-gray-900">
-                          {new Date(collection.collection_date).toLocaleDateString()}
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="font-medium text-gray-900">
-                            {collection.farmers?.profiles?.full_name || 'N/A'}
-                          </div>
-                          <div className="text-sm text-gray-500">
-                            {collection.farmers?.profiles?.phone || 'No phone'}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 text-gray-900">{(collection.liters || 0).toFixed(2)}L</td>
-                        <td className="px-6 py-4 text-gray-900">
-                          {formatCurrency(collection.rate_per_liter || 0)}
-                        </td>
-                        <td className="px-6 py-4 font-semibold text-gray-900">
-                          {formatCurrency(collection.total_amount || 0)}
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="text-sm text-gray-900">
-                            {collection.farmers?.bank_name || 'N/A'}
-                          </div>
-                          <div className="text-sm text-gray-500">
-                            {collection.farmers?.bank_account_number || 'No account'}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                            collection.status === 'Paid'
-                              ? 'bg-green-100 text-green-800'
-                              : collection.status === 'Verified'
-                              ? 'bg-blue-100 text-blue-800'
-                              : collection.status === 'Cancelled'
-                              ? 'bg-red-100 text-red-800'
-                              : 'bg-yellow-100 text-yellow-800'
-                          }`}>
-                            {collection.status}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4">
-                          {collection.status !== 'Paid' && (
-                            <Button
-                              onClick={() => markAsPaid(collection.id, collection.farmer_id)}
-                              className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors"
-                            >
-                              Mark Paid
-                            </Button>
-                          )}
-                          {collection.status === 'Paid' && (
-                            <span className="text-green-600 font-medium text-sm">✓ Paid</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {filteredCollections.length === 0 && (
-                <div className="text-center py-12">
-                  <AlertCircle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-600">
-                    {activeTab === 'pending' 
-                      ? 'No pending collections found.' 
-                      : 'No paid collections found yet.'}
-                  </p>
-                </div>
-              )}
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           )}
 
           {/* Settings Tab */}
           {activeTab === 'settings' && (
-            <div className="bg-white rounded-xl shadow-lg p-6">
-              <h2 className="text-2xl font-bold text-gray-900 mb-6">Rate Configuration</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Rate per Liter (KES)
-                  </label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={rateConfig.ratePerLiter}
-                    onChange={(e) => setRateConfig(prev => ({...prev, ratePerLiter: parseFloat(e.target.value) || 0}))}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Effective From
-                  </label>
-                  <Input
-                    type="date"
-                    value={rateConfig.effectiveFrom}
-                    onChange={(e) => setRateConfig(prev => ({...prev, effectiveFrom: e.target.value}))}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
-              <Button
-                onClick={updateMilkRate}
-                className="mt-6 bg-indigo-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-indigo-700 transition-colors"
-              >
-                Update Rate
-              </Button>
-
-              <div className="mt-8 p-4 bg-blue-50 rounded-lg">
-                <h3 className="font-semibold text-gray-900 mb-2">Current Active Rate</h3>
-                <p className="text-gray-700">
-                  {formatCurrency(rateConfig.ratePerLiter)} per liter
-                </p>
-              </div>
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Settings className="w-5 h-5 text-gray-600" />
+                    Milk Rate Configuration
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Current Rate per Liter (KES)
+                      </label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={rateConfig.ratePerLiter}
+                        onChange={(e) => setRateConfig({
+                          ...rateConfig,
+                          ratePerLiter: parseFloat(e.target.value) || 0
+                        })}
+                        className="w-full"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Effective From
+                      </label>
+                      <Input
+                        type="date"
+                        value={rateConfig.effectiveFrom}
+                        onChange={(e) => setRateConfig({
+                          ...rateConfig,
+                          effectiveFrom: e.target.value
+                        })}
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-6">
+                    <Button onClick={updateMilkRate}>
+                      Update Milk Rate
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           )}
         </div>

@@ -71,6 +71,9 @@ import {
 import { useSessionRefresh } from '@/hooks/useSessionRefresh';
 import { performanceMonitor } from '@/utils/performanceMonitor';
 import { dataCache } from '@/utils/dataCache';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { CACHE_KEYS } from '@/services/cache-utils';
+import RefreshButton from '@/components/ui/RefreshButton';
 
 // Types
 interface Collection {
@@ -198,6 +201,9 @@ const CHART_COLORS = {
 
 const AdminDashboard = () => {
   const toast = useToastNotifications();
+  const queryClient = useQueryClient();
+  
+  // State management
   const [collections, setCollections] = useState<Collection[]>([]);
   const [farmers, setFarmers] = useState<Farmer[]>([]);
   const [staff, setStaff] = useState<Staff[]>([]);
@@ -771,8 +777,10 @@ const AdminDashboard = () => {
   const { data: stableRevenueTrends, isStable: revenueTrendsStable } = useChartStabilizer(revenueTrends, 50);
   const { data: stableQualityDistribution, isStable: qualityDistributionStable } = useChartStabilizer(qualityDistribution, 50);
 
-  const fetchPendingFarmers = useCallback(async () => {
-    try {
+  // Fetch pending farmers data with React Query
+  const { data: pendingFarmersData, isLoading: isPendingFarmersLoading } = useQuery({
+    queryKey: [CACHE_KEYS.ADMIN_DASHBOARD, 'pending-farmers'],
+    queryFn: async () => {
       const { data, error } = await supabase
         .from('pending_farmers')
         .select('id, full_name, email, phone_number, status, created_at, rejection_count')
@@ -781,21 +789,23 @@ const AdminDashboard = () => {
         .limit(5);
 
       if (error) throw error;
-      setPendingFarmers(data || []);
-      
-      const pendingCount = data?.filter(f => f.status === 'email_verified').length || 0;
+      return data || [];
+    },
+    staleTime: 1000 * 60 * 2, // 2 minutes
+    gcTime: 1000 * 60 * 10, // 10 minutes
+  });
+
+  // Update pending farmers state when data changes
+  useEffect(() => {
+    if (pendingFarmersData) {
+      setPendingFarmers(pendingFarmersData);
+      const pendingCount = pendingFarmersData.filter(f => f.status === 'email_verified').length || 0;
       setKycStats(prev => ({
         ...prev,
         pending: pendingCount
       }));
-    } catch (error) {
-      console.error('Error fetching pending farmers:', error);
     }
-  }, []);
-
-  useEffect(() => {
-    fetchPendingFarmers();
-  }, [fetchPendingFarmers]);
+  }, [pendingFarmersData]);
 
   const MetricCard = ({ 
     icon: Icon, 
@@ -1010,6 +1020,188 @@ const AdminDashboard = () => {
     );
   };
 
+  // React Query hook for fetching dashboard data with caching
+  const { data: dashboardData, isLoading: isDashboardLoading, error: dashboardError, refetch } = useQuery({
+    queryKey: [CACHE_KEYS.ADMIN_DASHBOARD, timeRange],
+    queryFn: async () => {
+      // Refresh session before fetching data
+      await refreshSession().catch(error => {
+        console.warn('Session refresh failed before dashboard data fetch', error);
+      });
+      
+      const { startDate, endDate } = getDateFilter();
+      const cacheKey = `dashboard_data_${timeRange}_${startDate}_${endDate}`;
+      
+      // Check if we have cached data
+      const cachedData = dataCache.get<CachedDashboardData>(cacheKey);
+      if (cachedData && !initialLoad) {
+        console.log('Using cached dashboard data');
+        return cachedData;
+      }
+      
+      performanceMonitor.startFetch();
+      
+      // Fetch collections data
+      const { data: rawCollections, error: collectionsError } = await supabase
+        .from('collections')
+        .select(`
+          id,
+          collection_id,
+          farmer_id,
+          staff_id,
+          approved_by,
+          liters,
+          quality_grade,
+          rate_per_liter,
+          total_amount,
+          collection_date,
+          status,
+          notes,
+          farmers!inner(full_name)
+        `)
+        .gte('collection_date', startDate)
+        .lte('collection_date', endDate)
+        .order('collection_date', { ascending: false })
+        .limit(200);
+      
+      // Fetch farmers data
+      const { data: farmersData, error: farmersError } = await supabase
+        .from('farmers')
+        .select(`
+          id,
+          user_id,
+          registration_number,
+          kyc_status,
+          created_at,
+          profiles:user_id (full_name, email)
+        `)
+        .order('created_at', { ascending: false })
+        .limit(100);
+      
+      // Fetch staff data
+      const { data: staffDashboardData, error: staffError } = await supabase
+        .from('staff')
+        .select(`
+          id,
+          user_id,
+          employee_id,
+          status,
+          created_at,
+          profiles:user_id (full_name, email)
+        `)
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      performanceMonitor.endFetch();
+      
+      if (collectionsError) {
+        console.error('Error fetching collections:', collectionsError);
+        // Log details for debugging
+        if (collectionsError.details) {
+          console.error('Error details:', collectionsError.details);
+        }
+      }
+      if (farmersError) {
+        console.error('Error fetching farmers:', farmersError);
+      }
+      if (staffError) {
+        console.error('Error fetching staff:', staffError);
+      }
+
+      // If we have collections data, fetch staff profiles for collector and approver
+      let enrichedCollections = rawCollections || [];
+      if (rawCollections && rawCollections.length > 0) {
+        // Extract unique staff IDs from collections
+        const staffIds = new Set<string>();
+        rawCollections.forEach(collection => {
+          if (collection.staff_id) staffIds.add(collection.staff_id);
+          if (collection.approved_by) staffIds.add(collection.approved_by);
+        });
+        
+        // Fetch profiles for all staff members referenced in collections
+        if (staffIds.size > 0) {
+          const { data: staffProfiles, error: profilesError } = await supabase
+            .from('staff')
+            .select(`
+              id,
+              profiles:user_id (full_name)
+            `)
+            .in('id', Array.from(staffIds));
+          
+          if (!profilesError && staffProfiles) {
+            // Create a map of staff ID to profile
+            const staffProfileMap = new Map<string, any>();
+            staffProfiles.forEach(staff => {
+              staffProfileMap.set(staff.id, staff.profiles);
+            });
+            
+            // Enrich collections with staff names
+            enrichedCollections = rawCollections.map(collection => ({
+              ...collection,
+              staff: collection.staff_id ? { profiles: staffProfileMap.get(collection.staff_id) } : null,
+              approved_by: collection.approved_by ? { profiles: staffProfileMap.get(collection.approved_by) } : null
+            }));
+          }
+        }
+      }
+
+      const previousData: PreviousPeriodData | null = await fetchPreviousPeriodData();
+
+      processData(
+        enrichedCollections,
+        farmersData || [],
+        staffDashboardData || []
+      );
+      
+      // Define the type for current data to match calculateMetricsWithTrends signature
+      const currentDataForMetrics = {
+        collections: enrichedCollections,
+        farmers: farmersData || [],
+        staff: staffDashboardData || [],
+        payments: enrichedCollections
+      };
+      
+      const metricsWithTrends = calculateMetricsWithTrends(
+        currentDataForMetrics,
+        previousData
+      );
+      
+      setMetrics(metricsWithTrends);
+      
+      if (enrichedCollections && farmersData && staffDashboardData) {
+        const cacheData: CachedDashboardData = {
+          collections: enrichedCollections,
+          farmers: farmersData,
+          staff: staffDashboardData,
+          collectionTrends,
+          revenueTrends,
+          qualityDistribution,
+          alerts,
+          kycStats,
+          metrics: metricsWithTrends
+        };
+        dataCache.set(cacheKey, cacheData, 5 * 60 * 1000);
+        return cacheData;
+      }
+      
+      return null;
+    },
+    staleTime: 1000 * 60 * 5, // 5 minutes
+    gcTime: 1000 * 60 * 15, // 15 minutes
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    retry: 1,
+  });
+
+  // Update loading and error states based on React Query
+  useEffect(() => {
+    setLoading(isDashboardLoading);
+    if (dashboardError) {
+      setError(dashboardError.message || 'Failed to fetch dashboard data');
+    }
+  }, [isDashboardLoading, dashboardError]);
+
   return (
     <div className="space-y-6 p-4 md:p-6">
       {/* Header with actions */}
@@ -1031,15 +1223,11 @@ const AdminDashboard = () => {
               ))}
             </SelectContent>
           </Select>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={fetchData} 
+          <RefreshButton 
+            isRefreshing={loading} 
+            onRefresh={fetchData} 
             className="bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg shadow-sm"
-          >
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
-          </Button>
+          />
         </div>
       </div>
 

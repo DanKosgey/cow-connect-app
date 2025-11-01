@@ -45,6 +45,12 @@ const InvitationManagement = lazy(() => import("../pages/admin/InvitationManagem
 const StorageDiagnostics = lazy(() => import('@/pages/admin/StorageDiagnostics'));
 const StorageTest = lazy(() => import('@/pages/admin/StorageTest'));
 const FarmerPerformanceDashboard = lazy(() => import('@/pages/admin/FarmerPerformanceDashboard'));
+const CreditManagementEssentials = lazy(() => import('@/pages/admin/CreditManagementEssentials'));
+const CreditReports = lazy(() => import('@/components/admin/CreditReports'));
+const CreditDefaultManagement = lazy(() => import('@/components/admin/CreditDefaultManagement'));
+const CreditTransactionAudit = lazy(() => import('@/components/admin/CreditTransactionAudit'));
+const CreditRiskAssessment = lazy(() => import('@/components/admin/CreditRiskAssessment'));
+const CreditSettings = lazy(() => import('@/components/admin/CreditSettings'));
 
 export const adminRoutes = [
   { path: '/admin/login', element: <AdminLogin /> },
@@ -69,8 +75,14 @@ export const adminRoutes = [
   { path: '/admin/invite', element: <AdminInvite /> },
   { path: '/admin/notifications', element: <AdminNotifications /> },
   { path: '/admin/analytics', element: <AnalyticsDashboard /> },
+  { path: '/admin/checkpoints', element: <Checkpoints /> },
   { path: '/admin/farmer-performance', element: <FarmerPerformanceDashboard /> },
-  { path: '/admin/auth-test', element: <AuthTestPage /> },
+  { path: '/admin/credit-management', element: <CreditManagementEssentials /> },
+  { path: '/admin/credit-defaults', element: <CreditDefaultManagement /> },
+  { path: '/admin/credit-audit', element: <CreditTransactionAudit /> },
+  { path: '/admin/credit-reports', element: <CreditReports /> },
+  { path: '/admin/credit-risk-assessment', element: <CreditRiskAssessment /> },
+  { path: '/admin/credit-settings', element: <CreditSettings /> },
   { path: '/admin', element: <Navigate to="/admin/dashboard" replace /> },
 ];
 
@@ -139,6 +151,11 @@ export default function AdminRoutes() {
                 <Route path="storage-test" element={<StorageTest />} />
                 <Route path="kyc-storage-test" element={<KYCStorageTest />} />
                 <Route path="farmer-performance" element={<FarmerPerformanceDashboard />} />
+                <Route path="credit-management" element={<CreditManagementEssentials />} />
+                <Route path="credit-defaults" element={<CreditDefaultManagement />} />
+                <Route path="credit-audit" element={<CreditTransactionAudit />} />
+                <Route path="credit-reports" element={<CreditReports />} />
+                <Route path="credit-risk-assessment" element={<CreditRiskAssessment />} />
                 <Route index element={<Navigate to="dashboard" replace />} />
                 <Route path="*" element={<Navigate to="/admin" replace />} />
               </Routes>
@@ -233,6 +250,48 @@ export default function AdminRoutes() {
           <ProtectedRoute requiredRole={UserRole.ADMIN}>
             <PageTransition>
               <AnalyticsDashboard />
+            </PageTransition>
+          </ProtectedRoute>
+        } />
+        <Route path="credit-management" element={
+          <ProtectedRoute requiredRole={UserRole.ADMIN}>
+            <PageTransition>
+              <CreditManagementEssentials />
+            </PageTransition>
+          </ProtectedRoute>
+        } />
+        <Route path="credit-defaults" element={
+          <ProtectedRoute requiredRole={UserRole.ADMIN}>
+            <PageTransition>
+              <CreditDefaultManagement />
+            </PageTransition>
+          </ProtectedRoute>
+        } />
+        <Route path="credit-audit" element={
+          <ProtectedRoute requiredRole={UserRole.ADMIN}>
+            <PageTransition>
+              <CreditTransactionAudit />
+            </PageTransition>
+          </ProtectedRoute>
+        } />
+        <Route path="credit-reports" element={
+          <ProtectedRoute requiredRole={UserRole.ADMIN}>
+            <PageTransition>
+              <CreditReports />
+            </PageTransition>
+          </ProtectedRoute>
+        } />
+        <Route path="credit-risk-assessment" element={
+          <ProtectedRoute requiredRole={UserRole.ADMIN}>
+            <PageTransition>
+              <CreditRiskAssessment />
+            </PageTransition>
+          </ProtectedRoute>
+        } />
+        <Route path="credit-settings" element={
+          <ProtectedRoute requiredRole={UserRole.ADMIN}>
+            <PageTransition>
+              <CreditSettings />
             </PageTransition>
           </ProtectedRoute>
         } />
