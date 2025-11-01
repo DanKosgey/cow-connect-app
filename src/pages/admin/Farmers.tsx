@@ -14,17 +14,53 @@ import { FarmersSkeleton } from '@/components/admin/FarmersSkeleton';
 import { Pagination } from '@/components/admin/Pagination';
 import { PaginatedResponse, paginateArray } from '@/utils/paginationUtils';
 import { usePerformanceMonitor } from '@/hooks/usePerformanceMonitor';
+import RefreshButton from '@/components/ui/RefreshButton';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { CACHE_KEYS } from '@/services/cache-utils';
+
+const useFarmersData = (currentPage: number, pageSize: number) => {
+  return useQuery({
+    queryKey: [CACHE_KEYS.ADMIN_FARMERS, currentPage, pageSize],
+    queryFn: async () => {
+      console.log('Fetching farmers data from cache or API...');
+      
+      // For pagination, we need to get the total count first
+      const { count, error: countError } = await supabase
+        .from('farmers')
+        .select('*', { count: 'exact', head: true });
+      
+      if (countError) {
+        throw countError;
+      }
+      
+      // Then fetch the paginated data
+      const { data, error } = await supabase
+        .from('farmers')
+        .select('id, registration_number, full_name, phone_number, kyc_status')
+        .order('created_at', { ascending: false })
+        .range((currentPage - 1) * pageSize, currentPage * pageSize - 1);
+        
+      if (error) {
+        throw error;
+      }
+      
+      return {
+        farmers: data as any[],
+        totalCount: count || 0
+      };
+    },
+    staleTime: 1000 * 60 * 5, // 5 minutes
+    gcTime: 1000 * 60 * 15, // 15 minutes
+  });
+};
 
 const Farmers = () => {
-  const [farmers, setFarmers] = useState<any[]>([]);
-  const [filteredFarmers, setFilteredFarmers] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  const [totalCount, setTotalCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
   
   // Initialize performance monitoring
   const { measureOperation } = usePerformanceMonitor({ 
@@ -32,58 +68,14 @@ const Farmers = () => {
     enabled: process.env.NODE_ENV === 'development'
   });
 
-  useEffect(() => {
-    const fetch = async () => {
-      console.log('Fetching farmers data...');
-      await measureOperation('fetchFarmers', async () => {
-        setLoading(true);
-        setError(null);
-        try {
-          console.log('Attempting to fetch farmers count...');
-          // For pagination, we need to get the total count first
-          const { count, error: countError } = await supabase
-            .from('farmers')
-            .select('*', { count: 'exact', head: true });
-          
-          if (countError) {
-            console.error('Error fetching farmers count:', countError);
-            setError(`Failed to fetch farmers count: ${countError.message}`);
-            setLoading(false);
-            return;
-          }
-          
-          console.log('Farmers count fetched:', count);
-          setTotalCount(count || 0);
-          
-          // Then fetch the paginated data
-          console.log('Fetching farmers data...');
-          const { data, error } = await supabase
-            .from('farmers')
-            .select('id, registration_number, full_name, phone_number, kyc_status')
-            .order('created_at', { ascending: false })
-            .range((currentPage - 1) * pageSize, currentPage * pageSize - 1);
-            
-          if (error) {
-            console.error('Error fetching farmers:', error);
-            setError(`Failed to fetch farmers: ${error.message}`);
-          } else if (data) {
-            console.log('Farmers data fetched successfully:', data);
-            setFarmers(data as any[]);
-          }
-        } catch (err) {
-          console.error('Error fetching farmers:', err);
-          setError(`Unexpected error occurred: ${err instanceof Error ? err.message : String(err)}`);
-        } finally {
-          setLoading(false);
-          console.log('Finished fetching farmers data.');
-        }
-      });
-    };
-    fetch();
-  }, [currentPage, pageSize]); // Remove measureOperation from dependencies to prevent infinite loops
+  const { data, isLoading, isError, error: queryError, refetch } = useFarmersData(currentPage, pageSize);
+
+  const farmers = data?.farmers || [];
+  const totalCount = data?.totalCount || 0;
+  const loading = isLoading;
 
   // Apply client-side filtering
-  useEffect(() => {
+  const filteredFarmers = useMemo(() => {
     let filtered = [...farmers];
     
     if (searchTerm) {
@@ -98,7 +90,7 @@ const Farmers = () => {
       filtered = filtered.filter(farmer => farmer.kyc_status === statusFilter);
     }
     
-    setFilteredFarmers(filtered);
+    return filtered;
   }, [searchTerm, statusFilter, farmers]);
 
   const totalPages = Math.ceil(totalCount / pageSize);
@@ -145,13 +137,13 @@ const Farmers = () => {
     return <FarmersSkeleton />;
   }
 
-  if (error) {
+  if (isError || error) {
     return (
       <div className="container mx-auto py-6">
         <div className="bg-red-50 border border-red-200 rounded-lg p-6">
           <h3 className="text-lg font-medium text-red-800 mb-2">Error Loading Farmers Data</h3>
-          <p className="text-red-700 mb-4">{error}</p>
-          <Button onClick={() => window.location.reload()}>
+          <p className="text-red-700 mb-4">{error || queryError?.message}</p>
+          <Button onClick={() => refetch()}>
             Retry
           </Button>
         </div>
@@ -166,6 +158,13 @@ const Farmers = () => {
           title="Farmers Management"
           description="View and manage farmer profiles, KYC status, and registrations"
           icon={<Users className="h-8 w-8" />}
+          actions={
+            <RefreshButton 
+              isRefreshing={loading} 
+              onRefresh={refetch} 
+              className="bg-white border-gray-300 hover:bg-gray-50 rounded-lg shadow-sm"
+            />
+          }
         />
 
         {/* Stats Overview */}

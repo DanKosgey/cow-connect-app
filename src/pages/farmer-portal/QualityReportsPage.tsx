@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,11 +22,12 @@ import { supabase } from "@/integrations/supabase/client";
 import useToastNotifications from "@/hooks/useToastNotifications";
 import { format, subDays } from 'date-fns';
 import { exportToCSV, exportToJSON } from "@/utils/exportUtils";
-import { qualityReportService, QualityReportWithCollection, ServiceResponse } from "@/services/quality-report-service";
 import { PageHeader } from "@/components/PageHeader";
 import { FilterBar } from "@/components/FilterBar";
 import { DataTable } from "@/components/DataTable";
 import { StatCard } from "@/components/StatCard";
+import RefreshButton from "@/components/ui/RefreshButton";
+import { useQualityReportsData } from "@/hooks/useQualityReportsData";
 
 interface QualityReport {
   id: string;
@@ -43,24 +44,21 @@ interface QualityReport {
   notes: string;
 }
 
-// Update the interface to match what we're actually receiving
-interface FormattedQualityReport extends QualityReport {}
-
 const QualityReportsPage = () => {
   const toast = useToastNotifications();
-  const [loading, setLoading] = useState(true);
-  const [reports, setReports] = useState<QualityReport[]>([]);
-  const [filteredReports, setFilteredReports] = useState<QualityReport[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [dateFilter, setDateFilter] = useState('');
   const [gradeFilter, setGradeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const { useFarmerQualityReports } = useQualityReportsData();
 
-  // Fetch quality reports
+  // Get farmer ID
+  const [farmerId, setFarmerId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
   useEffect(() => {
-    const fetchReports = async () => {
+    const fetchFarmerId = async () => {
       try {
-        setLoading(true);
         const { data: { user } } = await supabase.auth.getUser();
         
         if (!user) return;
@@ -78,83 +76,49 @@ const QualityReportsPage = () => {
           return;
         }
 
-        // Fetch quality data for the farmer using the service
-        const qualityResponse = await qualityReportService.getReportsByFarmer(farmerData.id);
-        
-        if (!qualityResponse.success) {
-          toast.error('Error', qualityResponse.error || 'Failed to load quality reports');
-          setReports([]);
-          setFilteredReports([]);
-          return;
-        }
-
-        // Convert service data to UI format
-        const formattedReports: QualityReport[] = (qualityResponse.data || []).map(report => {
-          // Determine status based on quality parameters
-          let status: 'passed' | 'failed' | 'pending' = 'pending';
-          if (report.fat_content && report.protein_content && report.bacterial_count !== null) {
-            // Simple logic: if bacterial count is low and fat/protein are reasonable, it passes
-            status = (report.bacterial_count < 10000 && report.fat_content > 2.5 && report.protein_content > 2.0) 
-              ? 'passed' 
-              : 'failed';
-          }
-          
-          return {
-            id: report.id.toString(),
-            collectionId: report.collection?.id || 'N/A',
-            collectionDate: report.collection?.collection_date || new Date().toISOString(),
-            fatContent: report.fat_content || 0,
-            proteinContent: report.protein_content || 0,
-            snfContent: report.snf_content || 0,
-            acidityLevel: report.acidity_level || 0,
-            temperature: report.temperature || 0,
-            bacterialCount: report.bacterial_count || 0,
-            qualityGrade: report.collection?.quality_grade || 'N/A',
-            status: status,
-            notes: `Report for collection on ${report.collection?.collection_date ? new Date(report.collection.collection_date).toLocaleDateString() : 'unknown date'}`
-          };
-        });
-
-        setReports(formattedReports);
-        setFilteredReports(formattedReports);
-
+        setFarmerId(farmerData.id);
       } catch (err) {
-        console.error('Error fetching reports:', err);
-        toast.error('Error', 'Failed to load quality reports');
+        console.error('Error fetching farmer ID:', err);
+        toast.error('Error', 'Failed to load farmer profile');
       } finally {
         setLoading(false);
       }
     };
 
-    fetchReports();
-  }, []);
+    fetchFarmerId();
+  }, [toast]);
+
+  // Fetch quality reports with caching
+  const { data: reports = [], isLoading, refetch } = useFarmerQualityReports(farmerId || '');
 
   // Filter reports
-  useEffect(() => {
-    let result = reports;
-    
+  const filteredReports = reports.filter(report => {
+    // Apply search filter
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
-      result = result.filter(report => 
-        report.collectionId.toLowerCase().includes(term) ||
-        report.qualityGrade.toLowerCase().includes(term)
-      );
+      if (!report.collectionId.toLowerCase().includes(term) &&
+          !report.qualityGrade.toLowerCase().includes(term)) {
+        return false;
+      }
     }
     
-    if (dateFilter) {
-      result = result.filter(report => report.collectionDate === dateFilter);
+    // Apply date filter
+    if (dateFilter && report.collectionDate !== dateFilter) {
+      return false;
     }
     
-    if (gradeFilter !== 'all') {
-      result = result.filter(report => report.qualityGrade === gradeFilter);
+    // Apply grade filter
+    if (gradeFilter !== 'all' && report.qualityGrade !== gradeFilter) {
+      return false;
     }
     
-    if (statusFilter !== 'all') {
-      result = result.filter(report => report.status === statusFilter);
+    // Apply status filter
+    if (statusFilter !== 'all' && report.status !== statusFilter) {
+      return false;
     }
     
-    setFilteredReports(result);
-  }, [searchTerm, dateFilter, gradeFilter, statusFilter, reports]);
+    return true;
+  });
 
   const exportQualityReports = (format: 'csv' | 'json') => {
     try {
@@ -245,7 +209,7 @@ const QualityReportsPage = () => {
   const COLORS = ['#10B981', '#3B82F6', '#F59E0B', '#EF4444'];
   const PARAMETER_COLORS = ['#10B981', '#3B82F6'];
 
-  if (loading) {
+  if (loading || isLoading) {
     return (
       <div className="container mx-auto py-6">
         <div className="flex items-center justify-center h-64">
@@ -262,6 +226,11 @@ const QualityReportsPage = () => {
         description="View and analyze your milk quality test results"
         actions={
           <div className="flex space-x-3">
+            <RefreshButton 
+              isRefreshing={isLoading} 
+              onRefresh={refetch} 
+              className="bg-white border-gray-300 hover:bg-gray-50 rounded-md shadow-sm"
+            />
             <Button variant="outline" className="flex items-center gap-2" onClick={() => exportQualityReports('csv')}>
               <Download className="h-4 w-4" />
               CSV

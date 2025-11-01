@@ -1,6 +1,5 @@
-import { useState, useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import { CreditAnalyticsService } from "@/services/credit-analytics-service";
+import { useState } from "react";
+import { useCreditReportsData } from "@/hooks/useCreditReportsData";
 import { 
   BarChart, 
   Bar, 
@@ -30,49 +29,31 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 const CreditReports = () => {
-  const [loading, setLoading] = useState(true);
-  const [analytics, setAnalytics] = useState<any>(null);
-  const [trends, setTrends] = useState<any[]>([]);
-  const [farmerReports, setFarmerReports] = useState<any[]>([]);
-  const [categoryReports, setCategoryReports] = useState<any[]>([]);
-  const [riskAssessment, setRiskAssessment] = useState<any>(null);
+  const { 
+    useCreditAnalytics,
+    useCreditTrends,
+    useFarmerCreditReports,
+    useCreditCategoryReports,
+    useCreditRiskAssessment
+  } = useCreditReportsData();
+  
+  // Get credit analytics data with caching
+  const { data: analytics, isLoading: analyticsLoading } = useCreditAnalytics();
+  
+  // Get credit trends data with caching
+  const { data: trends = [], isLoading: trendsLoading } = useCreditTrends(30);
+  
+  // Get farmer credit reports data with caching
+  const { data: farmerReports = [], isLoading: farmerReportsLoading } = useFarmerCreditReports();
+  
+  // Get credit category reports data with caching
+  const { data: categoryReports = [], isLoading: categoryReportsLoading } = useCreditCategoryReports();
+  
+  // Get credit risk assessment data with caching
+  const { data: riskAssessment, isLoading: riskAssessmentLoading } = useCreditRiskAssessment();
+  
+  const loading = analyticsLoading || trendsLoading || farmerReportsLoading || categoryReportsLoading || riskAssessmentLoading;
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        
-        // Fetch all credit analytics data in parallel
-        const [
-          analyticsData,
-          trendsData,
-          farmerReportsData,
-          categoryReportsData,
-          riskAssessmentData
-        ] = await Promise.all([
-          CreditAnalyticsService.getCreditAnalytics(),
-          CreditAnalyticsService.getCreditTrends(30),
-          CreditAnalyticsService.getFarmerCreditReport(),
-          CreditAnalyticsService.getCreditByCategoryReport(),
-          CreditAnalyticsService.getCreditRiskAssessment()
-        ]);
-
-        setAnalytics(analyticsData);
-        setTrends(trendsData);
-        setFarmerReports(farmerReportsData);
-        setCategoryReports(categoryReportsData);
-        setRiskAssessment(riskAssessmentData);
-      } catch (err) {
-        console.error("Error fetching credit reports data:", err);
-        setError("Failed to load credit reports data");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, []);
 
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
 

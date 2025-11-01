@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { CreditService } from "@/services/credit-service";
 import { 
@@ -20,6 +20,8 @@ import {
 import { formatCurrency } from "@/utils/formatters";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import RefreshButton from "@/components/ui/RefreshButton";
+import { useFarmerCreditData } from '@/hooks/useFarmerCreditData';
 
 interface CreditStatus {
   id: string;
@@ -65,75 +67,21 @@ interface AgrovetPurchase {
 }
 
 const CreditDashboard = () => {
-  const [loading, setLoading] = useState(true);
-  const [creditStatus, setCreditStatus] = useState<CreditStatus | null>(null);
-  const [creditHistory, setCreditHistory] = useState<CreditTransaction[]>([]);
-  const [purchaseHistory, setPurchaseHistory] = useState<AgrovetPurchase[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [pendingPayments, setPendingPayments] = useState(0);
+  const { data: creditData, isLoading: loading, isError, error, refetch } = useFarmerCreditData();
+  
+  const creditStatus = creditData?.creditStatus || null;
+  const creditHistory = creditData?.creditHistory || [];
+  const purchaseHistory = creditData?.purchaseHistory || [];
+  const pendingPayments = creditData?.pendingPayments || 0;
+  
+  const displayCreditLimit = creditData?.creditLimit || 0;
+  const displayAvailableCredit = creditData?.availableCredit || 0;
+  const displayCreditUsed = creditData?.creditUsed || 0;
+  const displayCreditPercentage = creditData?.creditPercentage || 0;
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        const { data: { user } } = await supabase.auth.getUser();
-        
-        if (!user) {
-          setError("Not authenticated");
-          setLoading(false);
-          return;
-        }
-
-        // Get farmer profile
-        const { data: farmerData, error: farmerError } = await supabase
-          .from('farmers')
-          .select('id')
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-        if (farmerError) throw farmerError;
-        if (!farmerData) {
-          setError("Farmer profile not found");
-          setLoading(false);
-          return;
-        }
-
-        const farmerId = farmerData.id;
-
-        // Get credit status
-        const status = await CreditService.getCreditStatus(farmerId);
-        setCreditStatus(status);
-
-        // Get credit history
-        const history = await CreditService.getCreditHistory(farmerId);
-        setCreditHistory(history);
-
-        // Get purchase history
-        const purchases = await CreditService.getPurchaseHistory(farmerId);
-        setPurchaseHistory(purchases);
-
-        // Get pending payments
-        const { data: pendingCollections, error: collectionsError } = await supabase
-          .from('collections')
-          .select('total_amount')
-          .eq('farmer_id', farmerId)
-          .neq('status', 'Paid');
-
-        if (collectionsError) throw collectionsError;
-        const pendingTotal = pendingCollections?.reduce((sum, collection) => 
-          sum + (collection.total_amount || 0), 0) || 0;
-        setPendingPayments(pendingTotal);
-
-      } catch (err) {
-        console.error("Error fetching credit data:", err);
-        setError("Failed to load credit dashboard data");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, []);
+  const fetchData = useCallback(() => {
+    refetch();
+  }, [refetch]);
 
   if (loading) {
     return (
@@ -183,9 +131,18 @@ const CreditDashboard = () => {
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Credit Dashboard</h1>
-          <p className="text-gray-600 mt-2">Manage your credit against produce and agrovet purchases</p>
+        <div className="mb-8 flex flex-col md:flex-row md:items-center md:justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Credit Dashboard</h1>
+            <p className="text-gray-600 mt-2">Manage your credit against produce and agrovet purchases</p>
+          </div>
+          <div className="mt-4 md:mt-0">
+            <RefreshButton 
+              isRefreshing={loading} 
+              onRefresh={fetchData} 
+              className="bg-white border-gray-300 hover:bg-gray-50 rounded-md shadow-sm"
+            />
+          </div>
         </div>
 
         {/* Credit Summary Cards */}

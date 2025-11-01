@@ -19,6 +19,7 @@ import {
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { useFarmerDashboard } from '@/hooks/useFarmerDashboard';
 import { format } from 'date-fns';
+import RefreshButton from '@/components/ui/RefreshButton';
 
 const FarmerDashboard = () => {
   const { stats, loading, error } = useFarmerDashboard();
@@ -119,6 +120,11 @@ const FarmerDashboard = () => {
           <p className="text-gray-600 mt-2">Overview of your dairy operations</p>
         </div>
         <div className="mt-4 md:mt-0 flex items-center space-x-3">
+          <RefreshButton 
+            isRefreshing={loading} 
+            onRefresh={() => window.location.reload()} 
+            className="bg-white border-gray-300 hover:bg-gray-50 rounded-md shadow-sm"
+          />
           <Button variant="outline" className="flex items-center gap-2">
             <Bell className="h-4 w-4" />
             Notifications

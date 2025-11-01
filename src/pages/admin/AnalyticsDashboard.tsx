@@ -60,6 +60,10 @@ import {
   endOfYear
 } from 'date-fns';
 import { calculateMetricsWithTrends } from '@/utils/dashboardTrends';
+import RefreshButton from '@/components/ui/RefreshButton';
+import { useQueryClient } from '@tanstack/react-query';
+import { CACHE_KEYS } from '@/services/cache-utils';
+import { useAnalyticsData } from '@/hooks/useAnalyticsData';
 
 // Mini-page components
 const OverviewMiniPage = ({ metrics, collectionTrends, qualityData, revenueData }: any) => {
@@ -586,271 +590,12 @@ const OperationalMiniPage = ({ metrics, collectionTrends }: any) => {
 
 const AnalyticsDashboard = () => {
   const toast = useToastNotifications();
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [dateRange, setDateRange] = useState('30days');
   const [activeTab, setActiveTab] = useState('overview');
-  const [metrics, setMetrics] = useState<any[]>([]);
-  const [collectionTrends, setCollectionTrends] = useState<any[]>([]);
-  const [revenueData, setRevenueData] = useState<any[]>([]);
   
-  // Ref to track if data is already being fetched
-  const isFetching = useRef(false);
-  // Ref to track the last date range fetched
-  const lastFetchedDateRange = useRef<string>('');
-
-  const getDateFilter = useCallback(() => {
-    const now = new Date();
-    let startDate = new Date();
-    let endDate = new Date();
-    
-    switch(dateRange) {
-      case '7days':
-        startDate = subDays(now, 7);
-        endDate = now;
-        break;
-      case '30days':
-        startDate = subDays(now, 30);
-        endDate = now;
-        break;
-      case '90days':
-        startDate = subDays(now, 90);
-        endDate = now;
-        break;
-      case '180days':
-        startDate = subDays(now, 180);
-        endDate = now;
-        break;
-      case '365days':
-        startDate = subDays(now, 365);
-        endDate = now;
-        break;
-      default:
-        startDate = subDays(now, 30);
-        endDate = now;
-    }
-    
-    return {
-      startDate: startDate.toISOString(),
-      endDate: endDate.toISOString()
-    };
-  }, [dateRange]);
-
-  const fetchPreviousPeriodData = useCallback(async (startDate: string, endDate: string) => {
-    try {
-      // Calculate previous period dates
-      const start = new Date(startDate);
-      const end = new Date(endDate);
-      const diffTime = Math.abs(end.getTime() - start.getTime());
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      
-      const prevEndDate = new Date(start.getTime() - 1000); // One second before start
-      const prevStartDate = new Date(prevEndDate.getTime() - diffTime);
-      
-      // Fetch collections for previous period
-      const { data: prevCollectionsData, error: collectionsError } = await supabase
-        .from('collections')
-        .select(`
-          id,
-          farmer_id,
-          staff_id,
-          liters,
-          quality_grade,
-          rate_per_liter,
-          total_amount,
-          collection_date,
-          status
-        `)
-        .gte('collection_date', prevStartDate.toISOString())
-        .lte('collection_date', prevEndDate.toISOString())
-        .order('collection_date', { ascending: false });
-
-      if (collectionsError) {
-        console.error('Error fetching previous period collections:', collectionsError);
-        return null;
-      }
-
-      const { data: prevFarmersData, error: farmersError } = await supabase
-        .from('farmers')
-        .select(`
-          id,
-          user_id,
-          registration_number,
-          kyc_status,
-          created_at
-        `)
-        .order('created_at', { ascending: false });
-
-      if (farmersError) {
-        console.error('Error fetching previous period farmers:', farmersError);
-        return null;
-      }
-
-      return {
-        collections: prevCollectionsData || [],
-        farmers: prevFarmersData || [],
-        payments: prevCollectionsData || []
-      };
-    } catch (error: any) {
-      console.error('Error fetching previous period data:', error);
-      return null;
-    }
-  }, []);
-
-  const fetchData = useCallback(async () => {
-    // Prevent multiple simultaneous fetches
-    if (isFetching.current || lastFetchedDateRange.current === dateRange) {
-      return;
-    }
-    
-    try {
-      isFetching.current = true;
-      setLoading(true);
-      console.log('Starting fetchData with dateRange:', dateRange);
-      
-      const { startDate, endDate } = getDateFilter();
-      console.log('Date range:', { startDate, endDate });
-      
-      // Fetch current period data
-      const { data: collectionsData, error: collectionsError } = await supabase
-        .from('collections')
-        .select(`
-          id,
-          farmer_id,
-          staff_id,
-          liters,
-          quality_grade,
-          rate_per_liter,
-          total_amount,
-          collection_date,
-          status
-        `)
-        .gte('collection_date', startDate)
-        .lte('collection_date', endDate)
-        .order('collection_date', { ascending: false });
-
-      if (collectionsError) {
-        console.error('Error fetching collections:', collectionsError);
-        throw collectionsError;
-      }
-
-      const { data: farmersData, error: farmersError } = await supabase
-        .from('farmers')
-        .select(`
-          id,
-          user_id,
-          registration_number,
-          kyc_status,
-          created_at
-        `)
-        .order('created_at', { ascending: false });
-
-      if (farmersError) {
-        console.error('Error fetching farmers:', farmersError);
-        throw farmersError;
-      }
-
-      const { data: staffData, error: staffError } = await supabase
-        .from('staff')
-        .select(`
-          id,
-          user_id,
-          employee_id,
-          status,
-          created_at
-        `)
-        .order('created_at', { ascending: false });
-
-      if (staffError) {
-        console.error('Error fetching staff:', staffError);
-        throw staffError;
-      }
-
-      // Fetch previous period data for trend calculations
-      const previousData = await fetchPreviousPeriodData(startDate, endDate);
-
-      // Prepare current data for metrics calculation
-      const currentData = {
-        collections: collectionsData || [],
-        farmers: farmersData || [],
-        staff: staffData || [],
-        payments: collectionsData || [] // Using collections as payments for now
-      };
-
-      // Calculate metrics with trends
-      const calculatedMetrics = calculateMetricsWithTrends(currentData, previousData);
-      setMetrics(calculatedMetrics);
-      console.log('Calculated metrics:', calculatedMetrics);
-
-      // Process trends data for charts - GROUP BY DATE and SUM LITERS
-      const trendsData = (collectionsData || []).reduce((acc: any, collection: any) => {
-        const date = format(new Date(collection.collection_date), 'MMM dd');
-        if (!acc[date]) {
-          acc[date] = {
-            date,
-            liters: 0,
-            collections: 0,
-            revenue: 0,
-            avgQuality: 0,
-            qualityCount: 0
-          };
-        }
-        // SUM the liters for each date instead of counting collections
-        acc[date].liters += collection.liters;
-        acc[date].collections += 1;
-        acc[date].revenue += collection.total_amount;
-        
-        const qualityValue = collection.quality_grade === 'A+' ? 4 : 
-                          collection.quality_grade === 'A' ? 3 : 
-                          collection.quality_grade === 'B' ? 2 : 1;
-        acc[date].avgQuality += qualityValue;
-        acc[date].qualityCount += 1;
-        
-        return acc;
-      }, {});
-
-      // Convert to array and sort by date
-      const trendsArray = Object.values(trendsData)
-        .map((item: any) => ({
-          ...item,
-          avgQuality: item.qualityCount > 0 ? item.avgQuality / item.qualityCount : 0
-        }))
-        .sort((a: any, b: any) => {
-          const dateA = new Date(a.date);
-          const dateB = new Date(b.date);
-          return dateA.getTime() - dateB.getTime();
-        });
-
-      setCollectionTrends(trendsArray);
-      console.log('Collection trends set:', trendsArray);
-
-      // Transform revenue data for charts
-      const revenueData = trendsArray.map((trend: any) => ({
-        month: trend.date,
-        actual: trend.revenue,
-        predicted: trend.revenue * 1.05 // Simple prediction for demo
-      }));
-      
-      setRevenueData(revenueData);
-      console.log('Revenue data set:', revenueData);
-      
-      // Mark this date range as fetched
-      lastFetchedDateRange.current = dateRange;
-
-    } catch (error: any) {
-      console.error('Error fetching analytics data:', error);
-      toast.error('Error', error.message || 'Failed to fetch analytics data');
-    } finally {
-      isFetching.current = false;
-      setLoading(false);
-      console.log('Finished fetchData');
-    }
-  }, [dateRange, getDateFilter, fetchPreviousPeriodData, toast]);
-
-  // Only refetch data when dateRange actually changes
-  useEffect(() => {
-    console.log('AnalyticsDashboard useEffect triggered with dateRange:', dateRange);
-    fetchData();
-  }, [dateRange]); // Simplified dependencies
+  // Use React Query for data fetching
+  const { data: analyticsData, isLoading, isError, error, refetch } = useAnalyticsData(dateRange);
 
   const exportSimpleReport = () => {
     toast.success('Success', 'Report exported successfully');
@@ -868,7 +613,7 @@ const AnalyticsDashboard = () => {
     }
   };
 
-  if (loading) {
+  if (isLoading) {
     console.log('AnalyticsDashboard is loading');
     return (
       <DashboardLayout>
@@ -877,33 +622,58 @@ const AnalyticsDashboard = () => {
     );
   }
 
+  if (isError) {
+    console.error('Error loading analytics data:', error);
+    toast.error('Error', 'Failed to load analytics data');
+    return (
+      <DashboardLayout>
+        <div className="container mx-auto py-6">
+          <div className="text-center py-12">
+            <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">Error Loading Data</h2>
+            <p className="text-gray-600">Failed to load analytics data. Please try again.</p>
+            <Button 
+              onClick={() => refetch()} 
+              className="mt-4"
+            >
+              Retry
+            </Button>
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
   const renderActiveTab = () => {
-    console.log('Rendering active tab:', activeTab, 'with data:', { metrics, collectionTrends, revenueData });
+    console.log('Rendering active tab:', activeTab, 'with data:', analyticsData);
     switch (activeTab) {
       case 'overview':
         console.log('Rendering OverviewMiniPage');
         return <OverviewMiniPage 
-          metrics={metrics}
-          collectionTrends={collectionTrends} 
+          metrics={analyticsData?.metrics || []}
+          collectionTrends={analyticsData?.collectionTrends || []} 
           qualityData={[]} 
-          revenueData={revenueData} 
+          revenueData={analyticsData?.revenueData || []} 
         />;
       case 'financial':
         console.log('Rendering FinancialMiniPage');
-        return <FinancialMiniPage metrics={metrics} collectionTrends={collectionTrends} />;
+        return <FinancialMiniPage 
+          metrics={analyticsData?.metrics || []} 
+          collectionTrends={analyticsData?.collectionTrends || []} 
+        />;
       case 'operational':
         console.log('Rendering OperationalMiniPage');
         return <OperationalMiniPage 
-          metrics={metrics}
-          collectionTrends={collectionTrends} 
+          metrics={analyticsData?.metrics || []}
+          collectionTrends={analyticsData?.collectionTrends || []} 
         />;
       default:
         console.log('Rendering default OverviewMiniPage');
         return <OverviewMiniPage 
-          metrics={metrics}
-          collectionTrends={collectionTrends} 
+          metrics={analyticsData?.metrics || []}
+          collectionTrends={analyticsData?.collectionTrends || []} 
           qualityData={[]} 
-          revenueData={revenueData} 
+          revenueData={analyticsData?.revenueData || []} 
         />;
     }
   };
@@ -934,6 +704,11 @@ const AnalyticsDashboard = () => {
                 <option value="365days">Last Year</option>
               </select>
             </div>
+            <RefreshButton 
+              isRefreshing={isLoading} 
+              onRefresh={() => refetch()} 
+              className="bg-white border-gray-300 hover:bg-gray-50 rounded-md shadow-sm"
+            />
             <Button variant="outline" className="flex items-center gap-2 hover:bg-primary hover:text-primary-foreground transition-colors" onClick={exportSimpleReport}>
               <Download className="h-4 w-4" />
               Export Report

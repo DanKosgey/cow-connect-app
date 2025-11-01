@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +27,8 @@ import { useRealtimeForumPosts, useRealtimeForumComments } from "@/hooks/useReal
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/SimplifiedAuthContext";
 import { PageHeader } from "@/components/PageHeader";
+import RefreshButton from "@/components/ui/RefreshButton";
+import { useCommunityForumData } from "@/hooks/useCommunityForumData";
 
 const GEMINI_API_KEY = "AIzaSyAbRPjA1V7byZ5db23NOxWtY1UX7qp5h8M";
 
@@ -368,9 +370,9 @@ Use bullet points and clear formatting for better readability.`;
   );
 };
 
-// Simple Discussion Forum
+// Discussion Forum Component
 const DiscussionForum = ({ onNewNotification }) => {
-  const { posts, newPost } = useRealtimeForumPosts();
+  const { posts: realtimePosts, newPost } = useRealtimeForumPosts();
   const [newPostContent, setNewPostContent] = useState('');
   const [editingPostId, setEditingPostId] = useState(null);
   const [editingPostContent, setEditingPostContent] = useState('');
@@ -384,6 +386,13 @@ const DiscussionForum = ({ onNewNotification }) => {
   const [filterBy, setFilterBy] = useState('all');
   const [showFilters, setShowFilters] = useState(false);
   const { user } = useAuth();
+  const { useForumPosts, useForumComments, useUserProfiles, createPost, updatePost, deletePost: deletePostMutation, addComment, updateComment, deleteComment: deleteCommentMutation, likePost } = useCommunityForumData();
+
+  // Get forum posts with caching
+  const { data: posts = [], isLoading: postsLoading, refetch: refetchPosts } = useForumPosts(searchTerm, sortBy, filterBy);
+  
+  // Combine realtime posts with cached posts
+  const combinedPosts = [...posts, ...realtimePosts.filter(post => !posts.some(p => p.id === post.id))];
 
   // Get user profiles for display names
   const [userProfiles, setUserProfiles] = useState({});
@@ -436,28 +445,28 @@ const DiscussionForum = ({ onNewNotification }) => {
     fetchComments();
   }, [showComments]);
 
-  // Get user profiles for all post authors
-  useEffect(() => {
-    const fetchUserProfiles = async () => {
-      if (posts.length > 0) {
-        const authorIds = [...new Set(posts.map(post => post.author_id))];
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('id, full_name')
-          .in('id', authorIds);
-        
-        if (!error && data) {
-          const profileMap = {};
-          data.forEach(profile => {
-            profileMap[profile.id] = profile.full_name || 'Unknown User';
-          });
-          setUserProfiles(profileMap);
-        }
+  // Fetch user profiles for all post authors
+  const fetchUserProfiles = useCallback(async () => {
+    if (combinedPosts.length > 0) {
+      const authorIds = [...new Set(combinedPosts.map(post => post.author_id))];
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, full_name')
+        .in('id', authorIds);
+      
+      if (!error && data) {
+        const profileMap = {};
+        data.forEach(profile => {
+          profileMap[profile.id] = profile.full_name || 'Unknown User';
+        });
+        setUserProfiles(profileMap);
       }
-    };
+    }
+  }, [combinedPosts]);
 
+  useEffect(() => {
     fetchUserProfiles();
-  }, [posts]);
+  }, [fetchUserProfiles]);
 
   // Fetch user profile for new post author
   useEffect(() => {
@@ -484,15 +493,8 @@ const DiscussionForum = ({ onNewNotification }) => {
   const handlePost = async () => {
     if (!newPostContent.trim() || !user) return;
 
-    const { error } = await supabase
-      .from('forum_posts')
-      .insert({
-        title: newPostContent.substring(0, 50) + (newPostContent.length > 50 ? '...' : ''),
-        content: newPostContent,
-        author_id: user.id
-      });
-
-    if (!error) {
+    try {
+      await createPost.mutateAsync(newPostContent);
       setNewPostContent('');
       onNewNotification({
         type: 'post',
@@ -501,6 +503,8 @@ const DiscussionForum = ({ onNewNotification }) => {
         time: 'Just now',
         read: false
       });
+    } catch (error) {
+      console.error('Error creating post:', error);
     }
   };
 
@@ -514,17 +518,8 @@ const DiscussionForum = ({ onNewNotification }) => {
   const saveEditedPost = async (postId) => {
     if (!editingPostContent.trim() || !user) return;
 
-    const { error } = await supabase
-      .from('forum_posts')
-      .update({
-        content: editingPostContent,
-        title: editingPostContent.substring(0, 50) + (editingPostContent.length > 50 ? '...' : ''),
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', postId)
-      .eq('author_id', user.id);
-
-    if (!error) {
+    try {
+      await updatePost.mutateAsync({ postId, content: editingPostContent });
       setEditingPostId(null);
       setEditingPostContent('');
       onNewNotification({
@@ -534,20 +529,17 @@ const DiscussionForum = ({ onNewNotification }) => {
         time: 'Just now',
         read: false
       });
+    } catch (error) {
+      console.error('Error updating post:', error);
     }
   };
 
-  const deletePost = async (postId) => {
+  const handleDeletePost = async (postId) => {
     if (!user) return;
 
     if (window.confirm('Are you sure you want to delete this post?')) {
-      const { error } = await supabase
-        .from('forum_posts')
-        .delete()
-        .eq('id', postId)
-        .eq('author_id', user.id);
-
-      if (!error) {
+      try {
+        await deletePostMutation.mutateAsync(postId);
         onNewNotification({
           type: 'post',
           title: 'Post Deleted',
@@ -555,19 +547,18 @@ const DiscussionForum = ({ onNewNotification }) => {
           time: 'Just now',
           read: false
         });
+      } catch (error) {
+        console.error('Error deleting post:', error);
       }
     }
   };
 
   const handleLike = async (postId, currentLikes, isLiked) => {
-    // In a real implementation, you would track which users have liked which posts
-    // For now, we'll just update the like count
-    const newLikes = isLiked ? currentLikes - 1 : currentLikes + 1;
-    
-    await supabase
-      .from('forum_posts')
-      .update({ likes: newLikes })
-      .eq('id', postId);
+    try {
+      await likePost.mutateAsync({ postId, currentLikes, isLiked });
+    } catch (error) {
+      console.error('Error liking post:', error);
+    }
   };
 
   const handleCommentChange = (postId, text) => {
@@ -581,24 +572,9 @@ const DiscussionForum = ({ onNewNotification }) => {
     const text = commentText[postId] || '';
     if (!text.trim() || !user) return;
 
-    const { error } = await supabase
-      .from('forum_comments')
-      .insert({
-        post_id: postId,
-        content: text,
-        author_id: user.id
-      });
-
-    if (!error) {
-      // Update the comment count for the post
-      const post = posts.find(p => p.id === postId);
-      if (post) {
-        await supabase
-          .from('forum_posts')
-          .update({ comments: post.comments + 1 })
-          .eq('id', postId);
-      }
-
+    try {
+      await addComment.mutateAsync({ postId, content: text });
+      
       // Clear comment text for this post
       setCommentText(prev => ({
         ...prev,
@@ -622,6 +598,8 @@ const DiscussionForum = ({ onNewNotification }) => {
         time: 'Just now',
         read: false
       });
+    } catch (error) {
+      console.error('Error adding comment:', error);
     }
   };
 
@@ -635,16 +613,8 @@ const DiscussionForum = ({ onNewNotification }) => {
   const saveEditedComment = async (commentId, postId) => {
     if (!editingCommentContent.trim() || !user) return;
 
-    const { error } = await supabase
-      .from('forum_comments')
-      .update({
-        content: editingCommentContent,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', commentId)
-      .eq('author_id', user.id);
-
-    if (!error) {
+    try {
+      await updateComment.mutateAsync({ commentId, content: editingCommentContent, postId });
       setEditingCommentId(null);
       setEditingCommentContent('');
       
@@ -665,28 +635,17 @@ const DiscussionForum = ({ onNewNotification }) => {
         time: 'Just now',
         read: false
       });
+    } catch (error) {
+      console.error('Error updating comment:', error);
     }
   };
 
-  const deleteComment = async (commentId, postId) => {
+  const handleDeleteComment = async (commentId, postId) => {
     if (!user) return;
 
     if (window.confirm('Are you sure you want to delete this comment?')) {
-      const { error } = await supabase
-        .from('forum_comments')
-        .delete()
-        .eq('id', commentId)
-        .eq('author_id', user.id);
-
-      if (!error) {
-        // Update the comment count for the post
-        const post = posts.find(p => p.id === postId);
-        if (post) {
-          await supabase
-            .from('forum_posts')
-            .update({ comments: Math.max(0, post.comments - 1) })
-            .eq('id', postId);
-        }
+      try {
+        await deleteCommentMutation.mutateAsync({ commentId, postId });
         
         // Refresh comments for this post
         setShowComments(prev => ({
@@ -705,6 +664,8 @@ const DiscussionForum = ({ onNewNotification }) => {
           time: 'Just now',
           read: false
         });
+      } catch (error) {
+        console.error('Error deleting comment:', error);
       }
     }
   };
@@ -721,7 +682,7 @@ const DiscussionForum = ({ onNewNotification }) => {
   };
 
   // Filter and sort posts
-  const filteredAndSortedPosts = posts
+  const filteredAndSortedPosts = combinedPosts
     .filter(post => {
       // Search filter
       if (searchTerm && !post.content.toLowerCase().includes(searchTerm.toLowerCase())) {
@@ -809,22 +770,37 @@ const DiscussionForum = ({ onNewNotification }) => {
                 </select>
               </div>
             )}
+            
+            <div className="ml-auto">
+              <RefreshButton 
+                isRefreshing={postsLoading} 
+                onRefresh={refetchPosts}
+                className="bg-white border-gray-300 hover:bg-gray-50 rounded-md shadow-sm"
+              />
+            </div>
           </div>
         </div>
-        
-        {/* New Post */}
-        <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+
+        {/* New Post Form */}
+        <div className="mb-8 p-4 bg-white rounded-lg border shadow-sm">
+          <h3 className="font-semibold mb-3 flex items-center gap-2">
+            <Plus className="h-5 w-5" />
+            Start a Discussion
+          </h3>
           <Textarea
             value={newPostContent}
             onChange={(e) => setNewPostContent(e.target.value)}
-            placeholder="Share your experiences, ask questions, or start a discussion..."
+            placeholder="Share your thoughts, ask questions, or start a discussion..."
             rows={3}
             className="mb-3"
           />
-          <div className="flex justify-end">
+          <div className="flex justify-between items-center">
+            <div className="text-sm text-gray-500">
+              {newPostContent.length}/500 characters
+            </div>
             <Button 
               onClick={handlePost}
-              disabled={!newPostContent.trim() || !user}
+              disabled={!newPostContent.trim() || newPostContent.length > 500}
               className="bg-green-600 hover:bg-green-700 touch-friendly"
             >
               <Send className="h-4 w-4 mr-2" />
@@ -833,34 +809,60 @@ const DiscussionForum = ({ onNewNotification }) => {
           </div>
         </div>
 
-        {/* Posts Feed */}
-        <div className="space-y-4">
+        {/* Posts List */}
+        <div className="space-y-6">
           {filteredAndSortedPosts.length === 0 ? (
             <div className="text-center py-12">
               <MessageCircle className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-gray-700 mb-2">No discussions yet</h3>
+              <h3 className="text-lg font-medium text-gray-700 mb-2">No discussions yet</h3>
               <p className="text-gray-500">Be the first to start a conversation!</p>
             </div>
           ) : (
-            filteredAndSortedPosts.map(post => (
-              <div key={post.id} className="border rounded-lg p-4 bg-white hover:shadow-md transition-shadow">
-                <div className="flex items-start gap-3">
-                  <div className="p-2 rounded-full bg-green-100">
-                    <User className="h-5 w-5 text-green-600" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-semibold text-gray-900">
-                        {userProfiles[post.author_id] || 'Loading...'}
-                      </span>
-                      <span className="text-xs text-gray-500 flex items-center gap-1">
-                        <Clock className="h-3 w-3" />
-                        {formatTime(post.created_at)}
-                      </span>
+            filteredAndSortedPosts.map((post) => (
+              <div key={post.id} className="bg-white rounded-lg border shadow-sm hover:shadow-md transition-shadow">
+                <div className="p-5">
+                  {/* Post Header */}
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-r from-green-400 to-blue-500 flex items-center justify-center text-white font-bold">
+                        {userProfiles[post.author_id]?.charAt(0) || 'U'}
+                      </div>
+                      <div>
+                        <div className="font-medium text-gray-900">
+                          {userProfiles[post.author_id] || 'Unknown User'}
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-gray-500">
+                          <Clock className="h-4 w-4" />
+                          <span>{formatTime(post.created_at)}</span>
+                        </div>
+                      </div>
                     </div>
-                    
+                    {user && post.author_id === user.id && (
+                      <div className="flex gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => startEditingPost(post)}
+                          className="p-2 touch-friendly"
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDeletePost(post.id)}
+                          className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 touch-friendly"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Post Content */}
+                  <div className="mb-4">
                     {editingPostId === post.id ? (
-                      <div className="mb-3">
+                      <div className="space-y-3">
                         <Textarea
                           value={editingPostContent}
                           onChange={(e) => setEditingPostContent(e.target.value)}
@@ -871,16 +873,13 @@ const DiscussionForum = ({ onNewNotification }) => {
                           <Button 
                             onClick={() => saveEditedPost(post.id)}
                             size="sm"
-                            className="bg-blue-600 hover:bg-blue-700 touch-friendly"
+                            className="touch-friendly"
                           >
                             Save
                           </Button>
                           <Button 
-                            onClick={() => {
-                              setEditingPostId(null);
-                              setEditingPostContent('');
-                            }}
-                            variant="outline"
+                            variant="outline" 
+                            onClick={() => setEditingPostId(null)}
                             size="sm"
                             className="touch-friendly"
                           >
@@ -889,145 +888,130 @@ const DiscussionForum = ({ onNewNotification }) => {
                         </div>
                       </div>
                     ) : (
-                      <p className="text-gray-700 mb-3 post-content">{post.content}</p>
-                    )}
-                    
-                    <div className="flex items-center gap-4 flex-wrap">
-                      <button
-                        onClick={() => handleLike(post.id, post.likes, false)}
-                        className="flex items-center gap-1 text-sm text-gray-600 hover:text-blue-600 transition-colors touch-friendly"
-                      >
-                        <ThumbsUp className="h-4 w-4" />
-                        {post.likes}
-                      </button>
-                      <button
-                        onClick={() => toggleComments(post.id)}
-                        className="flex items-center gap-1 text-sm text-gray-600 hover:text-blue-600 transition-colors touch-friendly"
-                      >
-                        <MessageCircle className="h-4 w-4" />
-                        {post.comments}
-                      </button>
-                      {user && post.author_id === user.id && (
-                        <div className="flex gap-2 ml-auto">
-                          <Button
-                            onClick={() => startEditingPost(post)}
-                            variant="outline"
-                            size="sm"
-                            className="h-8 px-2 text-xs touch-friendly"
-                          >
-                            <Edit className="h-3 w-3 mr-1" />
-                            Edit
-                          </Button>
-                          <Button
-                            onClick={() => deletePost(post.id)}
-                            variant="outline"
-                            size="sm"
-                            className="h-8 px-2 text-xs text-red-600 hover:text-red-800 touch-friendly"
-                          >
-                            <Trash2 className="h-3 w-3 mr-1" />
-                            Delete
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Comment Section */}
-                    {showComments[post.id] && (
-                      <div className="mt-4 pt-4 border-t">
-                        <div className="space-y-3">
-                          {getCommentsForPost(post.id).map(comment => (
-                            <div key={comment.id} className="flex items-start gap-2 p-2 bg-gray-50 rounded">
-                              <User className="h-4 w-4 text-gray-600 mt-1" />
-                              <div className="flex-1">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-sm font-medium">
-                                    {userProfiles[comment.author_id] || 'Loading...'}
-                                  </span>
-                                  <span className="text-xs text-gray-500">
-                                    {formatTime(comment.created_at)}
-                                  </span>
-                                </div>
-                                
-                                {editingCommentId === comment.id ? (
-                                  <div className="mt-2">
-                                    <Textarea
-                                      value={editingCommentContent}
-                                      onChange={(e) => setEditingCommentContent(e.target.value)}
-                                      rows={2}
-                                      className="mb-2 text-sm"
-                                    />
-                                    <div className="flex gap-2">
-                                      <Button 
-                                        onClick={() => saveEditedComment(comment.id, post.id)}
-                                        size="sm"
-                                        className="h-7 text-xs bg-blue-600 hover:bg-blue-700 touch-friendly"
-                                      >
-                                        Save
-                                      </Button>
-                                      <Button 
-                                        onClick={() => {
-                                          setEditingCommentId(null);
-                                          setEditingCommentContent('');
-                                        }}
-                                        variant="outline"
-                                        size="sm"
-                                        className="h-7 text-xs touch-friendly"
-                                      >
-                                        Cancel
-                                      </Button>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <p className="text-sm text-gray-700 mt-1">{comment.content}</p>
-                                )}
-                                
-                                {user && comment.author_id === user.id && editingCommentId !== comment.id && (
-                                  <div className="flex gap-2 mt-2">
-                                    <Button
-                                      onClick={() => startEditingComment(comment)}
-                                      variant="outline"
-                                      size="sm"
-                                      className="h-6 px-2 text-xs touch-friendly"
-                                    >
-                                      <Edit className="h-3 w-3 mr-1" />
-                                      Edit
-                                    </Button>
-                                    <Button
-                                      onClick={() => deleteComment(comment.id, post.id)}
-                                      variant="outline"
-                                      size="sm"
-                                      className="h-6 px-2 text-xs text-red-600 hover:text-red-800 touch-friendly"
-                                    >
-                                      <Trash2 className="h-3 w-3 mr-1" />
-                                      Delete
-                                    </Button>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                        
-                        <div className="flex gap-2 mt-3 comment-input-container">
-                          <Input
-                            value={commentText[post.id] || ''}
-                            onChange={(e) => handleCommentChange(post.id, e.target.value)}
-                            placeholder="Write a comment..."
-                            className="flex-1 comment-input"
-                          />
-                          <Button
-                            onClick={() => handleComment(post.id)}
-                            disabled={!(commentText[post.id] || '').trim() || !user}
-                            size="sm"
-                            className="bg-blue-600 hover:bg-blue-700 comment-button touch-friendly"
-                          >
-                            Comment
-                          </Button>
-                        </div>
-                      </div>
+                      <p className="text-gray-700 whitespace-pre-line">{post.content}</p>
                     )}
                   </div>
+
+                  {/* Post Stats */}
+                  <div className="flex items-center gap-6 pt-3 border-t border-gray-100">
+                    <button 
+                      onClick={() => handleLike(post.id, post.likes, false)}
+                      className="flex items-center gap-2 text-gray-600 hover:text-red-500 transition-colors touch-friendly"
+                    >
+                      <ThumbsUp className="h-5 w-5" />
+                      <span>{post.likes}</span>
+                    </button>
+                    <button 
+                      onClick={() => toggleComments(post.id)}
+                      className="flex items-center gap-2 text-gray-600 hover:text-blue-500 transition-colors touch-friendly"
+                    >
+                      <MessageCircle className="h-5 w-5" />
+                      <span>{post.comments}</span>
+                    </button>
+                  </div>
                 </div>
+
+                {/* Comments Section */}
+                {showComments[post.id] && (
+                  <div className="border-t border-gray-100 bg-gray-50 rounded-b-lg">
+                    <div className="p-4">
+                      {/* Add Comment Form */}
+                      <div className="mb-4">
+                        <Textarea
+                          value={commentText[post.id] || ''}
+                          onChange={(e) => handleCommentChange(post.id, e.target.value)}
+                          placeholder="Add a comment..."
+                          rows={2}
+                          className="mb-2"
+                        />
+                        <Button 
+                          onClick={() => handleComment(post.id)}
+                          size="sm"
+                          disabled={!commentText[post.id]?.trim()}
+                          className="touch-friendly"
+                        >
+                          <Send className="h-4 w-4 mr-1" />
+                          Comment
+                        </Button>
+                      </div>
+
+                      {/* Comments List */}
+                      <div className="space-y-4">
+                        {getCommentsForPost(post.id).map((comment) => (
+                          <div key={comment.id} className="bg-white p-3 rounded-lg border">
+                            <div className="flex items-start justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 rounded-full bg-gradient-to-r from-purple-400 to-pink-500 flex items-center justify-center text-white text-xs font-bold">
+                                  {userProfiles[comment.author_id]?.charAt(0) || 'U'}
+                                </div>
+                                <div>
+                                  <div className="font-medium text-sm text-gray-900">
+                                    {userProfiles[comment.author_id] || 'Unknown User'}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    {formatTime(comment.created_at)}
+                                  </div>
+                                </div>
+                              </div>
+                              {user && comment.author_id === user.id && (
+                                <div className="flex gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => startEditingComment(comment)}
+                                    className="p-1 h-8 w-8 touch-friendly"
+                                  >
+                                    <Edit className="h-3 w-3" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleDeleteComment(comment.id, post.id)}
+                                    className="p-1 h-8 w-8 text-red-600 hover:text-red-800 hover:bg-red-50 touch-friendly"
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+                            
+                            <div className="ml-10">
+                              {editingCommentId === comment.id ? (
+                                <div className="space-y-2">
+                                  <Textarea
+                                    value={editingCommentContent}
+                                    onChange={(e) => setEditingCommentContent(e.target.value)}
+                                    rows={2}
+                                    className="text-sm mb-1"
+                                  />
+                                  <div className="flex gap-2">
+                                    <Button 
+                                      onClick={() => saveEditedComment(comment.id, post.id)}
+                                      size="sm"
+                                      className="text-xs h-8 touch-friendly"
+                                    >
+                                      Save
+                                    </Button>
+                                    <Button 
+                                      variant="outline" 
+                                      onClick={() => setEditingCommentId(null)}
+                                      size="sm"
+                                      className="text-xs h-8 touch-friendly"
+                                    >
+                                      Cancel
+                                    </Button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <p className="text-gray-700 text-sm whitespace-pre-line">{comment.content}</p>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             ))
           )}
@@ -1037,68 +1021,84 @@ const DiscussionForum = ({ onNewNotification }) => {
   );
 };
 
-// Main Component
-const DairyFarmerHub = () => {
+export default function CommunityForumPage() {
+  const [activeTab, setActiveTab] = useState('forum');
+  const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
-  const [notifications, setNotifications] = useState([
-    {
-      type: 'ai',
-      title: 'Welcome to Dr. Dairy AI',
-      message: 'Ask me anything about dairy farming!',
-      time: '5 minutes ago',
-      read: false
-    }
-  ]);
 
-  const addNotification = (notif) => {
-    setNotifications(prev => [notif, ...prev]);
+  const handleNewNotification = (notification) => {
+    setNotifications(prev => [notification, ...prev.slice(0, 9)]);
   };
 
   const clearNotifications = () => {
     setNotifications([]);
   };
 
-  const unreadCount = notifications.filter(n => !n.read).length;
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-green-50 p-4 forum-container">
-      <div className="max-w-7xl mx-auto">
-        <PageHeader
-          title="Dairy Farmer Hub"
-          description="AI-Powered Support & Community Discussion"
-          actions={
-            <div className="relative">
-              <Button
-                onClick={() => setShowNotifications(!showNotifications)}
-                variant="outline"
-                className="relative touch-friendly"
-              >
-                <Bell className="h-5 w-5" />
-                {unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
-                    {unreadCount}
-                  </span>
-                )}
-              </Button>
-              {showNotifications && (
-                <NotificationCenter
-                  notifications={notifications}
-                  onClose={() => setShowNotifications(false)}
-                  onClear={clearNotifications}
-                />
-              )}
-            </div>
-          }
-        />
-
-        {/* Main Content - Responsive Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <AIChatCenter />
-          <DiscussionForum onNewNotification={addNotification} />
+      <PageHeader 
+        title="Community Forum" 
+      />
+      
+      <div className="max-w-6xl mx-auto mt-6">
+        {/* Tab Navigation */}
+        <div className="flex border-b border-gray-200 mb-6">
+          <button
+            onClick={() => setActiveTab('forum')}
+            className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
+              activeTab === 'forum'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            <MessageCircle className="inline h-4 w-4 mr-2" />
+            Discussion Forum
+          </button>
+          <button
+            onClick={() => setActiveTab('ai')}
+            className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
+              activeTab === 'ai'
+                ? 'border-purple-500 text-purple-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            <Bot className="inline h-4 w-4 mr-2" />
+            Dr. Dairy AI Assistant
+          </button>
         </div>
+
+        {/* Notification Bell */}
+        <div className="fixed top-4 right-4 z-40">
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => setShowNotifications(!showNotifications)}
+            className="relative bg-white shadow-lg border-2 border-blue-500 hover:bg-blue-50 touch-friendly"
+          >
+            <Bell className="h-5 w-5 text-blue-600" />
+            {notifications.length > 0 && (
+              <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                {notifications.length}
+              </span>
+            )}
+          </Button>
+          
+          {showNotifications && (
+            <NotificationCenter
+              notifications={notifications}
+              onClose={() => setShowNotifications(false)}
+              onClear={clearNotifications}
+            />
+          )}
+        </div>
+
+        {/* Tab Content */}
+        {activeTab === 'forum' ? (
+          <DiscussionForum onNewNotification={handleNewNotification} />
+        ) : (
+          <AIChatCenter />
+        )}
       </div>
     </div>
   );
-};
-
-export default DairyFarmerHub;
+}

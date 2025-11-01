@@ -25,12 +25,15 @@ import {
   AlertTriangle,
   TrendingUp,
   TrendingDown,
-  FileText
+  FileText,
+  RefreshCw
 } from 'lucide-react';
 import { format } from 'date-fns';
 import useToastNotifications from '@/hooks/useToastNotifications';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
-import { useStaffInfo, useInventoryData } from '@/hooks/useStaffData';
+import { useStaffInfo } from '@/hooks/useStaffData';
+import { useInventoryData } from '@/hooks/useInventoryData';
+import RefreshButton from '@/components/ui/RefreshButton';
 
 interface InventoryItem {
   id: string;
@@ -70,13 +73,27 @@ export default function InventoryManagement() {
   const { user } = useAuth();
   const { show, error: showError } = useToastNotifications();
   const { staffInfo, loading: staffLoading } = useStaffInfo();
-  const { items, transactions, loading: inventoryLoading } = useInventoryData();
+  const { 
+    useInventoryItems, 
+    useInventoryTransactions,
+    addInventoryItem,
+    updateInventoryItem,
+    deleteInventoryItem,
+    addInventoryTransaction
+  } = useInventoryData();
+  
+  // Get inventory items with caching
+  const { data: items = [], isLoading: itemsLoading, refetch: refetchItems } = useInventoryItems();
+  
+  // Get inventory transactions with caching
+  const { data: transactions = [], isLoading: transactionsLoading, refetch: refetchTransactions } = useInventoryTransactions();
+  
+  const loading = itemsLoading || transactionsLoading;
   
   // Check if inventory features are available
-  const inventoryFeaturesAvailable = items.length > 0 || transactions.length > 0 || !inventoryLoading;
+  const inventoryFeaturesAvailable = items.length > 0 || transactions.length > 0 || !loading;
 
   const [filteredItems, setFilteredItems] = useState<InventoryItem[]>([]);
-  const [loading, setLoading] = useState(true);
   
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -108,13 +125,13 @@ export default function InventoryManagement() {
 
   useEffect(() => {
     // Show a message if inventory features are not available
-    if (!inventoryLoading && !inventoryFeaturesAvailable) {
+    if (!loading && !inventoryFeaturesAvailable) {
       show({ 
         title: 'Inventory Management Not Available', 
         description: 'Inventory management features are not currently available in this system.' 
       });
     }
-  }, [inventoryLoading, inventoryFeaturesAvailable, show]);
+  }, [loading, inventoryFeaturesAvailable, show]);
 
   useEffect(() => {
     applyFilters();
@@ -207,58 +224,27 @@ export default function InventoryManagement() {
     setShowItemForm(true);
   };
 
-  const saveItem = async () => {
-    if (!itemName || !itemCategory || !itemUnit) {
-      showError('Error', 'Please fill in all required fields');
+  const handleDeleteItem = async (itemId: string) => {
+    if (!window.confirm('Are you sure you want to delete this inventory item?')) {
       return;
     }
 
     try {
-      if (editingItem) {
-        // Update existing item
-        const { error } = await supabase
-          .from('inventory_items')
-          .update({
-            name: itemName,
-            description: itemDescription,
-            category: itemCategory,
-            unit: itemUnit,
-            current_stock: itemStock,
-            reorder_level: itemReorderLevel,
-            supplier: itemSupplier,
-            cost_per_unit: itemCost,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', editingItem.id);
-
-        if (error) throw error;
-        show({ title: 'Success', description: 'Inventory item updated successfully' });
-      } else {
-        // Create new item
-        const { error } = await supabase
-          .from('inventory_items')
-          .insert({
-            name: itemName,
-            description: itemDescription,
-            category: itemCategory,
-            unit: itemUnit,
-            current_stock: itemStock,
-            reorder_level: itemReorderLevel,
-            supplier: itemSupplier,
-            cost_per_unit: itemCost
-          });
-
-        if (error) throw error;
-        show({ title: 'Success', description: 'Inventory item added successfully' });
-      }
-      
-      setShowItemForm(false);
-      resetItemForm();
-      fetchData(); // Refresh data
+      await deleteInventoryItem.mutateAsync(itemId);
+      show({ title: 'Success', description: 'Inventory item deleted successfully' });
     } catch (error: any) {
-      console.error('Error saving item:', error);
-      showError('Error', error.message || 'Failed to save inventory item');
+      console.error('Error deleting item:', error);
+      showError('Error', 'Failed to delete inventory item');
     }
+  };
+
+  const handleAddTransaction = (item: InventoryItem) => {
+    setSelectedItem(item);
+    setTransactionType('in');
+    setTransactionQuantity(1);
+    setTransactionReason('');
+    setTransactionCost(item.cost_per_unit || 0);
+    setShowTransactionForm(true);
   };
 
   const resetItemForm = () => {
@@ -270,71 +256,93 @@ export default function InventoryManagement() {
     setItemReorderLevel(0);
     setItemSupplier('');
     setItemCost(0);
-    setEditingItem(null);
-  };
-
-  const handleAddTransaction = (item: InventoryItem) => {
-    setSelectedItem(item);
-    setTransactionQuantity(1);
-    setTransactionType('in');
-    setTransactionReason('');
-    setTransactionCost(item.cost_per_unit || 0);
-    setShowTransactionForm(true);
-  };
-
-  const saveTransaction = async () => {
-    if (!selectedItem || !staffInfo?.id || transactionQuantity <= 0) {
-      showError('Error', 'Please fill in all required fields');
-      return;
-    }
-
-    try {
-      // Create transaction
-      const { error: transactionError } = await supabase
-        .from('inventory_transactions')
-        .insert({
-          item_id: selectedItem.id,
-          transaction_type: transactionType,
-          quantity: transactionQuantity,
-          unit_cost: transactionCost,
-          total_cost: transactionCost * transactionQuantity,
-          reason: transactionReason,
-          performed_by: staffInfo.id
-        });
-
-      if (transactionError) throw transactionError;
-
-      // Update item stock
-      const newStock = transactionType === 'in' 
-        ? selectedItem.current_stock + transactionQuantity
-        : selectedItem.current_stock - transactionQuantity;
-      
-      const { error: updateError } = await supabase
-        .from('inventory_items')
-        .update({ 
-          current_stock: newStock,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', selectedItem.id);
-
-      if (updateError) throw updateError;
-      
-      show({ title: 'Success', description: 'Inventory transaction recorded successfully' });
-      setShowTransactionForm(false);
-      resetTransactionForm();
-      fetchData(); // Refresh data
-    } catch (error: any) {
-      console.error('Error recording transaction:', error);
-      showError('Error', error.message || 'Failed to record inventory transaction');
-    }
   };
 
   const resetTransactionForm = () => {
     setSelectedItem(null);
-    setTransactionQuantity(1);
     setTransactionType('in');
+    setTransactionQuantity(1);
     setTransactionReason('');
     setTransactionCost(0);
+  };
+
+  const saveItem = async () => {
+    if (!itemName || !itemCategory || !itemUnit) {
+      showError('Validation Error', 'Please fill in all required fields');
+      return;
+    }
+
+    try {
+      if (editingItem) {
+        // Update existing item
+        await updateInventoryItem.mutateAsync({
+          id: editingItem.id,
+          updates: {
+            name: itemName,
+            description: itemDescription || null,
+            category: itemCategory,
+            unit: itemUnit,
+            current_stock: itemStock,
+            reorder_level: itemReorderLevel,
+            supplier: itemSupplier || null,
+            cost_per_unit: itemCost || null
+          }
+        });
+        show({ title: 'Success', description: 'Inventory item updated successfully' });
+      } else {
+        // Add new item
+        await addInventoryItem.mutateAsync({
+          name: itemName,
+          description: itemDescription || null,
+          category: itemCategory,
+          unit: itemUnit,
+          current_stock: itemStock,
+          reorder_level: itemReorderLevel,
+          supplier: itemSupplier || null,
+          cost_per_unit: itemCost || null
+        });
+        show({ title: 'Success', description: 'Inventory item added successfully' });
+      }
+      
+      setShowItemForm(false);
+      resetItemForm();
+    } catch (error: any) {
+      console.error('Error saving item:', error);
+      showError('Error', error.message || 'Failed to save inventory item');
+    }
+  };
+
+  const saveTransaction = async () => {
+    if (!selectedItem || !staffInfo?.id) {
+      showError('Error', 'Missing required information');
+      return;
+    }
+
+    if (transactionQuantity <= 0) {
+      showError('Validation Error', 'Quantity must be greater than 0');
+      return;
+    }
+
+    try {
+      const totalCost = transactionQuantity * transactionCost;
+      
+      await addInventoryTransaction.mutateAsync({
+        item_id: selectedItem.id,
+        transaction_type: transactionType,
+        quantity: transactionQuantity,
+        unit_cost: transactionCost || null,
+        total_cost: totalCost || null,
+        reason: transactionReason || null,
+        performed_by: staffInfo.id
+      });
+
+      show({ title: 'Success', description: 'Transaction recorded successfully' });
+      setShowTransactionForm(false);
+      resetTransactionForm();
+    } catch (error: any) {
+      console.error('Error saving transaction:', error);
+      showError('Error', error.message || 'Failed to record transaction');
+    }
   };
 
   // Prepare data for charts
@@ -368,6 +376,14 @@ export default function InventoryManagement() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <RefreshButton 
+            isRefreshing={loading} 
+            onRefresh={() => {
+              refetchItems();
+              refetchTransactions();
+            }} 
+            className="bg-white border-gray-300 hover:bg-gray-50 rounded-md shadow-sm"
+          />
           <Button 
             className="flex items-center gap-2"
             onClick={handleAddItem}

@@ -37,6 +37,8 @@ import {
 } from 'recharts';
 
 import PaymentOverviewChart from '@/components/admin/PaymentOverviewChart';
+import RefreshButton from '@/components/ui/RefreshButton';
+import { usePaymentSystemData } from '@/hooks/usePaymentSystemData';
 
 interface Collection {
   id: string;
@@ -101,20 +103,6 @@ const PaymentSystem = () => {
   const toast = useToastNotifications();
   const { user, userRole } = useAuth();
   const [activeTab, setActiveTab] = useState('overview');
-  const [collections, setCollections] = useState<Collection[]>([]);
-  const [filteredCollections, setFilteredCollections] = useState<Collection[]>([]);
-  const [farmerPaymentSummaries, setFarmerPaymentSummaries] = useState<FarmerPaymentSummary[]>([]);
-  const [analytics, setAnalytics] = useState<PaymentAnalytics>({
-    total_pending: 0,
-    total_paid: 0,
-    total_farmers: 0,
-    avg_payment: 0,
-    daily_trend: [],
-    farmer_distribution: [],
-    total_credit_used: 0,
-    total_net_payment: 0
-  });
-  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [viewMode, setViewMode] = useState('list'); // 'list' or 'grid'
@@ -125,6 +113,24 @@ const PaymentSystem = () => {
     from: '',
     to: ''
   });
+
+  // Use React Query hook for data fetching
+  const { data: paymentData, isLoading, isError, error, refetch } = usePaymentSystemData(timeFrame, customDateRange);
+  
+  const collections = paymentData?.collections || [];
+  const farmerPaymentSummaries = paymentData?.farmerPaymentSummaries || [];
+  const analytics = paymentData?.analytics || {
+    total_pending: 0,
+    total_paid: 0,
+    total_farmers: 0,
+    avg_payment: 0,
+    daily_trend: [],
+    farmer_distribution: [],
+    total_credit_used: 0,
+    total_net_payment: 0
+  };
+  
+  const [filteredCollections, setFilteredCollections] = useState<Collection[]>([]);
 
   // Rate configuration state
   const [rateConfig, setRateConfig] = useState({
@@ -141,408 +147,8 @@ const PaymentSystem = () => {
   const { refreshSession } = useSessionRefresh({ refreshInterval: 10 * 60 * 1000 });
 
   // Fetch all data with retry logic
-  const fetchAllData = async (retryCount = 0) => {
-    await measureOperation('fetchAllData', async () => {
-      setLoading(true);
-      try {
-        // Refresh session before fetching data
-        await refreshSession().catch(error => {
-          console.warn('Session refresh failed, continuing with data fetch', error);
-        });
-        
-        await Promise.all([
-          fetchCollections(),
-          fetchFarmers(),
-          fetchMilkRates()
-        ]);
-      } catch (error: any) {
-        console.error('Error fetching data:', error);
-        
-        // If it's a 400/401 error and we haven't retried yet, try refreshing the session and retrying
-        if ((error.message && (error.message.includes('400') || error.message.includes('401'))) && retryCount < 2) {
-          console.log(`Retrying data fetch (attempt ${retryCount + 1}) after session refresh`);
-          toast.show({ title: 'Session Refresh', description: 'Refreshing session and retrying...' });
-          
-          // Wait a bit before retrying
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          
-          // Refresh session and retry
-          await refreshSession().catch(refreshError => {
-            console.warn('Session refresh failed during retry', refreshError);
-          });
-          
-          return await fetchAllData(retryCount + 1);
-        }
-        
-        toast.error('Error', 'Failed to fetch data: ' + (error.message || 'Unknown error'));
-      } finally {
-        setLoading(false);
-      }
-    });
-  };
-
-  const fetchCollections = async () => {
-    await measureOperation('fetchCollections', async () => {
-      try {
-        // Refresh session before fetching collections
-        await refreshSession().catch(error => {
-          console.warn('Session refresh failed before fetching collections', error);
-        });
-        
-        let query = supabase
-          .from('collections')
-          .select(`
-            *,
-            farmers (
-              id,
-              user_id,
-              bank_account_name,
-              bank_account_number,
-              bank_name,
-              profiles!user_id (
-                full_name,
-                phone
-              )
-            ),
-            collection_payments!collection_payments_collection_id_fkey (
-              credit_used
-            )
-          `)
-          .order('collection_date', { ascending: false });
-
-        // Apply filters based on active tab
-        if (activeTab === 'pending') {
-          query = query.neq('status', 'Paid');
-        } else if (activeTab === 'paid') {
-          query = query.eq('status', 'Paid');
-        }
-
-        const { data, error } = await query;
-
-        if (error) {
-          console.error('Error fetching collections:', error);
-          // If it's a 400 error, it might be due to session expiration
-          if (error.message && error.message.includes('400')) {
-            toast.error('Session Error', 'Your session may have expired. Please refresh the page or log in again.');
-          }
-          throw error;
-        }
-        
-        setCollections(data || []);
-        calculateAnalytics(data || []);
-        calculateFarmerSummaries(data || []);
-      } catch (error: any) {
-        console.error('Error fetching collections:', error);
-        toast.error('Error', error.message || 'Failed to fetch collections');
-      }
-    });
-  };
-
-  const fetchFarmers = async () => {
-    await measureOperation('fetchFarmers', async () => {
-      try {
-        // This is handled in the collections fetch with joins
-      } catch (error: any) {
-        console.error('Error fetching farmers:', error);
-        toast.error('Error', error.message || 'Failed to fetch farmers');
-      }
-    });
-  };
-
-  const fetchMilkRates = async () => {
-    await measureOperation('fetchMilkRates', async () => {
-      try {
-        const rate = await milkRateService.getCurrentRate();
-        if (rate > 0) {
-          setRateConfig({
-            ratePerLiter: rate,
-            effectiveFrom: new Date().toISOString().split('T')[0]
-          });
-        }
-      } catch (error: any) {
-        console.error('Error fetching rates:', error);
-        toast.error('Error', error.message || 'Failed to fetch milk rates');
-      }
-    });
-  };
-
-  // Helper function to filter collections by time frame
-  const filterCollectionsByTimeFrame = (collectionsData: Collection[]) => {
-    if (timeFrame === 'all' && !customDateRange.from && !customDateRange.to) {
-      return collectionsData;
-    }
-
-    const now = new Date();
-    let startDate: Date | null = null;
-    let endDate: Date | null = null;
-
-    // Set date range based on selected time frame
-    switch (timeFrame) {
-      case 'daily':
-        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
-        break;
-      case 'weekly':
-        const firstDayOfWeek = now.getDate() - now.getDay(); // Sunday as first day
-        startDate = new Date(now.getFullYear(), now.getMonth(), firstDayOfWeek);
-        endDate = new Date(now.getFullYear(), now.getMonth(), firstDayOfWeek + 6, 23, 59, 59);
-        break;
-      case 'monthly':
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-        endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
-        break;
-      case 'lastMonth':
-        startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-        endDate = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
-        break;
-      case 'custom':
-        if (customDateRange.from) {
-          startDate = new Date(customDateRange.from);
-        }
-        if (customDateRange.to) {
-          endDate = new Date(customDateRange.to);
-          endDate.setHours(23, 59, 59, 999); // End of the day
-        }
-        break;
-      default:
-        return collectionsData;
-    }
-
-    // Filter collections based on date range
-    return collectionsData.filter(collection => {
-      const collectionDate = new Date(collection.collection_date);
-      
-      // If start date is set and collection date is before start date, exclude
-      if (startDate && collectionDate < startDate) {
-        return false;
-      }
-      
-      // If end date is set and collection date is after end date, exclude
-      if (endDate && collectionDate > endDate) {
-        return false;
-      }
-      
-      return true;
-    });
-  };
-
-  // Modified calculateAnalytics to work with filtered data
-  const calculateAnalytics = (collectionsData: Collection[]) => {
-    // Apply time frame filtering
-    const filteredData = filterCollectionsByTimeFrame(collectionsData);
-    
-    const pendingCollections = filteredData.filter(c => c.status !== 'Paid');
-    const paidCollections = filteredData.filter(c => c.status === 'Paid');
-    
-    // Calculate gross pending and paid amounts
-    const grossPending = pendingCollections.reduce((sum, c) => sum + (c.total_amount || 0), 0);
-    const totalPaid = paidCollections.reduce((sum, c) => sum + (c.total_amount || 0), 0);
-    const uniqueFarmers = new Set(filteredData.map(c => c.farmer_id)).size;
-    
-    // Calculate credit usage from collection payments
-    const totalCreditUsed = filteredData.reduce((sum, c) => {
-      const collectionCredit = c.collection_payments?.[0]?.credit_used || 0;
-      return sum + collectionCredit;
-    }, 0);
-    
-    // Calculate net pending (gross pending - credit used)
-    const netPending = Math.max(0, grossPending - totalCreditUsed);
-    const totalNetPayment = totalPaid + netPending;
-    
-    // Calculate daily trend based on time frame
-    const dailyTrend = [];
-    
-    // Determine date range for trend calculation
-    let trendStartDate: Date;
-    let trendEndDate: Date;
-    
-    if (timeFrame === 'daily') {
-      trendStartDate = new Date();
-      trendStartDate.setDate(trendStartDate.getDate() - 6); // Last 7 days including today
-      trendEndDate = new Date();
-    } else if (timeFrame === 'weekly') {
-      trendStartDate = new Date();
-      trendStartDate.setDate(trendStartDate.getDate() - 6); // Last 7 days
-      trendEndDate = new Date();
-    } else if (timeFrame === 'monthly') {
-      trendStartDate = new Date();
-      trendStartDate.setDate(trendStartDate.getDate() - 29); // Last 30 days
-      trendEndDate = new Date();
-    } else if (timeFrame === 'lastMonth') {
-      const now = new Date();
-      trendEndDate = new Date(now.getFullYear(), now.getMonth(), 0); // Last day of previous month
-      trendStartDate = new Date(now.getFullYear(), now.getMonth() - 1, 1); // First day of previous month
-    } else if (timeFrame === 'custom' && customDateRange.from && customDateRange.to) {
-      trendStartDate = new Date(customDateRange.from);
-      trendEndDate = new Date(customDateRange.to);
-    } else {
-      // Default to last 7 days
-      trendEndDate = new Date();
-      trendStartDate = new Date();
-      trendStartDate.setDate(trendStartDate.getDate() - 6);
-    }
-    
-    // Generate daily trend data
-    for (let d = new Date(trendStartDate); d <= trendEndDate; d.setDate(d.getDate() + 1)) {
-      const dateString = new Date(d).toISOString().split('T')[0];
-      
-      // Count collections for this date
-      const collectionsCount = filteredData
-        .filter(c => c.collection_date?.startsWith(dateString))
-        .length;
-      
-      const paidAmount = filteredData
-        .filter(c => c.status === 'Paid' && c.collection_date?.startsWith(dateString))
-        .reduce((sum, c) => sum + (c.total_amount || 0), 0);
-      
-      // Calculate gross pending amount for this date
-      const grossPendingAmount = filteredData
-        .filter(c => c.status !== 'Paid' && c.collection_date?.startsWith(dateString))
-        .reduce((sum, c) => sum + (c.total_amount || 0), 0);
-      
-      // Calculate credit used for this date
-      const creditUsed = filteredData
-        .filter(c => c.collection_date?.startsWith(dateString))
-        .reduce((sum, c) => {
-          const collectionCredit = c.collection_payments?.[0]?.credit_used || 0;
-          return sum + collectionCredit;
-        }, 0);
-      
-      // Calculate net pending amount (gross pending - credit used)
-      const netPendingAmount = Math.max(0, grossPendingAmount - creditUsed);
-      
-      dailyTrend.push({ 
-        date: dateString, 
-        collections: collectionsCount,
-        paidAmount,
-        pendingAmount: netPendingAmount, // Use net pending instead of gross pending
-        creditUsed
-      });
-    }
-    
-    // Calculate farmer distribution (top 5 farmers by payment amount)
-    const farmerPayments = filteredData.reduce((acc, collection) => {
-      const farmerId = collection.farmer_id;
-      if (!farmerId) return acc; // Skip if no farmer_id
-      
-      if (!acc[farmerId]) {
-        acc[farmerId] = {
-          name: collection.farmer_id, // We'll update this with the actual name later
-          value: 0
-        };
-      }
-      acc[farmerId].value += collection.total_amount || 0;
-      return acc;
-    }, {} as Record<string, { name: string; value: number }>);
-    
-    // Map farmer IDs to names
-    const farmerNames: Record<string, string> = {};
-    filteredData.forEach(collection => {
-      if (collection.farmer_id && collection.farmers?.profiles?.full_name) {
-        farmerNames[collection.farmer_id] = collection.farmers.profiles.full_name;
-      }
-    });
-    
-    Object.keys(farmerPayments).forEach(farmerId => {
-      farmerPayments[farmerId].name = farmerNames[farmerId] || `Farmer ${farmerId.substring(0, 8)}`;
-    });
-    
-    const farmerDistribution = Object.values(farmerPayments)
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 5);
-    
-    setAnalytics({
-      total_pending: netPending, // Use net pending instead of gross pending
-      total_paid: totalPaid,
-      total_farmers: uniqueFarmers,
-      avg_payment: uniqueFarmers > 0 ? (netPending + totalPaid) / uniqueFarmers : 0, // Use net pending
-      daily_trend: dailyTrend,
-      farmer_distribution: farmerDistribution,
-      total_credit_used: totalCreditUsed,
-      total_net_payment: totalNetPayment
-    });
-  };
-
-  // Modified calculateFarmerSummaries to work with filtered data
-  const calculateFarmerSummaries = async (collectionsData: Collection[]) => {
-    // Apply time frame filtering
-    const filteredData = filterCollectionsByTimeFrame(collectionsData);
-    
-    // Group collections by farmer
-    const farmerCollections = filteredData.reduce((acc, collection) => {
-      const farmerId = collection.farmer_id;
-      if (!farmerId) return acc;
-      
-      if (!acc[farmerId]) {
-        acc[farmerId] = [];
-      }
-      acc[farmerId].push(collection);
-      return acc;
-    }, {} as Record<string, Collection[]>);
-    
-    // Calculate summaries for each farmer
-    const farmerSummaries: FarmerPaymentSummary[] = [];
-    
-    for (const farmerId of Object.keys(farmerCollections)) {
-      const farmerCollectionsList = farmerCollections[farmerId];
-      const firstCollection = farmerCollectionsList[0];
-      
-      // Calculate totals
-      const totalCollections = farmerCollectionsList.length;
-      const totalLiters = farmerCollectionsList.reduce((sum, c) => sum + (c.liters || 0), 0);
-      const totalAmount = farmerCollectionsList.reduce((sum, c) => sum + (c.total_amount || 0), 0);
-      const paidAmount = farmerCollectionsList
-        .filter(c => c.status === 'Paid')
-        .reduce((sum, c) => sum + (c.total_amount || 0), 0);
-      const grossPendingAmount = totalAmount - paidAmount;
-      
-      // Calculate credit used and net payment from collection payments
-      let creditUsed = 0;
-      
-      // Sum credit used from all collections for this farmer
-      creditUsed = farmerCollectionsList.reduce((sum, c) => {
-        const collectionCredit = c.collection_payments?.[0]?.credit_used || 0;
-        return sum + collectionCredit;
-      }, 0);
-      
-      // Fetch credit data for the farmer
-      try {
-        const { data: creditData, error: creditError } = await supabase
-          .from('farmer_credit_limits')
-          .select('current_credit_balance, total_credit_used')
-          .eq('farmer_id', farmerId)
-          .eq('is_active', true)
-          .maybeSingle();
-        
-        if (!creditError && creditData) {
-          creditUsed = creditData.total_credit_used || 0;
-        }
-      } catch (error) {
-        console.warn('Error fetching credit data for farmer:', farmerId, error);
-      }
-
-      // Calculate net pending amount (gross pending - credit used)
-      const netPendingAmount = Math.max(0, grossPendingAmount - creditUsed);
-      
-      // Calculate net payment (same as paid amount since we're looking at what's actually paid)
-      const netPayment = paidAmount;
-      
-      farmerSummaries.push({
-        farmer_id: farmerId,
-        farmer_name: firstCollection.farmers?.profiles?.full_name || 'Unknown Farmer',
-        farmer_phone: firstCollection.farmers?.profiles?.phone || 'No phone',
-        total_collections: totalCollections,
-        total_liters: totalLiters,
-        total_amount: totalAmount,
-        paid_amount: paidAmount,
-        pending_amount: netPendingAmount, // Use net pending instead of gross pending
-        bank_info: `${firstCollection.farmers?.bank_name || 'N/A'} - ${firstCollection.farmers?.bank_account_number || 'No account'}`,
-        credit_used: creditUsed,
-        net_payment: netPayment
-      });
-    }
-    
-    setFarmerPaymentSummaries(farmerSummaries);
+  const fetchAllData = async () => {
+    await refetch();
   };
 
   const updateMilkRate = async () => {
@@ -562,7 +168,7 @@ const PaymentSystem = () => {
         
         if (success) {
           toast.success('Success', 'Milk rate updated successfully!');
-          fetchMilkRates();
+          // Note: Milk rate updates are not cached, so we don't need to refetch
         } else {
           throw new Error('Failed to update milk rate');
         }
@@ -658,8 +264,7 @@ const PaymentSystem = () => {
     if (newTimeFrame !== 'custom') {
       // Reset custom date range when not using custom
       setCustomDateRange({ from: '', to: '' });
-      // Refresh data with new time frame
-      fetchAllData();
+      // React Query will automatically refetch when timeFrame changes
     }
   };
 
@@ -683,9 +288,9 @@ const PaymentSystem = () => {
         return;
       }
       
-      // Set time frame to custom and refresh data
+      // Set time frame to custom
+      // React Query will automatically refetch when timeFrame or customDateRange changes
       setTimeFrame('custom');
-      fetchAllData();
     } else {
       toast.error('Error', 'Please select both From and To dates');
     }
@@ -697,7 +302,7 @@ const PaymentSystem = () => {
     setCustomDateRange({ from: '', to: '' });
     setSearchTerm('');
     setFilterStatus('all');
-    fetchAllData();
+    // React Query will automatically refetch when dependencies change
   };
 
   // Refresh session on component mount and fetch initial data
@@ -719,18 +324,7 @@ const PaymentSystem = () => {
     initialize();
   }, []);
 
-  // Refresh data when time frame or custom date range changes
-  useEffect(() => {
-    if (timeFrame === 'custom' && customDateRange.from && customDateRange.to) {
-      // For custom date range, we only refresh when apply button is clicked
-      // This useEffect is just for other time frames
-      return;
-    }
-    
-    if (timeFrame !== 'custom') {
-      fetchAllData();
-    }
-  }, [timeFrame]);
+
 
   // Filter collections based on search and filters
   useEffect(() => {
@@ -756,14 +350,18 @@ const PaymentSystem = () => {
       result = result.filter(collection => collection.status === 'Paid');
     }
     
-    setFilteredCollections(result);
-  }, [searchTerm, filterStatus, activeTab, collections]);
+    // Only update state if the result actually changed
+    const currentResultString = JSON.stringify(result);
+    const previousResultString = JSON.stringify(filteredCollections);
+    
+    if (currentResultString !== previousResultString) {
+      setFilteredCollections(result);
+    }
+  }, [searchTerm, filterStatus, activeTab, collections, filteredCollections]);
 
-  useEffect(() => {
-    fetchAllData();
-  }, [activeTab]);
 
-  if (loading) {
+
+  if (isLoading) {
     return (
       <DashboardLayout>
         <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
@@ -782,8 +380,17 @@ const PaymentSystem = () => {
         <div className="max-w-7xl mx-auto">
           {/* Header */}
           <div className="mb-8">
-            <h1 className="text-4xl font-bold text-gray-900 mb-2">Payment Management</h1>
-            <p className="text-gray-600">Manage farmer payments, configure rates, and track payment history</p>
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div>
+                <h1 className="text-4xl font-bold text-gray-900 mb-2">Payment Management</h1>
+                <p className="text-gray-600">Manage farmer payments, configure rates, and track payment history</p>
+              </div>
+              <RefreshButton 
+                isRefreshing={isLoading} 
+                onRefresh={fetchAllData} 
+                className="bg-white border-gray-300 hover:bg-gray-50 rounded-lg shadow-sm"
+              />
+            </div>
           </div>
 
           {/* Analytics Cards */}

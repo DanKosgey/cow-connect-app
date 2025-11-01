@@ -24,6 +24,8 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { notificationService } from '@/services/notification-service';
 import { exportService } from '@/services/export-service';
+import RefreshButton from '@/components/ui/RefreshButton';
+import { useSettingsData } from '@/hooks/useSettingsData';
 
 // Define types for our data
 interface UserRole {
@@ -71,20 +73,7 @@ const validateNotification = (title: string, message: string): string | null => 
 
 const AdminSettings = () => {
   const { toast } = useToast();
-  const [settings, setSettings] = useState<SystemSettings>({
-    milk_rate_per_liter: 0,
-    collection_time_window: '',
-    kyc_required: true,
-    notifications_enabled: true,
-    data_retention_days: 365,
-    system_message: '',
-    default_role: 'farmer'
-  });
-  
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [users, setUsers] = useState<User[]>([]);
-  const [userLoading, setUserLoading] = useState(false);
   const [systemNotification, setSystemNotification] = useState({
     title: '',
     message: ''
@@ -98,8 +87,6 @@ const AdminSettings = () => {
   const [notificationErrors, setNotificationErrors] = useState<Record<string, string>>({});
   
   // Company location state
-  const [locations, setLocations] = useState<CompanyLocation[]>([]);
-  const [locationLoading, setLocationLoading] = useState(false);
   const [newLocation, setNewLocation] = useState({
     name: '',
     address: '',
@@ -108,73 +95,43 @@ const AdminSettings = () => {
   });
   const [locationErrors, setLocationErrors] = useState<Record<string, string>>({});
 
-  const fetchSettings = useCallback(async () => {
-    try {
-      const settingsData = await settingsService.getAllSettings();
-      setSettings(settingsData);
-    } catch (error: any) {
-      console.error('Error fetching settings:', error);
-      toast({
-        title: 'Error',
-        description: error.message || 'Failed to load settings',
-        variant: 'error',
-      });
-    } finally {
-      setLoading(false);
+  const {
+    useSystemSettings,
+    updateSettings,
+    useUsers,
+    toggleUserRole,
+    useCompanyLocations,
+    addLocation,
+    deleteLocation
+  } = useSettingsData();
+
+  // Get system settings with caching
+  const { data: settings, isLoading, refetch: refetchSettings } = useSystemSettings();
+  const [localSettings, setLocalSettings] = useState<SystemSettings>({
+    milk_rate_per_liter: 0,
+    collection_time_window: '',
+    kyc_required: true,
+    notifications_enabled: true,
+    data_retention_days: 365,
+    system_message: '',
+    default_role: 'farmer'
+  });
+
+  // Update local settings when data changes
+  useEffect(() => {
+    if (settings) {
+      setLocalSettings(settings);
     }
-  }, [toast]);
+  }, [settings]);
 
-  const fetchUsers = useCallback(async () => {
-    setUserLoading(true);
-    try {
-      // Use database optimizer for better performance
-      const usersData = await databaseOptimizer.fetchUsersWithRoles(100, 0);
-      
-      // Ensure user_roles is always an array
-      const usersWithRoles = usersData.map(user => ({
-        ...user,
-        user_roles: Array.isArray(user.user_roles) ? user.user_roles : []
-      }));
+  // Get users with caching
+  const { data: users = [], isLoading: userLoading, refetch: refetchUsers } = useUsers();
 
-      setUsers(usersWithRoles);
-    } catch (error: any) {
-      console.error('Error fetching users:', error);
-      toast({
-        title: 'Error',
-        description: error.message || 'Failed to load users',
-        variant: 'error',
-      });
-    } finally {
-      setUserLoading(false);
-    }
-  }, [toast]);
-
-  // Fetch company locations
-  const fetchLocations = useCallback(async () => {
-    setLocationLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('warehouses')
-        .select('*')
-        .order('name');
-
-      if (error) throw error;
-      
-      setLocations(data || []);
-    } catch (error: any) {
-      console.error('Error fetching company locations:', error);
-      toast({
-        title: 'Error',
-        description: error.message || 'Failed to load company locations',
-        variant: 'error',
-      });
-    } finally {
-      setLocationLoading(false);
-    }
-  }, [toast]);
+  // Get company locations with caching
+  const { data: locations = [], isLoading: locationLoading, refetch: refetchLocations } = useCompanyLocations();
 
   // Add new company location
-  const addLocation = useCallback(async () => {
+  const handleAddLocation = useCallback(async () => {
     // Validate input
     const errors: Record<string, string> = {};
     
@@ -231,22 +188,7 @@ const AdminSettings = () => {
         gps_longitude: parseFloat(newLocation.gps_longitude)
       };
       
-      const { data, error } = await supabase
-        .from('warehouses')
-        .insert([locationData])
-        .select();
-
-      if (error) throw error;
-      
-      // Check if we have data and handle accordingly
-      const locationRecord = data && data.length > 0 ? data[0] : null;
-      
-      if (!locationRecord) {
-        throw new Error('Failed to create company location');
-      }
-      
-      // Add to local state
-      setLocations(prev => [...prev, locationRecord]);
+      await addLocation.mutateAsync(locationData);
       
       // Reset form
       setNewLocation({
@@ -269,20 +211,12 @@ const AdminSettings = () => {
         variant: 'error',
       });
     }
-  }, [newLocation, toast]);
+  }, [newLocation, addLocation, toast]);
 
   // Delete company location
-  const deleteLocation = useCallback(async (id: string) => {
+  const handleDeleteLocation = useCallback(async (id: string) => {
     try {
-      const { error } = await supabase
-        .from('warehouses')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
-      
-      // Remove from local state
-      setLocations(prev => prev.filter(location => location.id !== id));
+      await deleteLocation.mutateAsync(id);
       
       toast({
         title: 'Success',
@@ -297,7 +231,7 @@ const AdminSettings = () => {
         variant: 'error',
       });
     }
-  }, [toast]);
+  }, [deleteLocation, toast]);
 
   const validateSettings = useCallback((): boolean => {
     const newErrors: Record<string, string> = {};
@@ -305,17 +239,17 @@ const AdminSettings = () => {
     // Remove milk rate validation since it's no longer in settings
 
     // Validate data retention
-    const dataRetentionError = validateDataRetention(settings.data_retention_days);
+    const dataRetentionError = validateDataRetention(localSettings.data_retention_days);
     if (dataRetentionError) newErrors.data_retention_days = dataRetentionError;
 
     // Validate collection time window
-    if (settings.collection_time_window && settings.collection_time_window.length > 50) {
+    if (localSettings.collection_time_window && localSettings.collection_time_window.length > 50) {
       newErrors.collection_time_window = 'Collection time window must be less than 50 characters';
     }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
-  }, [settings]);
+  }, [localSettings]);
 
   const handleSave = useCallback(async () => {
     if (!validateSettings()) {
@@ -329,7 +263,7 @@ const AdminSettings = () => {
 
     setSaving(true);
     try {
-      await settingsService.updateSettings(settings);
+      await updateSettings.mutateAsync(localSettings);
       
       // Invalidate related caches
       databaseOptimizer.invalidateRelatedCaches('system_settings');
@@ -349,10 +283,10 @@ const AdminSettings = () => {
     } finally {
       setSaving(false);
     }
-  }, [settings, validateSettings, toast]);
+  }, [localSettings, validateSettings, updateSettings, toast]);
 
   const handleInputChange = useCallback((key: keyof SystemSettings, value: any) => {
-    setSettings(prev => ({
+    setLocalSettings(prev => ({
       ...prev,
       [key]: value
     }));
@@ -468,18 +402,9 @@ const AdminSettings = () => {
     }
   }, [toast]);
 
-  const toggleUserRole = useCallback(async (userId: string, role: string, currentActive: boolean) => {
+  const toggleUserRoleHandler = useCallback(async (userId: string, role: string, currentActive: boolean) => {
     try {
-      const { error } = await supabase
-        .from('user_roles')
-        .update({ active: !currentActive })
-        .eq('user_id', userId)
-        .eq('role', role);
-
-      if (error) throw new Error(error.message);
-
-      // Refresh users list
-      await fetchUsers();
+      await toggleUserRole.mutateAsync({ userId, role, currentActive });
       
       // Invalidate related caches
       databaseOptimizer.invalidateRelatedCaches('user_roles');
@@ -497,7 +422,7 @@ const AdminSettings = () => {
         variant: 'error',
       });
     }
-  }, [fetchUsers, toast]);
+  }, [toggleUserRole, toast]);
 
   // Get current location
   const getCurrentLocation = useCallback(() => {
@@ -584,13 +509,7 @@ const AdminSettings = () => {
     }));
   }, [users]);
 
-  useEffect(() => {
-    fetchSettings();
-    fetchUsers();
-    fetchLocations(); // Fetch locations on component mount
-  }, [fetchSettings, fetchUsers, fetchLocations]);
-
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
@@ -603,6 +522,17 @@ const AdminSettings = () => {
         <PageHeader 
           title="System Settings" 
           description="Manage system configuration and preferences"
+          actions={
+            <RefreshButton 
+              isRefreshing={isLoading || userLoading || locationLoading} 
+              onRefresh={() => {
+                refetchSettings();
+                refetchUsers();
+                refetchLocations();
+              }} 
+              className="bg-white border-gray-300 hover:bg-gray-50 rounded-md shadow-sm"
+            />
+          }
         />
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -616,7 +546,7 @@ const AdminSettings = () => {
               {/* Hidden milk rate field - kept in state but not displayed per user request */}
               <input
                 type="hidden"
-                value={settings.milk_rate_per_liter}
+                value={localSettings.milk_rate_per_liter}
                 onChange={(e) => handleInputChange('milk_rate_per_liter', parseFloat(e.target.value) || 0)}
               />
 
@@ -624,7 +554,7 @@ const AdminSettings = () => {
                 <Label htmlFor="collection_time">Collection Time Window</Label>
                 <Input
                   id="collection_time"
-                  value={settings.collection_time_window}
+                  value={localSettings.collection_time_window}
                   onChange={(e) => handleInputChange('collection_time_window', e.target.value)}
                   placeholder="e.g., 6:00 AM - 10:00 AM"
                 />
@@ -638,7 +568,7 @@ const AdminSettings = () => {
                 <Input
                   id="data_retention"
                   type="number"
-                  value={settings.data_retention_days}
+                  value={localSettings.data_retention_days}
                   onChange={(e) => handleInputChange('data_retention_days', parseInt(e.target.value) || 365)}
                   placeholder="Enter number of days"
                 />
@@ -655,7 +585,7 @@ const AdminSettings = () => {
                   </p>
                 </div>
                 <Switch
-                  checked={settings.kyc_required}
+                  checked={localSettings.kyc_required}
                   onCheckedChange={(checked) => handleInputChange('kyc_required', checked)}
                 />
               </div>
@@ -671,7 +601,7 @@ const AdminSettings = () => {
                   </p>
                 </div>
                 <Switch
-                  checked={settings.notifications_enabled}
+                  checked={localSettings.notifications_enabled}
                   onCheckedChange={(checked) => handleInputChange('notifications_enabled', checked)}
                 />
               </div>
@@ -679,7 +609,7 @@ const AdminSettings = () => {
               <div className="space-y-2">
                 <Label htmlFor="default_role">Default User Role</Label>
                 <Select 
-                  value={settings.default_role} 
+                  value={localSettings.default_role} 
                   onValueChange={(value) => handleInputChange('default_role', value)}
                 >
                   <SelectTrigger>
@@ -713,7 +643,7 @@ const AdminSettings = () => {
                   </p>
                 </div>
                 <Switch
-                  checked={settings.notifications_enabled}
+                  checked={localSettings.notifications_enabled}
                   onCheckedChange={(checked) => handleInputChange('notifications_enabled', checked)}
                 />
               </div>
@@ -722,7 +652,7 @@ const AdminSettings = () => {
                 <Label htmlFor="system_message">System Message</Label>
                 <Textarea
                   id="system_message"
-                  value={settings.system_message}
+                  value={localSettings.system_message}
                   onChange={(e) => handleInputChange('system_message', e.target.value)}
                   placeholder="Enter a system-wide message for users"
                   rows={4}
@@ -887,7 +817,7 @@ const AdminSettings = () => {
               </div>
               
               <div className="md:col-span-2 flex justify-end">
-                <Button onClick={addLocation}>
+                <Button onClick={handleAddLocation}>
                   Add Company Location
                 </Button>
               </div>
@@ -932,7 +862,7 @@ const AdminSettings = () => {
                             <Button
                               variant="destructive"
                               size="sm"
-                              onClick={() => deleteLocation(location.id)}
+                              onClick={() => handleDeleteLocation(location.id)}
                             >
                               Delete
                             </Button>
@@ -997,7 +927,7 @@ const AdminSettings = () => {
                                 key={`${user.id}-${role.role}-toggle`}
                                 size="sm"
                                 variant={role.active ? "destructive" : "default"}
-                                onClick={() => toggleUserRole(user.id, role.role, role.active)}
+                                onClick={() => toggleUserRoleHandler(user.id, role.role, role.active)}
                               >
                                 {role.active ? 'Deactivate' : 'Activate'} {role.role}
                               </Button>

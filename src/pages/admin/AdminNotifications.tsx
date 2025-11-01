@@ -7,6 +7,7 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { notificationService } from '@/services/notification-service';
 import { useAuth } from '@/contexts/SimplifiedAuthContext';
+import RefreshButton from '@/components/ui/RefreshButton';
 
 type Notification = {
   id: string;
@@ -23,35 +24,35 @@ export default function AdminNotifications() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const fetchNotifications = async () => {
+    if (!user) {
+      setNotifications([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const data = await notificationService.getUserNotifications(user.id, 100);
+      const mapped = (data || []).map((n: any) => ({
+        id: n.id,
+        title: n.title,
+        message: n.message,
+        timestamp: n.created_at || new Date().toISOString(),
+        read: n.read,
+        type: n.type || 'info'
+      }));
+      setNotifications(mapped);
+    } catch (err) {
+      console.error('Error fetching admin notifications', err);
+      toast({ title: 'Error', description: 'Failed to load notifications', variant: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     let subscription: any | null = null;
-
-    const fetchNotifications = async () => {
-      if (!user) {
-        setNotifications([]);
-        setLoading(false);
-        return;
-      }
-
-      setLoading(true);
-      try {
-        const data = await notificationService.getUserNotifications(user.id, 100);
-        const mapped = (data || []).map((n: any) => ({
-          id: n.id,
-          title: n.title,
-          message: n.message,
-          timestamp: n.created_at || new Date().toISOString(),
-          read: n.read,
-          type: n.type || 'info'
-        }));
-        setNotifications(mapped);
-      } catch (err) {
-        console.error('Error fetching admin notifications', err);
-        toast({ title: 'Error', description: 'Failed to load notifications', variant: 'error' });
-      } finally {
-        setLoading(false);
-      }
-    };
 
     fetchNotifications();
 
@@ -126,7 +127,14 @@ export default function AdminNotifications() {
     <div>
       <Card>
         <CardHeader>
-          <CardTitle>Notifications</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle>Notifications</CardTitle>
+            <RefreshButton 
+              isRefreshing={loading} 
+              onRefresh={fetchNotifications} 
+              className="bg-white border-gray-300 hover:bg-gray-50 rounded-md shadow-sm"
+            />
+          </div>
         </CardHeader>
         <CardContent>
           {loading && <div>Loading...</div>}

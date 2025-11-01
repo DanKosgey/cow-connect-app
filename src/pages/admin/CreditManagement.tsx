@@ -33,7 +33,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useToast } from "@/hooks/useToast";
+import { useToast } from "@/components/ui/use-toast";
+import RefreshButton from '@/components/ui/RefreshButton';
+import { useCreditManagementData } from '@/hooks/useCreditManagementData';
 
 interface FarmerCreditSummary {
   farmer_id: string;
@@ -65,137 +67,23 @@ interface CreditLimit {
 }
 
 const CreditManagement = () => {
-  const [loading, setLoading] = useState(true);
-  const [farmers, setFarmers] = useState<FarmerCreditSummary[]>([]);
-  const [creditLimits, setCreditLimits] = useState<CreditLimit[]>([]);
-  const [filteredFarmers, setFilteredFarmers] = useState<FarmerCreditSummary[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        
-        // Get all farmers with their profiles
-        const { data: farmersData, error: farmersError } = await supabase
-          .from('farmers')
-          .select(`
-            id,
-            profiles:user_id (full_name, phone)
-          `);
-
-        if (farmersError) throw farmersError;
-
-        // Get all credit limits
-        const { data: creditLimitsData, error: creditLimitsError } = await supabase
-          .from('farmer_credit_limits')
-          .select(`
-            *,
-            farmers!inner(
-              profiles:user_id (full_name, phone)
-            )
-          `)
-          .eq('is_active', true);
-
-        if (creditLimitsError) throw creditLimitsError;
-
-        setCreditLimits(creditLimitsData as CreditLimit[]);
-
-        // For each farmer, calculate credit information
-        const farmerSummaries: FarmerCreditSummary[] = [];
-        
-        for (const farmer of farmersData || []) {
-          try {
-            // Get pending payments
-            const { data: pendingCollections, error: collectionsError } = await supabase
-              .from('collections')
-              .select('total_amount')
-              .eq('farmer_id', farmer.id)
-              .neq('status', 'Paid');
-
-            if (collectionsError) {
-              console.warn(`Error fetching collections for farmer ${farmer.id}:`, collectionsError);
-              continue;
-            }
-
-            const pendingPayments = pendingCollections?.reduce((sum, collection) => 
-              sum + (collection.total_amount || 0), 0) || 0;
-
-            // Get credit limit for this farmer
-            const creditLimit = creditLimitsData?.find((cl: any) => cl.farmer_id === farmer.id);
-            
-            let creditLimitAmount = 0;
-            let availableCredit = 0;
-            let creditUsed = 0;
-            let creditPercentage = 0;
-
-            if (creditLimit) {
-              creditLimitAmount = creditLimit.max_credit_amount;
-              availableCredit = creditLimit.current_credit_balance;
-              creditUsed = creditLimit.total_credit_used;
-              creditPercentage = creditLimit.credit_limit_percentage;
-            } else {
-              // Calculate default credit limit (70% of pending payments, max 100,000)
-              creditLimitAmount = Math.min(pendingPayments * 0.7, 100000);
-              availableCredit = 0;
-              creditUsed = 0;
-              creditPercentage = 70;
-            }
-
-            farmerSummaries.push({
-              farmer_id: farmer.id,
-              farmer_name: farmer.profiles?.full_name || 'Unknown Farmer',
-              farmer_phone: farmer.profiles?.phone || 'No phone',
-              credit_limit: creditLimitAmount,
-              available_credit: availableCredit,
-              credit_used: creditUsed,
-              pending_payments: pendingPayments,
-              credit_percentage: creditPercentage
-            });
-          } catch (err) {
-            console.warn(`Error processing farmer ${farmer.id}:`, err);
-          }
-        }
-
-        setFarmers(farmerSummaries);
-        setFilteredFarmers(farmerSummaries);
-      } catch (err) {
-        console.error("Error fetching credit management data:", err);
-        setError("Failed to load credit management data");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, []);
+  const { data: creditData, isLoading, isError, error: queryError, refetch } = useCreditManagementData(searchTerm, filterStatus);
+  
+  const farmers = creditData?.farmers || [];
+  const creditLimits = creditData?.creditLimits || [];
+  const filteredFarmers = farmers;
+  const loading = isLoading;
 
   useEffect(() => {
-    // Filter farmers based on search term and status
-    let filtered = farmers;
-
-    if (searchTerm) {
-      filtered = filtered.filter(farmer => 
-        farmer.farmer_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        farmer.farmer_phone.includes(searchTerm)
-      );
+    if (queryError) {
+      setError("Failed to load credit management data");
     }
-
-    if (filterStatus !== "all") {
-      if (filterStatus === "high_credit") {
-        filtered = filtered.filter(farmer => farmer.available_credit > 50000);
-      } else if (filterStatus === "low_credit") {
-        filtered = filtered.filter(farmer => farmer.available_credit < 10000);
-      } else if (filterStatus === "no_credit") {
-        filtered = filtered.filter(farmer => farmer.available_credit === 0);
-      }
-    }
-
-    setFilteredFarmers(filtered);
-  }, [searchTerm, filterStatus, farmers]);
+  }, [queryError]);
 
   const handleAdjustCreditLimit = async (farmerId: string, farmerName: string) => {
     try {
@@ -264,9 +152,18 @@ const CreditManagement = () => {
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Credit Management</h1>
-          <p className="text-gray-600 mt-2">Manage farmer credit limits and monitor credit usage</p>
+        <div className="mb-8 flex flex-col md:flex-row md:items-center md:justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Credit Management</h1>
+            <p className="text-gray-600 mt-2">Manage farmer credit limits and monitor credit usage</p>
+          </div>
+          <div className="mt-4 md:mt-0">
+            <RefreshButton 
+              isRefreshing={loading} 
+              onRefresh={refetch} 
+              className="bg-white border-gray-300 hover:bg-gray-50 rounded-lg shadow-sm"
+            />
+          </div>
         </div>
 
         {/* Summary Cards */}

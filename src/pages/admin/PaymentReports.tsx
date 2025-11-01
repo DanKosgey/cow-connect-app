@@ -8,13 +8,17 @@ import {
   Calendar,
   Download,
   BarChart3,
-  PieChart,
   TrendingUp,
   Users,
-  DollarSign
+  DollarSign,
+  Droplet,
+  CheckCircle,
+  Clock
 } from '@/utils/iconImports';
 import useToastNotifications from '@/hooks/useToastNotifications';
 import { formatCurrency } from '@/utils/formatters';
+import RefreshButton from '@/components/ui/RefreshButton';
+import { usePaymentReportsData } from '@/hooks/usePaymentReportsData';
 
 interface PaymentReport {
   date: string;
@@ -39,72 +43,31 @@ interface FarmerReport {
 
 const PaymentReports = () => {
   const toast = useToastNotifications();
-  const [loading, setLoading] = useState(true);
   const [dateRange, setDateRange] = useState({
     start: new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split('T')[0],
     end: new Date().toISOString().split('T')[0]
   });
-  const [dailyReports, setDailyReports] = useState<PaymentReport[]>([]);
-  const [farmerReports, setFarmerReports] = useState<FarmerReport[]>([]);
-  const [summary, setSummary] = useState({
+
+  const { data: reportsData, isLoading, isError, error, refetch } = usePaymentReportsData(dateRange);
+  
+  const dailyReports = reportsData?.dailyReports || [];
+  const farmerReports = reportsData?.farmerReports || [];
+  const summary = reportsData?.summary || {
     total_collections: 0,
     total_liters: 0,
     total_amount: 0,
     paid_amount: 0,
     pending_amount: 0,
     farmers_count: 0
-  });
+  };
+  const loading = isLoading;
 
   useEffect(() => {
-    fetchReports();
-  }, [dateRange]);
-
-  const fetchReports = async () => {
-    try {
-      setLoading(true);
-      
-      // Fetch daily reports
-      const { data: dailyData, error: dailyError } = await supabase
-        .rpc('get_payment_reports', {
-          start_date: dateRange.start,
-          end_date: dateRange.end
-        });
-
-      if (dailyError) throw dailyError;
-      setDailyReports(dailyData || []);
-
-      // Fetch farmer reports
-      const { data: farmerData, error: farmerError } = await supabase
-        .rpc('get_farmer_payment_reports', {
-          start_date: dateRange.start,
-          end_date: dateRange.end
-        });
-
-      if (farmerError) throw farmerError;
-      setFarmerReports(farmerData || []);
-
-      // Calculate summary
-      const totalCollections = dailyData?.reduce((sum, r) => sum + (r.total_collections || 0), 0) || 0;
-      const totalLiters = dailyData?.reduce((sum, r) => sum + (r.total_liters || 0), 0) || 0;
-      const totalAmount = dailyData?.reduce((sum, r) => sum + (r.total_amount || 0), 0) || 0;
-      const paidAmount = dailyData?.reduce((sum, r) => sum + (r.paid_amount || 0), 0) || 0;
-      const farmersCount = new Set(farmerData?.map(f => f.farmer_id)).size || 0;
-
-      setSummary({
-        total_collections: totalCollections,
-        total_liters: totalLiters,
-        total_amount: totalAmount,
-        paid_amount: paidAmount,
-        pending_amount: totalAmount - paidAmount,
-        farmers_count: farmersCount
-      });
-    } catch (error) {
+    if (error) {
       console.error('Error fetching reports:', error);
       toast.error('Error', 'Failed to fetch payment reports');
-    } finally {
-      setLoading(false);
     }
-  };
+  }, [error, toast]);
 
   const exportReport = async (type: 'daily' | 'farmer') => {
     try {
@@ -135,9 +98,18 @@ const PaymentReports = () => {
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
         <div className="max-w-7xl mx-auto">
           {/* Header */}
-          <div className="mb-8">
-            <h1 className="text-4xl font-bold text-gray-900 mb-2">Payment Reports</h1>
-            <p className="text-gray-600">Detailed analytics and reports on farmer payments</p>
+          <div className="mb-8 flex flex-col md:flex-row md:items-center md:justify-between">
+            <div>
+              <h1 className="text-4xl font-bold text-gray-900 mb-2">Payment Reports</h1>
+              <p className="text-gray-600">Detailed analytics and reports on farmer payments</p>
+            </div>
+            <div className="mt-4 md:mt-0">
+              <RefreshButton 
+                isRefreshing={loading} 
+                onRefresh={refetch} 
+                className="bg-white border-gray-300 hover:bg-gray-50 rounded-lg shadow-sm"
+              />
+            </div>
           </div>
 
           {/* Date Range Filter */}
@@ -171,7 +143,7 @@ const PaymentReports = () => {
                 </div>
                 <div className="flex items-end">
                   <Button
-                    onClick={fetchReports}
+                    onClick={() => refetch()}
                     className="bg-indigo-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-indigo-700 transition-colors"
                   >
                     Generate Report

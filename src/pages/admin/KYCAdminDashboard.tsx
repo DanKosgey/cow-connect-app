@@ -16,6 +16,8 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
+import RefreshButton from '@/components/ui/RefreshButton';
+import { useKYCAdminData } from '@/hooks/useKYCAdminData';
 
 type Farmer = Database['public']['Tables']['farmers']['Row'] & {
   profiles?: {
@@ -29,9 +31,6 @@ type KYCDocument = Database['public']['Tables']['kyc_documents']['Row'];
 
 const KYCAdminDashboard = () => {
   const toast = useToastNotifications();
-  const [farmers, setFarmers] = useState<Farmer[]>([]);
-  const [filteredFarmers, setFilteredFarmers] = useState<Farmer[]>([]);
-  const [loading, setLoading] = useState(true);
   const [selectedFarmer, setSelectedFarmer] = useState<Farmer | null>(null);
   const [documents, setDocuments] = useState<KYCDocument[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -41,17 +40,19 @@ const KYCAdminDashboard = () => {
   const [actionLoading, setActionLoading] = useState(false);
   const [viewingDocument, setViewingDocument] = useState<string | null>(null); // URL of document being viewed
 
-  // Statistics
-  const [stats, setStats] = useState({
+  const { data: kycData, isLoading, isError, error, refetch } = useKYCAdminData(searchTerm, statusFilter);
+  
+  const farmers = kycData?.farmers || [];
+  const stats = kycData?.stats || {
     total: 0,
     pending: 0,
     approved: 0,
     rejected: 0
-  });
+  };
+  const filteredFarmers = farmers;
+  const loading = isLoading;
 
   useEffect(() => {
-    fetchFarmers();
-    
     // Set up real-time subscription for farmers
     const farmersSubscription = supabase
       .channel('farmers-changes')
@@ -63,7 +64,7 @@ const KYCAdminDashboard = () => {
           table: 'farmers',
         },
         (payload) => {
-          fetchFarmers();
+          refetch();
           toast.success('New Registration', 'A new farmer has completed registration');
         }
       )
@@ -75,7 +76,7 @@ const KYCAdminDashboard = () => {
           table: 'farmers',
         },
         (payload) => {
-          fetchFarmers();
+          refetch();
         }
       )
       .subscribe();
@@ -104,65 +105,7 @@ const KYCAdminDashboard = () => {
       supabase.removeChannel(farmersSubscription);
       supabase.removeChannel(documentsSubscription);
     };
-  }, [selectedFarmer]);
-
-  useEffect(() => {
-    filterFarmers();
-  }, [farmers, searchTerm, statusFilter]);
-
-  const fetchFarmers = async () => {
-    try {
-      setLoading(true);
-      
-      // Fetch farmers with their profiles
-      const { data, error } = await supabase
-        .from('farmers')
-        .select(`
-          *,
-          profiles:user_id(id, email, full_name, phone)
-        `)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-
-      setFarmers(data || []);
-      calculateStats(data || []);
-    } catch (error: any) {
-      console.error('Error fetching farmers:', error);
-      toast.error('Error', error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const calculateStats = (farmersData: Farmer[]) => {
-    setStats({
-      total: farmersData.length,
-      pending: farmersData.filter(f => f.kyc_status === 'pending').length,
-      approved: farmersData.filter(f => f.kyc_status === 'approved').length,
-      rejected: farmersData.filter(f => f.kyc_status === 'rejected').length
-    });
-  };
-
-  const filterFarmers = () => {
-    let filtered = [...farmers];
-
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter(f => f.kyc_status === statusFilter);
-    }
-
-    if (searchTerm) {
-      filtered = filtered.filter(f =>
-        f.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        f.national_id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        f.registration_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        f.profiles?.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        f.profiles?.full_name?.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    }
-
-    setFilteredFarmers(filtered);
-  };
+  }, [selectedFarmer, refetch]);
 
   const fetchDocuments = async (farmerId: string) => {
     try {
@@ -206,7 +149,7 @@ const KYCAdminDashboard = () => {
 
       toast.success('Success', 'Farmer approved successfully!');
       setSelectedFarmer(null);
-      fetchFarmers();
+      refetch();
     } catch (error: any) {
       console.error('Error approving farmer:', error);
       toast.error('Error', error.message);
@@ -241,7 +184,7 @@ const KYCAdminDashboard = () => {
       setShowRejectModal(false);
       setRejectionReason('');
       setSelectedFarmer(null);
-      fetchFarmers();
+      refetch();
     } catch (error: any) {
       console.error('Error rejecting farmer:', error);
       toast.error('Error', error.message);
@@ -359,9 +302,18 @@ const KYCAdminDashboard = () => {
       <div className="min-h-screen bg-gray-50 p-6">
         <div className="max-w-7xl mx-auto">
           {/* Header */}
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900">Approved Farmers</h1>
-            <p className="text-gray-600 mt-2">View and manage approved farmer profiles</p>
+          <div className="mb-8 flex flex-col md:flex-row md:items-center md:justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Approved Farmers</h1>
+              <p className="text-gray-600 mt-2">View and manage approved farmer profiles</p>
+            </div>
+            <div className="mt-4 md:mt-0">
+              <RefreshButton 
+                isRefreshing={loading} 
+                onRefresh={refetch} 
+                className="bg-white border-gray-300 hover:bg-gray-50 rounded-lg shadow-sm"
+              />
+            </div>
           </div>
 
           {/* Statistics Cards */}

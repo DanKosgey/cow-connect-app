@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { 
   Search, 
   Filter,
@@ -6,7 +6,8 @@ import {
   User,
   CreditCard,
   ShoppingCart,
-  FileText
+  FileText,
+  RefreshCw
 } from "lucide-react";
 import { formatCurrency } from "@/utils/formatters";
 import { Button } from "@/components/ui/button";
@@ -28,7 +29,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/components/ui/use-toast";
-import { ComprehensiveCreditAnalyticsService } from "@/services/comprehensive-credit-analytics-service";
+import { useAuditLog } from '@/hooks/useAuditLog';
 
 interface TransactionAuditRecord {
   id: string;
@@ -43,52 +44,24 @@ interface TransactionAuditRecord {
 }
 
 const CreditTransactionAudit = () => {
-  const [loading, setLoading] = useState(true);
   const [transactions, setTransactions] = useState<TransactionAuditRecord[]>([]);
   const [filteredTransactions, setFilteredTransactions] = useState<TransactionAuditRecord[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
   const { toast } = useToast();
+  
+  const { useTransactionAudit, refreshTransactionAudit } = useAuditLog();
+  const { data: auditData, isLoading, refetch } = useTransactionAudit(200);
 
-  const fetchData = useCallback(async () => {
-    try {
-      setLoading(true);
-      console.log("Fetching transaction audit report...");
-      
-      // Get transaction audit report
-      const auditRecords = await ComprehensiveCreditAnalyticsService.getTransactionAuditReport(200);
-      console.log("Audit records fetched:", auditRecords);
-      
-      // Handle case when no transactions exist
-      if (!auditRecords || auditRecords.length === 0) {
-        console.log("No audit records found");
-        setTransactions([]);
-        setFilteredTransactions([]);
-        setLoading(false);
-        return;
-      }
-      
-      setTransactions(auditRecords);
-      setFilteredTransactions(auditRecords);
-    } catch (err) {
-      console.error("Error fetching transaction audit:", err);
-      toast({
-        title: "Error",
-        description: "Failed to load transaction audit records",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    if (auditData) {
+      setTransactions(auditData);
     }
-  }, [toast]);
+  }, [auditData]);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
-  useEffect(() => {
-    let filtered = transactions;
+    let filtered = transactions || [];
     
     // Apply search filter
     if (searchTerm) {
@@ -110,6 +83,23 @@ const CreditTransactionAudit = () => {
     
     setFilteredTransactions(filtered);
   }, [searchTerm, filterType, filterStatus, transactions]);
+
+  const handleRefresh = async () => {
+    try {
+      await refetch();
+      toast({
+        title: "Success",
+        description: "Audit records refreshed successfully",
+      });
+    } catch (err) {
+      console.error("Error refreshing transaction audit:", err);
+      toast({
+        title: "Error",
+        description: "Failed to refresh transaction audit records",
+        variant: "destructive",
+      });
+    }
+  };
 
   const getTransactionTypeIcon = (type: string) => {
     switch (type) {
@@ -135,7 +125,7 @@ const CreditTransactionAudit = () => {
     }
   };
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center py-8">
         <div className="text-center">
@@ -149,7 +139,7 @@ const CreditTransactionAudit = () => {
   return (
     <div className="space-y-6">
       {/* Controls */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <div className="relative md:col-span-2">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
           <Input
@@ -186,6 +176,11 @@ const CreditTransactionAudit = () => {
             <SelectItem value="rejected">Rejected</SelectItem>
           </SelectContent>
         </Select>
+        
+        <Button onClick={handleRefresh} disabled={isLoading} className="flex items-center gap-2">
+          <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+          Refresh
+        </Button>
       </div>
 
       {/* Transactions Table */}

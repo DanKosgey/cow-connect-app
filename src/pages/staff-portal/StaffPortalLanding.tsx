@@ -16,8 +16,8 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { useAuth } from '@/contexts/SimplifiedAuthContext';
-import { useState, useEffect } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import RefreshButton from '@/components/ui/RefreshButton';
+import { useStaffPortalData } from '@/hooks/useStaffPortalData';
 
 interface StaffStats {
   total_collections_today: number;
@@ -28,12 +28,9 @@ interface StaffStats {
 export default function StaffPortalLanding() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [staffStats, setStaffStats] = useState<StaffStats>({
-    total_collections_today: 0,
-    total_farmers_today: 0,
-    total_earnings_today: 0
-  });
-  const [loading, setLoading] = useState(true);
+  const { useStaffStats } = useStaffPortalData();
+  
+  const { data: staffStats, isLoading, refetch } = useStaffStats();
 
   const staffFeatures = [
     {
@@ -94,87 +91,25 @@ export default function StaffPortalLanding() {
     }
   ];
 
-  useEffect(() => {
-    const fetchStaffStats = async () => {
-      try {
-        setLoading(true);
-        
-        // Get today's date range
-        const today = new Date();
-        const startOfDay = new Date(today.setHours(0, 0, 0, 0)).toISOString();
-        const endOfDay = new Date(today.setHours(23, 59, 59, 999)).toISOString();
-
-        // First, get staff ID
-        const { data: staffData, error: staffError } = await supabase
-          .from('staff')
-          .select('id')
-          .eq('user_id', user?.id)
-          .maybeSingle();
-
-        if (staffError) throw staffError;
-        
-        if (!staffData) {
-          // If no staff record, use default values
-          setStaffStats({
-            total_collections_today: 0,
-            total_farmers_today: 0,
-            total_earnings_today: 0
-          });
-          return;
-        }
-
-        const staffId = staffData.id;
-
-        // Fetch today's collections for this staff member
-        const { data: collectionsData, error: collectionsError } = await supabase
-          .from('collections')
-          .select(`
-            id,
-            farmer_id,
-            liters,
-            total_amount
-          `)
-          .eq('staff_id', staffId)
-          .gte('collection_date', startOfDay)
-          .lte('collection_date', endOfDay);
-
-        if (collectionsError) throw collectionsError;
-
-        // Calculate stats
-        const totalCollections = collectionsData?.length || 0;
-        const totalFarmers = new Set(collectionsData?.map(c => c.farmer_id)).size || 0;
-        const totalEarnings = collectionsData?.reduce((sum, c) => sum + (c.total_amount || 0), 0) || 0;
-
-        setStaffStats({
-          total_collections_today: totalCollections,
-          total_farmers_today: totalFarmers,
-          total_earnings_today: parseFloat(totalEarnings.toFixed(2))
-        });
-      } catch (error) {
-        console.error('Error fetching staff stats:', error);
-        // Use default values on error
-        setStaffStats({
-          total_collections_today: 0,
-          total_farmers_today: 0,
-          total_earnings_today: 0
-        });
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (user?.id) {
-      fetchStaffStats();
-    }
-  }, [user?.id]);
-
   return (
     <div className="space-y-6">
       {/* Welcome Header */}
       <div className="bg-gradient-to-r from-primary to-primary-light rounded-2xl p-6 text-primary-foreground shadow-lg">
-        <h1 className="text-3xl font-bold">Welcome, {user?.email || 'Staff Member'}!</h1>
-        <div className="text-primary-foreground/90 mt-2">
-          Manage milk collections, farmers, and payments all in one place.
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between">
+          <div>
+            <h1 className="text-3xl font-bold">Welcome, {user?.email || 'Staff Member'}!</h1>
+            <div className="text-primary-foreground/90 mt-2">
+              Manage milk collections, farmers, and payments all in one place.
+            </div>
+          </div>
+          <div className="mt-4 md:mt-0">
+            <RefreshButton 
+              isRefreshing={isLoading} 
+              onRefresh={refetch} 
+              className="bg-white/20 border-white/30 hover:bg-white/30 text-white rounded-md shadow-sm"
+              variant="outline"
+            />
+          </div>
         </div>
       </div>
 
@@ -186,10 +121,10 @@ export default function StaffPortalLanding() {
               <div>
                 <div className="text-sm font-medium text-muted-foreground">Today's Collections</div>
                 <div className="text-2xl font-bold">
-                  {loading ? (
+                  {isLoading ? (
                     <div className="h-6 w-8 bg-gray-200 rounded animate-pulse"></div>
                   ) : (
-                    staffStats.total_collections_today
+                    staffStats?.total_collections_today || 0
                   )}
                 </div>
               </div>
@@ -204,10 +139,10 @@ export default function StaffPortalLanding() {
               <div>
                 <div className="text-sm font-medium text-muted-foreground">Farmers Visited</div>
                 <div className="text-2xl font-bold">
-                  {loading ? (
+                  {isLoading ? (
                     <div className="h-6 w-8 bg-gray-200 rounded animate-pulse"></div>
                   ) : (
-                    staffStats.total_farmers_today
+                    staffStats?.total_farmers_today || 0
                   )}
                 </div>
               </div>
@@ -222,10 +157,10 @@ export default function StaffPortalLanding() {
               <div>
                 <div className="text-sm font-medium text-muted-foreground">Total Earnings</div>
                 <div className="text-2xl font-bold">
-                  {loading ? (
+                  {isLoading ? (
                     <div className="h-6 w-20 bg-gray-200 rounded animate-pulse"></div>
                   ) : (
-                    `KSh ${staffStats.total_earnings_today.toLocaleString()}`
+                    `KSh ${(staffStats?.total_earnings_today || 0).toLocaleString()}`
                   )}
                 </div>
               </div>

@@ -30,7 +30,8 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import useToastNotifications from '@/hooks/useToastNotifications';
-import { useStaffInfo, useFarmerRelationshipData } from '@/hooks/useStaffData';
+import { useStaffInfo } from '@/hooks/useStaffData';
+import { useFarmerManagementData } from '@/hooks/useFarmerManagementData';
 
 interface Farmer {
   id: string;
@@ -79,11 +80,13 @@ const FarmerRelationshipManagement = () => {
   const { user } = useAuth();
   const { show, error: showError } = useToastNotifications();
   const { staffInfo, loading: staffLoading } = useStaffInfo();
-  const { communications, notes, loading: relationshipLoading } = useFarmerRelationshipData(staffInfo?.id || null);
+  const { data: farmerData, isLoading, isError, error, refetch } = useFarmerManagementData(staffInfo?.id || null);
   
-  const [farmers, setFarmers] = useState<Farmer[]>([]);
+  const farmers = farmerData?.farmers || [];
+  const communications = farmerData?.communications || [];
+  const notes = farmerData?.notes || [];
   const [filteredFarmers, setFilteredFarmers] = useState<Farmer[]>([]);
-  const [loading, setLoading] = useState(true);
+  const loading = isLoading || staffLoading;
   
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -108,41 +111,7 @@ const FarmerRelationshipManagement = () => {
   }, [farmers, searchTerm, kycStatus]);
 
   const fetchData = async () => {
-    setLoading(true);
-    try {
-      // Fetch approved farmers
-      const { data: farmersData, error: farmersError } = await supabase
-        .from('farmers')
-        .select(`
-          id,
-          user_id,
-          national_id,
-          address,
-          kyc_status,
-          created_at,
-          profiles (
-            full_name,
-            phone,
-            email
-          ),
-          farmer_analytics!farmer_analytics_farmer_id_fkey (
-            total_collections,
-            total_liters,
-            avg_quality_score,
-            current_month_liters,
-            current_month_earnings
-          )
-        `)
-        .order('full_name', { referencedTable: 'profiles', ascending: true });
-
-      if (farmersError) throw farmersError;
-      setFarmers(farmersData || []);
-    } catch (error: any) {
-      console.error('Error fetching data:', error);
-      showError('Error', error.message || 'Failed to load farmer relationship data');
-    } finally {
-      setLoading(false);
-    }
+    await refetch();
   };
 
   const applyFilters = () => {
@@ -196,7 +165,8 @@ const FarmerRelationshipManagement = () => {
         }
       };
       
-      setCommunications(prev => [newCommunication, ...prev]);
+      // Refetch to get updated data
+      await refetch();
       setNewMessage('');
       show({ title: 'Success', description: 'Message sent successfully' });
     } catch (error: any) {
@@ -228,7 +198,8 @@ const FarmerRelationshipManagement = () => {
         created_at: new Date().toISOString()
       };
       
-      setNotes(prev => [newNoteItem, ...prev]);
+      // Refetch to get updated data
+      await refetch();
       setNewNote('');
       show({ title: 'Success', description: 'Note added successfully' });
     } catch (error: any) {

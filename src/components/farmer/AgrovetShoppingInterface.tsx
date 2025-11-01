@@ -25,6 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
+import RefreshButton from "@/components/ui/RefreshButton";
 
 interface AgrovetProduct {
   id: string;
@@ -63,45 +64,45 @@ const AgrovetShoppingInterface = ({ farmerId, availableCredit }: { farmerId: str
   const [categories, setCategories] = useState<string[]>([]);
   const { toast } = useToast();
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        
-        // Get agrovet inventory
-        const inventory = await CreditServiceEssentials.getAgrovetInventory();
-        
-        // Handle case when no products exist
-        if (!inventory || inventory.length === 0) {
-          console.info("No agrovet inventory found - showing empty state");
-          setProducts([]);
-          setFilteredProducts([]);
-          setCategories([]);
-          return;
-        }
-        
-        setProducts(inventory);
-        setFilteredProducts(inventory);
-        
-        // Get unique categories
-        const uniqueCategories = Array.from(new Set(inventory.map(item => item.category)));
-        setCategories(uniqueCategories);
-        
-        // Get existing credit requests
-        const requests = await CreditRequestService.getFarmerCreditRequests(farmerId);
-        setCreditRequests(requests);
-      } catch (err) {
-        console.error("Error fetching agrovet data:", err);
-        toast({
-          title: "Error",
-          description: "Failed to load agrovet products",
-          variant: "destructive",
-        });
-      } finally {
-        setLoading(false);
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      
+      // Get agrovet inventory
+      const inventory = await CreditServiceEssentials.getAgrovetInventory();
+      
+      // Handle case when no products exist
+      if (!inventory || inventory.length === 0) {
+        console.info("No agrovet inventory found - showing empty state");
+        setProducts([]);
+        setFilteredProducts([]);
+        setCategories([]);
+        return;
       }
-    };
+      
+      setProducts(inventory);
+      setFilteredProducts(inventory);
+      
+      // Get unique categories
+      const uniqueCategories = Array.from(new Set(inventory.map(item => item.category)));
+      setCategories(uniqueCategories);
+      
+      // Get existing credit requests
+      const requests = await CreditRequestService.getFarmerCreditRequests(farmerId);
+      setCreditRequests(requests);
+    } catch (err) {
+      console.error("Error fetching agrovet data:", err);
+      toast({
+        title: "Error",
+        description: "Failed to load agrovet products",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  useEffect(() => {
     if (farmerId) {
       fetchData();
     }
@@ -297,6 +298,12 @@ const AgrovetShoppingInterface = ({ farmerId, availableCredit }: { farmerId: str
                 ))}
               </SelectContent>
             </Select>
+            
+            <RefreshButton 
+              isRefreshing={loading} 
+              onRefresh={fetchData} 
+              className="bg-white border-gray-300 hover:bg-gray-50 rounded-md shadow-sm"
+            />
           </div>
         </CardContent>
       </Card>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +18,8 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import useToastNotifications from "@/hooks/useToastNotifications";
 import { PageHeader } from "@/components/PageHeader";
+import RefreshButton from "@/components/ui/RefreshButton";
+import { useProfileData } from "@/hooks/useProfileData";
 
 interface FarmerProfile {
   id: string;
@@ -33,47 +35,22 @@ interface FarmerProfile {
 
 const ProfilePage = () => {
   const toast = useToastNotifications();
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [isGettingLocation, setIsGettingLocation] = useState(false);
-  const [farmer, setFarmer] = useState<FarmerProfile | null>(null);
-  const [editableFarmer, setEditableFarmer] = useState<FarmerProfile | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const { useFarmerProfile, updateProfile } = useProfileData();
 
-  // Fetch farmer profile
+  // Fetch farmer profile with caching
+  const { data: farmer, isLoading, refetch } = useFarmerProfile();
+  const [editableFarmer, setEditableFarmer] = useState<FarmerProfile | null>(null);
+
+  // Update editableFarmer when farmer data changes
   useEffect(() => {
-    const fetchProfile = async () => {
-      try {
-        setLoading(true);
-        const { data: { user } } = await supabase.auth.getUser();
-        
-        if (!user) return;
-
-        // Fetch farmer profile
-        const { data: farmerData, error } = await supabase
-          .from('farmers')
-          .select('*')
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-        if (error) throw error;
-        if (!farmerData) {
-          toast.error('Error', 'Farmer profile not found. Please complete your registration.');
-          return;
-        }
-        setFarmer(farmerData);
-        setEditableFarmer(farmerData);
-      } catch (err) {
-        console.error('Error fetching profile:', err);
-        toast.error('Error', 'Failed to load profile data');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchProfile();
-  }, []);
+    if (farmer) {
+      setEditableFarmer(farmer);
+    }
+  }, [farmer]);
 
   const handleSave = async () => {
     if (!editableFarmer) return;
@@ -81,20 +58,14 @@ const ProfilePage = () => {
     try {
       setSaving(true);
       
-      // Update farmer profile
-      const { error } = await supabase
-        .from('farmers')
-        .update({
-          full_name: editableFarmer.full_name,
-          phone_number: editableFarmer.phone_number,
-          address: editableFarmer.address,
-          farm_location: editableFarmer.farm_location
-        })
-        .eq('id', editableFarmer.id);
-
-      if (error) throw error;
+      // Update farmer profile using the mutation
+      await updateProfile.mutateAsync({
+        full_name: editableFarmer.full_name,
+        phone_number: editableFarmer.phone_number,
+        address: editableFarmer.address,
+        farm_location: editableFarmer.farm_location
+      });
       
-      setFarmer(editableFarmer);
       setIsEditing(false);
       toast.success('Success', 'Profile updated successfully');
     } catch (err) {
@@ -151,7 +122,7 @@ const ProfilePage = () => {
     );
   };
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="container mx-auto py-6">
         <div className="flex items-center justify-center h-64">
@@ -197,10 +168,17 @@ const ProfilePage = () => {
               </Button>
             </div>
           ) : (
-            <Button onClick={() => setIsEditing(true)} className="flex items-center gap-2">
-              <Edit3 className="h-4 w-4" />
-              Edit Profile
-            </Button>
+            <div className="flex space-x-3">
+              <RefreshButton 
+                isRefreshing={isLoading} 
+                onRefresh={refetch} 
+                className="bg-white border-gray-300 hover:bg-gray-50 rounded-md shadow-sm"
+              />
+              <Button onClick={() => setIsEditing(true)} className="flex items-center gap-2">
+                <Edit3 className="h-4 w-4" />
+                Edit Profile
+              </Button>
+            </div>
           )
         }
       />

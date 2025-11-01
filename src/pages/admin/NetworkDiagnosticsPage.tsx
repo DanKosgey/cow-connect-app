@@ -7,79 +7,44 @@ import { Button } from '@/components/ui/button';
 import { logger } from '@/utils/logger';
 import { NetworkDiagnostics } from '@/utils/networkDiagnostics';
 import { RefreshCw, Wifi, AlertTriangle, CheckCircle } from 'lucide-react';
+import { useNetworkDiagnostics } from '@/hooks/useNetworkDiagnostics';
 
 const NetworkDiagnosticsPage = () => {
   const { user, session, userRole, signOut, refreshSession } = useAuth();
   const navigate = useNavigate();
-  const [diagnostics, setDiagnostics] = useState<any>({});
   const [loading, setLoading] = useState(false);
   const [testResults, setTestResults] = useState<any>(null);
+  const [testEnabled, setTestEnabled] = useState(false);
+  
+  const { useSystemDiagnostics, useConnectionTest, refreshDiagnostics } = useNetworkDiagnostics();
+  const { data: diagnostics, isLoading, refetch } = useSystemDiagnostics();
+  const { data: connectionTest } = useConnectionTest(testEnabled);
+
+  useEffect(() => {
+    if (connectionTest) {
+      setTestResults({
+        success: true,
+        data: connectionTest
+      });
+      setTestEnabled(false);
+    }
+  }, [connectionTest]);
 
   const runDiagnostics = async () => {
-    setLoading(true);
     try {
-      // Get current session
-      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-      
-      // Get current user
-      const { data: userData, error: userError } = await supabase.auth.getUser();
-      
-      // Check user roles
-      let roleData = null;
-      let roleError = null;
-      if (userData?.user?.id) {
-        const { data, error } = await supabase
-          .from('user_roles')
-          .select('role')
-          .eq('user_id', userData.user.id)
-          .maybeSingle();
-        roleData = data;
-        roleError = error;
-      }
-      
-      // Check localStorage items
-      const localStorageItems = {
-        cached_user: localStorage.getItem('cached_user'),
-        cached_role: localStorage.getItem('cached_role'),
-        auth_cache_timestamp: localStorage.getItem('auth_cache_timestamp'),
-        pending_profile: localStorage.getItem('pending_profile')
-      };
-      
-      // Check for Supabase-specific items
-      const supabaseItems: Record<string, string> = {};
-      Object.keys(localStorage).forEach(key => {
-        if (key.startsWith('sb-') || key.startsWith('supabase-')) {
-          supabaseItems[key] = localStorage.getItem(key) || '';
-        }
-      });
-      
-      setDiagnostics({
-        session: sessionData?.session,
-        sessionError,
-        user: userData?.user,
-        userError,
-        role: roleData,
-        roleError,
-        localStorageItems,
-        supabaseItems,
-        timestamp: new Date().toISOString()
-      });
+      await refetch();
     } catch (error) {
       logger.error('Error running diagnostics:', error);
-    } finally {
-      setLoading(false);
     }
   };
 
   const testNetworkConnection = async () => {
     setLoading(true);
     try {
-      const result = await NetworkDiagnostics.testSupabaseConnection();
-      setTestResults(result);
+      setTestEnabled(true);
     } catch (error) {
       logger.error('Error testing network connection:', error);
       setTestResults({ success: false, error });
-    } finally {
       setLoading(false);
     }
   };
@@ -88,6 +53,8 @@ const NetworkDiagnosticsPage = () => {
     setLoading(true);
     try {
       await NetworkDiagnostics.clearNetworkCache();
+      // Refresh diagnostics after clearing cache
+      await refetch();
       // Refresh the page to ensure cache is cleared
       window.location.reload();
     } catch (error) {
@@ -156,6 +123,16 @@ const NetworkDiagnosticsPage = () => {
               className="w-full"
             >
               Clear Network Cache
+            </Button>
+            
+            <Button 
+              onClick={runDiagnostics} 
+              disabled={isLoading}
+              variant="outline"
+              className="w-full"
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+              Refresh Diagnostics
             </Button>
             
             {testResults && (

@@ -20,14 +20,16 @@ export const useChartStabilizer = <T extends ChartDataPoint>(
       clearTimeout(timeoutRef.current);
     }
 
-    // Check if data has actually changed
-    const hasChanged = JSON.stringify(data) !== JSON.stringify(prevDataRef.current);
+    // Check if data has actually changed by comparing stringified versions
+    const currentDataString = JSON.stringify(data);
+    const prevDataString = JSON.stringify(prevDataRef.current);
+    const hasChanged = currentDataString !== prevDataString;
     
     // For immediate render on first load or empty data
     if (prevDataRef.current.length === 0 || data.length === 0) {
-      setStabilizedData([...data]);
+      setStabilizedData(data);
       setIsStable(true);
-      prevDataRef.current = [...data];
+      prevDataRef.current = data;
       return;
     }
 
@@ -38,9 +40,9 @@ export const useChartStabilizer = <T extends ChartDataPoint>(
 
     // For small datasets, stabilize immediately
     if (data.length < 5) {
-      setStabilizedData([...data]);
+      setStabilizedData(data);
       setIsStable(true);
-      prevDataRef.current = [...data];
+      prevDataRef.current = data;
       return;
     }
 
@@ -54,16 +56,16 @@ export const useChartStabilizer = <T extends ChartDataPoint>(
       
       // Set timeout to stabilize data
       timeoutRef.current = setTimeout(() => {
-        setStabilizedData([...data]);
+        setStabilizedData(data);
         setIsStable(true);
-        prevDataRef.current = [...data];
+        prevDataRef.current = data;
         lastUpdateTimeRef.current = Date.now();
       }, delay - timeSinceLastUpdate);
     } else if (hasChanged) {
       // Update immediately if enough time has passed
-      setStabilizedData([...data]);
+      setStabilizedData(data);
       setIsStable(true);
-      prevDataRef.current = [...data];
+      prevDataRef.current = data;
       lastUpdateTimeRef.current = now;
     }
 

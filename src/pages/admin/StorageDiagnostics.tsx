@@ -3,52 +3,47 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { diagnoseStorageIssues, checkStoragePolicies, verifyDocumentRecords } from '@/utils/storageDiagnostics';
 import useToastNotifications from '@/hooks/useToastNotifications';
+import { useStorageDiagnostics } from '@/hooks/useStorageDiagnostics';
+import { RefreshCw } from 'lucide-react';
 
 const StorageDiagnostics = () => {
   const toast = useToastNotifications();
-  const [loading, setLoading] = useState(false);
   const [pendingFarmerId, setPendingFarmerId] = useState('');
-  const [diagnosticsResults, setDiagnosticsResults] = useState<any>(null);
-  const [policyResults, setPolicyResults] = useState<any>(null);
-  const [verificationResults, setVerificationResults] = useState<any>(null);
+  
+  const { 
+    useStorageDiagnosticsData, 
+    useStoragePoliciesData, 
+    useDocumentRecordsData,
+    refreshStorageDiagnostics,
+    refreshStoragePolicies,
+    refreshDocumentRecords,
+    invalidateStorageCache
+  } = useStorageDiagnostics();
+  
+  const { data: diagnosticsResults, isLoading: diagnosticsLoading, refetch: refetchDiagnostics } = useStorageDiagnosticsData();
+  const { data: policyResults, isLoading: policiesLoading, refetch: refetchPolicies } = useStoragePoliciesData();
+  const { data: verificationResults, isLoading: verificationLoading, refetch: refetchVerification } = useDocumentRecordsData(pendingFarmerId);
+  
+  const loading = diagnosticsLoading || policiesLoading || verificationLoading;
 
   const handleRunDiagnostics = async () => {
     try {
-      setLoading(true);
-      const results = await diagnoseStorageIssues();
-      setDiagnosticsResults(results);
-      
-      if (results.success) {
-        toast.success('Diagnostics', 'Storage diagnostics completed successfully');
-      } else {
-        toast.error('Diagnostics Failed', results.error);
-      }
+      await refetchDiagnostics();
+      toast.success('Diagnostics', 'Storage diagnostics completed successfully');
     } catch (error: any) {
       console.error('Error running diagnostics:', error);
       toast.error('Error', error.message);
-    } finally {
-      setLoading(false);
     }
   };
 
   const handleCheckPolicies = async () => {
     try {
-      setLoading(true);
-      const results = await checkStoragePolicies();
-      setPolicyResults(results);
-      
-      if (results.error) {
-        toast.error('Policy Check Failed', results.error);
-      } else {
-        toast.success('Policy Check', 'Storage policies checked successfully');
-      }
+      await refetchPolicies();
+      toast.success('Policy Check', 'Storage policies checked successfully');
     } catch (error: any) {
       console.error('Error checking policies:', error);
       toast.error('Error', error.message);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -59,20 +54,24 @@ const StorageDiagnostics = () => {
     }
 
     try {
-      setLoading(true);
-      const results = await verifyDocumentRecords(pendingFarmerId);
-      setVerificationResults(results);
-      
-      if (results.success) {
-        toast.success('Verification', `Document verification completed. Found ${results.documents?.length || 0} documents`);
-      } else {
-        toast.error('Verification Failed', results.error);
-      }
+      await refetchVerification();
+      toast.success('Verification', `Document verification completed.`);
     } catch (error: any) {
       console.error('Error verifying documents:', error);
       toast.error('Error', error.message);
-    } finally {
-      setLoading(false);
+    }
+  };
+
+  const handleRefreshAll = async () => {
+    try {
+      await Promise.all([
+        refetchDiagnostics(),
+        refetchPolicies()
+      ]);
+      toast.success('Refresh', 'All diagnostics refreshed successfully');
+    } catch (error: any) {
+      console.error('Error refreshing diagnostics:', error);
+      toast.error('Error', error.message);
     }
   };
 
@@ -87,10 +86,20 @@ const StorageDiagnostics = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Storage Diagnostics Card */}
+          {/* Storage Diagnostics Card */}}
           <Card>
             <CardHeader>
-              <CardTitle>Storage Diagnostics</CardTitle>
+              <CardTitle className="flex items-center justify-between">
+                <span>Storage Diagnostics</span>
+                <Button 
+                  variant="ghost" 
+                  size="sm"
+                  onClick={handleRunDiagnostics}
+                  disabled={loading}
+                >
+                  <RefreshCw className={`h-4 w-4 ${diagnosticsLoading ? 'animate-spin' : ''}`} />
+                </Button>
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground mb-4">
@@ -101,7 +110,7 @@ const StorageDiagnostics = () => {
                 disabled={loading}
                 className="w-full"
               >
-                {loading ? 'Running Diagnostics...' : 'Run Diagnostics'}
+                {loading && diagnosticsLoading ? 'Running Diagnostics...' : 'Run Diagnostics'}
               </Button>
               
               {diagnosticsResults && (
@@ -125,7 +134,17 @@ const StorageDiagnostics = () => {
           {/* Policy Check Card */}
           <Card>
             <CardHeader>
-              <CardTitle>Policy Check</CardTitle>
+              <CardTitle className="flex items-center justify-between">
+                <span>Policy Check</span>
+                <Button 
+                  variant="ghost" 
+                  size="sm"
+                  onClick={handleCheckPolicies}
+                  disabled={loading}
+                >
+                  <RefreshCw className={`h-4 w-4 ${policiesLoading ? 'animate-spin' : ''}`} />
+                </Button>
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground mb-4">
@@ -136,7 +155,7 @@ const StorageDiagnostics = () => {
                 disabled={loading}
                 className="w-full"
               >
-                {loading ? 'Checking Policies...' : 'Check Policies'}
+                {loading && policiesLoading ? 'Checking Policies...' : 'Check Policies'}
               </Button>
               
               {policyResults && (
@@ -164,7 +183,17 @@ const StorageDiagnostics = () => {
           {/* Document Verification Card */}
           <Card className="md:col-span-2">
             <CardHeader>
-              <CardTitle>Document Verification</CardTitle>
+              <CardTitle className="flex items-center justify-between">
+                <span>Document Verification</span>
+                <Button 
+                  variant="ghost" 
+                  size="sm"
+                  onClick={() => refetchVerification()}
+                  disabled={loading || !pendingFarmerId}
+                >
+                  <RefreshCw className={`h-4 w-4 ${verificationLoading ? 'animate-spin' : ''}`} />
+                </Button>
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
@@ -183,7 +212,7 @@ const StorageDiagnostics = () => {
                   disabled={loading || !pendingFarmerId}
                   className="w-full"
                 >
-                  {loading ? 'Verifying...' : 'Verify Documents'}
+                  {loading && verificationLoading ? 'Verifying...' : 'Verify Documents'}
                 </Button>
                 
                 {verificationResults && (
@@ -218,6 +247,19 @@ const StorageDiagnostics = () => {
               </div>
             </CardContent>
           </Card>
+        </div>
+
+        {/* Refresh All Button */}
+        <div className="mt-6 flex justify-center">
+          <Button 
+            onClick={handleRefreshAll} 
+            disabled={loading}
+            variant="outline"
+            className="flex items-center gap-2"
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh All Diagnostics
+          </Button>
         </div>
 
         {/* Troubleshooting Guide */}

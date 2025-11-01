@@ -1,21 +1,17 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { logger } from '@/utils/logger';
+import { CACHE_KEYS } from '@/services/cache-utils';
 
 export const useFarmerDashboard = () => {
-  const [stats, setStats] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchDashboardData = useCallback(async () => {
-    console.log('[useFarmerDashboard] Fetching dashboard data');
-    console.log('[FarmerPortal] Farmer dashboard data fetch initiated', {
-      timestamp: new Date().toISOString()
-    });
-    
-    try {
-      setLoading(true);
-      setError(null);
+  const { data: stats, isLoading: loading, error, refetch } = useQuery({
+    queryKey: [CACHE_KEYS.FARMER_DASHBOARD],
+    queryFn: async () => {
+      console.log('[useFarmerDashboard] Fetching dashboard data');
+      console.log('[FarmerPortal] Farmer dashboard data fetch initiated', {
+        timestamp: new Date().toISOString()
+      });
       
       // Get the current user
       const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -43,9 +39,7 @@ export const useFarmerDashboard = () => {
           userId: user.id, 
           timestamp: new Date().toISOString() 
         });
-        setError('Farmer profile not found');
-        setLoading(false);
-        return;
+        throw new Error('Farmer profile not found');
       }
 
       console.log('[useFarmerDashboard] Farmer record found', { farmerId: farmer.id });
@@ -236,8 +230,8 @@ export const useFarmerDashboard = () => {
         timestamp: new Date().toISOString() 
       });
 
-      // Compile all stats
-      const compiledStats = {
+      // Return all stats
+      return {
         today: {
           collections: todayCollections.length,
           liters: todayLiters,
@@ -255,34 +249,14 @@ export const useFarmerDashboard = () => {
         qualityTrend,
         allTime: allTimeStats
       };
+    },
+    staleTime: 1000 * 60 * 5, // 5 minutes
+    gcTime: 1000 * 60 * 15, // 15 minutes
+  });
 
-      console.log('[useFarmerDashboard] Setting stats state');
-      setStats(compiledStats);
-      
-      console.log('[FarmerPortal] Dashboard data fetch completed successfully', { 
-        farmerId: farmer.id, 
-        timestamp: new Date().toISOString() 
-      });
-    } catch (err) {
-      console.error('[useFarmerDashboard] Error fetching dashboard data:', err);
-      console.log('[FarmerPortal] Dashboard data fetch failed', { 
-        error: err instanceof Error ? err.message : 'Unknown error',
-        timestamp: new Date().toISOString() 
-      });
-      setError(err instanceof Error ? err.message : 'Failed to load dashboard data');
-    } finally {
-      console.log('[useFarmerDashboard] Finishing dashboard data fetch');
-      setLoading(false);
-    }
-  }, []);
+  const refresh = useCallback(() => {
+    refetch();
+  }, [refetch]);
 
-  useEffect(() => {
-    console.log('[useFarmerDashboard] useEffect triggered');
-    console.log('[FarmerPortal] Dashboard data effect triggered', {
-      timestamp: new Date().toISOString()
-    });
-    fetchDashboardData();
-  }, [fetchDashboardData]);
-
-  return { stats, loading, error, refresh: fetchDashboardData };
+  return { stats, loading, error: error?.message || null, refresh };
 };

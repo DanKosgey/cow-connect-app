@@ -11,10 +11,10 @@ import {
   DollarSign,
   Milk
 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
-import useToastNotifications from "@/hooks/useToastNotifications";
 import { PageHeader } from "@/components/PageHeader";
 import { FilterBar } from "@/components/FilterBar";
+import RefreshButton from "@/components/ui/RefreshButton";
+import { useNotificationSystem } from "@/hooks/useNotificationSystem";
 
 interface Notification {
   id: string;
@@ -27,95 +27,23 @@ interface Notification {
 }
 
 const NotificationsPage = () => {
-  const toast = useToastNotifications();
-  const [loading, setLoading] = useState(true);
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [filteredNotifications, setFilteredNotifications] = useState<Notification[]>([]);
   const [categoryFilter, setCategoryFilter] = useState("all");
-  const [unreadCount, setUnreadCount] = useState(0);
-
-  // Fetch notifications
-  useEffect(() => {
-    const fetchNotifications = async () => {
-      try {
-        setLoading(true);
-        const { data: { user } } = await supabase.auth.getUser();
-        
-        if (!user) return;
-
-        // Fetch notifications
-        const { data: notificationsData, error } = await supabase
-          .from('notifications')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false });
-
-        if (error) throw error;
-        setNotifications(notificationsData || []);
-        setFilteredNotifications(notificationsData || []);
-        
-        // Count unread notifications
-        const unread = notificationsData?.filter(n => !n.read).length || 0;
-        setUnreadCount(unread);
-      } catch (err) {
-        console.error('Error fetching notifications:', err);
-        toast.error('Error', 'Failed to load notifications');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchNotifications();
-  }, []);
+  const {
+    notifications,
+    unreadCount,
+    isLoading,
+    error,
+    refetch,
+    markAsRead,
+    markAllAsRead,
+    isMarkingAsRead,
+    isMarkingAllAsRead
+  } = useNotificationSystem();
 
   // Filter notifications based on category
-  useEffect(() => {
-    if (categoryFilter === "all") {
-      setFilteredNotifications(notifications);
-    } else {
-      setFilteredNotifications(notifications.filter(n => n.category === categoryFilter));
-    }
-  }, [categoryFilter, notifications]);
-
-  const markAsRead = async (id: string) => {
-    try {
-      const { error } = await supabase
-        .from('notifications')
-        .update({ read: true })
-        .eq('id', id);
-
-      if (error) throw error;
-
-      setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
-      setUnreadCount(prev => prev > 0 ? prev - 1 : 0);
-      toast.success('Success', 'Notification marked as read');
-    } catch (err) {
-      console.error('Error marking notification as read:', err);
-      toast.error('Error', 'Failed to mark notification as read');
-    }
-  };
-
-  const markAllAsRead = async () => {
-    try {
-      const unreadIds = notifications.filter(n => !n.read).map(n => n.id);
-      
-      if (unreadIds.length === 0) return;
-
-      const { error } = await supabase
-        .from('notifications')
-        .update({ read: true })
-        .in('id', unreadIds);
-
-      if (error) throw error;
-
-      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-      setUnreadCount(0);
-      toast.success('Success', 'All notifications marked as read');
-    } catch (err) {
-      console.error('Error marking all notifications as read:', err);
-      toast.error('Error', 'Failed to mark all notifications as read');
-    }
-  };
+  const filteredNotifications = categoryFilter === "all" 
+    ? notifications 
+    : notifications.filter(n => n.category === categoryFilter);
 
   const getIcon = (type: string) => {
     switch (type) {
@@ -141,11 +69,26 @@ const NotificationsPage = () => {
     }
   };
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="container mx-auto py-6">
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="container mx-auto py-6">
+        <div className="text-center py-12">
+          <AlertCircle className="h-12 w-12 mx-auto text-red-500 mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 mb-2">Error Loading Notifications</h3>
+          <p className="text-gray-500">Failed to load notifications. Please try again.</p>
+          <Button onClick={() => refetch()} className="mt-4">
+            Retry
+          </Button>
         </div>
       </div>
     );
@@ -158,6 +101,11 @@ const NotificationsPage = () => {
         description="Stay updated with important alerts and announcements"
         actions={
           <div className="flex items-center space-x-4">
+            <RefreshButton 
+              isRefreshing={isLoading} 
+              onRefresh={refetch} 
+              className="bg-white border-gray-300 hover:bg-gray-50 rounded-md shadow-sm"
+            />
             {unreadCount > 0 && (
               <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
                 {unreadCount} unread
@@ -165,10 +113,10 @@ const NotificationsPage = () => {
             )}
             <Button 
               variant="outline" 
-              onClick={markAllAsRead}
-              disabled={unreadCount === 0}
+              onClick={() => markAllAsRead()}
+              disabled={unreadCount === 0 || isMarkingAllAsRead}
             >
-              Mark All as Read
+              {isMarkingAllAsRead ? "Marking..." : "Mark All as Read"}
             </Button>
           </div>
         }
@@ -259,6 +207,7 @@ const NotificationsPage = () => {
                         variant="ghost"
                         size="sm"
                         onClick={() => markAsRead(notification.id)}
+                        disabled={isMarkingAsRead}
                         className="h-8 w-8 p-0"
                       >
                         <X className="h-4 w-4" />

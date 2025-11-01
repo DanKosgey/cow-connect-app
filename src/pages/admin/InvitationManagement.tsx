@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-// DashboardLayout provided by AdminPortalLayout; avoid duplicate wrapper here
+import { AdminPortalLayout } from '@/components/admin/AdminPortalLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { UserPlus, Mail, Shield, X, Check } from 'lucide-react';
 import useToastNotifications from '@/hooks/useToastNotifications';
-import { invitationService } from '@/services/invitation-service';
+import { useInvitationData } from '@/hooks/useInvitationData';
 
 interface InvitationRecord {
   id: string;
@@ -22,12 +22,18 @@ interface InvitationRecord {
 
 export default function InvitationManagement() {
   const { show, error: showError } = useToastNotifications();
-  const [invitations, setInvitations] = useState<InvitationRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { 
+    useAllInvitations,
+    resendInvitation,
+    revokeInvitation
+  } = useInvitationData();
+  
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [userName, setUserName] = useState<string>('');
 
-  useEffect(() => {
-    const fetchUserAndInvitations = async () => {
+  // Simulate fetching user data (in a real app, this would come from your auth context)
+  useState(() => {
+    const fetchUser = async () => {
       try {
         // Get current user
         const { data: { user } } = await supabase.auth.getUser();
@@ -39,88 +45,26 @@ export default function InvitationManagement() {
             .from('profiles')
             .select('full_name')
             .eq('id', user.id);
-            // Removed .single() to avoid PGRST116 error when no records found
-          
+            
           // Check if we have data and handle accordingly
           const profileData = profile && profile.length > 0 ? profile[0] : null;
-          
-          // Fetch pending invitations
-          await fetchInvitations(user.id, profileData?.full_name || 'Unknown');
+          setUserName(profileData?.full_name || 'Unknown');
         }
       } catch (error) {
         console.error('Error fetching user data:', error);
         showError('Error', 'Failed to load user data');
-      } finally {
-        setLoading(false);
       }
     };
 
-    fetchUserAndInvitations();
-  }, []);
+    fetchUser();
+  });
 
-  const fetchInvitations = async (userId: string, userName: string) => {
-    try {
-      // In a real implementation with an invitations table, you would:
-      // const { data, error } = await supabase
-      //   .from('invitations')
-      //   .select(`
-      //     id,
-      //     email,
-      //     role,
-      //     created_at,
-      //     expires_at,
-      //     accepted,
-      //     invited_by:profiles(full_name)
-      //   `)
-      //   .eq('invited_by', userId)
-      //   .order('created_at', { ascending: false });
-      
-      // Since we're simulating, we'll create mock data
-      const mockInvitations: InvitationRecord[] = [
-        {
-          id: '1',
-          email: 'john.doe@example.com',
-          role: 'staff',
-          created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(), // 2 days ago
-          expires_at: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(), // 5 days from now
-          accepted: false,
-          invited_by_name: userName
-        },
-        {
-          id: '2',
-          email: 'jane.smith@example.com',
-          role: 'admin',
-          created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(), // 5 days ago
-          expires_at: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(), // 2 days from now
-          accepted: false,
-          invited_by_name: userName
-        },
-        {
-          id: '3',
-          email: 'bob.johnson@example.com',
-          role: 'staff',
-          created_at: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(), // 10 days ago
-          expires_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(), // 3 days ago (expired)
-          accepted: false,
-          invited_by_name: userName
-        }
-      ];
-      
-      setInvitations(mockInvitations);
-    } catch (error) {
-      console.error('Error fetching invitations:', error);
-      showError('Error', 'Failed to load invitations');
-    }
-  };
+  // Get all invitations with caching
+  const { data: invitations = [], isLoading: invitationsLoading, refetch: refetchInvitations } = useAllInvitations(currentUser?.id || '');
 
-  const revokeInvitation = async (invitationId: string) => {
+  const handleRevokeInvitation = async (invitationId: string) => {
     try {
-      // In a real implementation, you would:
-      // const success = await invitationService.revokeInvitation(invitationId);
-      
-      // Since we're simulating, we'll just remove from local state
-      setInvitations(prev => prev.filter(inv => inv.id !== invitationId));
-      
+      await revokeInvitation.mutateAsync(invitationId);
       show({ 
         title: 'Success', 
         description: 'Invitation revoked successfully' 
@@ -131,31 +75,13 @@ export default function InvitationManagement() {
     }
   };
 
-  const resendInvitation = async (invitation: InvitationRecord) => {
+  const handleResendInvitation = async (invitation: InvitationRecord) => {
     try {
-      // Create a new invitation object
-      const newInvitation = {
-        id: invitation.id,
-        email: invitation.email,
-        role: invitation.role as 'admin' | 'staff' | 'farmer',
-        invitedBy: currentUser?.id || '',
-        created_at: new Date().toISOString(),
-        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days from now
-        token: Math.random().toString(36).substring(2, 15),
-        accepted: false
-      };
-      
-      // Send the invitation email
-      const emailSent = await invitationService.sendInvitationEmail(newInvitation);
-      
-      if (emailSent) {
-        show({ 
-          title: 'Success', 
-          description: `Invitation resent to ${invitation.email}` 
-        });
-      } else {
-        throw new Error('Failed to send invitation email');
-      }
+      await resendInvitation.mutateAsync(invitation.id);
+      show({ 
+        title: 'Success', 
+        description: `Invitation resent to ${invitation.email}` 
+      });
     } catch (error) {
       console.error('Error resending invitation:', error);
       showError('Error', 'Failed to resend invitation');
@@ -170,18 +96,18 @@ export default function InvitationManagement() {
     return new Date(expiresAt) < new Date();
   };
 
-  if (loading) {
+  if (invitationsLoading) {
     return (
-      <DashboardLayout>
+      <AdminPortalLayout>
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
         </div>
-      </DashboardLayout>
+      </AdminPortalLayout>
     );
   }
 
   return (
-    <DashboardLayout>
+    <AdminPortalLayout>
       <div className="container mx-auto py-6">
         <PageHeader
           title="Invitation Management"
@@ -248,7 +174,8 @@ export default function InvitationManagement() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => resendInvitation(invitation)}
+                                onClick={() => handleResendInvitation(invitation)}
+                                disabled={resendInvitation.isPending}
                               >
                                 <Mail className="h-4 w-4 mr-1" />
                                 Resend
@@ -256,7 +183,8 @@ export default function InvitationManagement() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => revokeInvitation(invitation.id)}
+                                onClick={() => handleRevokeInvitation(invitation.id)}
+                                disabled={revokeInvitation.isPending}
                               >
                                 <X className="h-4 w-4 mr-1" />
                                 Revoke
@@ -323,6 +251,6 @@ export default function InvitationManagement() {
           </CardContent>
         </Card>
       </div>
-    </DashboardLayout>
+    </AdminPortalLayout>
   );
 }

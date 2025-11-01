@@ -50,6 +50,9 @@ import {
   ComposedChart
 } from 'recharts';
 import { collectionsViewLogger } from '@/utils/logging-config';
+import RefreshButton from '@/components/ui/RefreshButton';
+import { useQueryClient, useQuery } from '@tanstack/react-query';
+import { CACHE_KEYS } from '@/services/cache-utils';
 
 // Types
 interface Collection {
@@ -87,6 +90,12 @@ interface AnalyticsData {
   qualityDistribution: any[];
   topFarmers: any[];
   staffPerformance: any[];
+}
+
+interface CollectionsData {
+  collections: Collection[];
+  farmers: any[];
+  staff: any[];
 }
 
 // Constants
@@ -138,6 +147,79 @@ const getStatusVariant = (status: string) => {
   return variants[status] || 'outline';
 };
 
+// Custom hook for collections data
+const useCollectionsData = () => {
+  return useQuery<CollectionsData>({
+    queryKey: [CACHE_KEYS.ADMIN_COLLECTIONS],
+    queryFn: async () => {
+      // Fetch collections with farmer and staff data
+      const { data: collectionsData, error: collectionsError } = await supabase
+        .from('collections')
+        .select(`
+          id,
+          collection_id,
+          farmer_id,
+          staff_id,
+          liters,
+          quality_grade,
+          rate_per_liter,
+          total_amount,
+          collection_date,
+          status,
+          gps_latitude,
+          gps_longitude,
+          farmers!inner (
+            id,
+            user_id,
+            profiles (
+              full_name,
+              phone
+            )
+          ),
+          staff (
+            id,
+            user_id,
+            profiles (
+              full_name
+            )
+          )
+        `)
+        .order('collection_date', { ascending: false });
+
+      if (collectionsError) {
+        throw collectionsError;
+      }
+
+      // Fetch farmers for dropdown
+      const { data: farmersData, error: farmersError } = await supabase
+        .from('farmers')
+        .select('id, profiles!user_id(full_name)')
+        .eq('kyc_status', 'approved');
+
+      if (farmersError) {
+        throw farmersError;
+      }
+
+      // Fetch staff for dropdown
+      const { data: staffData, error: staffError } = await supabase
+        .from('staff')
+        .select('id, profiles!user_id(full_name)');
+
+      if (staffError) {
+        throw staffError;
+      }
+
+      return {
+        collections: collectionsData || [],
+        farmers: farmersData || [],
+        staff: staffData || []
+      };
+    },
+    staleTime: 1000 * 60 * 5, // 5 minutes
+    gcTime: 1000 * 60 * 15, // 15 minutes
+  });
+};
+
 // Memoized metric card component
 const MetricCard = memo(({ icon: Icon, title, value, subtitle, gradient }: any) => (
   <div className={`bg-gradient-to-br ${gradient} rounded-lg shadow-lg p-6 text-white`}>
@@ -154,7 +236,9 @@ MetricCard.displayName = 'MetricCard';
 
 const CollectionsAnalyticsDashboard = () => {
   const toast = useToastNotifications();
+  const queryClient = useQueryClient();
   const { collections: realtimeCollections, isLoading: realtimeLoading } = useRealtimeAllCollections();
+  const { data: collectionsData, isLoading: collectionsLoading, isError, error, refetch } = useCollectionsData();
   
   // State
   const [initialLoading, setInitialLoading] = useState(true);
@@ -165,8 +249,6 @@ const CollectionsAnalyticsDashboard = () => {
   const [selectedFarmer, setSelectedFarmer] = useState('all');
   const [selectedStaff, setSelectedStaff] = useState('all');
   const [currentView, setCurrentView] = useState('overview');
-  const [farmers, setFarmers] = useState<any[]>([]);
-  const [staff, setStaff] = useState<any[]>([]);
 
   // Log component mount
   useEffect(() => {
@@ -176,51 +258,12 @@ const CollectionsAnalyticsDashboard = () => {
     };
   }, []);
 
-  // Fetch dropdown data - only once on component mount
+  // Update initial loading state when data is loaded
   useEffect(() => {
-    let isMounted = true;
-    
-    const fetchDropdownData = async () => {
-      collectionsViewLogger.info('Fetching dropdown data');
-      try {
-        const [farmersResult, staffResult] = await Promise.all([
-          supabase
-            .from('farmers')
-            .select('id, profiles!user_id(full_name)')
-            .eq('kyc_status', 'approved'),
-          supabase
-            .from('staff')
-            .select('id, profiles!user_id(full_name)')
-        ]);
-
-        if (farmersResult.error) throw farmersResult.error;
-        if (staffResult.error) throw staffResult.error;
-
-        if (isMounted) {
-          collectionsViewLogger.info('Dropdown data fetched successfully', {
-            farmersCount: farmersResult.data?.length || 0,
-            staffCount: staffResult.data?.length || 0
-          });
-          setFarmers(farmersResult.data || []);
-          setStaff(staffResult.data || []);
-          setInitialLoading(false);
-        }
-      } catch (error: any) {
-        collectionsViewLogger.error('Error fetching dropdown data', error);
-        console.error('Error fetching dropdown data:', error);
-        toast.error('Error', error.message || 'Failed to fetch dropdown data');
-        if (isMounted) {
-          setInitialLoading(false);
-        }
-      }
-    };
-
-    fetchDropdownData();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [toast]);
+    if (collectionsData) {
+      setInitialLoading(false);
+    }
+  }, [collectionsData]);
 
   // Log realtime collections updates
   useEffect(() => {
@@ -520,6 +563,10 @@ const CollectionsAnalyticsDashboard = () => {
     collectionsViewLogger.info('Search term changed', { from: searchTerm, to: value });
     setSearchTerm(value);
   }, [searchTerm]);
+
+  // Get farmers and staff from cached data
+  const farmers = collectionsData?.farmers || [];
+  const staff = collectionsData?.staff || [];
 
   // Render views
   const renderView = useCallback(() => {
@@ -969,7 +1016,7 @@ const CollectionsAnalyticsDashboard = () => {
   }, [currentView, filteredCollections, realtimeCollections, analytics, metrics, selectedCollection]);
 
   // Check if we're still loading (either initial data or realtime data)
-  const isLoading = initialLoading || (realtimeLoading && realtimeCollections.length === 0);
+  const isLoading = initialLoading || collectionsLoading || (realtimeLoading && realtimeCollections.length === 0);
 
   if (isLoading) {
     collectionsViewLogger.info('Showing loading state');
@@ -978,6 +1025,22 @@ const CollectionsAnalyticsDashboard = () => {
         <div className="text-center">
           <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-indigo-600 mx-auto"></div>
           <p className="mt-4 text-gray-600 font-medium">Loading collections analytics...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (isError) {
+    collectionsViewLogger.error('Error loading collections data', error);
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+        <div className="text-center bg-white p-8 rounded-lg shadow-lg max-w-md">
+          <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
+          <h3 className="text-xl font-semibold text-gray-900 mb-2">Error Loading Data</h3>
+          <p className="text-gray-600 mb-4">Failed to load collections data. Please try again.</p>
+          <Button onClick={() => refetch()} className="bg-blue-600 hover:bg-blue-700">
+            Retry
+          </Button>
         </div>
       </div>
     );
@@ -995,9 +1058,16 @@ const CollectionsAnalyticsDashboard = () => {
               <h1 className="text-4xl font-bold text-gray-900 mb-2">Collections Analytics</h1>
               <p className="text-gray-600">Advanced insights and performance metrics</p>
             </div>
-            <div className="flex items-center gap-2 px-4 py-2 bg-white rounded-lg shadow">
-              <Activity className="h-5 w-5 text-green-500 animate-pulse" />
-              <span className="text-sm font-medium text-gray-700">Live Data</span>
+            <div className="flex items-center gap-2">
+              <RefreshButton 
+                isRefreshing={isLoading} 
+                onRefresh={() => refetch()} 
+                className="bg-white border-gray-300 hover:bg-gray-50 rounded-lg shadow-sm"
+              />
+              <div className="flex items-center gap-2 px-4 py-2 bg-white rounded-lg shadow">
+                <Activity className="h-5 w-5 text-green-500 animate-pulse" />
+                <span className="text-sm font-medium text-gray-700">Live Data</span>
+              </div>
             </div>
           </div>
 

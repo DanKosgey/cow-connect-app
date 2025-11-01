@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { useAuth } from '@/contexts/SimplifiedAuthContext';
-import { supabase } from '@/integrations/supabase/client';
 import useToastNotifications from '@/hooks/useToastNotifications';
 import { PaymentService } from '@/services/payment-service';
 import { Button } from '@/components/ui/button';
@@ -20,6 +19,9 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { format } from 'date-fns';
+import RefreshButton from '@/components/ui/RefreshButton';
+import { useStaffPortalData } from '@/hooks/useStaffPortalData';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface FarmerPayment {
   id: string;
@@ -41,48 +43,10 @@ interface FarmerPayment {
 const PaymentHistory: React.FC = () => {
   const { user } = useAuth();
   const { show, error: showError } = useToastNotifications();
-  const [farmerPayments, setFarmerPayments] = useState<FarmerPayment[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      // Fetch payment history with increased limit to show more records
-      const { data: paymentsData, error: paymentsError } = await supabase
-        .from('farmer_payments')
-        .select(`
-          id,
-          farmer_id,
-          collection_ids,
-          total_amount,
-          approval_status,
-          approved_at,
-          paid_at,
-          notes,
-          created_at,
-          farmers!farmer_payments_farmer_id_fkey (
-            full_name,
-            id,
-            phone_number
-          )
-        `)
-        .order('created_at', { ascending: false })
-        .limit(1000); // Increased limit to show more payment records
-
-      if (paymentsError) throw paymentsError;
-      
-      setFarmerPayments(paymentsData || []);
-    } catch (error: any) {
-      console.error('Error fetching data:', error);
-      showError('Error', String(error?.message || 'Failed to fetch data'));
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { useStaffPayments } = useStaffPortalData();
+  const queryClient = useQueryClient();
+  
+  const { data: farmerPayments = [], isLoading, refetch } = useStaffPayments('all');
 
   const handleMarkAsPaid = async (paymentId: string) => {
     try {
@@ -93,7 +57,7 @@ const PaymentHistory: React.FC = () => {
       }
 
       // Refresh data
-      await fetchData();
+      await refetch();
 
       show({
         title: 'Success',
@@ -114,7 +78,7 @@ const PaymentHistory: React.FC = () => {
     }
   };
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
@@ -125,9 +89,18 @@ const PaymentHistory: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold">Payment History</h1>
-        <p className="text-muted-foreground">View and manage farmer payment records</p>
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">Payment History</h1>
+          <p className="text-muted-foreground">View and manage farmer payment records</p>
+        </div>
+        <div className="mt-4 md:mt-0">
+          <RefreshButton 
+            isRefreshing={isLoading} 
+            onRefresh={refetch} 
+            className="bg-white border-gray-300 hover:bg-gray-50 rounded-md shadow-sm"
+          />
+        </div>
       </div>
 
       {/* Payment History */}

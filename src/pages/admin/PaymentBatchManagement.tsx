@@ -1,5 +1,4 @@
-import React, { useState, useEffect } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import React, { useState } from 'react';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -14,8 +13,7 @@ import {
 } from '@/utils/iconImports';
 import useToastNotifications from '@/hooks/useToastNotifications';
 import { formatCurrency } from '@/utils/formatters';
-import { CreditService } from '@/services/credit-service';
-import { logger } from '@/utils/logger';
+import { usePaymentBatchData } from '@/hooks/usePaymentBatchData';
 
 interface PaymentBatch {
   batch_id: string;
@@ -48,111 +46,48 @@ interface BatchCollection {
 
 const PaymentBatchManagement = () => {
   const toast = useToastNotifications();
-  const [batches, setBatches] = useState<PaymentBatch[]>([]);
+  const { 
+    usePaymentBatches,
+    useBatchCollections,
+    createPaymentBatch,
+    processPaymentBatch,
+    exportBatch
+  } = usePaymentBatchData();
+  
+  // Get payment batches with caching
+  const { data: batches = [], isLoading: batchesLoading, refetch: refetchBatches } = usePaymentBatches();
+  
+  // State for selected batch and its collections
   const [selectedBatch, setSelectedBatch] = useState<PaymentBatch | null>(null);
-  const [batchCollections, setBatchCollections] = useState<BatchCollection[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [processing, setProcessing] = useState(false);
+  const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
+  
+  // Get batch collections with caching
+  const { data: batchCollections = [], isLoading: collectionsLoading } = useBatchCollections(selectedBatchId || '');
+  
+  const loading = batchesLoading || collectionsLoading;
+  const processing = createPaymentBatch.isPending || processPaymentBatch.isPending;
+  
   const [newBatchPeriod, setNewBatchPeriod] = useState({
     start: new Date().toISOString().split('T')[0],
     end: new Date().toISOString().split('T')[0]
   });
 
-  useEffect(() => {
-    fetchBatches();
-  }, []);
-
-  const fetchBatches = async () => {
-    try {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('payment_batches')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setBatches(data || []);
-    } catch (error) {
-      console.error('Error fetching batches:', error);
-      toast.error('Error', 'Failed to fetch payment batches');
-    } finally {
-      setLoading(false);
+  // Update batch collections when selected batch changes
+  React.useEffect(() => {
+    if (selectedBatch) {
+      setSelectedBatchId(selectedBatch.batch_id);
+    } else {
+      setSelectedBatchId(null);
     }
-  };
+  }, [selectedBatch]);
 
-  const fetchBatchCollections = async (batchId: string) => {
+  const handleCreateNewBatch = async () => {
     try {
-      const { data, error } = await supabase
-        .from('collection_payments')
-        .select(`
-          id,
-          collection_id,
-          amount,
-          rate_applied,
-          credit_used,
-          net_payment,
-          collections (
-            id,
-            collection_id,
-            liters,
-            rate_per_liter,
-            total_amount,
-            status,
-            collection_date,
-            farmers (
-              profiles (
-                full_name,
-                phone
-              )
-            )
-          )
-        `)
-        .eq('batch_id', batchId);
-
-      if (error) throw error;
-
-      const collections = data?.map(item => ({
-        id: item.id,
-        collection_id: item.collections?.collection_id || '',
-        farmer_name: item.collections?.farmers?.profiles?.full_name || 'Unknown Farmer',
-        farmer_phone: item.collections?.farmers?.profiles?.phone || 'No phone',
-        liters: item.collections?.liters || 0,
-        rate_per_liter: item.collections?.rate_per_liter || 0,
-        total_amount: item.collections?.total_amount || 0,
-        status: item.collections?.status || 'Unknown',
-        credit_used: item.credit_used || 0,
-        net_payment: item.net_payment || (item.collections?.total_amount || 0)
-      })) || [];
-
-      setBatchCollections(collections);
-    } catch (error) {
-      console.error('Error fetching batch collections:', error);
-      toast.error('Error', 'Failed to fetch batch collections');
-    }
-  };
-
-  const createNewBatch = async () => {
-    try {
-      // Generate a human-readable batch identifier
-      const batchName = `BATCH-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
-      const displayName = `Payment Batch ${new Date().toISOString().slice(0, 10)}`;
-      
-      const { data, error } = await supabase
-        .from('payment_batches')
-        .insert({
-          batch_id: batchName,
-          batch_name: displayName,
-          period_start: newBatchPeriod.start,
-          period_end: newBatchPeriod.end,
-          status: 'Generated'
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-
+      await createPaymentBatch.mutateAsync({
+        start: newBatchPeriod.start,
+        end: newBatchPeriod.end
+      });
       toast.success('Success', 'Payment batch created successfully!');
-      fetchBatches();
       setNewBatchPeriod({
         start: new Date().toISOString().split('T')[0],
         end: new Date().toISOString().split('T')[0]
@@ -163,229 +98,19 @@ const PaymentBatchManagement = () => {
     }
   };
 
-  const processBatch = async (batchId: string) => {
+  const handleProcessBatch = async (batchId: string) => {
     try {
-      setProcessing(true);
-      
-      // Update batch status to Processing
-      const { error: updateError } = await supabase
-        .from('payment_batches')
-        .update({ 
-          status: 'Processing',
-          processed_at: new Date().toISOString()
-        })
-        .eq('batch_id', batchId);
-
-      if (updateError) throw updateError;
-
-      // Fetch all collections in this batch
-      const { data: batchCollections, error: collectionsError } = await supabase
-        .from('collection_payments')
-        .select(`
-          id,
-          collection_id,
-          amount,
-          rate_applied,
-          collections (
-            id,
-            farmer_id,
-            total_amount,
-            status
-          )
-        `)
-        .eq('batch_id', batchId);
-
-      if (collectionsError) throw collectionsError;
-
-      // Group collections by farmer
-      const farmerCollections: Record<string, any[]> = {};
-      batchCollections?.forEach((item: any) => {
-        const farmerId = item.collections?.farmer_id;
-        if (farmerId) {
-          if (!farmerCollections[farmerId]) {
-            farmerCollections[farmerId] = [];
-          }
-          farmerCollections[farmerId].push(item);
-        }
-      });
-
-      // Process each farmer's collections with credit deduction
-      let totalCreditUsedInBatch = 0;
-      let totalNetPaymentInBatch = 0;
-
-      for (const [farmerId, collections] of Object.entries(farmerCollections)) {
-        try {
-          // Calculate available credit for this farmer
-          const creditInfo = await CreditService.calculateAvailableCredit(farmerId);
-          let farmerCreditUsed = 0;
-          let farmerNetPayment = 0;
-          
-          // Process each collection for this farmer
-          for (const collectionItem of collections) {
-            const collection = collectionItem.collections;
-            const collectionAmount = collection.total_amount || 0;
-            
-            // Calculate credit to use for this collection (minimum of available credit and collection amount)
-            const creditUsed = Math.min(creditInfo.availableCredit - farmerCreditUsed, collectionAmount);
-            const netPayment = collectionAmount - creditUsed;
-            
-            // Update the collection payment record with credit information
-            const { error: updatePaymentError } = await supabase
-              .from('collection_payments')
-              .update({
-                credit_used: creditUsed,
-                net_payment: netPayment
-              })
-              .eq('id', collectionItem.id);
-
-            if (updatePaymentError) {
-              logger.warn('Warning: Failed to update collection payment with credit info', updatePaymentError);
-            }
-
-            // Update collection status to Paid
-            const { error: updateCollectionError } = await supabase
-              .from('collections')
-              .update({ 
-                status: 'Paid',
-                updated_at: new Date().toISOString()
-              })
-              .eq('id', collection.id);
-
-            if (updateCollectionError) {
-              logger.warn('Warning: Failed to update collection status', updateCollectionError);
-            }
-
-            // Track credit used and net payment
-            farmerCreditUsed += creditUsed;
-            farmerNetPayment += netPayment;
-            totalCreditUsedInBatch += creditUsed;
-            totalNetPaymentInBatch += netPayment;
-
-            // If credit was used, deduct it from the farmer's credit balance and record transaction
-            if (creditUsed > 0) {
-              // Get current credit limit record
-              const { data: creditLimitData, error: creditLimitError } = await supabase
-                .from('farmer_credit_limits')
-                .select('*')
-                .eq('farmer_id', farmerId)
-                .eq('is_active', true)
-                .maybeSingle();
-
-              if (creditLimitError) {
-                logger.warn('Warning: Error fetching credit limit', creditLimitError);
-              } else if (creditLimitData) {
-                const creditLimitRecord = creditLimitData as any;
-                
-                // Calculate new balance
-                const newBalance = Math.max(0, creditLimitRecord.current_credit_balance - creditUsed);
-                const newTotalUsed = creditLimitRecord.total_credit_used + creditUsed;
-
-                // Update credit limit
-                const { error: updateError } = await supabase
-                  .from('farmer_credit_limits')
-                  .update({
-                    current_credit_balance: newBalance,
-                    total_credit_used: newTotalUsed,
-                    updated_at: new Date().toISOString()
-                  })
-                  .eq('id', creditLimitRecord.id);
-
-                if (updateError) {
-                  logger.warn('Warning: Failed to update credit limit', updateError);
-                }
-
-                // Create credit transaction record for the deduction
-                const { error: transactionError } = await supabase
-                  .from('farmer_credit_transactions')
-                  .insert({
-                    farmer_id: farmerId,
-                    transaction_type: 'credit_repaid',
-                    amount: creditUsed,
-                    balance_after: newBalance,
-                    reference_type: 'batch_payment_deduction',
-                    reference_id: collection.id,
-                    description: `Credit used to offset batch payment of KES ${collectionAmount.toFixed(2)}`
-                  });
-
-                if (transactionError) {
-                  logger.warn('Warning: Failed to create credit deduction transaction', transactionError);
-                }
-              }
-            }
-          }
-
-          // Update farmer_payments records for this farmer
-          // Find farmer_payments that include any of these collections
-          const collectionIds = collections.map((item: any) => item.collection_id);
-          const { data: relatedPayments, error: findPaymentsError } = await supabase
-            .from('farmer_payments')
-            .select('id, collection_ids, total_amount')
-            .contains('collection_ids', collectionIds)
-            .eq('farmer_id', farmerId);
-
-          if (findPaymentsError) {
-            logger.warn('Warning: Error finding related farmer payments', findPaymentsError);
-          } else if (relatedPayments && relatedPayments.length > 0) {
-            // Update all related farmer_payments with credit information
-            for (const payment of relatedPayments) {
-              const { error: updatePaymentError } = await supabase
-                .from('farmer_payments')
-                .update({ 
-                  approval_status: 'approved',
-                  paid_at: new Date().toISOString(),
-                  credit_used: farmerCreditUsed,
-                  net_payment: farmerNetPayment
-                })
-                .eq('id', payment.id);
-
-              if (updatePaymentError) {
-                logger.warn('Warning: Error updating farmer payment with credit info', updatePaymentError);
-              }
-            }
-          }
-        } catch (farmerError) {
-          logger.error('Error processing farmer collections', farmerError);
-          // Continue processing other farmers even if one fails
-        }
-      }
-
-      // Update batch with credit summary
-      const { error: updateBatchError } = await supabase
-        .from('payment_batches')
-        .update({
-          total_credit_used: totalCreditUsedInBatch,
-          total_net_payment: totalNetPaymentInBatch,
-          status: 'Completed',
-          completed_at: new Date().toISOString()
-        })
-        .eq('batch_id', batchId);
-
-      if (updateBatchError) throw updateBatchError;
-
+      await processPaymentBatch.mutateAsync(batchId);
       toast.success('Success', 'Payment batch processed successfully with credit deductions!');
-      fetchBatches();
     } catch (error: any) {
       console.error('Error processing batch:', error);
-      
-      // Reset batch status to Generated on error
-      await supabase
-        .from('payment_batches')
-        .update({ status: 'Generated' })
-        .eq('batch_id', batchId);
-        
       toast.error('Error', 'Failed to process payment batch: ' + (error.message || 'Unknown error'));
-    } finally {
-      setProcessing(false);
     }
   };
 
-  const exportBatch = async (batchId: string) => {
+  const handleExportBatch = async (batchId: string) => {
     try {
-      // Fetch batch data for export
-      await fetchBatchCollections(batchId);
-      
-      // In a real implementation, you would generate a CSV file
-      // For now, we'll just show a success message
+      await exportBatch.mutateAsync(batchId);
       toast.success('Success', 'Batch export initiated. File will be downloaded shortly.');
     } catch (error: any) {
       console.error('Error exporting batch:', error);
@@ -447,10 +172,11 @@ const PaymentBatchManagement = () => {
                 </div>
                 <div className="flex items-end">
                   <Button
-                    onClick={createNewBatch}
+                    onClick={handleCreateNewBatch}
+                    disabled={createPaymentBatch.isPending}
                     className="bg-indigo-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-indigo-700 transition-colors"
                   >
-                    Create Batch
+                    {createPaymentBatch.isPending ? 'Creating...' : 'Create Batch'}
                   </Button>
                 </div>
               </div>
@@ -485,7 +211,6 @@ const PaymentBatchManagement = () => {
                         }`}
                         onClick={() => {
                           setSelectedBatch(batch);
-                          fetchBatchCollections(batch.batch_id);
                         }}
                       >
                         <td className="px-6 py-4 font-medium text-gray-900">
@@ -520,20 +245,25 @@ const PaymentBatchManagement = () => {
                               <Button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  processBatch(batch.batch_id);
+                                  handleProcessBatch(batch.batch_id);
                                 }}
                                 disabled={processing}
                                 className="bg-green-600 text-white px-3 py-1 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors flex items-center gap-1"
                               >
-                                <Zap className="w-3 h-3" />
+                                {processPaymentBatch.isPending ? (
+                                  <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
+                                ) : (
+                                  <Zap className="w-3 h-3" />
+                                )}
                                 Process
                               </Button>
                             )}
                             <Button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                exportBatch(batch.batch_id);
+                                handleExportBatch(batch.batch_id);
                               }}
+                              disabled={exportBatch.isPending}
                               className="bg-blue-600 text-white px-3 py-1 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors flex items-center gap-1"
                             >
                               <Download className="w-3 h-3" />

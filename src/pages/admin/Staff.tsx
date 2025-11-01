@@ -15,16 +15,14 @@ import { Pagination } from '@/components/admin/Pagination';
 import { StaffInviteDialog } from '@/components/admin/StaffInviteDialog';
 import { PaginatedResponse, paginateArray } from '@/utils/paginationUtils';
 import { usePerformanceMonitor } from '@/hooks/usePerformanceMonitor';
+import RefreshButton from '@/components/ui/RefreshButton';
+import { useStaffManagementData } from '@/hooks/useStaffManagementData';
 
 const Staff = () => {
-  const [staff, setStaff] = useState<any[]>([]);
-  const [filteredStaff, setFilteredStaff] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
-  const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  const [totalCount, setTotalCount] = useState(0);
   
   // Initialize performance monitoring
   const { measureOperation } = usePerformanceMonitor({ 
@@ -32,115 +30,16 @@ const Staff = () => {
     enabled: process.env.NODE_ENV === 'development'
   });
 
-  useEffect(() => {
-    const fetch = async () => {
-      await measureOperation('fetchStaff', async () => {
-        setLoading(true);
-        try {
-          // For pagination, we need to get the total count first
-          const { count, error: countError } = await supabase
-            .from('staff')
-            .select('*', { count: 'exact', head: true });
-          
-          if (countError) {
-            console.error('Error fetching staff count:', countError);
-            setLoading(false);
-            return;
-          }
-          
-          setTotalCount(count || 0);
-          
-          // Then fetch the paginated data with user roles in a single query
-          // Fixed the query to properly fetch user roles by joining through the profiles table
-          const { data, error } = await supabase
-            .from('staff')
-            .select(`
-              id, 
-              employee_id, 
-              user_id,
-              profiles:user_id(full_name, email)
-            `)
-            .order('created_at', { ascending: false })
-            .range((currentPage - 1) * pageSize, currentPage * pageSize - 1);
-          
-          if (!error && data) {
-            // Fetch user roles separately since there's no direct relationship between staff and user_roles
-            const userIds = data.map(staffMember => staffMember.user_id);
-            let userRolesData = [];
-            
-            if (userIds.length > 0) {
-              const { data: rolesData, error: rolesError } = await supabase
-                .from('user_roles')
-                .select('user_id, role, active')
-                .in('user_id', userIds);
-              
-              if (!rolesError && rolesData) {
-                userRolesData = rolesData;
-              }
-            }
-            
-            // Combine staff data with user roles
-            const staffWithRoles = data.map(staffMember => {
-              const userRoles = userRolesData.filter(role => role.user_id === staffMember.user_id);
-              let roles = [];
-              let activeRoles = [];
-              
-              if (Array.isArray(userRoles)) {
-                roles = userRoles
-                  .filter((r: any) => r.role === 'staff' || r.role === 'admin')
-                  .map((r: any) => r.role);
-                
-                activeRoles = userRoles
-                  .filter((r: any) => (r.role === 'staff' || r.role === 'admin') && r.active)
-                  .map((r: any) => r.role);
-              }
-              
-              return {
-                ...staffMember,
-                roles: roles,
-                activeRoles: activeRoles
-              };
-            });
-            
-            setStaff(staffWithRoles);
-          } else if (error) {
-            console.error('Error fetching staff data:', error);
-            // Handle 400/401 errors by potentially refreshing the session
-            if ((error as any).status === 400 || (error as any).status === 401) {
-              console.warn('Authentication issue detected, may need to refresh session');
-              // The app should handle session refresh automatically through the auth context
-            }
-          }
-        } catch (error) {
-          console.error('Error fetching staff:', error);
-        } finally {
-          setLoading(false);
-        }
-      });
-    };
-    fetch();
-  }, [currentPage, pageSize]); // Remove measureOperation from dependencies to prevent infinite loops
+  const { data: staffData, isLoading, isError, error, refetch } = useStaffManagementData(currentPage, pageSize, searchTerm, roleFilter);
+  
+  const staff = staffData?.staff || [];
+  const totalCount = staffData?.totalCount || 0;
+  const [filteredStaff, setFilteredStaff] = useState<any[]>(staff);
+  const loading = isLoading;
 
-  // Apply client-side filtering
   useEffect(() => {
-    let filtered = [...staff];
-    
-    if (searchTerm) {
-      filtered = filtered.filter(staffMember => 
-        staffMember.profiles?.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        staffMember.employee_id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        staffMember.profiles?.email?.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    }
-    
-    if (roleFilter !== 'all') {
-      filtered = filtered.filter(staffMember => 
-        staffMember.roles?.includes(roleFilter)
-      );
-    }
-    
-    setFilteredStaff(filtered);
-  }, [searchTerm, roleFilter, staff]);
+    setFilteredStaff(staff);
+  }, [staff]);
 
   const totalPages = Math.ceil(totalCount / pageSize);
   
@@ -173,84 +72,9 @@ const Staff = () => {
     setCurrentPage(1); // Reset to first page when page size changes
   };
 
-  const handleInviteSent = () => {
+  const handleInviteSent = async () => {
     // Refresh the staff list to show updated counts
-    // The invitation won't appear in the staff list until the user accepts it,
-    // but we can refresh to get updated statistics
-    const refreshData = async () => {
-      try {
-        setLoading(true);
-        
-        // Get updated count
-        const { count, error: countError } = await supabase
-          .from('staff')
-          .select('*', { count: 'exact', head: true });
-        
-        if (!countError) {
-          setTotalCount(count || 0);
-        }
-        
-        // Fetch updated staff data
-        const { data, error } = await supabase
-          .from('staff')
-          .select(`
-            id, 
-            employee_id, 
-            user_id,
-            profiles:user_id(full_name, email)
-          `)
-          .order('created_at', { ascending: false })
-          .range((currentPage - 1) * pageSize, currentPage * pageSize - 1);
-        
-        if (!error && data) {
-          // Fetch user roles separately since there's no direct relationship between staff and user_roles
-          const userIds = data.map(staffMember => staffMember.user_id);
-          let userRolesData = [];
-          
-          if (userIds.length > 0) {
-            const { data: rolesData, error: rolesError } = await supabase
-              .from('user_roles')
-              .select('user_id, role, active')
-              .in('user_id', userIds);
-            
-            if (!rolesError && rolesData) {
-              userRolesData = rolesData;
-            }
-          }
-          
-          // Combine staff data with user roles
-          const staffWithRoles = data.map(staffMember => {
-            const userRoles = userRolesData.filter(role => role.user_id === staffMember.user_id);
-            let roles = [];
-            let activeRoles = [];
-            
-            if (Array.isArray(userRoles)) {
-              roles = userRoles
-                .filter((r: any) => r.role === 'staff' || r.role === 'admin')
-                .map((r: any) => r.role);
-              
-              activeRoles = userRoles
-                .filter((r: any) => (r.role === 'staff' || r.role === 'admin') && r.active)
-                .map((r: any) => r.role);
-            }
-            
-            return {
-              ...staffMember,
-              roles: roles,
-              activeRoles: activeRoles
-            };
-          });
-          
-          setStaff(staffWithRoles);
-        }
-      } catch (error) {
-        console.error('Error refreshing staff data:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    refreshData();
+    await refetch();
   };
 
   if (loading && staff.length === 0) {
@@ -269,7 +93,14 @@ const Staff = () => {
           description="Manage staff profiles, roles, and permissions"
           icon={<UserCog className="h-8 w-8" />}
           actions={
-            <StaffInviteDialog onInviteSent={handleInviteSent} />
+            <div className="flex items-center space-x-2">
+              <RefreshButton 
+                isRefreshing={loading} 
+                onRefresh={refetch} 
+                className="bg-white border-gray-300 hover:bg-gray-50 rounded-lg shadow-sm"
+              />
+              <StaffInviteDialog onInviteSent={handleInviteSent} />
+            </div>
           }
         />
 

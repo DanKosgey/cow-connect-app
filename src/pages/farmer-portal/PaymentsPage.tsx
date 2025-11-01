@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +22,8 @@ import { FilterBar } from "@/components/FilterBar";
 import { DataTable } from "@/components/DataTable";
 import { StatCard } from "@/components/StatCard";
 import { formatCurrency } from "@/utils/formatters";
+import RefreshButton from "@/components/ui/RefreshButton";
+import { useFarmerPaymentsData } from '@/hooks/useFarmerPaymentsData';
 
 interface Collection {
   id: string;
@@ -36,97 +38,29 @@ interface Collection {
 const PaymentsPage = () => {
   const toast = useToastNotifications();
   const toastRef = useRef(toast);
-  const [loading, setLoading] = useState(true);
-  const [collections, setCollections] = useState<Collection[]>([]);
-  const [filteredCollections, setFilteredCollections] = useState<Collection[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [dateFilter, setDateFilter] = useState("");
-  const [farmer, setFarmer] = useState<any>(null);
-  const [creditInfo, setCreditInfo] = useState<any>(null);
+  
+  const { data: paymentsData, isLoading: loading, isError, error, refetch } = useFarmerPaymentsData();
+  
+  const collections = paymentsData?.collections || [];
+  const farmer = paymentsData?.farmer;
+  const creditInfo = paymentsData?.creditInfo;
+  
+  const [filteredCollections, setFilteredCollections] = useState<Collection[]>(collections);
 
   // Update toast ref whenever toast changes
   useEffect(() => {
     toastRef.current = toast;
-  }, []);
+  }, [toast]);
 
-  // Fetch collections data for the logged-in farmer
   useEffect(() => {
-    const fetchCollections = async () => {
-      try {
-        setLoading(true);
-        const { data: { user } } = await supabase.auth.getUser();
-        
-        if (!user) return;
-
-        // Fetch farmer profile
-        const { data: farmerData, error: farmerError } = await supabase
-          .from('farmers')
-          .select('id')
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-        if (farmerError) {
-          console.error('Error fetching farmer data:', farmerError);
-          toastRef.current.error('Error', 'Failed to load farmer profile');
-          setLoading(false);
-          return;
-        }
-
-        if (!farmerData) {
-          console.warn('No farmer data found for user:', user.id);
-          toastRef.current.error('Warning', 'Farmer profile not found. Please complete your registration.');
-          setLoading(false);
-          return;
-        }
-
-        setFarmer(farmerData);
-
-        // Fetch credit information
-        const { data: creditData, error: creditError } = await supabase
-          .from('farmer_credit_limits')
-          .select('*')
-          .eq('farmer_id', farmerData.id)
-          .eq('is_active', true)
-          .maybeSingle();
-
-        if (!creditError && creditData) {
-          setCreditInfo(creditData);
-        }
-
-        // Fetch collections from the collections table for this farmer
-        const { data: collectionsData, error } = await supabase
-          .from('collections')
-          .select(`
-            id,
-            collection_id,
-            liters,
-            rate_per_liter,
-            total_amount,
-            collection_date,
-            status
-          `)
-          .eq('farmer_id', farmerData.id)
-          .order('collection_date', { ascending: false });
-
-        if (error) {
-          console.error('Error fetching collections:', error);
-          toastRef.current.error('Error', 'Failed to load collections data');
-          setLoading(false);
-          return;
-        }
-        
-        setCollections(collectionsData || []);
-      } catch (err) {
-        console.error('Error fetching collections:', err);
-        toastRef.current.error('Error', 'Failed to load collections data');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchCollections();
-  }, []);
+    if (error) {
+      console.error('Error fetching payments data:', error);
+      toastRef.current.error('Error', error.message || 'Failed to load payments data');
+    }
+  }, [error, toastRef]);
 
   // Filter collections based on search and filters
   useEffect(() => {
@@ -161,12 +95,12 @@ const PaymentsPage = () => {
     amount: collection.total_amount
   }));
 
-  // Calculate payment statistics
-  const totalCollections = collections.reduce((sum, collection) => sum + collection.total_amount, 0);
-  const paidCollections = collections.filter(c => c.status === 'Paid').reduce((sum, collection) => sum + collection.total_amount, 0);
-  const pendingCollections = collections.filter(c => c.status !== 'Paid').reduce((sum, collection) => sum + collection.total_amount, 0);
-  const availableCredit = creditInfo?.current_credit_balance || 0;
-  const creditLimit = creditInfo?.max_credit_amount || 0;
+  // Payment statistics from hook data
+  const totalCollections = paymentsData?.totalCollections || 0;
+  const paidCollections = paymentsData?.paidCollections || 0;
+  const pendingCollections = paymentsData?.pendingCollections || 0;
+  const availableCredit = paymentsData?.availableCredit || 0;
+  const creditLimit = paymentsData?.creditLimit || 0;
 
   const exportCollections = (format: 'csv' | 'json') => {
     try {
@@ -209,6 +143,11 @@ const PaymentsPage = () => {
         description="Track all your milk collections and payment status"
         actions={
           <div className="flex space-x-3">
+            <RefreshButton 
+              isRefreshing={loading} 
+              onRefresh={refetch} 
+              className="bg-white border-gray-300 hover:bg-gray-50 rounded-md shadow-sm"
+            />
             <Button variant="outline" className="flex items-center gap-2" onClick={() => exportCollections('csv')}>
               <Download className="h-4 w-4" />
               CSV

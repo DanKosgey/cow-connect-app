@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback, useMemo, startTransition } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useCollectionAnalyticsData } from '@/hooks/useCollectionAnalyticsData';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -14,7 +14,6 @@ import {
 import useToastNotifications from '@/hooks/useToastNotifications';
 import { CollectionsSkeleton } from '@/components/admin/CollectionsSkeleton';
 import BusinessIntelligenceDashboard from '@/components/analytics/BusinessIntelligenceDashboard';
-import { trendService } from '@/services/trend-service';
 import { useSessionRefresh } from '@/hooks/useSessionRefresh';
 import OverviewView from '@/components/admin/analytics/OverviewView';
 import { QualityView } from '@/components/admin/analytics/QualityView';
@@ -22,7 +21,7 @@ import { CollectionsView } from '@/components/admin/analytics/CollectionsView';
 import { useDebounce } from '@/hooks/useDebounce';
 import { useChartStabilizer } from '@/hooks/useChartStabilizer';
 import { useBatchedState } from '@/hooks/useBatchedState';
-import { useLoadingDelay } from '@/hooks/useLoadingDelay'; // Add loading delay hook
+import { useLoadingDelay } from '@/hooks/useLoadingDelay';
 
 // Types
 interface Collection {
@@ -118,25 +117,27 @@ const VIEWS = [
 const CollectionsAnalyticsDashboard = () => {
   const toast = useToastNotifications();
   const { refreshSession } = useSessionRefresh({ refreshInterval: 90 * 60 * 1000 }); // Increased to 90 minutes
+  const { 
+    useCollections,
+    useTrends,
+    useFilteredCollections,
+    refreshCollections,
+    exportToCSV
+  } = useCollectionAnalyticsData();
 
   // State
-  const [collections, setCollections] = useState<Collection[]>([]);
-  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [currentView, setCurrentView] = useState('overview');
   const [selectedCollection, setSelectedCollection] = useState<Collection | null>(null);
-  const [lastFetchTime, setLastFetchTime] = useState<number>(0);
   
   // Use batched state for filter controls
   const [filters, setFilters] = useBatchedState({
     status: 'all',
     dateRange: 'daily'
   });
-  
-  const [trends, setTrends] = useState<Trends>(DEFAULT_TRENDS);
 
   // Use loading delay to prevent UI blinking
-  const showLoading = useLoadingDelay(loading, 300);
+  const showLoading = useLoadingDelay(refreshCollections.isPending, 300);
 
   // Add debounced search term
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
@@ -155,25 +156,20 @@ const CollectionsAnalyticsDashboard = () => {
     return ranges[filters.dateRange]?.toISOString() || ranges['daily'].toISOString();
   }, [filters.dateRange]);
 
-  // Memoized filtered collections with debounced search
-  const filteredCollections = useMemo(() => {
-    let filtered = collections;
-
-    if (debouncedSearchTerm) {
-      const term = debouncedSearchTerm.toLowerCase();
-      filtered = filtered.filter(c => 
-        c.farmers?.profiles?.full_name?.toLowerCase().includes(term) ||
-        c.collection_id?.toLowerCase().includes(term) ||
-        c.staff?.profiles?.full_name?.toLowerCase().includes(term)
-      );
-    }
-
-    if (filters.status !== 'all') {
-      filtered = filtered.filter(c => c.status === filters.status);
-    }
-
-    return filtered;
-  }, [collections, debouncedSearchTerm, filters.status]);
+  // Get collections data with caching
+  const { data: collections = [], isLoading: collectionsLoading } = useCollections(dateFilter);
+  
+  // Get trends data with caching
+  const { data: trends = DEFAULT_TRENDS, isLoading: trendsLoading } = useTrends(filters.dateRange);
+  
+  // Get filtered collections data with caching
+  const { data: filteredCollections = [], isLoading: filteredCollectionsLoading } = useFilteredCollections({
+    searchTerm: debouncedSearchTerm,
+    status: filters.status,
+    dateRange: dateFilter
+  });
+  
+  const loading = collectionsLoading || trendsLoading || filteredCollectionsLoading || refreshCollections.isPending;
 
   // Memoized analytics calculations with chart stabilizer
   const analytics = useMemo(() => {
@@ -280,160 +276,23 @@ const CollectionsAnalyticsDashboard = () => {
   const { data: stableTopFarmers } = useChartStabilizer(analytics.topFarmers, 100);
   const { data: stableStaffPerformance } = useChartStabilizer(analytics.staffPerformance, 100);
 
-  // Fetch data with batched state updates
-  const fetchData = useCallback(async () => {
-    // Rate limiting - prevent too frequent fetches
-    const now = Date.now();
-    if (now - lastFetchTime < 5000) { // At least 5 seconds between fetches
-      console.log('Skipping data fetch - too soon since last fetch');
-      return;
-    }
-    setLastFetchTime(now);
-
-    try {
-      startTransition(() => {
-        setLoading(true);
-      });
-      
-      // Check if we have a valid session before fetching data
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        console.warn('No valid session found, skipping data fetch');
-        toast.error('Authentication Required', 'Please log in again to view collections data');
-        startTransition(() => {
-          setLoading(false);
-        });
-        return;
-      }
-      
-      // Only refresh session if it's been more than 60 minutes since last refresh
-      // This prevents excessive refresh calls that cause rate limiting
-      refreshSession().catch(err => 
-        console.warn('Session refresh check completed', err)
-      );
-      
-      // Parallel data fetching with timeout
-      const fetchWithTimeout = async (promise: Promise<any>, timeoutMs: number = 10000) => {
-        return Promise.race([
-          promise,
-          new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Request timeout')), timeoutMs)
-          )
-        ]);
-      };
-      
-      const [collectionsResult, trendsResult] = await Promise.allSettled([
-        fetchWithTimeout(
-          supabase
-            .from('collections')
-            .select(`
-              *,
-              farmers!fk_collections_farmer_id (
-                id,
-                user_id,
-                profiles!user_id (full_name, phone)
-              ),
-              staff!collections_staff_id_fkey (
-                id,
-                user_id,
-                profiles!user_id (full_name)
-              )
-            `)
-            .gte('collection_date', dateFilter)
-            .order('collection_date', { ascending: false })
-            .limit(1000)
-            .then(data => data) as Promise<any>
-        ),
-        fetchWithTimeout(trendService.calculateCollectionsTrends(filters.dateRange))
-      ]);
-
-      // Handle collections result
-      if (collectionsResult.status === 'fulfilled' && !collectionsResult.value.error) {
-        setCollections(collectionsResult.value.data || []);
-      } else if (collectionsResult.status === 'rejected' || collectionsResult.value.error) {
-        const error = collectionsResult.status === 'rejected' 
-          ? collectionsResult.reason 
-          : collectionsResult.value.error;
-        
-        console.error('Error fetching collections:', error);
-        
-        // Check if this is an authentication error
-        if (error.message && (error.message.includes('apikey') || error.message.includes('Unauthorized') || error.message.includes('401'))) {
-          toast.error('Authentication Error', 'Your session has expired. Please log in again.');
-        } else if (error.message && error.message.includes('429')) {
-          toast.error('Rate Limit Exceeded', 'Too many requests. Please wait a moment and try again.');
-        } else {
-          toast.error('Error', error.message || 'Failed to fetch collections data');
-        }
-      }
-
-      // Handle trends result
-      if (trendsResult.status === 'fulfilled') {
-        setTrends(trendsResult.value);
-      } else {
-        console.error('Error calculating trends:', trendsResult.reason);
-        setTrends(DEFAULT_TRENDS);
-      }
-    } catch (error: any) {
-      console.error('Error fetching data:', error);
-      
-      // Check if this is an authentication error
-      if (error.message && (error.message.includes('apikey') || error.message.includes('Unauthorized') || error.message.includes('401'))) {
-        toast.error('Authentication Error', 'Your session has expired. Please log in again.');
-      } else if (error.message && error.message.includes('429')) {
-        toast.error('Rate Limit Exceeded', 'Too many requests. Please wait a moment and try again.');
-      } else {
-        toast.error('Error', error.message || 'Failed to fetch data');
-      }
-    } finally {
-      startTransition(() => {
-        setLoading(false);
-      });
-    }
-  }, [dateFilter, filters.dateRange, refreshSession, toast, lastFetchTime]);
-
   // Export to CSV
-  const exportToCSV = useCallback(() => {
-    if (filteredCollections.length === 0) {
-      toast.show({ title: 'Warning', description: 'No data to export' });
-      return;
+  const handleExportToCSV = useCallback(async () => {
+    try {
+      await exportToCSV.mutateAsync(collections);
+      toast.show({ title: 'Success', description: 'Data exported successfully' });
+    } catch (error: any) {
+      console.error('Error exporting data:', error);
+      toast.error('Error', error.message || 'Failed to export data');
     }
-
-    const csvData = filteredCollections.map(c => [
-      c.collection_id,
-      new Date(c.collection_date).toLocaleDateString(),
-      c.farmers?.profiles?.full_name || 'N/A',
-      c.staff?.profiles?.full_name || 'N/A',
-      c.liters,
-      c.quality_grade,
-      c.rate_per_liter,
-      c.total_amount,
-      c.status,
-      c.gps_latitude || 'N/A',
-      c.gps_longitude || 'N/A'
-    ]);
-
-    const headers = ['Collection ID', 'Date', 'Farmer', 'Staff', 'Liters', 'Quality Grade', 
-                     'Rate per Liter', 'Total Amount', 'Status', 'GPS Latitude', 'GPS Longitude'];
-    const csv = [headers, ...csvData].map(row => row.join(',')).join('\n');
-    
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `collections_${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [filteredCollections, toast]);
+  }, [collections, exportToCSV, toast]);
 
   // Clear filters with batched updates
   const clearFilters = useCallback(() => {
-    startTransition(() => {
-      setSearchTerm('');
-      setFilters({
-        status: 'all',
-        dateRange: 'daily'
-      });
+    setSearchTerm('');
+    setFilters({
+      status: 'all',
+      dateRange: 'daily'
     });
   }, [setFilters]);
 
@@ -454,11 +313,6 @@ const CollectionsAnalyticsDashboard = () => {
       currency: 'KES'
     }).format(amount);
   }, []);
-
-  // Effects
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
 
   if (showLoading) {
     return (
@@ -481,7 +335,8 @@ const CollectionsAnalyticsDashboard = () => {
           </div>
           <div className="flex flex-col sm:flex-row gap-3">
             <Button 
-              onClick={exportToCSV}
+              onClick={handleExportToCSV}
+              disabled={exportToCSV.isPending}
               className="bg-gradient-to-r from-green-600 to-emerald-700 hover:from-green-700 hover:to-emerald-800 text-white flex items-center gap-2 shadow-lg hover:shadow-xl transition-all duration-300 px-4 py-2"
             >
               <Download className="h-4 w-4" />
@@ -602,7 +457,7 @@ const CollectionsAnalyticsDashboard = () => {
               formatCurrency={formatCurrency}
               error={null} // In the future, we can pass error state from the hook
               isLoading={loading}
-              refreshData={fetchData}
+              refreshData={() => refreshCollections.mutate()}
             />
           )}
         </div>

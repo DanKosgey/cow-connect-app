@@ -21,6 +21,8 @@ import { PageHeader } from "@/components/PageHeader";
 import { FilterBar } from "@/components/FilterBar";
 import { DataTable } from "@/components/DataTable";
 import { StatCard } from "@/components/StatCard";
+import RefreshButton from '@/components/ui/RefreshButton';
+import { useFarmerCollectionsData } from '@/hooks/useFarmerCollectionsData';
 
 interface Collection {
   id: string;
@@ -35,19 +37,26 @@ interface Collection {
 const CollectionsPage = () => {
   const toast = useToastNotifications();
   const toastRef = useRef(toast);
-  const [loading, setLoading] = useState(true);
-  const [collections, setCollections] = useState<Collection[]>([]);
-  const [filteredCollections, setFilteredCollections] = useState<Collection[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [dateFilter, setDateFilter] = useState("");
   const [qualityFilter, setQualityFilter] = useState("");
   const [farmerId, setFarmerId] = useState<string | null>(null);
-  const { collections: realtimeCollections, recentCollection, totalLiters, totalAmount, isLoading: realtimeLoading } = useRealtimeFarmerCollections(farmerId || undefined);
+  
+  const { data: collectionsData, isLoading: loading, isError, error, refetch } = useFarmerCollectionsData(farmerId);
+  
+  const collections = collectionsData?.collections || [];
+  const totalLiters = collectionsData?.totalLiters || 0;
+  const totalAmount = collectionsData?.totalAmount || 0;
+  const recentCollection = collectionsData?.recentCollection;
+  
+  const [filteredCollections, setFilteredCollections] = useState<Collection[]>(collections);
+  
+  const { collections: realtimeCollections } = useRealtimeFarmerCollections(farmerId || undefined);
 
   // Update toast ref whenever toast changes
   useEffect(() => {
     toastRef.current = toast;
-  }, []); // Empty dependencies to avoid infinite loop
+  }, [toast]);
 
   // Fetch farmer data
   useEffect(() => {
@@ -67,69 +76,24 @@ const CollectionsPage = () => {
         if (farmerError) {
           console.error('Error fetching farmer data:', farmerError);
           toastRef.current.error('Error', 'Failed to load farmer profile');
-          setLoading(false);
           return;
         }
 
         if (!farmerData) {
           console.warn('No farmer data found for user:', user.id);
           toastRef.current.error('Warning', 'Farmer profile not found. Please complete your registration.');
-          setLoading(false);
           return;
         }
 
         setFarmerId(farmerData.id);
-        setLoading(false);
       } catch (err) {
         console.error('Error fetching farmer data:', err);
         toastRef.current.error('Error', 'Failed to load farmer profile');
-        setLoading(false);
       }
     };
 
     fetchFarmerData();
   }, []);
-
-  // Fetch collections data when farmerId changes
-  useEffect(() => {
-    if (!farmerId) return;
-
-    const fetchCollections = async () => {
-      try {
-        // Use real-time collections if available, otherwise fetch from database
-        if (realtimeCollections.length > 0) {
-          setCollections(realtimeCollections.map(collection => ({
-            id: collection.id,
-            collection_date: collection.collection_date,
-            liters: collection.liters,
-            quality_grade: collection.quality_grade,
-            total_amount: collection.total_amount,
-            status: collection.status,
-            rate_per_liter: 0 // Default value, will be updated when fetched from DB
-          })));
-        } else {
-          // Fetch collections
-          const { data: collectionsData, error } = await supabase
-            .from('collections')
-            .select('*')
-            .eq('farmer_id', farmerId)
-            .order('collection_date', { ascending: false });
-
-          if (error) {
-            console.error('Error fetching collections:', error);
-            toastRef.current.error('Error', 'Failed to load collections data');
-            return;
-          }
-          setCollections(collectionsData || []);
-        }
-      } catch (err) {
-        console.error('Error fetching collections:', err);
-        toastRef.current.error('Error', 'Failed to load collections data');
-      }
-    };
-
-    fetchCollections();
-  }, [farmerId]); // Removed realtimeCollections from dependencies to prevent infinite loop
 
   // Update filtered collections when collections or filters change
   useEffect(() => {
@@ -214,6 +178,11 @@ const CollectionsPage = () => {
         description="View and manage all your milk collections"
         actions={
           <div className="flex space-x-3">
+            <RefreshButton 
+              isRefreshing={loading} 
+              onRefresh={refetch} 
+              className="bg-white border-gray-300 hover:bg-gray-50 rounded-md shadow-sm"
+            />
             <Button className="flex items-center gap-2">
               <Plus className="h-4 w-4" />
               New Collection
