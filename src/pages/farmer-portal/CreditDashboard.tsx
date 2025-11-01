@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import RefreshButton from "@/components/ui/RefreshButton";
 import { useFarmerCreditData } from '@/hooks/useFarmerCreditData';
+import { TimeframeSelector } from "@/components/TimeframeSelector";
 
 interface CreditStatus {
   id: string;
@@ -67,7 +68,8 @@ interface AgrovetPurchase {
 }
 
 const CreditDashboard = () => {
-  const { data: creditData, isLoading: loading, isError, error, refetch } = useFarmerCreditData();
+  const { data: creditData, isLoading: loading, isError, error, refetch } = useFarmerCreditData(timeframe);
+  const [timeframe, setTimeframe] = useState("month"); // Add timeframe state
   
   const creditStatus = creditData?.creditStatus || null;
   const creditHistory = creditData?.creditHistory || [];
@@ -78,6 +80,12 @@ const CreditDashboard = () => {
   const displayAvailableCredit = creditData?.availableCredit || 0;
   const displayCreditUsed = creditData?.creditUsed || 0;
   const displayCreditPercentage = creditData?.creditPercentage || 0;
+
+  // Update timeframe handler
+  const handleTimeframeChange = (timeframeValue: string, start: Date, end: Date) => {
+    setTimeframe(timeframeValue);
+    // The data will be refetched automatically due to the query key dependency
+  };
 
   const fetchData = useCallback(() => {
     refetch();
@@ -102,7 +110,7 @@ const CreditDashboard = () => {
             <AlertCircle className="w-6 h-6 text-red-600" />
             <h3 className="text-lg font-semibold text-red-900">Error</h3>
           </div>
-          <p className="text-red-700">{error}</p>
+          <p className="text-red-700">{error.message || String(error)}</p>
         </div>
       </div>
     );
@@ -137,10 +145,11 @@ const CreditDashboard = () => {
             <p className="text-gray-600 mt-2">Manage your credit against produce and agrovet purchases</p>
           </div>
           <div className="mt-4 md:mt-0">
+            <TimeframeSelector onTimeframeChange={handleTimeframeChange} defaultValue={timeframe} />
             <RefreshButton 
               isRefreshing={loading} 
               onRefresh={fetchData} 
-              className="bg-white border-gray-300 hover:bg-gray-50 rounded-md shadow-sm"
+              className="bg-white border-gray-300 hover:bg-gray-50 rounded-md shadow-sm ml-2"
             />
           </div>
         </div>

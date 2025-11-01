@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { CACHE_KEYS } from '@/services/cache-utils';
+import { subDays, subWeeks, subMonths, subYears } from 'date-fns';
 
 interface Collection {
   id: string;
@@ -19,19 +20,44 @@ interface FarmerCollectionsData {
   recentCollection?: Collection;
 }
 
-export const useFarmerCollectionsData = (farmerId: string | null) => {
+export const useFarmerCollectionsData = (farmerId: string | null, timeframe: string = 'month') => {
   return useQuery<FarmerCollectionsData>({
-    queryKey: [CACHE_KEYS.FARMER_COLLECTIONS, farmerId],
+    queryKey: [CACHE_KEYS.FARMER_COLLECTIONS, farmerId, timeframe],
     queryFn: async () => {
       if (!farmerId) {
         throw new Error('Farmer ID is required');
       }
 
-      // Fetch collections
+      // Calculate date range based on timeframe
+      const now = new Date();
+      let startDate: Date;
+      
+      switch (timeframe) {
+        case 'day':
+          startDate = subDays(now, 1);
+          break;
+        case 'week':
+          startDate = subDays(now, 7);
+          break;
+        case 'month':
+          startDate = subDays(now, 30);
+          break;
+        case 'quarter':
+          startDate = subDays(now, 90);
+          break;
+        case 'year':
+          startDate = subDays(now, 365);
+          break;
+        default:
+          startDate = subDays(now, 30);
+      }
+
+      // Fetch collections with date filtering
       const { data: collectionsData, error } = await supabase
         .from('collections')
         .select('*')
         .eq('farmer_id', farmerId)
+        .gte('collection_date', startDate.toISOString())
         .order('collection_date', { ascending: false });
 
       if (error) {

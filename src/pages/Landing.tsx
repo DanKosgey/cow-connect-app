@@ -51,10 +51,16 @@ const Landing = () => {
       color: "from-blue-500 to-cyan-500"
     },
     {
-      icon: <Award className="h-7 w-7" />,
-      title: "Certification Ready",
-      description: "Comprehensive documentation for regulatory compliance and industry certifications.",
+      icon: <Star className="h-7 w-7" />,
+      title: "AI-Powered Insights",
+      description: "Get expert dairy farming advice from Dr. Dairy AI, smart production predictions, and personalized recommendations to maximize your profits.",
       color: "from-violet-500 to-purple-500"
+    },
+    {
+      icon: <Users className="h-7 w-7" />,
+      title: "Community Forum",
+      description: "Connect with fellow farmers, share experiences, get expert advice from Dr. Dairy AI, and participate in knowledge-sharing discussions.",
+      color: "from-amber-500 to-orange-500"
     }
   ];
 
@@ -121,18 +127,18 @@ const Landing = () => {
             </div>
           </div>
 
-          {/* Main Heading - Updated with Cherengany Dairies */}
+          {/* Main Heading - Updated with Dairy Farmers of Trans-Nzoia */}
           <h1 className="text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-extrabold tracking-tight mb-6 animate-fade-in-up">
             <span className="bg-gradient-to-r from-white via-slate-100 to-white bg-clip-text text-transparent">
               Welcome to
             </span>
             <br />
             <span className="bg-gradient-to-r from-green-400 via-emerald-300 to-teal-400 bg-clip-text text-transparent">
-              Cherengany
+              Dairy Farmers
             </span>
             <br />
             <span className="bg-gradient-to-r from-white via-slate-100 to-white bg-clip-text text-transparent">
-              Dairies
+              of Trans-Nzoia
             </span>
           </h1>
 
@@ -213,7 +219,7 @@ const Landing = () => {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
             {features.map((feature, index) => (
               <div
                 key={index}
@@ -296,7 +302,7 @@ const Landing = () => {
             Ready to Transform Your Dairy Operations?
           </h2>
           <p className="text-xl text-green-50 mb-10 max-w-2xl mx-auto leading-relaxed">
-            Join thousands of dairy professionals who trust Cherengany Dairies to streamline their operations.
+            Join thousands of dairy professionals who trust Dairy Farmers of Trans-Nzoia to streamline their operations.
           </p>
           <Button 
             size="lg"
@@ -318,7 +324,7 @@ const Landing = () => {
                 <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center">
                   <Milk className="w-6 h-6 text-white" />
                 </div>
-                <span className="text-xl font-bold">CHERENGANY DAIRIES</span>
+                <span className="text-xl font-bold">DAIRY FARMERS OF TRANS-NZOIA</span>
               </div>
               <p className="text-slate-400 text-sm">
                 Premium dairy management for Trans Nzoia
@@ -326,7 +332,7 @@ const Landing = () => {
             </div>
             <div className="text-center md:text-right">
               <p className="text-slate-400 text-sm">
-                © {new Date().getFullYear()} CHERENGANY DAIRIES. All rights reserved.
+                © {new Date().getFullYear()} DAIRY FARMERS OF TRANS-NZOIA. All rights reserved.
               </p>
             </div>
           </div>

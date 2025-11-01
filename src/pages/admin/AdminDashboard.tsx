@@ -228,6 +228,13 @@ const AdminDashboard = () => {
 
   const { refreshSession } = useSessionRefresh({ refreshInterval: 10 * 60 * 1000 });
 
+  // Clear cache when timeframe changes
+  useEffect(() => {
+    // Clear the cache for the previous timeframe to ensure fresh data
+    queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.ADMIN_DASHBOARD] });
+    dataCache.clear();
+  }, [timeRange, queryClient]);
+
   const getDateFilter = useCallback(() => {
     const now = new Date();
     let startDate = new Date();
@@ -543,12 +550,7 @@ const AdminDashboard = () => {
     performanceMonitor.reset();
     performanceMonitor.startFetch();
     
-    if (prevTimeRange.current === timeRange && !loading) {
-      isProcessing.current = false;
-      return;
-    }
-    
-    prevTimeRange.current = timeRange;
+    // Always fetch fresh data when timeframe changes
     setError(null);
     
     try {
@@ -559,36 +561,8 @@ const AdminDashboard = () => {
       const { startDate, endDate } = getDateFilter();
       const cacheKey = `dashboard_data_${timeRange}_${startDate}_${endDate}`;
       
-      const cachedData = dataCache.get<CachedDashboardData>(cacheKey);
-      if (cachedData && !initialLoad) {
-        console.log('Using cached dashboard data');
-        performanceMonitor.endFetch();
-        
-        setCollections(cachedData.collections || []);
-        setFarmers(cachedData.farmers || []);
-        setStaff(cachedData.staff || []);
-        setCollectionTrends(cachedData.collectionTrends || []);
-        setRevenueTrends(cachedData.revenueTrends || []);
-        setQualityDistribution(cachedData.qualityDistribution || []);
-        setAlerts(cachedData.alerts || []);
-        setKycStats(cachedData.kycStats || {
-          pending: 0,
-          approved: 0,
-          rejected: 0,
-          resubmissions: 0
-        });
-        setMetrics(cachedData.metrics || []);
-        
-        performanceMonitor.endRender();
-        performanceMonitor.logMetrics('AdminDashboard');
-        setLoading(false);
-        isProcessing.current = false;
-        return;
-      }
-      
-      if (initialLoad || prevTimeRange.current !== timeRange) {
-        setLoading(true);
-      }
+      // Always fetch fresh data to ensure charts update properly
+      setLoading(true);
       
       // Fetch collections with staff and approved_by IDs only (simplified query)
       const { data: rawCollections, error: collectionsError } = await supabase
@@ -754,12 +728,12 @@ const AdminDashboard = () => {
       setInitialLoad(false);
       isProcessing.current = false;
     }
-  }, [getDateFilter, toast, initialLoad, processData, timeRange, loading, fetchPreviousPeriodData, refreshSession, 
+  }, [getDateFilter, toast, processData, timeRange, fetchPreviousPeriodData, refreshSession, 
       collectionTrends, revenueTrends, qualityDistribution, alerts, kycStats]);
 
   useEffect(() => {
     fetchData();
-  }, [fetchData]);
+  }, [fetchData, timeRange]); // Add timeRange as dependency
 
   const formatCurrency = useCallback((amount: number) => {
     return new Intl.NumberFormat('en-KE', {
@@ -872,10 +846,11 @@ const AdminDashboard = () => {
   };
 
   const CollectionTrendChart = () => {
-    if (!collectionTrendsStable || collectionTrends.length === 0) {
+    // Always use the latest data, don't rely on stabilization for charts
+    if (collectionTrends.length === 0) {
       return (
         <div className="h-80 flex items-center justify-center">
-          <p className="text-gray-500 dark:text-gray-400">Loading chart data...</p>
+          <p className="text-gray-500 dark:text-gray-400">No data available for the selected timeframe</p>
         </div>
       );
     }
@@ -912,6 +887,7 @@ const AdminDashboard = () => {
               fillOpacity={0.3} 
               name="Liters" 
               isAnimationActive={false}
+              key={`collection-trend-${timeRange}`} // Force re-render when timeframe changes
             />
           </AreaChart>
         </ResponsiveContainer>
@@ -920,10 +896,11 @@ const AdminDashboard = () => {
   };
 
   const RevenueTrendChart = () => {
-    if (!revenueTrendsStable || revenueTrends.length === 0) {
+    // Always use the latest data, don't rely on stabilization for charts
+    if (revenueTrends.length === 0) {
       return (
         <div className="h-80 flex items-center justify-center">
-          <p className="text-gray-500 dark:text-gray-400">Loading chart data...</p>
+          <p className="text-gray-500 dark:text-gray-400">No data available for the selected timeframe</p>
         </div>
       );
     }
@@ -961,6 +938,7 @@ const AdminDashboard = () => {
               activeDot={{ r: 7, fill: CHART_COLORS.secondary }}
               name="Revenue" 
               isAnimationActive={false}
+              key={`revenue-trend-${timeRange}`} // Force re-render when timeframe changes
             />
           </LineChart>
         </ResponsiveContainer>
@@ -969,10 +947,11 @@ const AdminDashboard = () => {
   };
 
   const QualityDistributionChart = () => {
-    if (!qualityDistributionStable || qualityDistribution.length === 0 || qualityDistribution.every(q => q.count === 0)) {
+    // Always use the latest data, don't rely on stabilization for charts
+    if (qualityDistribution.length === 0 || qualityDistribution.every(q => q.count === 0)) {
       return (
         <div className="h-80 flex items-center justify-center">
-          <p className="text-gray-500 dark:text-gray-400">Loading chart data...</p>
+          <p className="text-gray-500 dark:text-gray-400">No data available for the selected timeframe</p>
         </div>
       );
     }
@@ -999,6 +978,7 @@ const AdminDashboard = () => {
               nameKey="name"
               label={({ name, percentage }) => `${name}: ${percentage}%`}
               isAnimationActive={false}
+              key={`quality-distribution-${timeRange}`} // Force re-render when timeframe changes
             >
               {qualityDistribution.map((entry, index) => (
                 <Cell key={`cell-${index}`} fill={qualityColors[entry.name] || '#8884d8'} />
@@ -1031,13 +1011,6 @@ const AdminDashboard = () => {
       
       const { startDate, endDate } = getDateFilter();
       const cacheKey = `dashboard_data_${timeRange}_${startDate}_${endDate}`;
-      
-      // Check if we have cached data
-      const cachedData = dataCache.get<CachedDashboardData>(cacheKey);
-      if (cachedData && !initialLoad) {
-        console.log('Using cached dashboard data');
-        return cachedData;
-      }
       
       performanceMonitor.startFetch();
       
@@ -1190,13 +1163,17 @@ const AdminDashboard = () => {
     gcTime: 1000 * 60 * 15, // 15 minutes
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
-    refetchOnMount: false,
+    refetchOnMount: true, // Always refetch on mount
+    enabled: true, // Always enable the query
     retry: 1,
   });
 
   // Update loading and error states based on React Query
   useEffect(() => {
-    setLoading(isDashboardLoading);
+    // Only set loading state from React Query if we're not already loading from manual fetch
+    if (!isProcessing.current) {
+      setLoading(isDashboardLoading);
+    }
     if (dashboardError) {
       setError(dashboardError.message || 'Failed to fetch dashboard data');
     }
@@ -1211,7 +1188,13 @@ const AdminDashboard = () => {
           <p className="text-gray-600 dark:text-gray-400 mt-1">Monitor and manage your dairy operations</p>
         </div>
         <div className="flex items-center space-x-3">
-          <Select value={timeRange} onValueChange={setTimeRange}>
+          <Select value={timeRange} onValueChange={(value) => {
+            setTimeRange(value);
+            // Trigger immediate refresh when timeframe changes
+            setTimeout(() => {
+              refetch();
+            }, 100);
+          }}>
             <SelectTrigger className="w-[180px] bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded-lg shadow-sm">
               <SelectValue placeholder="Select time range" />
             </SelectTrigger>
@@ -1224,8 +1207,13 @@ const AdminDashboard = () => {
             </SelectContent>
           </Select>
           <RefreshButton 
-            isRefreshing={loading} 
-            onRefresh={fetchData} 
+            isRefreshing={isDashboardLoading || loading} 
+            onRefresh={() => {
+              // Clear cache and refetch data
+              dataCache.clear();
+              queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.ADMIN_DASHBOARD, timeRange] });
+              refetch();
+            }} 
             className="bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg shadow-sm"
           />
         </div>

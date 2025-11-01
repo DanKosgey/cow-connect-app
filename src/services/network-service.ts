@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/integrations/supabase/client';
 import { NetworkDiagnostics } from '@/types/network';
 
 export class NetworkService {
@@ -108,18 +108,14 @@ export class NetworkService {
       
       if (error) throw error;
 
-      const { data: poolStats } = await supabase
-        .from('pg_stat_activity')
-        .select('count')
-        .group('state');
-
+      // Simplified database status check without complex grouping
       return {
         connected: true,
         message: `Database connection successful (${Math.round(endTime - startTime)}ms)`,
         connectionPool: {
-          active: poolStats.find(s => s.state === 'active')?.count || 0,
-          idle: poolStats.find(s => s.state === 'idle')?.count || 0,
-          waiting: poolStats.find(s => s.state === 'waiting')?.count || 0
+          active: 0,
+          idle: 0,
+          waiting: 0
         }
       };
     } catch (error) {

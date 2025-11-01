@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { 
   Milk, DollarSign, BarChart3, Calendar, TrendingUp, Award,
@@ -11,6 +11,7 @@ import {
   ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area,
   ComposedChart, Bar, Legend
 } from 'recharts';
+import { TimeframeSelector } from "@/components/TimeframeSelector";
 
 // Define types for our data
 interface Farmer {
@@ -28,8 +29,6 @@ interface Collection {
   farmer_id: string;
   collection_date: string;
   liters: number;
-  quality_grade: string;
-  fat_content: number;
   total_amount: number;
   created_at: string;
 }
@@ -48,7 +47,6 @@ interface Analytics {
   farmer_id: string;
   current_month_liters: number;
   current_month_earnings: number;
-  avg_quality_score: number;
   today_collections_trend: {
     value: number;
     isPositive: boolean;
@@ -74,12 +72,6 @@ interface WeeklyTrendData {
   date: string;
   liters: number;
   earnings: number;
-}
-
-interface QualityData {
-  name: string;
-  value: number;
-  percentage: string;
 }
 
 // Date utility functions
@@ -238,7 +230,7 @@ const DualAxisChart = ({ data, title, icon, leftKey, leftName, rightKey, rightNa
   </Card>
 );
 
-export default function FarmerDashboard() {
+const EnhancedFarmerDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [farmer, setFarmer] = useState<Farmer | null>(null);
   const [collections, setCollections] = useState<Collection[]>([]);
@@ -247,138 +239,222 @@ export default function FarmerDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [monthlyTrendData, setMonthlyTrendData] = useState<MonthlyTrendData[]>([]);
   const [weeklyTrendData, setWeeklyTrendData] = useState<WeeklyTrendData[]>([]);
-  const [qualityData, setQualityData] = useState<QualityData[]>([]);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        const { data: { user } } = await supabase.auth.getUser();
-        
-        if (!user) {
-          setError('Not authenticated');
-          setLoading(false);
-          return;
-        }
+  const [timeframe, setTimeframe] = useState("month");
+  const fetchInProgress = useRef(false);
 
-        // Fetch farmer profile
-        const { data: farmerData, error: farmerError } = await supabase
-          .from('farmers')
-          .select('*')
-          .eq('user_id', user.id)
-          .maybeSingle();
+  // Memoize the data processing to prevent unnecessary recalculations
+  const processedData = useMemo(() => {
+    // Calculate dashboard metrics with null safety
+    const todayCollection = collections
+      ? collections
+          .filter(c => new Date(c.collection_date).toDateString() === new Date().toDateString())
+          .reduce((sum, c) => sum + (parseFloat(c.liters.toString()) || 0), 0)
+      : 0;
 
-        if (farmerError) throw farmerError;
-        
-        if (!farmerData) {
-          setError('Farmer profile not found');
-          setLoading(false);
-          return;
-        }
+    const monthlyLiters = analytics?.current_month_liters || 
+      (collections
+        ? collections
+            .filter(c => {
+              const date = new Date(c.collection_date);
+              const now = new Date();
+              return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+            })
+            .reduce((sum, c) => sum + (c.liters || 0), 0)
+        : 0);
 
-        setFarmer(farmerData as Farmer);
+    const monthlyEarnings = analytics?.current_month_earnings || 
+      (collections
+        ? collections
+            .filter(c => {
+              const date = new Date(c.collection_date);
+              const now = new Date();
+              return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+            })
+            .reduce((sum, c) => sum + (c.total_amount || 0), 0)
+        : 0);
 
-        // Fetch collections
-        const { data: collectionsData, error: collectionsError } = await supabase
-          .from('collections')
-          .select('*')
-          .eq('farmer_id', farmerData.id)
-          .order('collection_date', { ascending: false });
+    const totalEarned = payments
+      ? payments
+          .filter(p => p.status === 'completed')
+          .reduce((sum, p) => sum + parseFloat(p.amount.toString() || "0"), 0)
+      : 0;
 
-        if (collectionsError) throw collectionsError;
-        setCollections((collectionsData || []) as Collection[]);
+    const totalPending = payments
+      ? payments
+          .filter(p => p.status === 'processing')
+          .reduce((sum, p) => sum + parseFloat(p.amount.toString() || "0"), 0)
+      : 0;
 
-        // Fetch payments
-        const { data: paymentsData, error: paymentsError } = await supabase
-          .from('payments')
-          .select('*')
-          .eq('farmer_id', farmerData.id)
-          .order('created_at', { ascending: false });
-
-        if (paymentsError) throw paymentsError;
-        setPayments((paymentsData || []) as Payment[]);
-
-        // Fetch analytics
-        const { data: analyticsData, error: analyticsError } = await supabase
-          .from('farmer_analytics')
-          .select('*')
-          .eq('farmer_id', farmerData.id)
-          .maybeSingle();
-
-        if (analyticsError) throw analyticsError;
-        setAnalytics(analyticsData as Analytics || null);
-
-        // Process monthly trend data
-        const monthlyMap: Record<string, { liters: number; earnings: number; count: number }> = {};
-        (collectionsData || []).forEach((collection: any) => {
-          const month = format(new Date(collection.collection_date), 'MMM yyyy');
-          if (!monthlyMap[month]) {
-            monthlyMap[month] = { liters: 0, earnings: 0, count: 0 };
-          }
-          monthlyMap[month].liters += collection.liters || 0;
-          monthlyMap[month].earnings += collection.total_amount || 0;
-          monthlyMap[month].count += 1;
-        });
-
-        const sortedMonths = Object.keys(monthlyMap).sort((a, b) => 
-          new Date(`01 ${a}`).getTime() - new Date(`01 ${b}`).getTime()
-        );
-        const lastSixMonths = sortedMonths.slice(-6);
-
-        const monthlyData = lastSixMonths.map(month => ({
-          month: month.split(' ')[0],
-          liters: monthlyMap[month].liters,
-          earnings: monthlyMap[month].earnings
-        }));
-        setMonthlyTrendData(monthlyData);
-
-        // Process weekly trend data
-        const weeklyMap: Record<string, { liters: number; earnings: number }> = {};
-        for (let i = 6; i >= 0; i--) {
-          const date = subDays(new Date(), i);
-          const dateString = format(date, 'EEE');
-          const dayCollections = (collectionsData || []).filter((c: any) => 
-            format(new Date(c.collection_date), 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd')
-          ) || [];
-          
-          const totalLiters = dayCollections.reduce((sum: number, c: any) => sum + (c.liters || 0), 0);
-          const totalEarnings = dayCollections.reduce((sum: number, c: any) => sum + (c.total_amount || 0), 0);
-          
-          weeklyMap[dateString] = { liters: totalLiters, earnings: totalEarnings };
-        }
-
-        const weeklyData = Object.entries(weeklyMap).map(([date, data]) => ({
-          date,
-          liters: data.liters,
-          earnings: data.earnings
-        }));
-        setWeeklyTrendData(weeklyData);
-
-        // Process quality distribution
-        const qualityMap: Record<string, number> = {};
-        (collectionsData || []).forEach((collection: any) => {
-          const grade = collection.quality_grade || 'Unknown';
-          qualityMap[grade] = (qualityMap[grade] || 0) + 1;
-        });
-
-        const qualityChartData = Object.entries(qualityMap).map(([grade, count]) => ({
-          name: grade,
-          value: count,
-          percentage: (collectionsData || []).length > 0 ? ((count / (collectionsData || []).length) * 100).toFixed(0) : "0"
-        }));
-        setQualityData(qualityChartData);
-
-      } catch (err) {
-        console.error('Error fetching data:', err);
-        setError('Failed to load dashboard data');
-      } finally {
-        setLoading(false);
-      }
+    return {
+      todayCollection,
+      monthlyLiters,
+      monthlyEarnings,
+      totalEarned,
+      totalPending
     };
+  }, [collections, payments, analytics]);
 
-    fetchData();
+  // Update timeframe handler
+  const handleTimeframeChange = useCallback((timeframeValue: string, start: Date, end: Date) => {
+    setTimeframe(timeframeValue);
+    // Refetch data when timeframe changes
+    fetchData(timeframeValue);
   }, []);
 
+  const fetchData = useCallback(async (currentTimeframe: string = timeframe) => {
+    // Prevent multiple simultaneous fetches
+    if (fetchInProgress.current) {
+      return;
+    }
+    
+    try {
+      fetchInProgress.current = true;
+      setLoading(true);
+      setError(null);
+      
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        setError('Not authenticated');
+        setLoading(false);
+        return;
+      }
+
+      // Fetch farmer profile
+      const { data: farmerData, error: farmerError } = await supabase
+        .from('farmers')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (farmerError) throw farmerError;
+      
+      if (!farmerData) {
+        setError('Farmer profile not found');
+        setLoading(false);
+        return;
+      }
+
+      setFarmer(farmerData as Farmer);
+
+      // Calculate date range based on timeframe
+      const now = new Date();
+      let startDate: Date;
+      
+      switch (currentTimeframe) {
+        case 'day':
+          startDate = subDays(now, 1);
+          break;
+        case 'week':
+          startDate = subDays(now, 7);
+          break;
+        case 'month':
+          startDate = subDays(now, 30);
+          break;
+        case 'quarter':
+          startDate = subDays(now, 90);
+          break;
+        case 'year':
+          startDate = subDays(now, 365);
+          break;
+        default:
+          startDate = subDays(now, 30);
+      }
+
+      // Fetch collections with date filtering
+      const { data: collectionsData, error: collectionsError } = await supabase
+        .from('collections')
+        .select('*')
+        .eq('farmer_id', farmerData.id)
+        .gte('collection_date', startDate.toISOString())
+        .order('collection_date', { ascending: false });
+
+      if (collectionsError) throw collectionsError;
+      setCollections((collectionsData || []) as Collection[]);
+
+      // Fetch payments with date filtering
+      const { data: paymentsData, error: paymentsError } = await supabase
+        .from('payments')
+        .select('*')
+        .eq('farmer_id', farmerData.id)
+        .gte('created_at', startDate.toISOString())
+        .order('created_at', { ascending: false });
+
+      if (paymentsError) throw paymentsError;
+      setPayments((paymentsData || []) as Payment[]);
+
+      // Fetch analytics
+      const { data: analyticsData, error: analyticsError } = await supabase
+        .from('farmer_analytics')
+        .select('*')
+        .eq('farmer_id', farmerData.id)
+        .maybeSingle();
+
+      if (analyticsError) throw analyticsError;
+      setAnalytics(analyticsData as Analytics || null);
+
+      // Process monthly trend data
+      const monthlyMap: Record<string, { liters: number; earnings: number; count: number }> = {};
+      (collectionsData || []).forEach((collection: any) => {
+        const month = format(new Date(collection.collection_date), 'MMM yyyy');
+        if (!monthlyMap[month]) {
+          monthlyMap[month] = { liters: 0, earnings: 0, count: 0 };
+        }
+        monthlyMap[month].liters += collection.liters || 0;
+        monthlyMap[month].earnings += collection.total_amount || 0;
+        monthlyMap[month].count += 1;
+      });
+
+      const sortedMonths = Object.keys(monthlyMap).sort((a, b) => 
+        new Date(`01 ${a}`).getTime() - new Date(`01 ${b}`).getTime()
+      );
+      const lastSixMonths = sortedMonths.slice(-6);
+
+      const monthlyData = lastSixMonths.map(month => ({
+        month: month.split(' ')[0],
+        liters: monthlyMap[month].liters,
+        earnings: monthlyMap[month].earnings
+      }));
+      setMonthlyTrendData(monthlyData);
+
+      // Process weekly trend data
+      const weeklyMap: Record<string, { liters: number; earnings: number }> = {};
+      for (let i = 6; i >= 0; i--) {
+        const date = subDays(new Date(), i);
+        const dateString = format(date, 'EEE');
+        const dayCollections = (collectionsData || []).filter((c: any) => 
+          format(new Date(c.collection_date), 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd')
+        ) || [];
+        
+        const totalLiters = dayCollections.reduce((sum: number, c: any) => sum + (c.liters || 0), 0);
+        const totalEarnings = dayCollections.reduce((sum: number, c: any) => sum + (c.total_amount || 0), 0);
+        
+        weeklyMap[dateString] = { liters: totalLiters, earnings: totalEarnings };
+      }
+
+      const weeklyData = Object.entries(weeklyMap).map(([date, data]) => ({
+        date,
+        liters: data.liters,
+        earnings: data.earnings
+      }));
+      setWeeklyTrendData(weeklyData);
+
+    } catch (err) {
+      console.error('Error fetching data:', err);
+      setError('Failed to load dashboard data');
+    } finally {
+      fetchInProgress.current = false;
+      setLoading(false);
+    }
+  }, [timeframe]);
+
+  // Use useEffect with useCallback to prevent infinite loops
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  // Handle loading state with proper null checks
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50 flex items-center justify-center">
@@ -390,6 +466,7 @@ export default function FarmerDashboard() {
     );
   }
 
+  // Handle error state
   if (error) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50 flex items-center justify-center p-4">
@@ -399,40 +476,31 @@ export default function FarmerDashboard() {
             <h3 className="text-lg font-semibold text-red-900">Error</h3>
           </div>
           <p className="text-red-700">{error}</p>
+          <button 
+            onClick={() => fetchData()}
+            className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+          >
+            Try Again
+          </button>
         </div>
       </div>
     );
   }
 
-  const todayCollection = collections
-    .filter(c => new Date(c.collection_date).toDateString() === new Date().toDateString())
-    .reduce((sum, c) => sum + (parseFloat(c.liters.toString()) || 0), 0);
-
-  const monthlyLiters = analytics?.current_month_liters || collections
-    .filter(c => {
-      const date = new Date(c.collection_date);
-      const now = new Date();
-      return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
-    })
-    .reduce((sum, c) => sum + (c.liters || 0), 0);
-
-  const monthlyEarnings = analytics?.current_month_earnings || collections
-    .filter(c => {
-      const date = new Date(c.collection_date);
-      const now = new Date();
-      return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
-    })
-    .reduce((sum, c) => sum + (c.total_amount || 0), 0);
-
-  const totalEarned = payments
-    .filter(p => p.status === 'completed')
-    .reduce((sum, p) => sum + parseFloat(p.amount.toString() || "0"), 0);
-
-  const totalPending = payments
-    .filter(p => p.status === 'processing')
-    .reduce((sum, p) => sum + parseFloat(p.amount.toString() || "0"), 0);
-
-  const avgQuality = analytics?.avg_quality_score || 0;
+  // Handle case where farmer data is not available
+  if (!farmer) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50 flex items-center justify-center p-4">
+        <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-8 max-w-md">
+          <div className="flex items-center gap-3 mb-4">
+            <AlertCircle className="w-6 h-6 text-yellow-600" />
+            <h3 className="text-lg font-semibold text-yellow-900">No Farmer Data</h3>
+          </div>
+          <p className="text-yellow-700">Farmer profile data is not available.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50">
@@ -445,6 +513,7 @@ export default function FarmerDashboard() {
               <p className="text-gray-600 mt-1">Here's your dairy operations overview</p>
             </div>
             <div className="flex gap-3">
+              <TimeframeSelector onTimeframeChange={handleTimeframeChange} defaultValue={timeframe} />
               <button className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors font-medium flex items-center gap-2">
                 <Bell size={18} />
                 Notifications
@@ -464,7 +533,7 @@ export default function FarmerDashboard() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <StatCard 
             title="Today's Collection"
-            value={todayCollection.toFixed(1)} 
+            value={processedData.todayCollection.toFixed(1)} 
             unit="Liters"
             change={analytics?.today_collections_trend?.value}
             isPositive={analytics?.today_collections_trend?.isPositive ?? true}
@@ -472,7 +541,7 @@ export default function FarmerDashboard() {
           />
           <StatCard 
             title="Monthly Total"
-            value={monthlyLiters.toFixed(0)} 
+            value={processedData.monthlyLiters.toFixed(0)} 
             unit="Liters"
             change={analytics?.monthly_liters_trend?.value}
             isPositive={analytics?.monthly_liters_trend?.isPositive ?? true}
@@ -480,24 +549,17 @@ export default function FarmerDashboard() {
           />
           <StatCard 
             title="Monthly Earnings"
-            value={`KSh ${(monthlyEarnings/1000).toFixed(1)}k`}
+            value={`KSh ${(processedData.monthlyEarnings/1000).toFixed(1)}k`}
             unit="Income"
             change={analytics?.monthly_earnings_trend?.value}
             isPositive={analytics?.monthly_earnings_trend?.isPositive ?? true}
             icon={<DollarSign className="w-6 h-6 text-emerald-600" />}
           />
-          <StatCard 
-            title="Avg Quality"
-            value={`${avgQuality.toFixed(0)}%`}
-            unit="Grade"
-            change={null}
-            isPositive={true}
-            icon={<Award className="w-6 h-6 text-amber-600" />}
-          />
+
         </div>
 
         {/* Main Charts - Dual Axis */}
-        {monthlyTrendData.length > 0 && (
+        {monthlyTrendData && monthlyTrendData.length > 0 && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
             <DualAxisChart
               data={monthlyTrendData}
@@ -575,64 +637,6 @@ export default function FarmerDashboard() {
           </div>
         )}
 
-        {/* Quality Distribution and Collections */}
-        {qualityData.length > 0 && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-            <div className="lg:col-span-2">
-              <Card 
-                title="Collections Over Time" 
-                icon={<Droplets className="w-5 h-5 text-blue-600" />}
-              >
-                <div className="h-80 -mx-6 -mb-6">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={monthlyTrendData} margin={{ top: 20, right: 30, left: 60, bottom: 20 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                      <XAxis dataKey="month" stroke="#9ca3af" tick={{ fontSize: 12 }} />
-                      <YAxis stroke="#10b981" tick={{ fontSize: 12 }} />
-                      <Tooltip contentStyle={{ backgroundColor: '#fff', border: '2px solid #10b981', borderRadius: '8px' }} />
-                      <Line 
-                        type="monotone" 
-                        dataKey="liters" 
-                        stroke="#10b981" 
-                        strokeWidth={2.5}
-                        dot={{ stroke: '#10b981', strokeWidth: 2, r: 4, fill: '#fff' }}
-                        activeDot={{ r: 6 }}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              </Card>
-            </div>
-
-            <Card 
-              title="Quality Distribution" 
-              icon={<Award className="w-5 h-5 text-amber-600" />}
-            >
-              <div className="h-80 -mx-6 -mb-6">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={qualityData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={50}
-                      outerRadius={90}
-                      paddingAngle={2}
-                      dataKey="value"
-                      label={({ name, percentage }) => `${name}: ${percentage}%`}
-                    >
-                      {qualityData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value) => [`${value} collections`, '']} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </Card>
-          </div>
-        )}
-
         {/* Bottom Section - Collections and Payments */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Recent Collections */}
@@ -641,7 +645,7 @@ export default function FarmerDashboard() {
             icon={<Milk className="w-5 h-5 text-blue-600" />}
           >
             <div className="space-y-3">
-              {collections.slice(0, 5).map((collection) => (
+              {collections && collections.slice(0, 5).map((collection) => (
                 <div key={collection.id} className="flex items-center justify-between p-4 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors">
                   <div className="flex items-center gap-3">
                     <div className="p-2 rounded-lg bg-blue-100">
@@ -652,19 +656,14 @@ export default function FarmerDashboard() {
                       <p className="text-xs text-gray-500">{format(new Date(collection.collection_date), 'MMM d, yyyy')}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${
-                      collection.quality_grade === 'A+' ? 'bg-green-100 text-green-700' :
-                      collection.quality_grade === 'A' ? 'bg-blue-100 text-blue-700' :
-                      collection.quality_grade === 'B' ? 'bg-amber-100 text-amber-700' :
-                      'bg-red-100 text-red-700'
-                    }`}>
-                      {collection.quality_grade}
-                    </span>
-                    <p className="font-bold text-gray-900 min-w-20 text-right">KSh {collection.total_amount}</p>
-                  </div>
+                  <p className="font-bold text-gray-900 min-w-20 text-right">KSh {collection.total_amount}</p>
                 </div>
               ))}
+              {(!collections || collections.length === 0) && (
+                <div className="text-center py-8 text-gray-500">
+                  <p>No recent collections found</p>
+                </div>
+              )}
             </div>
           </Card>
 
@@ -677,18 +676,18 @@ export default function FarmerDashboard() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-4 rounded-lg border border-green-100">
                   <p className="text-xs font-medium text-green-700 mb-1">Total Earned</p>
-                  <p className="text-2xl font-bold text-green-900">KSh {totalEarned.toLocaleString()}</p>
+                  <p className="text-2xl font-bold text-green-900">KSh {processedData.totalEarned.toLocaleString()}</p>
                 </div>
                 <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-100">
                   <p className="text-xs font-medium text-blue-700 mb-1">Pending</p>
-                  <p className="text-2xl font-bold text-blue-900">KSh {totalPending.toLocaleString()}</p>
+                  <p className="text-2xl font-bold text-blue-900">KSh {processedData.totalPending.toLocaleString()}</p>
                 </div>
               </div>
 
               <div>
                 <h4 className="font-semibold text-gray-900 mb-3">Recent Transactions</h4>
                 <div className="space-y-3">
-                  {payments.slice(0, 5).map((payment) => (
+                  {payments && payments.slice(0, 5).map((payment) => (
                     <div key={payment.id} className="flex items-center justify-between p-3 border border-gray-100 rounded-lg">
                       <div className="flex items-center gap-3">
                         <div className={`p-2 rounded-lg ${
@@ -708,6 +707,11 @@ export default function FarmerDashboard() {
                       <p className="font-semibold text-gray-900">KSh {parseFloat(payment.amount.toString()).toLocaleString()}</p>
                     </div>
                   ))}
+                  {(!payments || payments.length === 0) && (
+                    <div className="text-center py-4 text-gray-500">
+                      <p>No recent transactions found</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -716,4 +720,6 @@ export default function FarmerDashboard() {
       </div>
     </div>
   );
-}
+};
+
+export default EnhancedFarmerDashboard;

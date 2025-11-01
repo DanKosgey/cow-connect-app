@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { CreditService } from '@/services/credit-service';
 import { CACHE_KEYS } from '@/services/cache-utils';
+import { subDays, subWeeks, subMonths, subYears } from 'date-fns';
 
 interface CreditStatus {
   id: string;
@@ -57,9 +58,9 @@ interface FarmerCreditData {
   creditPercentage: number;
 }
 
-export const useFarmerCreditData = () => {
+export const useFarmerCreditData = (timeframe: string = 'month') => {
   return useQuery<FarmerCreditData>({
-    queryKey: [CACHE_KEYS.FARMER_CREDIT],
+    queryKey: [CACHE_KEYS.FARMER_CREDIT, timeframe],
     queryFn: async () => {
       const { data: { user } } = await supabase.auth.getUser();
       
@@ -81,16 +82,46 @@ export const useFarmerCreditData = () => {
 
       const farmerId = farmerData.id;
 
+      // Calculate date range based on timeframe
+      const now = new Date();
+      let startDate: Date;
+      
+      switch (timeframe) {
+        case 'day':
+          startDate = subDays(now, 1);
+          break;
+        case 'week':
+          startDate = subDays(now, 7);
+          break;
+        case 'month':
+          startDate = subDays(now, 30);
+          break;
+        case 'quarter':
+          startDate = subDays(now, 90);
+          break;
+        case 'year':
+          startDate = subDays(now, 365);
+          break;
+        default:
+          startDate = subDays(now, 30);
+      }
+
       // Get credit status
       const creditStatus = await CreditService.getCreditStatus(farmerId);
 
-      // Get credit history
-      const creditHistory = await CreditService.getCreditHistory(farmerId);
+      // Get credit history with date filtering
+      let creditHistory = await CreditService.getCreditHistory(farmerId);
+      creditHistory = creditHistory.filter(transaction => 
+        new Date(transaction.created_at) >= startDate
+      );
 
-      // Get purchase history
-      const purchaseHistory = await CreditService.getPurchaseHistory(farmerId);
+      // Get purchase history with date filtering
+      let purchaseHistory = await CreditService.getPurchaseHistory(farmerId);
+      purchaseHistory = purchaseHistory.filter(purchase => 
+        new Date(purchase.created_at) >= startDate
+      );
 
-      // Get pending payments
+      // Get pending payments (no date filtering needed as these are current)
       const { data: pendingCollections, error: collectionsError } = await supabase
         .from('collections')
         .select('total_amount')

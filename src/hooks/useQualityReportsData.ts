@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { qualityReportService, QualityReportWithCollection, ServiceResponse } from '@/services/quality-report-service';
+import { subDays, subWeeks, subMonths, subYears } from 'date-fns';
 
 // Define interfaces for our data structures
 interface QualityReport {
@@ -30,11 +31,35 @@ export const useQualityReportsData = () => {
   const queryClient = useQueryClient();
 
   // Get quality reports for a specific farmer
-  const useFarmerQualityReports = (farmerId: string) => {
+  const useFarmerQualityReports = (farmerId: string, timeframe: string = 'month') => {
     return useQuery<QualityReport[]>({
-      queryKey: [QUALITY_REPORTS_CACHE_KEYS.FARMER_REPORTS, farmerId],
+      queryKey: [QUALITY_REPORTS_CACHE_KEYS.FARMER_REPORTS, farmerId, timeframe],
       queryFn: async () => {
         if (!farmerId) return [];
+
+        // Calculate date range based on timeframe
+        const now = new Date();
+        let startDate: Date;
+        
+        switch (timeframe) {
+          case 'day':
+            startDate = subDays(now, 1);
+            break;
+          case 'week':
+            startDate = subDays(now, 7);
+            break;
+          case 'month':
+            startDate = subDays(now, 30);
+            break;
+          case 'quarter':
+            startDate = subDays(now, 90);
+            break;
+          case 'year':
+            startDate = subDays(now, 365);
+            break;
+          default:
+            startDate = subDays(now, 30);
+        }
 
         // Fetch quality data for the farmer using the service
         const qualityResponse: ServiceResponse<QualityReportWithCollection[]> = await qualityReportService.getReportsByFarmer(farmerId);
@@ -43,8 +68,15 @@ export const useQualityReportsData = () => {
           throw new Error(qualityResponse.error || 'Failed to load quality reports');
         }
 
+        // Filter reports by date range
+        const filteredReports = (qualityResponse.data || []).filter(report => {
+          if (!report.collection?.collection_date) return false;
+          const collectionDate = new Date(report.collection.collection_date);
+          return collectionDate >= startDate;
+        });
+
         // Convert service data to UI format
-        const formattedReports: QualityReport[] = (qualityResponse.data || []).map(report => {
+        const formattedReports: QualityReport[] = filteredReports.map(report => {
           // Determine status based on quality parameters
           let status: 'passed' | 'failed' | 'pending' = 'pending';
           if (report.fat_content && report.protein_content && report.bacterial_count !== null) {

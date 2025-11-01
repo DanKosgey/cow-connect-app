@@ -48,7 +48,6 @@ import { supabase } from "@/integrations/supabase/client";
 import useToastNotifications from "@/hooks/useToastNotifications";
 import { format, subDays, subMonths, subYears, startOfMonth, endOfMonth, startOfYear, endOfYear, differenceInDays } from 'date-fns';
 import { exportToCSV, exportToJSON } from "@/utils/exportUtils";
-import { qualityReportService, QualityReportWithCollection, ServiceResponse } from "@/services/quality-report-service";
 import { PageHeader } from "@/components/PageHeader";
 import { FilterBar } from "@/components/FilterBar";
 import { StatCard } from "@/components/StatCard";
@@ -60,7 +59,6 @@ interface CollectionData {
   collection_date: string;
   liters: number;
   total_amount: number;
-  quality_grade: string;
   rate_per_liter: number;
 }
 
@@ -92,22 +90,6 @@ interface TimeSeriesData {
   earningsMA7: number;
 }
 
-interface QualityData {
-  parameter: string;
-  avgValue: number;
-  minValue: number;
-  maxValue: number;
-  trend: 'up' | 'down' | 'stable';
-  // Standard deviation for variability analysis
-  stdDev: number;
-}
-
-interface GradeDistribution {
-  grade: string;
-  count: number;
-  percentage: number;
-}
-
 const AnalyticsPage = () => {
   const formatNumber = (num: number): string => {
     if (num >= 1000000) {
@@ -131,21 +113,16 @@ const AnalyticsPage = () => {
   const [loading, setLoading] = useState(true);
   const [farmer, setFarmer] = useState<any>(null);
   const [collections, setCollections] = useState<CollectionData[]>([]);
-  const [qualityData, setQualityData] = useState<QualityReportWithCollection[]>([]);
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [timeSeriesData, setTimeSeriesData] = useState<TimeSeriesData[]>([]);
-  const [qualityMetrics, setQualityMetrics] = useState<QualityData[]>([]);
-  const [gradeDistribution, setGradeDistribution] = useState<GradeDistribution[]>([]);
   const [dateRange, setDateRange] = useState('month');
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     overview: true,
     trends: true,
-    quality: true,
     earnings: true
   });
   // Real-time subscription references
   const collectionsSubscriptionRef = useRef<any>(null);
-  const qualitySubscriptionRef = useRef<any>(null);
 
   // Toggle section expansion
   const toggleSection = (section: string) => {
@@ -153,82 +130,6 @@ const AnalyticsPage = () => {
       ...prev,
       [section]: !prev[section]
     }));
-  };
-
-  // Calculate quality score from quality parameters with weighted scoring
-  const calculateQualityScore = (report: QualityReportWithCollection): number => {
-    let score = 0;
-    let totalWeight = 0;
-    
-    // Define weights for different quality parameters
-    const weights = {
-      fat_content: 0.25,
-      protein_content: 0.25,
-      snf_content: 0.20,
-      acidity_level: 0.15,
-      temperature: 0.10,
-      bacterial_count: 0.05
-    };
-    
-    // Ideal ranges for different parameters
-    const idealRanges = {
-      fat_content: { min: 3.5, max: 5.0, target: 4.0 },
-      protein_content: { min: 3.0, max: 3.5, target: 3.25 },
-      snf_content: { min: 8.0, max: 9.5, target: 8.75 },
-      acidity_level: { min: 6.0, max: 7.2, target: 6.6 },
-      temperature: { min: 2.0, max: 4.0, target: 3.0 },
-      bacterial_count: { min: 0, max: 100000, target: 50000 }
-    };
-    
-    if (report.fat_content !== null) {
-      const deviation = Math.abs(report.fat_content - idealRanges.fat_content.target);
-      const maxDeviation = Math.abs(idealRanges.fat_content.max - idealRanges.fat_content.target);
-      const fatScore = Math.max(0, 10 * (1 - deviation / maxDeviation));
-      score += fatScore * weights.fat_content;
-      totalWeight += weights.fat_content;
-    }
-    
-    if (report.protein_content !== null) {
-      const deviation = Math.abs(report.protein_content - idealRanges.protein_content.target);
-      const maxDeviation = Math.abs(idealRanges.protein_content.max - idealRanges.protein_content.target);
-      const proteinScore = Math.max(0, 10 * (1 - deviation / maxDeviation));
-      score += proteinScore * weights.protein_content;
-      totalWeight += weights.protein_content;
-    }
-    
-    if (report.snf_content !== null) {
-      const deviation = Math.abs(report.snf_content - idealRanges.snf_content.target);
-      const maxDeviation = Math.abs(idealRanges.snf_content.max - idealRanges.snf_content.target);
-      const snfScore = Math.max(0, 10 * (1 - deviation / maxDeviation));
-      score += snfScore * weights.snf_content;
-      totalWeight += weights.snf_content;
-    }
-    
-    if (report.acidity_level !== null) {
-      const deviation = Math.abs(report.acidity_level - idealRanges.acidity_level.target);
-      const maxDeviation = Math.abs(idealRanges.acidity_level.max - idealRanges.acidity_level.target);
-      const acidityScore = Math.max(0, 10 * (1 - deviation / maxDeviation));
-      score += acidityScore * weights.acidity_level;
-      totalWeight += weights.acidity_level;
-    }
-    
-    if (report.temperature !== null) {
-      const deviation = Math.abs(report.temperature - idealRanges.temperature.target);
-      const maxDeviation = Math.abs(idealRanges.temperature.max - idealRanges.temperature.target);
-      const tempScore = Math.max(0, 10 * (1 - deviation / maxDeviation));
-      score += tempScore * weights.temperature;
-      totalWeight += weights.temperature;
-    }
-    
-    if (report.bacterial_count !== null) {
-      const deviation = Math.abs(report.bacterial_count - idealRanges.bacterial_count.target);
-      const maxDeviation = Math.abs(idealRanges.bacterial_count.max - idealRanges.bacterial_count.target);
-      const bacteriaScore = Math.max(0, 10 * (1 - deviation / maxDeviation));
-      score += bacteriaScore * weights.bacterial_count;
-      totalWeight += weights.bacterial_count;
-    }
-    
-    return totalWeight > 0 ? (score / totalWeight) : 0;
   };
 
   // Calculate moving averages for trend analysis
@@ -345,18 +246,8 @@ const AnalyticsPage = () => {
         if (collectionsError) throw collectionsError;
         setCollections(collectionsData || []);
 
-        // Fetch quality data for the farmer
-        const qualityResponse: ServiceResponse<QualityReportWithCollection[]> = await qualityReportService.getReportsByFarmer(farmerData.id);
-        
-        if (!qualityResponse.success) {
-          toast.error('Error', qualityResponse.error || 'Failed to load quality data');
-          setQualityData([]);
-        } else {
-          setQualityData(qualityResponse.data || []);
-        }
-
         // Process analytics data
-        processAnalyticsData(collectionsData || [], qualityResponse.data || []);
+        processAnalyticsData(collectionsData || []);
 
       } catch (err) {
         console.error('Error fetching analytics data:', err);
@@ -388,7 +279,7 @@ const AnalyticsPage = () => {
           // Add new collection to state
           setCollections(prev => [...prev, payload.new as CollectionData]);
           // Re-process analytics
-          processAnalyticsData([...collections, payload.new as CollectionData], qualityData);
+          processAnalyticsData([...collections, payload.new as CollectionData]);
         }
       )
       .on(
@@ -410,30 +301,7 @@ const AnalyticsPage = () => {
           const updatedCollections = collections.map(collection => 
             collection.id === payload.new.id ? payload.new as CollectionData : collection
           );
-          processAnalyticsData(updatedCollections, qualityData);
-        }
-      )
-      .subscribe();
-
-    // Subscribe to real-time quality updates
-    qualitySubscriptionRef.current = supabase
-      .channel('quality-analytics')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'milk_quality_parameters'
-        },
-        async (payload) => {
-          // Fetch the full quality report
-          const qualityResponse: ServiceResponse<QualityReportWithCollection[]> = await qualityReportService.getReportsByFarmer(farmer.id);
-          
-          if (qualityResponse.success) {
-            setQualityData(qualityResponse.data || []);
-            // Re-process analytics
-            processAnalyticsData(collections, qualityResponse.data || []);
-          }
+          processAnalyticsData(updatedCollections);
         }
       )
       .subscribe();
@@ -443,24 +311,16 @@ const AnalyticsPage = () => {
       if (collectionsSubscriptionRef.current) {
         supabase.removeChannel(collectionsSubscriptionRef.current);
       }
-      if (qualitySubscriptionRef.current) {
-        supabase.removeChannel(qualitySubscriptionRef.current);
-      }
     };
-  }, [farmer?.id, collections, qualityData]);
+  }, [farmer?.id, collections]);
 
   // Process analytics data with enhanced insights
-  const processAnalyticsData = (collectionsData: CollectionData[], qualityDataArray: QualityReportWithCollection[]) => {
+  const processAnalyticsData = (collectionsData: CollectionData[]) => {
     // Basic metrics
     const totalCollections = collectionsData.length;
     const totalLiters = collectionsData.reduce((sum, collection) => sum + (collection.liters || 0), 0);
     const totalEarnings = collectionsData.reduce((sum, collection) => sum + (collection.total_amount || 0), 0);
     const avgDailyProduction = totalCollections > 0 ? totalLiters / totalCollections : 0;
-    
-    // Average quality score
-    const avgQualityScore = qualityDataArray.length > 0 
-      ? qualityDataArray.reduce((sum, report) => sum + (calculateQualityScore(report) || 0), 0) / qualityDataArray.length
-      : 0;
 
     // Best collection day
     const bestCollection = collectionsData.reduce((best, current) => 
@@ -481,20 +341,6 @@ const AnalyticsPage = () => {
     const firstHalfCollections = firstHalf.length;
     const secondHalfCollections = secondHalf.length;
     const collectionsGrowth = firstHalfCollections > 0 ? ((secondHalfCollections - firstHalfCollections) / firstHalfCollections) * 100 : 0;
-    
-    const firstHalfQuality = firstHalf.length > 0 
-      ? qualityDataArray
-          .filter(q => firstHalf.some(c => c.id === q.collection_id))
-          .reduce((sum, report) => sum + (calculateQualityScore(report) || 0), 0) / firstHalf.length
-      : 0;
-      
-    const secondHalfQuality = secondHalf.length > 0 
-      ? qualityDataArray
-          .filter(q => secondHalf.some(c => c.id === q.collection_id))
-          .reduce((sum, report) => sum + (calculateQualityScore(report) || 0), 0) / secondHalf.length
-      : 0;
-      
-    const qualityGrowth = firstHalfQuality > 0 ? ((secondHalfQuality - firstHalfQuality) / firstHalfQuality) * 100 : 0;
 
     // Predictive insights
     const dailyLiters = collectionsData.map(c => c.liters || 0);
@@ -507,25 +353,20 @@ const AnalyticsPage = () => {
     if (collectionsGrowth > 5) productionTrend = 'increasing';
     else if (collectionsGrowth < -5) productionTrend = 'decreasing';
 
-    // Quality trend analysis
-    let qualityTrend: 'improving' | 'declining' | 'stable' = 'stable';
-    if (qualityGrowth > 5) qualityTrend = 'improving';
-    else if (qualityGrowth < -5) qualityTrend = 'declining';
-
     setAnalytics({
       totalCollections,
       totalLiters,
       totalEarnings,
       avgDailyProduction,
-      avgQualityScore,
+      avgQualityScore: 0,
       bestCollectionDay,
       collectionsGrowth,
       earningsGrowth,
-      qualityGrowth,
+      qualityGrowth: 0,
       predictedNextCollection,
       predictedNextEarnings,
       productionTrend,
-      qualityTrend
+      qualityTrend: 'stable'
     });
 
     // Time series data with moving averages
@@ -542,19 +383,6 @@ const AnalyticsPage = () => {
         collections: existing.collections + 1,
         qualityScores: existing.qualityScores
       });
-    });
-    
-    // Add quality scores to dates
-    qualityDataArray.forEach(report => {
-      if (report.collection?.collection_date) {
-        const dateKey = format(new Date(report.collection.collection_date), 'yyyy-MM-dd');
-        const existing = dateMap.get(dateKey);
-        if (existing) {
-          const qualityScore = calculateQualityScore(report);
-          existing.qualityScores.push(qualityScore);
-          dateMap.set(dateKey, existing);
-        }
-      }
     });
     
     // Convert to time series format
@@ -580,79 +408,6 @@ const AnalyticsPage = () => {
     // Calculate moving averages
     const timeSeriesWithMA = calculateMovingAverages(timeSeries);
     setTimeSeriesData(timeSeriesWithMA);
-
-    // Quality metrics with standard deviation
-    const qualityMetricsData: QualityData[] = [];
-    
-    if (qualityDataArray.length > 0) {
-      // Fat content metrics
-      const fatValues = qualityDataArray
-        .filter(q => q.fat_content !== null)
-        .map(q => q.fat_content || 0);
-      
-      if (fatValues.length > 0) {
-        qualityMetricsData.push({
-          parameter: 'Fat Content',
-          avgValue: fatValues.reduce((sum, val) => sum + val, 0) / fatValues.length,
-          minValue: Math.min(...fatValues),
-          maxValue: Math.max(...fatValues),
-          trend: fatValues[fatValues.length - 1] > fatValues[0] ? 'up' : fatValues[fatValues.length - 1] < fatValues[0] ? 'down' : 'stable',
-          stdDev: calculateStandardDeviation(fatValues)
-        });
-      }
-      
-      // Protein content metrics
-      const proteinValues = qualityDataArray
-        .filter(q => q.protein_content !== null)
-        .map(q => q.protein_content || 0);
-      
-      if (proteinValues.length > 0) {
-        qualityMetricsData.push({
-          parameter: 'Protein Content',
-          avgValue: proteinValues.reduce((sum, val) => sum + val, 0) / proteinValues.length,
-          minValue: Math.min(...proteinValues),
-          maxValue: Math.max(...proteinValues),
-          trend: proteinValues[proteinValues.length - 1] > proteinValues[0] ? 'up' : proteinValues[proteinValues.length - 1] < proteinValues[0] ? 'down' : 'stable',
-          stdDev: calculateStandardDeviation(proteinValues)
-        });
-      }
-      
-      // Bacterial count metrics
-      const bacterialValues = qualityDataArray
-        .filter(q => q.bacterial_count !== null)
-        .map(q => q.bacterial_count || 0);
-      
-      if (bacterialValues.length > 0) {
-        qualityMetricsData.push({
-          parameter: 'Bacterial Count',
-          avgValue: bacterialValues.reduce((sum, val) => sum + val, 0) / bacterialValues.length,
-          minValue: Math.min(...bacterialValues),
-          maxValue: Math.max(...bacterialValues),
-          trend: bacterialValues[bacterialValues.length - 1] < bacterialValues[0] ? 'down' : bacterialValues[bacterialValues.length - 1] > bacterialValues[0] ? 'up' : 'stable',
-          stdDev: calculateStandardDeviation(bacterialValues)
-        });
-      }
-    }
-    
-    setQualityMetrics(qualityMetricsData);
-
-    // Grade distribution
-    const gradeCounts = new Map<string, number>();
-    collectionsData.forEach(collection => {
-      if (collection.quality_grade) {
-        const count = gradeCounts.get(collection.quality_grade) || 0;
-        gradeCounts.set(collection.quality_grade, count + 1);
-      }
-    });
-    
-    const totalGradeCollections = Array.from(gradeCounts.values()).reduce((sum, count) => sum + count, 0);
-    const gradeDistributionData: GradeDistribution[] = Array.from(gradeCounts.entries()).map(([grade, count]) => ({
-      grade,
-      count,
-      percentage: totalGradeCollections > 0 ? (count / totalGradeCollections) * 100 : 0
-    }));
-    
-    setGradeDistribution(gradeDistributionData);
   };
 
   // Export analytics data
@@ -660,16 +415,12 @@ const AnalyticsPage = () => {
     try {
       const exportData = {
         summary: analytics,
-        timeSeries: timeSeriesData,
-        qualityMetrics: qualityMetrics,
-        gradeDistribution: gradeDistribution
+        timeSeries: timeSeriesData
       };
       
       if (format === 'csv') {
         exportToCSV([exportData.summary], 'analytics-summary');
         exportToCSV(exportData.timeSeries, 'analytics-trends');
-        exportToCSV(exportData.qualityMetrics, 'analytics-quality');
-        exportToCSV(exportData.gradeDistribution, 'analytics-grades');
         toast.success('Success', 'Analytics data exported as CSV');
       } else {
         exportToJSON([exportData], 'farmer-analytics');
@@ -757,16 +508,6 @@ const AnalyticsPage = () => {
           icon={<Wallet className="h-6 w-6 text-yellow-500" />}
           color="bg-yellow-100"
         />
-        <StatCard
-          title="Avg Quality Score"
-          value={analytics?.avgQualityScore?.toFixed(1) || "0.0"}
-          description={
-            analytics?.qualityTrend === 'improving' ? "Quality improving" : 
-            analytics?.qualityTrend === 'declining' ? "Quality declining" : "Quality stable"
-          }
-          icon={<Star className="h-6 w-6 text-purple-500" />}
-          color="bg-purple-100"
-        />
       </div>
 
       {/* Predictive Insights */}
@@ -821,26 +562,6 @@ const AnalyticsPage = () => {
               color={
                 analytics?.productionTrend === 'increasing' ? "bg-green-100" : 
                 analytics?.productionTrend === 'decreasing' ? "bg-red-100" : "bg-yellow-100"
-              }
-            />
-            <StatCard
-              title="Quality Trend"
-              value={
-                analytics?.qualityTrend === 'improving' ? "Improving" : 
-                analytics?.qualityTrend === 'declining' ? "Declining" : "Stable"
-              }
-              description={
-                analytics?.qualityTrend === 'improving' ? "Quality is getting better" : 
-                analytics?.qualityTrend === 'declining' ? "Quality needs attention" : "Consistent quality"
-              }
-              icon={
-                analytics?.qualityTrend === 'improving' ? <TrendingUp className="h-6 w-6 text-green-500" /> : 
-                analytics?.qualityTrend === 'declining' ? <TrendingDown className="h-6 w-6 text-red-500" /> : 
-                <AlertTriangle className="h-6 w-6 text-yellow-500" />
-              }
-              color={
-                analytics?.qualityTrend === 'improving' ? "bg-green-100" : 
-                analytics?.qualityTrend === 'declining' ? "bg-red-100" : "bg-yellow-100"
               }
             />
           </div>
@@ -947,85 +668,6 @@ const AnalyticsPage = () => {
         </Card>
 
       </div>
-
-      {/* Quality Metrics with Enhanced Insights */}
-      <Card className="mb-8">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Award className="h-5 w-5 text-primary" />
-            Quality Metrics
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {qualityMetrics.map((metric, index) => (
-              <StatCard
-                key={index}
-                title={metric.parameter}
-                value={metric.avgValue.toFixed(2)}
-                description={`${metric.trend === 'up' ? '↑' : metric.trend === 'down' ? '↓' : '→'} Variability: ±${metric.stdDev.toFixed(2)}`}
-                icon={
-                  metric.parameter.includes('Fat') ? <Droplets className="h-6 w-6 text-blue-500" /> :
-                  metric.parameter.includes('Protein') ? <Zap className="h-6 w-6 text-yellow-500" /> :
-                  metric.parameter.includes('SNF') ? <Star className="h-6 w-6 text-green-500" /> :
-                  metric.parameter.includes('Acidity') ? <TrendingUp className="h-6 w-6 text-red-500" /> :
-                  metric.parameter.includes('Temperature') ? <Thermometer className="h-6 w-6 text-purple-500" /> :
-                  <Beaker className="h-6 w-6 text-gray-500" />
-                }
-                color={
-                  metric.parameter.includes('Fat') ? 'bg-blue-100' :
-                  metric.parameter.includes('Protein') ? 'bg-yellow-100' :
-                  metric.parameter.includes('SNF') ? 'bg-green-100' :
-                  metric.parameter.includes('Acidity') ? 'bg-red-100' :
-                  metric.parameter.includes('Temperature') ? 'bg-purple-100' :
-                  'bg-gray-100'
-                }
-              />
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Grade Distribution */}
-      <Card className="mb-8">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <PieChart className="h-5 w-5 text-primary" />
-            Grade Distribution
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <RechartsPieChart>
-                <Pie
-                  data={gradeDistribution}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={true}
-                  label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="count"
-                  nameKey="grade"
-                >
-                  {gradeDistribution.map((entry, index) => {
-                    const colors = {
-                      'A+': '#10b981',
-                      'A': '#3b82f6',
-                      'B': '#f59e0b',
-                      'C': '#ef4444'
-                    };
-                    return <Cell key={`cell-${index}`} fill={colors[entry.grade as keyof typeof colors] || '#8884d8'} />;
-                  })}
-                </Pie>
-                <Tooltip formatter={(value, name) => [value, 'Collections']} />
-                <Legend />
-              </RechartsPieChart>
-            </ResponsiveContainer>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 };

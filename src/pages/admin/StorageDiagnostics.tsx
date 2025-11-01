@@ -86,7 +86,7 @@ const StorageDiagnostics = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Storage Diagnostics Card */}}
+          {/* Storage Diagnostics Card */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center justify-between">

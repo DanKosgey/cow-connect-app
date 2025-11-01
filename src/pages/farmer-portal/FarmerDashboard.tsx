@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { 
@@ -20,10 +20,37 @@ import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, R
 import { useFarmerDashboard } from '@/hooks/useFarmerDashboard';
 import { format } from 'date-fns';
 import RefreshButton from '@/components/ui/RefreshButton';
+import { TimeframeSelector } from "@/components/TimeframeSelector";
 
 const FarmerDashboard = () => {
-  const { stats, loading, error } = useFarmerDashboard();
-  const [selectedPeriod, setSelectedPeriod] = useState('month');
+  const [timeframe, setTimeframe] = useState("month");
+  const { stats, loading, error, refresh } = useFarmerDashboard(timeframe);
+  const componentMounted = useRef(true);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      componentMounted.current = false;
+    };
+  }, []);
+
+  // Update timeframe handler
+  const handleTimeframeChange = (timeframeValue: string, start: Date, end: Date) => {
+    if (componentMounted.current) {
+      setTimeframe(timeframeValue);
+    }
+  };
+
+  // Memoize chart data to prevent unnecessary recalculations
+  const collectionTrendData = useMemo(() => {
+    if (!stats || !stats.qualityTrend) return [];
+    
+    return (stats.qualityTrend || []).map((item: any) => ({
+      date: item.date,
+      collections: item.liters, // Using liters as collections metric
+      revenue: item.liters * 20 // Mock revenue calculation - you might want to adjust this
+    }));
+  }, [stats]);
 
   if (loading) {
     return (
@@ -69,46 +96,27 @@ const FarmerDashboard = () => {
     );
   }
 
-  // Stats cards data
+  // Stats cards data with null safety
   const statsCards = [
     {
       title: "Today's Collection",
-      value: `${stats.today.liters.toFixed(1)} L`,
-      change: `${stats.today.collections} collections`,
+      value: `${(stats.today?.liters || 0).toFixed(1)} L`,
+      change: `${stats.today?.collections || 0} collections`,
       icon: <Droplets className="h-5 w-5" />,
     },
     {
-      title: 'This Month',
-      value: `${stats.thisMonth.liters.toFixed(1)} L`,
-      change: `KSh ${stats.thisMonth.earnings.toFixed(0)}`,
+      title: 'This Period',
+      value: `${(stats.thisMonth?.liters || 0).toFixed(1)} L`,
+      change: `KSh ${(stats.thisMonth?.earnings || 0).toFixed(0)}`,
       icon: <TrendingUp className="h-5 w-5" />,
     },
     {
-      title: 'Avg Quality',
-      value: stats.today.avgQuality > 0 ? stats.today.avgQuality.toFixed(1) : 'N/A',
-      change: 'This week',
-      icon: <Award className="h-5 w-5" />,
-    },
-    {
       title: 'Total Earnings',
-      value: `KSh ${stats.allTime.totalEarnings.toFixed(0)}`,
-      change: 'All time',
+      value: `KSh ${(stats.allTime?.totalEarnings || 0).toFixed(0)}`,
+      change: 'This period',
       icon: <DollarSign className="h-5 w-5" />,
     }
   ];
-
-  // Prepare data for charts
-  const qualityDistributionData = Object.entries(stats.thisMonth.qualityDistribution).map(([grade, count]) => ({
-    name: `Grade ${grade}`,
-    value: count as number
-  }));
-
-  // Prepare data for the dual-axis line chart
-  const collectionTrendData = stats.qualityTrend.map((item: any) => ({
-    date: item.date,
-    collections: item.liters, // Using liters as collections metric
-    revenue: item.liters * 20 // Mock revenue calculation - you might want to adjust this
-  }));
 
   const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444'];
 
@@ -120,9 +128,10 @@ const FarmerDashboard = () => {
           <p className="text-gray-600 mt-2">Overview of your dairy operations</p>
         </div>
         <div className="mt-4 md:mt-0 flex items-center space-x-3">
+          <TimeframeSelector onTimeframeChange={handleTimeframeChange} defaultValue={timeframe} />
           <RefreshButton 
             isRefreshing={loading} 
-            onRefresh={() => window.location.reload()} 
+            onRefresh={refresh} 
             className="bg-white border-gray-300 hover:bg-gray-50 rounded-md shadow-sm"
           />
           <Button variant="outline" className="flex items-center gap-2">
@@ -166,101 +175,74 @@ const FarmerDashboard = () => {
           </CardHeader>
           <CardContent>
             <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={collectionTrendData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis 
-                    dataKey="date" 
-                    stroke="#6b7280"
-                    tickFormatter={(value) => format(new Date(value), 'MMM dd')}
-                  />
-                  <YAxis 
-                    yAxisId="left" 
-                    stroke="#10b981" 
-                    tickFormatter={(value) => `${value} L`}
-                    label={{ 
-                      value: 'Collections (Liters)', 
-                      angle: -90, 
-                      position: 'insideLeft',
-                      style: { textAnchor: 'middle', fill: '#10b981' }
-                    }}
-                  />
-                  <YAxis 
-                    yAxisId="right" 
-                    orientation="right" 
-                    stroke="#3b82f6" 
-                    tickFormatter={(value) => `KSh${value >= 1000 ? `${(value/1000).toFixed(1)}k` : value}`}
-                    label={{ 
-                      value: 'Revenue (KSh)', 
-                      angle: 90, 
-                      position: 'insideRight',
-                      style: { textAnchor: 'middle', fill: '#3b82f6' }
-                    }}
-                  />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }} 
-                    formatter={(value, name) => {
-                      if (name === 'collections') return [`${value} L`, 'Collections'];
-                      if (name === 'revenue') return [`KSh ${Number(value).toLocaleString()}`, 'Revenue'];
-                      return [value, name];
-                    }}
-                    labelFormatter={(value) => format(new Date(value), 'MMM dd, yyyy')}
-                  />
-                  <Line 
-                    yAxisId="left"
-                    type="monotone" 
-                    dataKey="collections" 
-                    stroke="#10b981" 
-                    strokeWidth={2} 
-                    dot={{ r: 4, fill: '#10b981' }} 
-                    activeDot={{ r: 6, stroke: '#10b981', strokeWidth: 2 }}
-                    name="Collections (L)"
-                  />
-                  <Line 
-                    yAxisId="right"
-                    type="monotone" 
-                    dataKey="revenue" 
-                    stroke="#3b82f6" 
-                    strokeWidth={2} 
-                    dot={{ r: 4, fill: '#3b82f6' }} 
-                    activeDot={{ r: 6, stroke: '#3b82f6', strokeWidth: 2 }}
-                    name="Revenue (KSh)"
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Quality Distribution */}
-        <Card className="shadow-sm">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Award className="h-5 w-5 text-primary" />
-              Quality Distribution
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={qualityDistributionData}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="value"
-                  >
-                    {qualityDistributionData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(value) => [value, 'Collections']} />
-                </PieChart>
-              </ResponsiveContainer>
+              {collectionTrendData && collectionTrendData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={collectionTrendData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis 
+                      dataKey="date" 
+                      stroke="#6b7280"
+                      tickFormatter={(value) => format(new Date(value), 'MMM dd')}
+                    />
+                    <YAxis 
+                      yAxisId="left" 
+                      stroke="#10b981" 
+                      tickFormatter={(value) => `${value} L`}
+                      label={{ 
+                        value: 'Collections (Liters)', 
+                        angle: -90, 
+                        position: 'insideLeft',
+                        style: { textAnchor: 'middle', fill: '#10b981' }
+                      }}
+                    />
+                    <YAxis 
+                      yAxisId="right" 
+                      orientation="right" 
+                      stroke="#3b82f6" 
+                      tickFormatter={(value) => `KSh${value >= 1000 ? `${(value/1000).toFixed(1)}k` : value}`}
+                      label={{ 
+                        value: 'Revenue (KSh)', 
+                        angle: 90, 
+                        position: 'insideRight',
+                        style: { textAnchor: 'middle', fill: '#3b82f6' }
+                      }}
+                    />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }} 
+                      formatter={(value, name) => {
+                        if (name === 'collections') return [`${value} L`, 'Collections'];
+                        if (name === 'revenue') return [`KSh ${Number(value).toLocaleString()}`, 'Revenue'];
+                        return [value, name];
+                      }}
+                      labelFormatter={(value) => format(new Date(value), 'MMM dd, yyyy')}
+                    />
+                    <Line 
+                      yAxisId="left"
+                      type="monotone" 
+                      dataKey="collections" 
+                      stroke="#10b981" 
+                      strokeWidth={2} 
+                      dot={{ r: 4, fill: '#10b981' }} 
+                      activeDot={{ r: 6, stroke: '#10b981', strokeWidth: 2 }}
+                      name="Collections (L)"
+                    />
+                    <Line 
+                      yAxisId="right"
+                      type="monotone" 
+                      dataKey="revenue" 
+                      stroke="#3b82f6" 
+                      strokeWidth={2} 
+                      dot={{ r: 4, fill: '#3b82f6' }} 
+                      activeDot={{ r: 6, stroke: '#3b82f6', strokeWidth: 2 }}
+                      name="Revenue (KSh)"
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-full text-gray-500">
+                  <p>No trend data available</p>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -277,7 +259,7 @@ const FarmerDashboard = () => {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {stats.recentCollections.slice(0, 5).map((collection: any) => (
+              {stats.recentCollections && stats.recentCollections.slice(0, 5).map((collection: any) => (
                 <div key={collection.id} className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-muted/50 transition-colors">
                   <div className="flex items-center space-x-4">
                     <div className="p-2 rounded-full bg-blue-100">
@@ -290,19 +272,14 @@ const FarmerDashboard = () => {
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center space-x-4">
-                    <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
-                      collection.quality_grade === 'A+' ? 'bg-green-100 text-green-800' :
-                      collection.quality_grade === 'A' ? 'bg-blue-100 text-blue-800' :
-                      collection.quality_grade === 'B' ? 'bg-yellow-100 text-yellow-800' :
-                      'bg-red-100 text-red-800'
-                    }`}>
-                      Grade {collection.quality_grade}
-                    </span>
-                    <span className="text-lg font-bold text-gray-900">KSh {collection.total_amount}</span>
-                  </div>
+                  <span className="text-lg font-bold text-gray-900">KSh {collection.total_amount}</span>
                 </div>
               ))}
+              {(!stats.recentCollections || stats.recentCollections.length === 0) && (
+                <div className="text-center py-8 text-gray-500">
+                  <p>No recent collections found</p>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>

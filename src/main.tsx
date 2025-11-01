@@ -24,9 +24,10 @@ if (!rootElement) {
 }
 
 createRoot(rootElement).render(
-	<React.StrictMode>
-		<App />
-		<Toaster />
-		{/* <SonnerToaster /> */}
-	</React.StrictMode>
+  // Removed React.StrictMode to prevent double mounting in development
+  <>
+    <App />
+    <Toaster />
+    {/* <SonnerToaster /> */}
+  </>
 );

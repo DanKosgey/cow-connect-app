@@ -20,6 +20,7 @@ import useToastNotifications from "@/hooks/useToastNotifications";
 import { PageHeader } from "@/components/PageHeader";
 import RefreshButton from "@/components/ui/RefreshButton";
 import { useProfileData } from "@/hooks/useProfileData";
+import { TimeframeSelector } from "@/components/TimeframeSelector";
 
 interface FarmerProfile {
   id: string;
@@ -39,11 +40,18 @@ const ProfilePage = () => {
   const [isGettingLocation, setIsGettingLocation] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [timeframe, setTimeframe] = useState("month"); // Add timeframe state
   const { useFarmerProfile, updateProfile } = useProfileData();
 
   // Fetch farmer profile with caching
   const { data: farmer, isLoading, refetch } = useFarmerProfile();
   const [editableFarmer, setEditableFarmer] = useState<FarmerProfile | null>(null);
+
+  // Update timeframe handler
+  const handleTimeframeChange = (timeframeValue: string, start: Date, end: Date) => {
+    setTimeframe(timeframeValue);
+    // In a real implementation, you would filter the data based on the timeframe
+  };
 
   // Update editableFarmer when farmer data changes
   useEffect(() => {
@@ -169,6 +177,7 @@ const ProfilePage = () => {
             </div>
           ) : (
             <div className="flex space-x-3">
+              <TimeframeSelector onTimeframeChange={handleTimeframeChange} defaultValue={timeframe} />
               <RefreshButton 
                 isRefreshing={isLoading} 
                 onRefresh={refetch} 
