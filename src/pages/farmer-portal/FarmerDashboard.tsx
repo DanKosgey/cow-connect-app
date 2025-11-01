@@ -113,14 +113,22 @@ const FarmerDashboard = () => {
   // Stats cards data with null safety
   const statsCards = [
     {
-      title: "Today's Collection",
+      title: timeframe === 'day' ? "Today's Collection" : 
+             timeframe === 'week' ? "This Week's Collection" : 
+             timeframe === 'month' ? "This Month's Collection" : 
+             timeframe === 'quarter' ? "This Quarter's Collection" : 
+             "This Period's Collection",
       value: `${(stats.today?.liters || 0).toFixed(1)} L`,
       change: `${stats.today?.collections || 0} collections`,
       icon: <Droplets className="h-5 w-5" />,
       trend: "up"
     },
     {
-      title: 'This Period',
+      title: timeframe === 'day' ? "Today's Earnings" : 
+             timeframe === 'week' ? "This Week's Earnings" : 
+             timeframe === 'month' ? "This Month's Earnings" : 
+             timeframe === 'quarter' ? "This Quarter's Earnings" : 
+             "This Period's Earnings",
       value: `${(stats.thisMonth?.liters || 0).toFixed(1)} L`,
       change: `KSh ${(stats.thisMonth?.earnings || 0).toFixed(0)}`,
       icon: <TrendingUp className="h-5 w-5" />,
@@ -129,14 +137,22 @@ const FarmerDashboard = () => {
     {
       title: 'Total Earnings',
       value: `KSh ${(stats.allTime?.totalEarnings || 0).toFixed(0)}`,
-      change: 'This period',
+      change: timeframe === 'day' ? 'Today' : 
+              timeframe === 'week' ? 'This week' : 
+              timeframe === 'month' ? 'This month' : 
+              timeframe === 'quarter' ? 'This quarter' : 
+              'This period',
       icon: <DollarSign className="h-5 w-5" />,
       trend: "up"
     },
     {
       title: 'Collection Frequency',
       value: stats.today?.collections || 0,
-      change: "Collections today",
+      change: timeframe === 'day' ? "Collections today" : 
+              timeframe === 'week' ? "Collections this week" : 
+              timeframe === 'month' ? "Collections this month" : 
+              timeframe === 'quarter' ? "Collections this quarter" : 
+              "Collections this period",
       icon: <Calendar className="h-5 w-5" />,
       trend: "up"
     }
