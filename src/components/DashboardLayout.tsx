@@ -71,12 +71,19 @@ const roleNavigation: Record<string, NavItem[]> = {
     { label: 'Documents Under Review', path: '/farmer/documents-under-review', icon: <FileText className="h-5 w-5" />, category: 'system' },
   ],
   staff: [
-    { label: 'Dashboard', path: '/staff/dashboard', icon: <LayoutDashboard className="h-5 w-5" />, category: 'main' },
-    { label: 'New Collection', path: '/staff/collections/new', icon: <ClipboardList className="h-5 w-5" />, category: 'operations' },
-    { label: 'Collections', path: '/staff/collections', icon: <Milk className="h-5 w-5" />, category: 'operations' },
-    { label: 'Farmers', path: '/staff/farmers', icon: <Users className="h-5 w-5" />, category: 'management' },
-    { label: 'Performance', path: '/staff/performance', icon: <BarChart3 className="h-5 w-5" />, category: 'analytics' },
-    { label: 'Profile', path: '/staff/profile', icon: <UserCog className="h-5 w-5" />, category: 'settings' },
+    { label: 'Dashboard', path: '/staff-only/dashboard', icon: <LayoutDashboard className="h-5 w-5" />, category: 'main' },
+    { label: 'Milk Approval', path: '/staff-only/milk-approval', icon: <CheckCircle className="h-5 w-5" />, category: 'operations' },
+    { label: 'Variance Reports', path: '/staff-only/variance-reports', icon: <TrendingUp className="h-5 w-5" />, category: 'analytics' },
+    { label: 'Collector Performance', path: '/staff-only/collector-performance', icon: <BarChart3 className="h-5 w-5" />, category: 'analytics' },
+    { label: 'Profile', path: '/staff-only/profile', icon: <UserCog className="h-5 w-5" />, category: 'settings' },
+  ],
+  collector: [
+    { label: 'Dashboard', path: '/collector-only/dashboard', icon: <LayoutDashboard className="h-5 w-5" />, category: 'main' },
+    { label: 'New Collection', path: '/collector-only/collections/new', icon: <ClipboardList className="h-5 w-5" />, category: 'operations' },
+    { label: 'Collections', path: '/collector-only/collections', icon: <Milk className="h-5 w-5" />, category: 'operations' },
+    { label: 'Farmers', path: '/collector-only/farmers', icon: <Users className="h-5 w-5" />, category: 'management' },
+    { label: 'Performance', path: '/collector-only/performance', icon: <BarChart3 className="h-5 w-5" />, category: 'analytics' },
+    { label: 'Profile', path: '/collector-only/profile', icon: <UserCog className="h-5 w-5" />, category: 'settings' },
   ],
   admin: [
     { label: 'Dashboard', path: '/admin/dashboard', icon: <LayoutDashboard className="h-5 w-5" />, category: 'main' },
@@ -87,6 +94,7 @@ const roleNavigation: Record<string, NavItem[]> = {
     { label: 'Credit Defaults', path: '/admin/credit-defaults', icon: <AlertTriangle className="h-5 w-5" />, category: 'finance' },
     { label: 'Credit Audit', path: '/admin/credit-audit', icon: <FileText className="h-5 w-5" />, category: 'finance' },
     { label: 'Credit Reports', path: '/admin/credit-reports', icon: <FileText className="h-5 w-5" />, category: 'finance' },
+    { label: 'Penalty Management', path: '/admin/penalty-management', icon: <AlertTriangle className="h-5 w-5" />, category: 'finance' },
     { label: 'Analytics', path: '/admin/analytics', icon: <BarChart3 className="h-5 w-5" />, category: 'analytics' },
     { label: 'Farmer Performance', path: '/admin/farmer-performance', icon: <Activity className="h-5 w-5" />, category: 'analytics' },
     { label: 'KYC Approvals', path: '/admin/kyc-pending-farmers', icon: <CheckCircle className="h-5 w-5" />, category: 'kyc' },
@@ -153,7 +161,8 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
       if (userRole) {
         const loginPaths: Record<string, string> = {
           'farmer': '/farmer/login',
-          'staff': '/staff/login',
+          'staff': '/staff-only/login',
+          'collector': '/collector-only/login',
           'admin': '/admin/login'
         };
         
@@ -185,7 +194,8 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
       if (userRole) {
         const loginPaths: Record<string, string> = {
           'farmer': '/farmer/login',
-          'staff': '/staff/login',
+          'staff': '/staff-only/login',
+          'collector': '/collector-only/login',
           'admin': '/admin/login'
         };
         

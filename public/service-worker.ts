@@ -7,9 +7,9 @@ const OFFLINE_URL = '/offline.html';
 const ASSETS_TO_CACHE = [
   '/',
   OFFLINE_URL,
-  '/staff/collections',
-  '/staff/route',
-  '/staff/performance',
+  '/collector/collections',
+  '/collector/route',
+  '/collector/performance',
   '/assets/dairy-farm-hero.jpg',
   '/favicon.ico',
   '/manifest.json',

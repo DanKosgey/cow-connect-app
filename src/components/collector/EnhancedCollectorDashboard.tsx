@@ -92,7 +92,7 @@ const QUALITY_COLORS = {
   'C': '#EF4444'
 };
 
-const EnhancedStaffDashboard = () => {
+const EnhancedCollectorDashboard = () => {
   const { user, userRole } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -654,7 +654,7 @@ const EnhancedStaffDashboard = () => {
             <Button 
               variant="outline"
               className="relative flex items-center gap-2 text-sm sm:text-base"
-              onClick={() => navigate('/staff/notifications')}
+              onClick={() => navigate('/collector/notifications')}
             >
               <Bell className="h-4 w-4" />
               <span className="hidden xs:inline">Notifications</span>
@@ -667,7 +667,7 @@ const EnhancedStaffDashboard = () => {
           </div>
           <Button 
             className="flex items-center gap-2 text-sm sm:text-base"
-            onClick={() => navigate('/staff/collections/new')}
+            onClick={() => navigate('/collector/collections/new')}
           >
             <ClipboardList className="h-4 w-4" />
             <span className="hidden xs:inline">New Collection</span>
@@ -676,7 +676,7 @@ const EnhancedStaffDashboard = () => {
           <Button 
             variant="outline"
             className="flex items-center gap-2 text-sm sm:text-base"
-            onClick={() => navigate('/staff/payments/approval')}
+            onClick={() => navigate('/collector/payments/approval')}
           >
             <Wallet className="h-4 w-4" />
             <span className="hidden xs:inline">Payments</span>
@@ -908,7 +908,7 @@ const EnhancedStaffDashboard = () => {
             <div className="mt-4 sm:mt-6 text-center">
               <Button 
                 variant="outline" 
-                onClick={() => navigate('/staff/collections/new')}
+                onClick={() => navigate('/collector/collections/new')}
                 className="flex items-center gap-2 mx-auto text-sm sm:text-base"
               >
                 <Plus className="h-4 w-4" />
@@ -978,7 +978,7 @@ const EnhancedStaffDashboard = () => {
             <Button 
               className="flex flex-col items-center justify-center h-20 sm:h-24 gap-1 sm:gap-2 text-xs sm:text-sm"
               variant="outline"
-              onClick={() => navigate('/staff/collections/new')}
+              onClick={() => navigate('/collector/collections/new')}
             >
               <ClipboardList className="h-5 w-5 sm:h-6 sm:w-6" />
               <span className="text-center">New Collection</span>
@@ -986,7 +986,7 @@ const EnhancedStaffDashboard = () => {
             <Button 
               className="flex flex-col items-center justify-center h-20 sm:h-24 gap-1 sm:gap-2 text-xs sm:text-sm"
               variant="outline"
-              onClick={() => navigate('/staff/collections/history')}
+              onClick={() => navigate('/collector/collections/history')}
             >
               <Calendar className="h-5 w-5 sm:h-6 sm:w-6" />
               <span className="text-center">Collection History</span>
@@ -994,7 +994,7 @@ const EnhancedStaffDashboard = () => {
             <Button 
               className="flex flex-col items-center justify-center h-20 sm:h-24 gap-1 sm:gap-2 text-xs sm:text-sm"
               variant="outline"
-              onClick={() => navigate('/staff/farmers')}
+              onClick={() => navigate('/collector/farmers')}
             >
               <Users className="h-5 w-5 sm:h-6 sm:w-6" />
               <span className="text-center">Farmer Directory</span>
@@ -1002,7 +1002,7 @@ const EnhancedStaffDashboard = () => {
             <Button 
               className="flex flex-col items-center justify-center h-20 sm:h-24 gap-1 sm:gap-2 text-xs sm:text-sm"
               variant="outline"
-              onClick={() => navigate('/staff/payments/approval')}
+              onClick={() => navigate('/collector/payments/approval')}
             >
               <Wallet className="h-5 w-5 sm:h-6 sm:w-6" />
               <span className="text-center">Payments</span>
@@ -1010,7 +1010,7 @@ const EnhancedStaffDashboard = () => {
             <Button 
               className="flex flex-col items-center justify-center h-20 sm:h-24 gap-1 sm:gap-2 text-xs sm:text-sm"
               variant="outline"
-              onClick={() => navigate('/staff/routes')}
+              onClick={() => navigate('/collector/routes')}
             >
               <Route className="h-5 w-5 sm:h-6 sm:w-6" />
               <span className="text-center">Routes</span>
@@ -1018,7 +1018,7 @@ const EnhancedStaffDashboard = () => {
             <Button 
               className="flex flex-col items-center justify-center h-20 sm:h-24 gap-1 sm:gap-2 text-xs sm:text-sm"
               variant="outline"
-              onClick={() => navigate('/staff/performance')}
+              onClick={() => navigate('/collector/performance')}
             >
               <BarChart3 className="h-5 w-5 sm:h-6 sm:w-6" />
               <span className="text-center">Performance</span>
@@ -1026,7 +1026,7 @@ const EnhancedStaffDashboard = () => {
             <Button 
               className="flex flex-col items-center justify-center h-20 sm:h-24 gap-1 sm:gap-2 text-xs sm:text-sm"
               variant="outline"
-              onClick={() => navigate('/staff/performance-tracking')}
+              onClick={() => navigate('/collector/performance-tracking')}
             >
               <TrendingUp className="h-5 w-5 sm:h-6 sm:w-6" />
               <span className="text-center hidden xs:inline">Performance Tracking</span>
@@ -1035,7 +1035,7 @@ const EnhancedStaffDashboard = () => {
             <Button 
               className="flex flex-col items-center justify-center h-20 sm:h-24 gap-1 sm:gap-2 text-xs sm:text-sm"
               variant="outline"
-              onClick={() => navigate('/staff/quality-control')}
+              onClick={() => navigate('/collector/quality-control')}
             >
               <Beaker className="h-5 w-5 sm:h-6 sm:w-6" />
               <span className="text-center">Quality Control</span>
@@ -1043,7 +1043,7 @@ const EnhancedStaffDashboard = () => {
             <Button 
               className="flex flex-col items-center justify-center h-20 sm:h-24 gap-1 sm:gap-2 text-xs sm:text-sm"
               variant="outline"
-              onClick={() => navigate('/staff/inventory')}
+              onClick={() => navigate('/collector/inventory')}
             >
               <Package className="h-5 w-5 sm:h-6 sm:w-6" />
               <span className="text-center">Inventory</span>
@@ -1051,7 +1051,7 @@ const EnhancedStaffDashboard = () => {
             <Button 
               className="flex flex-col items-center justify-center h-20 sm:h-24 gap-1 sm:gap-2 text-xs sm:text-sm"
               variant="outline"
-              onClick={() => navigate('/staff/reports')}
+              onClick={() => navigate('/collector/reports')}
             >
               <FileText className="h-5 w-5 sm:h-6 sm:w-6" />
               <span className="text-center">Reports</span>
@@ -1059,7 +1059,7 @@ const EnhancedStaffDashboard = () => {
             <Button 
               className="flex flex-col items-center justify-center h-20 sm:h-24 gap-1 sm:gap-2 text-xs sm:text-sm"
               variant="outline"
-              onClick={() => navigate('/staff/analytics')}
+              onClick={() => navigate('/collector/analytics')}
             >
               <LineChart className="h-5 w-5 sm:h-6 sm:w-6" />
               <span className="text-center hidden xs:inline">Detailed Analytics</span>
@@ -1072,4 +1072,4 @@ const EnhancedStaffDashboard = () => {
   );
 };
 
-export default EnhancedStaffDashboard;
+export default EnhancedCollectorDashboard;

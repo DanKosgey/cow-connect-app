@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
-const StaffQuickActions = () => {
+const CollectorQuickActions = () => {
   const navigate = useNavigate();
 
   const quickActions = [
@@ -28,84 +28,84 @@ const StaffQuickActions = () => {
       description: "Record a new milk collection",
       icon: <ClipboardList className="h-6 w-6" />,
       color: "bg-blue-500",
-      action: () => navigate('/staff/collections/new')
+      action: () => navigate('/collector/collections/new')
     },
     {
       title: "Farmer Directory",
       description: "View and manage farmers",
       icon: <Users className="h-6 w-6" />,
       color: "bg-green-500",
-      action: () => navigate('/staff/farmers')
+      action: () => navigate('/collector/farmers')
     },
     {
       title: "Payment Approval",
       description: "Approve farmer payments",
       icon: <Wallet className="h-6 w-6" />,
       color: "bg-purple-500",
-      action: () => navigate('/staff/payments/approval')
+      action: () => navigate('/collector/payments/approval')
     },
     {
       title: "Route Management",
       description: "Manage collection routes",
       icon: <Route className="h-6 w-6" />,
       color: "bg-teal-500",
-      action: () => navigate('/staff/routes')
+      action: () => navigate('/collector/routes')
     },
     {
       title: "Quality Control",
       description: "Check milk quality parameters",
       icon: <Beaker className="h-6 w-6" />,
       color: "bg-yellow-500",
-      action: () => navigate('/staff/quality-control')
+      action: () => navigate('/collector/quality-control')
     },
     {
       title: "Inventory",
       description: "Manage supplies and equipment",
       icon: <Package className="h-6 w-6" />,
       color: "bg-indigo-500",
-      action: () => navigate('/staff/inventory')
+      action: () => navigate('/collector/inventory')
     },
     {
       title: "Reports",
       description: "Generate detailed reports",
       icon: <FileText className="h-6 w-6" />,
       color: "bg-pink-500",
-      action: () => navigate('/staff/reports')
+      action: () => navigate('/collector/reports')
     },
     {
       title: "Analytics",
       description: "View performance analytics",
       icon: <BarChart3 className="h-6 w-6" />,
       color: "bg-red-500",
-      action: () => navigate('/staff/analytics')
+      action: () => navigate('/collector/analytics')
     },
     {
       title: "Performance Tracking",
       description: "Monitor staff performance",
       icon: <TrendingUp className="h-6 w-6" />,
       color: "bg-cyan-500",
-      action: () => navigate('/staff/performance-tracking')
+      action: () => navigate('/collector/performance-tracking')
     },
     {
       title: "GPS Tracking",
       description: "View location data",
       icon: <MapPin className="h-6 w-6" />,
       color: "bg-orange-500",
-      action: () => navigate('/staff/gps-tracking')
+      action: () => navigate('/collector/gps-tracking')
     },
     {
       title: "Photo Documentation",
       description: "View collection photos",
       icon: <Camera className="h-6 w-6" />,
       color: "bg-lime-500",
-      action: () => navigate('/staff/photos')
+      action: () => navigate('/collector/photos')
     },
     {
       title: "Notifications",
       description: "View alerts and messages",
       icon: <Bell className="h-6 w-6" />,
       color: "bg-rose-500",
-      action: () => navigate('/staff/notifications')
+      action: () => navigate('/collector/notifications')
     }
   ];
 
@@ -151,7 +151,7 @@ const StaffQuickActions = () => {
             <Button 
               variant="outline" 
               className="h-16 flex flex-col items-center justify-center gap-2"
-              onClick={() => navigate('/staff/schedule')}
+              onClick={() => navigate('/collector/schedule')}
             >
               <Calendar className="h-5 w-5" />
               <span>Schedule</span>
@@ -159,7 +159,7 @@ const StaffQuickActions = () => {
             <Button 
               variant="outline" 
               className="h-16 flex flex-col items-center justify-center gap-2"
-              onClick={() => navigate('/staff/vehicle-tracking')}
+              onClick={() => navigate('/collector/vehicle-tracking')}
             >
               <Truck className="h-5 w-5" />
               <span>Vehicle Tracking</span>
@@ -167,7 +167,7 @@ const StaffQuickActions = () => {
             <Button 
               variant="outline" 
               className="h-16 flex flex-col items-center justify-center gap-2"
-              onClick={() => navigate('/staff/settings')}
+              onClick={() => navigate('/collector/settings')}
             >
               <Settings className="h-5 w-5" />
               <span>Settings</span>
@@ -179,4 +179,4 @@ const StaffQuickActions = () => {
   );
 };
 
-export default StaffQuickActions;
+export default CollectorQuickActions;

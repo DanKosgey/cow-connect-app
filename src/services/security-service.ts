@@ -132,7 +132,7 @@ class SecurityService {
       sessionStorage.clear();
       
       // Redirect to login page
-      window.location.href = '/staff/login?reason=session_timeout';
+      window.location.href = '/collector/login?reason=session_timeout';
     } catch (error) {
       console.error('Error handling session timeout:', error);
     }

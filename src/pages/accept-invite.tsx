@@ -296,7 +296,7 @@ const AcceptInvitePage: React.FC = () => {
           // Redirect to the appropriate dashboard based on role
           const dashboardRoutes = {
             'admin': '/admin/dashboard',
-            'staff': '/staff/dashboard',
+            'staff': '/collector/dashboard',
             'farmer': '/farmer/dashboard'
           };
           

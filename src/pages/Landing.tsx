@@ -129,16 +129,12 @@ const Landing = () => {
 
           {/* Main Heading - Updated with Dairy Farmers of Trans-Nzoia */}
           <h1 className="text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-extrabold tracking-tight mb-6 animate-fade-in-up">
-            <span className="bg-gradient-to-r from-white via-slate-100 to-white bg-clip-text text-transparent">
-              Welcome to
-            </span>
-            <br />
             <span className="bg-gradient-to-r from-green-400 via-emerald-300 to-teal-400 bg-clip-text text-transparent">
               Dairy Farmers
             </span>
             <br />
             <span className="bg-gradient-to-r from-white via-slate-100 to-white bg-clip-text text-transparent">
-              of Trans-Nzoia
+              Trans-Nzoia
             </span>
           </h1>
 
@@ -150,7 +146,7 @@ const Landing = () => {
               </span>
             </p>
             <p>
-              Serving the <span className="font-semibold text-blue-300">Trans Nzoia</span> region with excellence
+              Serving <span className="font-semibold text-blue-300">Trans Nzoia</span> with excellence
             </p>
           </div>
 
@@ -168,10 +164,10 @@ const Landing = () => {
             <Button 
               size="lg"
               variant="outline"
-              className="px-8 py-4 bg-white/10 text-white font-semibold rounded-full border-2 border-white/20 hover:border-green-500 shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300 backdrop-blur-sm"
-              onClick={() => navigate('/staff/login')}
+              className="px-8 py-4 bg-white/10 text-white font-semibold rounded-full border-2 border-white/20 hover:border-blue-500 shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300 backdrop-blur-sm"
+              onClick={() => navigate('/collector-only/login')}
             >
-              Staff Login
+              Collectors
             </Button>
             <Button 
               size="lg"
@@ -179,7 +175,23 @@ const Landing = () => {
               className="px-8 py-4 bg-white/10 text-white font-semibold rounded-full border-2 border-white/20 hover:border-purple-500 shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300 backdrop-blur-sm"
               onClick={() => navigate('/admin/login')}
             >
-              Admin Login
+              Admin
+            </Button>
+            <Button 
+              size="lg"
+              variant="outline"
+              className="px-8 py-4 bg-white/10 text-white font-semibold rounded-full border-2 border-white/20 hover:border-indigo-500 shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300 backdrop-blur-sm"
+              onClick={() => navigate('/staff-only/login')}
+            >
+              Staff
+            </Button>
+            <Button 
+              size="lg"
+              variant="outline"
+              className="px-8 py-4 bg-white/10 text-white font-semibold rounded-full border-2 border-white/20 hover:border-green-500 shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300 backdrop-blur-sm"
+              onClick={() => navigate('/creditor/login')}
+            >
+              Creditors
             </Button>
           </div>
 

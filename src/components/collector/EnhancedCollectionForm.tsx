@@ -380,7 +380,7 @@ const EnhancedCollectionForm = () => {
         </div>
         <Button 
           variant="outline" 
-          onClick={() => navigate('/staff/dashboard')}
+          onClick={() => navigate('/collector/dashboard')}
         >
           Back to Dashboard
         </Button>

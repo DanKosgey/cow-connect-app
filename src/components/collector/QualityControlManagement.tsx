@@ -660,7 +660,7 @@ export default function QualityControlManagement() {
                         <Button 
                           size="sm" 
                           variant="outline"
-                          onClick={() => navigate(`/staff/collections/history`)}
+                          onClick={() => navigate(`/collector/collections`)}
                         >
                           <Eye className="h-4 w-4" />
                         </Button>

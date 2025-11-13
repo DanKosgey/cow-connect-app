@@ -67,7 +67,7 @@ const EmailVerificationWaiting = () => {
           navigate('/admin/dashboard');
           break;
         case 'staff':
-          navigate('/staff/dashboard');
+          navigate('/collector/dashboard');
           break;
         default:
           navigate('/farmer/dashboard');

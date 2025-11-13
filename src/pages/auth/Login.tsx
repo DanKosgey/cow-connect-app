@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { Lock, Users, UserCog, Shield } from "lucide-react";
+import { Lock, Users, UserCog, Shield, Scale, CreditCard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,7 +12,9 @@ const Login = () => {
   const { user, userRole, loading, resetAuthState } = useAuth();
   const roleOptions = [
     { value: UserRole.FARMER, label: 'Farmer', icon: <Users className="h-4 w-4" /> },
-    { value: UserRole.STAFF, label: 'Staff', icon: <UserCog className="h-4 w-4" /> },
+    { value: UserRole.COLLECTOR, label: 'Field Collector', icon: <UserCog className="h-4 w-4" /> },
+    { value: UserRole.STAFF, label: 'Office Admin', icon: <Scale className="h-4 w-4" /> },
+    { value: UserRole.CREDITOR, label: 'Agrovet Creditor', icon: <CreditCard className="h-4 w-4" /> },
     { value: UserRole.ADMIN, label: 'Admin', icon: <Shield className="h-4 w-4" /> }
   ];
 
@@ -22,7 +24,8 @@ const Login = () => {
       // User is already logged in, redirect to their dashboard
       const dashboardRoutes = {
         [UserRole.ADMIN]: '/admin/dashboard',
-        [UserRole.STAFF]: '/staff/dashboard',
+        [UserRole.COLLECTOR]: '/collector-only/dashboard',
+        [UserRole.STAFF]: '/staff-only/dashboard',
         [UserRole.FARMER]: '/farmer/dashboard'
       };
       
@@ -63,14 +66,16 @@ const Login = () => {
               {/* Role Selection */}
               <div className="space-y-2">
                 <Label className="text-lg font-medium">I am a:</Label>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 gap-3">
                   {roleOptions.map((role) => (
                     <button
                       key={role.value}
                       onClick={() => {
-                        const rolePaths: Record<UserRole, string> = {
+                        const rolePaths: Record<string, string> = {
                           farmer: '/farmer/login',
-                          staff: '/staff/login',
+                          collector: '/collector-only/login',
+                          staff: '/staff-only/login',
+                          creditor: '/creditor/login',
                           admin: '/admin/login'
                         };
                         navigate(rolePaths[role.value]);

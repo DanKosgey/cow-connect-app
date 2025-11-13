@@ -254,7 +254,7 @@ const AuthCallback = () => {
                     navigate('/admin/dashboard');
                     break;
                   case 'staff':
-                    navigate('/staff/dashboard');
+                    navigate('/collector/dashboard');
                     break;
                   default:
                     navigate('/farmer/dashboard');
@@ -293,7 +293,7 @@ const AuthCallback = () => {
                   navigate('/admin/dashboard');
                   break;
                 case 'staff':
-                  navigate('/staff/dashboard');
+                  navigate('/collector/dashboard');
                   break;
                 case 'farmer':
                   // For farmers, check if they have completed registration

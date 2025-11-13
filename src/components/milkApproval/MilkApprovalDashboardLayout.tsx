@@ -5,7 +5,7 @@ import { DashboardLayout } from '@/components/DashboardLayout';
 import { useNavigate } from 'react-router-dom';
 import { UserRole } from '@/types/auth.types';
 
-export function StaffPortalLayout({ children }: { children: React.ReactNode }) {
+export function MilkApprovalDashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, userRole } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -21,7 +21,7 @@ export function StaffPortalLayout({ children }: { children: React.ReactNode }) {
       const dashboardRoutes = {
         [UserRole.ADMIN]: '/admin/dashboard',
         [UserRole.FARMER]: '/farmer/dashboard',
-        [UserRole.COLLECTOR]: '/collector-only/dashboard'
+        [UserRole.STAFF]: '/collector/dashboard'
       };
       navigate(dashboardRoutes[userRole as UserRole] || '/');
     }

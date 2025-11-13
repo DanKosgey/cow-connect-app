@@ -18,8 +18,12 @@ if (typeof React === 'undefined') {
 // Lazy load route components
 const PublicRoutes = lazy(() => import("./routes/public.routes"));
 const AdminRoutes = lazy(() => import("./routes/admin.routes"));
-const StaffRoutes = lazy(() => import("./routes/staff.routes"));
+const CollectorRoutes = lazy(() => import("./routes/collector.routes"));
 const FarmerRoutes = lazy(() => import("./routes/farmer.routes"));
+const MilkApprovalRoutes = lazy(() => import("./routes/milkApproval.routes"));
+const CollectorOnlyRoutes = lazy(() => import("./routes/collector-only.routes"));
+const StaffOnlyRoutes = lazy(() => import("./routes/staff-only.routes"));
+const CreditorRoutes = lazy(() => import("./routes/creditor.routes"));
 
 // Configure React Query with performance optimizations
 const queryClient = new QueryClient({
@@ -111,8 +115,12 @@ const App = () => {
                       
                       {/* Role-specific routes with their own login pages */}
                       <Route path="/admin/*" element={<AdminRoutes />} />
-                      <Route path="/staff/*" element={<StaffRoutes />} />
+                      <Route path="/collector/*" element={<CollectorRoutes />} />
                       <Route path="/farmer/*" element={<FarmerRoutes />} />
+                      <Route path="/milk-approval/*" element={<MilkApprovalRoutes />} />
+                      <Route path="/collector-only/*" element={<CollectorOnlyRoutes />} />
+                      <Route path="/staff-only/*" element={<StaffOnlyRoutes />} />
+                      <Route path="/creditor/*" element={<CreditorRoutes />} />
                     </Routes>
                   </Suspense>
                 </main>

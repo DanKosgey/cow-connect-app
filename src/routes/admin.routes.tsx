@@ -51,6 +51,7 @@ const CreditDefaultManagement = lazy(() => import('@/components/admin/CreditDefa
 const CreditTransactionAudit = lazy(() => import('@/components/admin/CreditTransactionAudit'));
 const CreditRiskAssessment = lazy(() => import('@/components/admin/CreditRiskAssessment'));
 const CreditSettings = lazy(() => import('@/components/admin/CreditSettings'));
+const PenaltyManagementPage = lazy(() => import('@/pages/admin/PenaltyManagementPage'));
 
 export const adminRoutes = [
   { path: '/admin/login', element: <AdminLogin /> },
@@ -156,6 +157,8 @@ export default function AdminRoutes() {
                 <Route path="credit-audit" element={<CreditTransactionAudit />} />
                 <Route path="credit-reports" element={<CreditReports />} />
                 <Route path="credit-risk-assessment" element={<CreditRiskAssessment />} />
+                <Route path="credit-settings" element={<CreditSettings />} />
+                <Route path="penalty-management" element={<PenaltyManagementPage />} />
                 <Route index element={<Navigate to="dashboard" replace />} />
                 <Route path="*" element={<Navigate to="/admin" replace />} />
               </Routes>

@@ -557,7 +557,7 @@ const CollectionHistoryPage = () => {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => navigate(`/staff/collections/${collection.id}`)}
+                          onClick={() => navigate(`/collector/collections/${collection.id}`)}
                         >
                           <Eye className="h-4 w-4" />
                         </Button>

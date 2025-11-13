@@ -4,7 +4,9 @@ import { User } from '@supabase/supabase-js';
 export enum UserRole {
     ADMIN = 'admin',
     STAFF = 'staff',
-    FARMER = 'farmer'
+    FARMER = 'farmer',
+    COLLECTOR = 'collector',
+    CREDITOR = 'creditor'
 }
 
 export interface UserRoleRecord {
@@ -94,11 +96,22 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     ],
     [UserRole.STAFF]: [
         'read:farmers',
+        'read:collections',
+        'read:payments',
+        'read:analytics'
+    ],
+    [UserRole.COLLECTOR]: [
+        'read:farmers',
         'create:collections',
         'read:collections',
         'update:collections',
         'read:payments',
         'read:analytics'
+    ],
+    [UserRole.CREDITOR]: [
+        'read:farmers',
+        'read:collections',
+        'read:payments'
     ],
     [UserRole.FARMER]: [
         'read:farmers',

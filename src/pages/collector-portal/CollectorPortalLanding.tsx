@@ -4,99 +4,64 @@ import { Button } from '@/components/ui/button';
 import { 
   Milk, 
   Users, 
-  DollarSign, 
-  BarChart3, 
+  ClipboardList, 
+  Calendar, 
+  TrendingUp, 
   Route, 
   Target,
-  ClipboardList,
-  Calendar,
-  TrendingUp,
   MapPin,
   Wallet,
-  AlertCircle,
-  Scale,
-  Award
+  BarChart3
 } from 'lucide-react';
 import { useAuth } from '@/contexts/SimplifiedAuthContext';
 import RefreshButton from '@/components/ui/RefreshButton';
-import { useStaffPortalData } from '@/hooks/useStaffPortalData';
 
-interface StaffStats {
-  total_collections_today: number;
-  total_farmers_today: number;
-  total_earnings_today: number;
-}
-
-export default function StaffPortalLanding() {
+export default function CollectorPortalLanding() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { useStaffStats } = useStaffPortalData();
-  
-  const { data: staffStats, isLoading, refetch } = useStaffStats();
 
-  const staffFeatures = [
+  const collectorFeatures = [
     {
       title: "Dashboard",
       description: "View your daily overview and key metrics",
       icon: <Milk className="h-8 w-8" />,
-      path: "/staff-only/dashboard",
+      path: "/collector-only/dashboard",
       color: "bg-blue-500"
     },
     {
-      title: "Milk Approval",
-      description: "Approve milk collections and track variances",
-      icon: <Scale className="h-8 w-8" />,
-      path: "/staff-only/milk-approval",
-      color: "bg-orange-500"
+      title: "New Collection",
+      description: "Record a new milk collection from farmers",
+      icon: <ClipboardList className="h-8 w-8" />,
+      path: "/collector-only/collections/new",
+      color: "bg-green-500"
     },
     {
-      title: "Variance Reports",
-      description: "View detailed variance analytics and penalties",
-      icon: <TrendingUp className="h-8 w-8" />,
-      path: "/staff-only/variance-reports",
-      color: "bg-red-500"
-    },
-    {
-      title: "Collector Performance",
-      description: "Monitor collector performance metrics and scores",
-      icon: <Award className="h-8 w-8" />,
-      path: "/staff-only/collector-performance",
+      title: "Collection History",
+      description: "View and manage all milk collections",
+      icon: <Calendar className="h-8 w-8" />,
+      path: "/collector-only/collections",
       color: "bg-purple-500"
     },
     {
       title: "Farmer Directory",
       description: "Manage and view farmer information",
       icon: <Users className="h-8 w-8" />,
-      path: "/collector/farmers",
+      path: "/collector-only/farmers",
       color: "bg-yellow-500"
-    },
-    {
-      title: "Payment Approval",
-      description: "Approve and manage farmer payments",
-      icon: <DollarSign className="h-8 w-8" />,
-      path: "/collector/payments/approval",
-      color: "bg-indigo-500"
     },
     {
       title: "Performance",
       description: "View your performance metrics and analytics",
       icon: <TrendingUp className="h-8 w-8" />,
-      path: "/collector/performance",
+      path: "/collector-only/performance",
       color: "bg-pink-500"
     },
     {
       title: "Route Management",
       description: "Manage your collection routes and stops",
       icon: <Route className="h-8 w-8" />,
-      path: "/collector/routes",
+      path: "/collector-only/routes",
       color: "bg-teal-500"
-    },
-    {
-      title: "Payment History",
-      description: "View and manage payment records",
-      icon: <Wallet className="h-8 w-8" />,
-      path: "/collector/payments/history",
-      color: "bg-indigo-500"
     }
   ];
 
@@ -106,15 +71,15 @@ export default function StaffPortalLanding() {
       <div className="bg-gradient-to-r from-primary to-primary-light rounded-2xl p-6 text-primary-foreground shadow-lg">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-3xl font-bold">Welcome, {user?.email || 'Staff Member'}!</h1>
+            <h1 className="text-3xl font-bold">Welcome, Field Collector!</h1>
             <div className="text-primary-foreground/90 mt-2">
-              Manage milk collections, farmers, and payments all in one place.
+              Manage milk collections, farmers, and routes all in one place.
             </div>
           </div>
           <div className="mt-4 md:mt-0">
             <RefreshButton 
-              isRefreshing={isLoading} 
-              onRefresh={refetch} 
+              isRefreshing={false} 
+              onRefresh={() => window.location.reload()} 
               className="bg-white/20 border-white/30 hover:bg-white/30 text-white rounded-md shadow-sm"
               variant="outline"
             />
@@ -122,66 +87,9 @@ export default function StaffPortalLanding() {
         </div>
       </div>
 
-      {/* Quick Stats Preview */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card className="border-l-4 border-l-blue-500 hover:shadow-lg transition-shadow">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm font-medium text-muted-foreground">Today's Collections</div>
-                <div className="text-2xl font-bold">
-                  {isLoading ? (
-                    <div className="h-6 w-8 bg-gray-200 rounded animate-pulse"></div>
-                  ) : (
-                    staffStats?.total_collections_today || 0
-                  )}
-                </div>
-              </div>
-              <Milk className="h-8 w-8 text-blue-500" />
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card className="border-l-4 border-l-green-500 hover:shadow-lg transition-shadow">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm font-medium text-muted-foreground">Farmers Visited</div>
-                <div className="text-2xl font-bold">
-                  {isLoading ? (
-                    <div className="h-6 w-8 bg-gray-200 rounded animate-pulse"></div>
-                  ) : (
-                    staffStats?.total_farmers_today || 0
-                  )}
-                </div>
-              </div>
-              <Users className="h-8 w-8 text-green-500" />
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card className="border-l-4 border-l-purple-500 hover:shadow-lg transition-shadow">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm font-medium text-muted-foreground">Total Earnings</div>
-                <div className="text-2xl font-bold">
-                  {isLoading ? (
-                    <div className="h-6 w-20 bg-gray-200 rounded animate-pulse"></div>
-                  ) : (
-                    `KSh ${(staffStats?.total_earnings_today || 0).toLocaleString()}`
-                  )}
-                </div>
-              </div>
-              <DollarSign className="h-8 w-8 text-purple-500" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
       {/* Features Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        {staffFeatures.map((feature, index) => (
+        {collectorFeatures.map((feature, index) => (
           <Card 
             key={feature.title}
             className="hover:shadow-lg transition-all duration-300 hover:-translate-y-1 border-border"
@@ -243,28 +151,36 @@ export default function StaffPortalLanding() {
           </CardHeader>
           <CardContent className="space-y-3">
             <Button 
-              onClick={() => navigate('/staff-only/milk-approval')}
+              onClick={() => navigate('/collector-only/collections/new')}
               className="w-full justify-start gap-2"
               variant="outline"
             >
-              <Scale className="h-4 w-4" />
-              Approve Milk Collections
+              <ClipboardList className="h-4 w-4" />
+              Record New Collection
             </Button>
             <Button 
-              onClick={() => navigate('/staff-only/variance-reports')}
+              onClick={() => navigate('/collector-only/farmers')}
               className="w-full justify-start gap-2"
               variant="outline"
             >
-              <TrendingUp className="h-4 w-4" />
-              View Variance Reports
+              <Users className="h-4 w-4" />
+              View Farmer Directory
             </Button>
             <Button 
-              onClick={() => navigate('/staff-only/collector-performance')}
+              onClick={() => navigate('/collector-only/collections')}
               className="w-full justify-start gap-2"
               variant="outline"
             >
-              <Award className="h-4 w-4" />
-              Collector Performance
+              <Calendar className="h-4 w-4" />
+              View Collection History
+            </Button>
+            <Button 
+              onClick={() => navigate('/collector-only/performance')}
+              className="w-full justify-start gap-2"
+              variant="outline"
+            >
+              <BarChart3 className="h-4 w-4" />
+              View Performance Metrics
             </Button>
           </CardContent>
         </Card>

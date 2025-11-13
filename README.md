@@ -201,7 +201,7 @@ npm run dev
 ### **6. Access Application**
 - **Development**: http://localhost:5173
 - **Admin Portal**: http://localhost:5173/admin
-- **Staff Portal**: http://localhost:5173/staff
+- **Collector Portal**: http://localhost:5173/collector
 - **Farmer Portal**: http://localhost:5173/farmer
 
 ---
