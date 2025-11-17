@@ -18,10 +18,14 @@ import {
   Plus, 
   Trash2, 
   Save, 
-  X 
+  X,
+  TrendingUp,
+  TrendingDown,
+  Minus
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import RefreshButton from '@/components/ui/RefreshButton';
+import { format } from 'date-fns';
 
 interface PenaltyConfig {
   id: number;
@@ -34,13 +38,41 @@ interface PenaltyConfig {
   updated_at: string;
 }
 
+interface VarianceRecord {
+  id: string;
+  collection_id: string;
+  collection_details: {
+    collection_id: string;
+    liters: number;
+    collection_date: string;
+    farmers: {
+      full_name: string;
+    } | null;
+  } | null;
+  staff_id: string;
+  staff_details: {
+    profiles: {
+      full_name: string;
+    } | null;
+  } | null;
+  company_received_liters: number;
+  variance_liters: number;
+  variance_percentage: number;
+  variance_type: string;
+  penalty_amount: number;
+  approval_notes: string | null;
+  approved_at: string;
+}
+
 const PenaltyManagementPage: React.FC = () => {
   const { user } = useAuth();
   const { show, error: showError } = useToastNotifications();
   
   const [penaltyConfigs, setPenaltyConfigs] = useState<PenaltyConfig[]>([]);
+  const [variances, setVariances] = useState<VarianceRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [variancesLoading, setVariancesLoading] = useState(true);
   
   const [newConfig, setNewConfig] = useState({
     variance_type: 'positive' as 'positive' | 'negative',
@@ -54,6 +86,7 @@ const PenaltyManagementPage: React.FC = () => {
 
   useEffect(() => {
     fetchPenaltyConfigs();
+    fetchRecentVariances();
   }, []);
 
   const fetchPenaltyConfigs = async () => {
@@ -75,6 +108,59 @@ const PenaltyManagementPage: React.FC = () => {
       showError('Error', String(error?.message || 'Failed to fetch penalty configurations'));
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchRecentVariances = async () => {
+    setVariancesLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('milk_approvals')
+        .select(`
+          id,
+          collection_id,
+          staff_id,
+          company_received_liters,
+          variance_liters,
+          variance_percentage,
+          variance_type,
+          penalty_amount,
+          approval_notes,
+          approved_at,
+          collections!milk_approvals_collection_id_fkey (
+            collection_id,
+            liters,
+            collection_date,
+            farmers (
+              full_name
+            )
+          ),
+          staff!milk_approvals_staff_id_fkey (
+            profiles (
+              full_name
+            )
+          )
+        `)
+        .order('approved_at', { ascending: false })
+        .limit(10);
+
+      if (error) {
+        throw error;
+      }
+
+      // Transform the data to match our interface
+      const transformedData = (data || []).map((item: any) => ({
+        ...item,
+        collection_details: item.collections || null,
+        staff_details: item.staff || null
+      }));
+
+      setVariances(transformedData);
+    } catch (error: any) {
+      console.error('Error fetching recent variances:', error);
+      showError('Error', String(error?.message || 'Failed to fetch recent variances'));
+    } finally {
+      setVariancesLoading(false);
     }
   };
 
@@ -191,21 +277,91 @@ const PenaltyManagementPage: React.FC = () => {
       : 'bg-red-100 text-red-800';
   };
 
+  const getVarianceIcon = (varianceType: string) => {
+    switch (varianceType) {
+      case 'positive':
+        return <TrendingUp className="h-4 w-4 text-green-600" />;
+      case 'negative':
+        return <TrendingDown className="h-4 w-4 text-red-600" />;
+      default:
+        return <Minus className="h-4 w-4 text-gray-600" />;
+    }
+  };
+
+  const getVarianceSeverity = (percentage: number) => {
+    const absPercentage = Math.abs(percentage);
+    if (absPercentage >= 10) return 'High';
+    if (absPercentage >= 5) return 'Medium';
+    if (absPercentage > 0) return 'Low';
+    return 'None';
+  };
+
+  const getVarianceSeverityColor = (percentage: number) => {
+    const absPercentage = Math.abs(percentage);
+    if (absPercentage >= 10) return 'bg-red-500 text-white';
+    if (absPercentage >= 5) return 'bg-orange-500 text-white';
+    if (absPercentage > 0) return 'bg-yellow-500 text-white';
+    return 'bg-green-500 text-white';
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Penalty Management</h1>
-          <p className="text-muted-foreground">Configure penalty rates for milk collection variances</p>
+          <h1 className="text-3xl font-bold">Penalty & Variance Management</h1>
+          <p className="text-muted-foreground">Configure penalty rates and monitor milk collection variances</p>
         </div>
-        <div className="mt-4 md:mt-0">
+        <div className="mt-4 md:mt-0 flex gap-2">
           <RefreshButton 
-            isRefreshing={isLoading} 
-            onRefresh={fetchPenaltyConfigs} 
+            isRefreshing={isLoading || variancesLoading} 
+            onRefresh={() => {
+              fetchPenaltyConfigs();
+              fetchRecentVariances();
+            }} 
             className="bg-white border-gray-300 hover:bg-gray-50 rounded-md shadow-sm"
           />
         </div>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total Penalty Configs</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{penaltyConfigs.length}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Active Configs</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {penaltyConfigs.filter(c => c.is_active).length}
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Recent Variances</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{variances.length}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total Penalties</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              KSh {variances.reduce((sum, v) => sum + (v.penalty_amount || 0), 0).toFixed(2)}
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Add New Configuration */}
@@ -466,6 +622,107 @@ const PenaltyManagementPage: React.FC = () => {
         </CardContent>
       </Card>
 
+      {/* Recent Variances Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Recent Collection Variances</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="border rounded-md">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Collection ID</TableHead>
+                  <TableHead>Farmer</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Collector</TableHead>
+                  <TableHead>Collected (L)</TableHead>
+                  <TableHead>Received (L)</TableHead>
+                  <TableHead>Variance</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Penalty (KSh)</TableHead>
+                  <TableHead>Approved</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {variancesLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={10} className="text-center py-8">
+                      <div className="flex justify-center">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : variances.length > 0 ? (
+                  variances.map((variance) => (
+                    <TableRow key={variance.id}>
+                      <TableCell className="font-mono">
+                        {variance.collection_details?.collection_id || 'N/A'}
+                      </TableCell>
+                      <TableCell>
+                        {variance.collection_details?.farmers?.full_name || 'Unknown Farmer'}
+                      </TableCell>
+                      <TableCell>
+                        {variance.collection_details?.collection_date 
+                          ? format(new Date(variance.collection_details.collection_date), 'MMM dd, yyyy')
+                          : 'N/A'}
+                      </TableCell>
+                      <TableCell>
+                        {variance.staff_details?.profiles?.full_name || 'Unknown Staff'}
+                      </TableCell>
+                      <TableCell>
+                        {variance.collection_details?.liters?.toFixed(2) || '0.00'}
+                      </TableCell>
+                      <TableCell>
+                        {variance.company_received_liters?.toFixed(2) || '0.00'}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          {getVarianceIcon(variance.variance_type || 'none')}
+                          <span className={variance.variance_liters >= 0 ? 'text-green-600' : 'text-red-600'}>
+                            {variance.variance_liters?.toFixed(2) || '0.00'}L
+                          </span>
+                          <Badge className={getVarianceSeverityColor(variance.variance_percentage || 0)}>
+                            {variance.variance_percentage?.toFixed(2) || '0.00'}%
+                          </Badge>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={getVarianceTypeColor(variance.variance_type || 'none')}>
+                          {variance.variance_type 
+                            ? variance.variance_type.charAt(0).toUpperCase() + variance.variance_type.slice(1)
+                            : 'None'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {variance.penalty_amount > 0 ? (
+                          <span className="font-medium text-red-600">
+                            {variance.penalty_amount?.toFixed(2) || '0.00'}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">0.00</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {variance.approved_at 
+                          ? format(new Date(variance.approved_at), 'MMM dd, yyyy HH:mm')
+                          : 'N/A'}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={10} className="text-center py-8">
+                      <p className="text-muted-foreground">No recent variances found</p>
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Penalty Calculation Examples */}
       <Card>
         <CardHeader>
@@ -489,6 +746,38 @@ const PenaltyManagementPage: React.FC = () => {
                 and the penalty rate is KSh 3.00/L, the penalty would be:
                 <br />
                 <strong>5L × KSh 3.00 = KSh 15.00</strong>
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Variance Analysis */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Variance Analysis</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="p-4 bg-green-50 rounded-lg">
+              <h3 className="font-medium text-green-800 mb-2">Positive Variances</h3>
+              <p className="text-sm text-green-700">
+                Occur when the company receives more milk than was collected by the collector. 
+                This could indicate measurement errors or other factors.
+              </p>
+            </div>
+            <div className="p-4 bg-red-50 rounded-lg">
+              <h3 className="font-medium text-red-800 mb-2">Negative Variances</h3>
+              <p className="text-sm text-red-700">
+                Occur when the company receives less milk than was collected by the collector. 
+                This could indicate spillage, theft, or measurement errors.
+              </p>
+            </div>
+            <div className="p-4 bg-blue-50 rounded-lg">
+              <h3 className="font-medium text-blue-800 mb-2">Penalty System</h3>
+              <p className="text-sm text-blue-700">
+                Penalties are automatically calculated based on variance percentages and applied 
+                according to the configured penalty rates.
               </p>
             </div>
           </div>

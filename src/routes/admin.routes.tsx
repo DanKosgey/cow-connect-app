@@ -53,12 +53,12 @@ const CreditRiskAssessment = lazy(() => import('@/components/admin/CreditRiskAss
 const CreditSettings = lazy(() => import('@/components/admin/CreditSettings'));
 const PenaltyManagementPage = lazy(() => import('@/pages/admin/PenaltyManagementPage'));
 const ErrorReportingDashboard = lazy(() => import('@/pages/admin/ErrorReportingDashboard'));
+const VarianceReportingDashboard = lazy(() => import('@/pages/admin/VarianceReportingDashboard'));
 
 export const adminRoutes = [
   { path: '/admin/login', element: <AdminLogin /> },
   { path: '/admin/connection-test', element: <ConnectionTestPage /> },
   { path: '/admin/auth-debug', element: <AuthDebugPage /> },
-  { path: '/admin/network-diagnostics', element: <NetworkDiagnosticsPage /> },
   { path: '/admin/*', element: <AdminPortalLayout><div>Placeholder</div></AdminPortalLayout> },
   { path: '/admin/farmers', element: <Farmers /> },
   { path: '/admin/staff', element: <Staff /> },
@@ -84,6 +84,7 @@ export const adminRoutes = [
   { path: '/admin/credit-risk-assessment', element: <CreditRiskAssessment /> },
   { path: '/admin/credit-settings', element: <CreditSettings /> },
   { path: '/admin/error-reporting', element: <ErrorReportingDashboard /> },
+  { path: '/admin/variance-reporting', element: <VarianceReportingDashboard /> },
   { path: '/admin', element: <Navigate to="/admin/dashboard" replace /> },
 ];
 
@@ -170,6 +171,7 @@ export default function AdminRoutes() {
                 <Route path="credit-risk-assessment" element={<CreditRiskAssessment />} />
                 <Route path="credit-settings" element={<CreditSettings />} />
                 <Route path="error-reporting" element={<ErrorReportingDashboard />} />
+                <Route path="variance-reporting" element={<VarianceReportingDashboard />} />
                 <Route index element={<Navigate to="dashboard" replace />} />
                 <Route path="*" element={<Navigate to="/admin" replace />} />
               </Routes>
