@@ -279,8 +279,14 @@ export const useApprovedFarmers = () => {
     const fetchFarmers = async () => {
       try {
         setLoading(true);
+        console.log('useApprovedFarmers: Creating service and fetching data...');
         const service = createStaffDataService(null);
+        
+        // Clear cache to force fresh data fetch
+        service.clearFarmerCache();
+        
         const data = await service.getApprovedFarmers();
+        console.log('useApprovedFarmers: Data received:', data);
         setFarmers(data);
       } catch (err: any) {
         setError(err.message || 'Failed to fetch farmers');

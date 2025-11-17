@@ -5,6 +5,7 @@ import { ProtectedRoute } from "../components/ProtectedRoute";
 import { PageLoader } from '@/components/PageLoader';
 import { PageTransition } from '@/components/PageTransition';
 import { preloadRouteWhenIdle } from '@/utils/routePreloader';
+import AdminDebugLogger from '@/utils/adminDebugLogger';
 // Lazy load admin components with preload optimization
 import { AdminPortalLayout } from '@/components/admin/AdminPortalLayout';
 
@@ -21,7 +22,6 @@ const AdminDashboard = lazy(() => {
 });
 
 const AdminLogin = lazy(() => import("../pages/auth/AdminLogin"));
-const AuthDiagnostics = lazy(() => import("../pages/auth/AuthDiagnostics"));
 const ConnectionTestPage = lazy(() => import("../pages/admin/ConnectionTestPage"));
 const Farmers = lazy(() => import("../pages/admin/Farmers"));
 const Staff = lazy(() => import("../pages/admin/Staff"));
@@ -38,7 +38,7 @@ const Settings = lazy(() => import("../pages/admin/Settings"));
 const AdminInvite = lazy(() => import("../pages/admin/AdminInvite"));
 const AnalyticsDashboard = lazy(() => import("../pages/admin/AnalyticsDashboard"));
 const Checkpoints = lazy(() => import("../pages/admin/Checkpoints"));
-const AuthTestPage = lazy(() => import("../pages/admin/AuthTestPage"));
+const AuthDiagnosticsPage = lazy(() => import("../pages/admin/AuthDiagnosticsPage"));
 const AuthDebugPage = lazy(() => import("../pages/admin/AuthDebugPage"));
 const NetworkDiagnosticsPage = lazy(() => import("../pages/admin/NetworkDiagnosticsPage"));
 const InvitationManagement = lazy(() => import("../pages/admin/InvitationManagement"));
@@ -52,14 +52,13 @@ const CreditTransactionAudit = lazy(() => import('@/components/admin/CreditTrans
 const CreditRiskAssessment = lazy(() => import('@/components/admin/CreditRiskAssessment'));
 const CreditSettings = lazy(() => import('@/components/admin/CreditSettings'));
 const PenaltyManagementPage = lazy(() => import('@/pages/admin/PenaltyManagementPage'));
+const ErrorReportingDashboard = lazy(() => import('@/pages/admin/ErrorReportingDashboard'));
 
 export const adminRoutes = [
   { path: '/admin/login', element: <AdminLogin /> },
-  { path: '/admin/diagnostics', element: <AuthDiagnostics /> },
   { path: '/admin/connection-test', element: <ConnectionTestPage /> },
   { path: '/admin/auth-debug', element: <AuthDebugPage /> },
   { path: '/admin/network-diagnostics', element: <NetworkDiagnosticsPage /> },
-  { path: '/admin/checkpoints', element: <Checkpoints /> },
   { path: '/admin/*', element: <AdminPortalLayout><div>Placeholder</div></AdminPortalLayout> },
   { path: '/admin/farmers', element: <Farmers /> },
   { path: '/admin/staff', element: <Staff /> },
@@ -70,7 +69,7 @@ export const adminRoutes = [
   { path: '/admin/collections', element: <CollectionsAnalyticsDashboard /> },
   { path: '/admin/kyc', element: <KYCAdminDashboard /> },
   { path: '/admin/kyc-pending-farmers', element: <KYCPendingFarmersDashboard /> },
-  { path: '/admin/kyc-pending-farmers/:id', element: <KYCPendingFarmerDetails /> },
+  { path: '/admin/kyc-pending-farmer/:id', element: <KYCPendingFarmerDetails /> },
   { path: '/admin/kyc-storage-test', element: <KYCStorageTest /> },
   { path: '/admin/settings', element: <Settings /> },
   { path: '/admin/invite', element: <AdminInvite /> },
@@ -84,15 +83,25 @@ export const adminRoutes = [
   { path: '/admin/credit-reports', element: <CreditReports /> },
   { path: '/admin/credit-risk-assessment', element: <CreditRiskAssessment /> },
   { path: '/admin/credit-settings', element: <CreditSettings /> },
+  { path: '/admin/error-reporting', element: <ErrorReportingDashboard /> },
   { path: '/admin', element: <Navigate to="/admin/dashboard" replace /> },
 ];
 
 export default function AdminRoutes() {
   const location = useLocation();
   
+  AdminDebugLogger.route('AdminRoutes component rendering', { 
+    pathname: location.pathname,
+    search: location.search,
+    hash: location.hash
+  });
+  
   // Preload commonly accessed routes when on the dashboard
   useEffect(() => {
+    AdminDebugLogger.route('Preload effect triggered', { pathname: location.pathname });
+    
     if (location.pathname.includes('dashboard')) {
+      AdminDebugLogger.route('On dashboard, preloading Farmers and Staff pages');
       // Reduced preloading to only the most essential pages
       preloadRouteWhenIdle(() => import("../pages/admin/Farmers"));
       preloadRouteWhenIdle(() => import("../pages/admin/Staff"));
@@ -100,6 +109,7 @@ export default function AdminRoutes() {
     
     // Preload the dashboard when on other pages
     if (!location.pathname.includes('dashboard')) {
+      AdminDebugLogger.route('Not on dashboard, preloading AdminDashboard');
       preloadRouteWhenIdle(() => import("../pages/admin/AdminDashboard"));
     }
   }, [location.pathname]);
@@ -108,9 +118,9 @@ export default function AdminRoutes() {
     <Suspense fallback={<PageLoader type="dashboard" />}>
       <Routes location={location}>
         <Route path="login" element={<AdminLogin />} />
-        <Route path="diagnostics" element={<AuthDiagnostics />} />
         <Route path="connection-test" element={<ConnectionTestPage />} />
         <Route path="auth-debug" element={<AuthDebugPage />} />
+        <Route path="auth-diagnostics" element={<AuthDiagnosticsPage />} />
         <Route path="network-diagnostics" element={
           <ProtectedRoute requiredRole={UserRole.ADMIN}>
             <PageTransition>
@@ -139,7 +149,7 @@ export default function AdminRoutes() {
                 <Route path="collections" element={<CollectionsAnalyticsDashboard />} />
                 <Route path="kyc" element={<KYCAdminDashboard />} />
                 <Route path="kyc-pending-farmers" element={<KYCPendingFarmersDashboard />} />
-                <Route path="kyc-pending-farmers/:id" element={<KYCPendingFarmerDetails />} />
+                <Route path="kyc-pending-farmer/:id" element={<KYCPendingFarmerDetails />} />
                 <Route path="kyc-storage-test" element={<KYCStorageTest />} />
                 <Route path="settings" element={<Settings />} />
                 <Route path="invite" element={<AdminInvite />} />
@@ -147,6 +157,7 @@ export default function AdminRoutes() {
                 <Route path="analytics" element={<AnalyticsDashboard />} />
                 <Route path="checkpoints" element={<Checkpoints />} />
                 <Route path="network-diagnostics" element={<NetworkDiagnosticsPage />} />
+                <Route path="auth-diagnostics" element={<AuthDiagnosticsPage />} />
                 <Route path="invitation-management" element={<InvitationManagement />} />
                 <Route path="storage-diagnostics" element={<StorageDiagnostics />} />
                 <Route path="storage-test" element={<StorageTest />} />
@@ -158,7 +169,7 @@ export default function AdminRoutes() {
                 <Route path="credit-reports" element={<CreditReports />} />
                 <Route path="credit-risk-assessment" element={<CreditRiskAssessment />} />
                 <Route path="credit-settings" element={<CreditSettings />} />
-                <Route path="penalty-management" element={<PenaltyManagementPage />} />
+                <Route path="error-reporting" element={<ErrorReportingDashboard />} />
                 <Route index element={<Navigate to="dashboard" replace />} />
                 <Route path="*" element={<Navigate to="/admin" replace />} />
               </Routes>
@@ -221,7 +232,7 @@ export default function AdminRoutes() {
             </PageTransition>
           </ProtectedRoute>
         } />
-        <Route path="kyc-pending-farmers/:id" element={
+        <Route path="kyc-pending-farmer/:id" element={
           <ProtectedRoute requiredRole={UserRole.ADMIN}>
             <PageTransition>
               <KYCPendingFarmerDetails />
@@ -295,13 +306,6 @@ export default function AdminRoutes() {
           <ProtectedRoute requiredRole={UserRole.ADMIN}>
             <PageTransition>
               <CreditSettings />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="auth-test" element={
-          <ProtectedRoute requiredRole={UserRole.ADMIN}>
-            <PageTransition>
-              <AuthTestPage />
             </PageTransition>
           </ProtectedRoute>
         } />

@@ -27,10 +27,14 @@ import {
   Activity,
   DollarSign,
   CreditCard,
-  AlertTriangle
+  AlertTriangle,
+  Package,
+  ChevronUp,
+  ChevronDown
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
+import GlobalSearch from './GlobalSearch';
 
 interface NavItem {
   label: string;
@@ -95,12 +99,21 @@ const roleNavigation: Record<string, NavItem[]> = {
     { label: 'Credit Audit', path: '/admin/credit-audit', icon: <FileText className="h-5 w-5" />, category: 'finance' },
     { label: 'Credit Reports', path: '/admin/credit-reports', icon: <FileText className="h-5 w-5" />, category: 'finance' },
     { label: 'Penalty Management', path: '/admin/penalty-management', icon: <AlertTriangle className="h-5 w-5" />, category: 'finance' },
+    { label: 'Error Reporting', path: '/admin/error-reporting', icon: <AlertTriangle className="h-5 w-5" />, category: 'system' },
     { label: 'Analytics', path: '/admin/analytics', icon: <BarChart3 className="h-5 w-5" />, category: 'analytics' },
     { label: 'Farmer Performance', path: '/admin/farmer-performance', icon: <Activity className="h-5 w-5" />, category: 'analytics' },
     { label: 'KYC Approvals', path: '/admin/kyc-pending-farmers', icon: <CheckCircle className="h-5 w-5" />, category: 'kyc' },
     { label: 'Farmers', path: '/admin/farmers', icon: <Users className="h-5 w-5" />, category: 'management' },
     { label: 'Staff', path: '/admin/staff', icon: <UserCog className="h-5 w-5" />, category: 'management' },
     { label: 'Settings', path: '/admin/settings', icon: <Settings className="h-5 w-5" />, category: 'settings' },
+  ],
+  creditor: [
+    { label: 'Dashboard', path: '/creditor/dashboard', icon: <LayoutDashboard className="h-5 w-5" />, category: 'main' },
+    { label: 'Credit Management', path: '/creditor/credit-management', icon: <CreditCard className="h-5 w-5" />, category: 'finance' },
+    { label: 'Product Management', path: '/creditor/product-management', icon: <Package className="h-5 w-5" />, category: 'inventory' },
+    { label: 'Credit Reports', path: '/creditor/credit-reports', icon: <FileText className="h-5 w-5" />, category: 'reports' },
+    { label: 'Farmer Profiles', path: '/creditor/farmer-profiles', icon: <Users className="h-5 w-5" />, category: 'farmers' },
+    { label: 'Payment Tracking', path: '/creditor/payment-tracking', icon: <DollarSign className="h-5 w-5" />, category: 'payments' },
   ],
 };
 
@@ -121,6 +134,10 @@ const categoryStyles: Record<string, { bg: string; text: string; border: string 
   market: { bg: 'bg-green-500/10', text: 'text-green-500', border: 'border-green-500' },
   community: { bg: 'bg-amber-500/10', text: 'text-amber-500', border: 'border-amber-500' },
   account: { bg: 'bg-indigo-500/10', text: 'text-indigo-500', border: 'border-indigo-500' },
+  inventory: { bg: 'bg-emerald-500/10', text: 'text-emerald-500', border: 'border-emerald-500' },
+  reports: { bg: 'bg-rose-500/10', text: 'text-rose-500', border: 'border-rose-500' },
+  farmers: { bg: 'bg-amber-500/10', text: 'text-amber-500', border: 'border-amber-500' },
+  payments: { bg: 'bg-violet-500/10', text: 'text-violet-500', border: 'border-violet-500' },
 };
 
 // Fixed dimensions to prevent layout shifts
@@ -136,7 +153,8 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
   const { userRole, signOut, user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const [sidebarOpen, setSidebarOpen] = useState(false); // Start closed on mobile
+  const [sidebarOpen, setSidebarOpen] = useState(true); // Start open on all screen sizes
+  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
   
   // Memoize the handleLogout function to prevent unnecessary re-renders
   const handleLogout = useCallback(async () => {
@@ -163,7 +181,8 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
           'farmer': '/farmer/login',
           'staff': '/staff-only/login',
           'collector': '/collector-only/login',
-          'admin': '/admin/login'
+          'admin': '/admin/login',
+          'creditor': '/creditor/login'
         };
         
         const loginPath = loginPaths[userRole] || '/';
@@ -196,7 +215,8 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
           'farmer': '/farmer/login',
           'staff': '/staff-only/login',
           'collector': '/collector-only/login',
-          'admin': '/admin/login'
+          'admin': '/admin/login',
+          'creditor': '/creditor/login'
         };
         
         const loginPath = loginPaths[userRole] || '/';
@@ -258,9 +278,12 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
     return location.pathname === path;
   }, [location.pathname]);
 
-  // Close sidebar when route changes on mobile
+  // Close sidebar when route changes on mobile only
   useEffect(() => {
-    setSidebarOpen(false);
+    // Only close sidebar on mobile devices
+    if (window.innerWidth < 768) {
+      setSidebarOpen(false);
+    }
   }, [location.pathname]);
 
   // Navigation controls functions with reduced logging
@@ -278,6 +301,7 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
     navigate(1);
   };
 
+  
   const handleRefresh = () => {
     if (import.meta.env.DEV) {
       // Minimal logging for refresh action
@@ -285,6 +309,23 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
     // Reload the current page
     window.location.reload();
   };
+
+  // Toggle category expansion
+  const toggleCategory = (category: string) => {
+    setExpandedCategories(prev => ({
+      ...prev,
+      [category]: !prev[category]
+    }));
+  };
+
+  // Initialize all categories as expanded by default
+  useEffect(() => {
+    const initialExpanded: Record<string, boolean> = {};
+    Object.keys(groupedNavigation).forEach(category => {
+      initialExpanded[category] = true;
+    });
+    setExpandedCategories(initialExpanded);
+  }, [groupedNavigation]);
 
   return (
     <div className="min-h-screen bg-background flex w-full flex-col md:flex-row">
@@ -304,10 +345,12 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
           <Milk className="h-8 w-8 text-primary" />
           <span className="font-bold text-xl">Dairy Farmers of Trans Nzoia</span>
         </div>
-        <div className="w-10"></div> {/* Spacer for alignment */}
+        <div className="flex items-center gap-2">
+          <GlobalSearch /> {/* Add GlobalSearch here */}
+        </div>
       </div>
 
-      {/* Sidebar */}
+      {/* Sidebar - now visible by default on all screen sizes */}
       <aside
         className={cn(
           "bg-card border-r border-border transition-all duration-300 ease-in-out flex flex-col",
@@ -354,6 +397,9 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
                 <RotateCw className="h-4 w-4" />
               </Button>
             </div>
+            <div className="hidden md:block">
+              <GlobalSearch /> {/* Add GlobalSearch for desktop */}
+            </div>
             <Button
               variant="ghost"
               size="icon"
@@ -375,19 +421,25 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
           {Object.entries(groupedNavigation).map(([category, items]) => (
             <div key={category} className="mb-2">
-              {/* Category header - only show when sidebar is expanded */}
+              {/* Category header with toggle - show on all screen sizes when sidebar is open */}
               {sidebarOpen && (
-                <div className={cn(
-                  "px-3 py-1 text-xs font-semibold uppercase tracking-wider rounded mb-1",
-                  categoryStyles[category]?.bg || 'bg-muted',
-                  categoryStyles[category]?.text || 'text-muted-foreground'
-                )}>
-                  {category}
-                </div>
+                <button
+                  className={cn(
+                    "w-full px-3 py-2 text-xs font-semibold uppercase tracking-wider rounded mb-1 flex items-center justify-between",
+                    categoryStyles[category]?.bg || 'bg-muted',
+                    categoryStyles[category]?.text || 'text-muted-foreground'
+                  )}
+                  onClick={() => toggleCategory(category)}
+                >
+                  <span>{category}</span>
+                  <span className="transform transition-transform duration-200">
+                    {expandedCategories[category] ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                  </span>
+                </button>
               )}
               
-              {/* Navigation items */}
-              {items.map((item) => {
+              {/* Navigation items - show on all screen sizes when category is expanded and sidebar is open */}
+              {sidebarOpen && expandedCategories[category] && items.map((item) => {
                 const isActive = isActivePath(item.path);
                 const categoryStyle = categoryStyles[item.category || 'other'] || categoryStyles.main;
                 
@@ -404,7 +456,10 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
                         userId: user?.id,
                         timestamp: new Date().toISOString()
                       });
-                      setSidebarOpen(false); // Close sidebar on mobile after selection
+                      // Only close sidebar on mobile after selection
+                      if (window.innerWidth < 768) {
+                        setSidebarOpen(false);
+                      }
                     }}
                   >
                     <Button
@@ -427,6 +482,7 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
                   </Link>
                 );
               })}
+
             </div>
           ))}
         </nav>
@@ -435,8 +491,21 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
         <div className="p-4 border-t border-border space-y-2" style={{ minHeight: '120px' }}>
           {sidebarOpen && user?.email && (
             <div className="px-3 py-2 text-sm hidden md:block">
-              <p className="font-medium truncate">{user.email}</p>
-              <p className="text-xs text-muted-foreground capitalize">{userRole}</p>
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                  <UserCog className="h-4 w-4 text-primary" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium truncate">{user.email}</p>
+                  <p className="text-xs text-muted-foreground capitalize flex items-center gap-1">
+                    <CreditCard className="h-3 w-3" />
+                    {userRole}
+                  </p>
+                </div>
+              </div>
+              <div className="text-xs text-muted-foreground mt-1">
+                Agrovet Creditor Portal
+              </div>
             </div>
           )}
           <Button
@@ -455,8 +524,8 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
         </div>
       </aside>
 
-      {/* Overlay for mobile */}
-      {sidebarOpen && (
+      {/* Overlay for mobile - only show when sidebar is open on mobile */}
+      {sidebarOpen && window.innerWidth < 768 && (
         <div 
           className="md:hidden fixed inset-0 bg-black/50 z-40"
           onClick={() => {
@@ -474,7 +543,7 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
       {/* Main Content */}
       <main className="flex-1 overflow-auto">
         {/* Desktop Navigation Controls */}
-        <div className="hidden md:flex items-center justify-end p-2 bg-card border-b border-border">
+        <div className="hidden md:flex items-center justify-between p-2 bg-card border-b border-border">
           <div className="flex gap-1">
             <Button
               variant="ghost"
@@ -503,6 +572,9 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
             >
               <RotateCw className="h-4 w-4" />
             </Button>
+          </div>
+          <div className="hidden md:block mr-4">
+            <GlobalSearch /> {/* Add GlobalSearch for desktop in main content area */}
           </div>
         </div>
         <div className="p-4 md:p-6">

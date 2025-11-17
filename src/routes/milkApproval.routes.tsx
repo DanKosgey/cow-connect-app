@@ -8,7 +8,7 @@ import { preloadRouteWhenIdle } from '@/utils/routePreloader';
 import { MilkApprovalDashboardLayout } from '@/components/milkApproval/MilkApprovalDashboardLayout';
 
 // Lazy load milk approval components
-const MilkApprovalStaffLogin = lazy(() => import("../pages/auth/MilkApprovalStaffLogin"));
+const StaffLogin = lazy(() => import("../pages/auth/StaffLogin"));
 const MilkApprovalStaffDashboard = lazy(() => import("../pages/staff-portal/MilkApprovalStaffDashboard"));
 const MilkApprovalDashboard = lazy(() => import("../pages/staff-portal/MilkApprovalPage"));
 const VarianceReportPage = lazy(() => import("../pages/staff-portal/VarianceReportPage"));
@@ -20,7 +20,7 @@ export default function MilkApprovalRoutes() {
   return (
     <Suspense fallback={<LoadingSkeleton type="dashboard" />}>
       <Routes>
-        <Route path="login" element={<MilkApprovalStaffLogin />} />
+        <Route path="login" element={<StaffLogin />} />
         <Route path="/*" element={
           <ProtectedRoute requiredRole={UserRole.STAFF}>
             <MilkApprovalDashboardLayout>

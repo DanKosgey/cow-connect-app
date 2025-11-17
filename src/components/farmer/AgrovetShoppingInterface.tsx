@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { CreditServiceEssentials } from "@/services/credit-service-essentials";
 import { CreditRequestService } from "@/services/credit-request-service";
@@ -11,7 +11,9 @@ import {
   AlertCircle,
   CheckCircle,
   Clock,
-  XCircle
+  XCircle,
+  Info,
+  AlertTriangle
 } from "lucide-react";
 import { formatCurrency } from "@/utils/formatters";
 import { Button } from "@/components/ui/button";
@@ -26,6 +28,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
 import RefreshButton from "@/components/ui/RefreshButton";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 interface AgrovetProduct {
   id: string;
@@ -62,9 +65,15 @@ const AgrovetShoppingInterface = ({ farmerId, availableCredit }: { farmerId: str
   const [cart, setCart] = useState<{product: AgrovetProduct, quantity: number}[]>([]);
   const [creditRequests, setCreditRequests] = useState<CreditRequest[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
+  const [creditInfo, setCreditInfo] = useState<{
+    isEligible: boolean;
+    creditLimit: number;
+    availableCredit: number;
+    pendingPayments: number;
+  } | null>(null);
   const { toast } = useToast();
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       setLoading(true);
       
@@ -90,6 +99,10 @@ const AgrovetShoppingInterface = ({ farmerId, availableCredit }: { farmerId: str
       // Get existing credit requests
       const requests = await CreditRequestService.getFarmerCreditRequests(farmerId);
       setCreditRequests(requests);
+      
+      // Get credit information
+      const creditData = await CreditServiceEssentials.calculateCreditEligibility(farmerId);
+      setCreditInfo(creditData);
     } catch (err) {
       console.error("Error fetching agrovet data:", err);
       toast({
@@ -100,13 +113,13 @@ const AgrovetShoppingInterface = ({ farmerId, availableCredit }: { farmerId: str
     } finally {
       setLoading(false);
     }
-  };
+  }, [farmerId, toast]);
 
   useEffect(() => {
     if (farmerId) {
       fetchData();
     }
-  }, [farmerId, toast]);
+  }, [farmerId, fetchData]);
 
   useEffect(() => {
     let filtered = products;
@@ -179,6 +192,26 @@ const AgrovetShoppingInterface = ({ farmerId, availableCredit }: { farmerId: str
     try {
       const totalAmount = getTotalCartAmount();
       
+      // Validate credit eligibility
+      if (!creditInfo?.isEligible) {
+        toast({
+          title: "Not Eligible",
+          description: "You are not currently eligible for credit. Please contact admin.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      // Check if farmer has enough credit
+      if (creditInfo.availableCredit < totalAmount) {
+        toast({
+          title: "Insufficient Credit",
+          description: `You need ${formatCurrency(totalAmount)} but only have ${formatCurrency(creditInfo.availableCredit)} available.`,
+          variant: "destructive",
+        });
+        return;
+      }
+      
       // Create credit requests for each item in cart
       for (const item of cart) {
         await CreditRequestService.createCreditRequest(
@@ -193,9 +226,12 @@ const AgrovetShoppingInterface = ({ farmerId, availableCredit }: { farmerId: str
       // Clear cart
       setCart([]);
       
-      // Refresh requests
+      // Refresh requests and credit info
       const requests = await CreditRequestService.getFarmerCreditRequests(farmerId);
       setCreditRequests(requests);
+      
+      const updatedCreditInfo = await CreditServiceEssentials.calculateCreditEligibility(farmerId);
+      setCreditInfo(updatedCreditInfo);
       
       toast({
         title: "Request Submitted",
@@ -206,6 +242,56 @@ const AgrovetShoppingInterface = ({ farmerId, availableCredit }: { farmerId: str
       toast({
         title: "Error",
         description: "Failed to submit credit request",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleApproveRequest = async (requestId: string) => {
+    try {
+      // Get the request details
+      const request = requests.find(r => r.id === requestId);
+      if (!request) return;
+
+      // Approve the credit request
+      const result = await CreditRequestService.approveCreditRequest(
+        requestId,
+        (await supabase.auth.getUser()).data.user?.id
+      );
+
+      if (result.success) {
+        toast({
+          title: "Request Approved",
+          description: `Credit request for ${request.farmer_name} has been approved`,
+        });
+      } else {
+        toast({
+          title: "Approval Failed",
+          description: result.errorMessage || "Failed to approve credit request",
+          variant: "destructive",
+        });
+        
+        // If there are enforcement details, log them for debugging
+        if (result.enforcementDetails) {
+          console.log("Enforcement details:", result.enforcementDetails);
+        }
+      }
+
+      // Update local state
+      setRequests(requests.map(req => 
+        req.id === requestId 
+          ? { ...req, status: 'approved', approved_at: new Date().toISOString() } 
+          : req
+      ));
+
+      // Refresh credit info
+      const updatedCreditInfo = await CreditServiceEssentials.calculateCreditEligibility(farmerId);
+      setCreditInfo(updatedCreditInfo);
+    } catch (error) {
+      console.error("Error approving credit request:", error);
+      toast({
+        title: "Error",
+        description: "Failed to approve credit request",
         variant: "destructive",
       });
     }
@@ -236,6 +322,10 @@ const AgrovetShoppingInterface = ({ farmerId, availableCredit }: { farmerId: str
       const requests = await CreditRequestService.getFarmerCreditRequests(farmerId);
       setCreditRequests(requests);
       
+      // Refresh credit info
+      const updatedCreditInfo = await CreditServiceEssentials.calculateCreditEligibility(farmerId);
+      setCreditInfo(updatedCreditInfo);
+      
       toast({
         title: "Request Cancelled",
         description: "Your credit request has been cancelled",
@@ -262,9 +352,37 @@ const AgrovetShoppingInterface = ({ farmerId, availableCredit }: { farmerId: str
   }
 
   const cartTotal = getTotalCartAmount();
+  const canRequestCredit = creditInfo?.isEligible && creditInfo.availableCredit >= cartTotal && cart.length > 0;
 
   return (
     <div className="space-y-6">
+      {/* Credit Status Banner */}
+      {creditInfo && (
+        <Alert variant={creditInfo.isEligible ? "default" : "destructive"}>
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>
+            {creditInfo.isEligible ? "Credit Available" : "Credit Not Available"}
+          </AlertTitle>
+          <AlertDescription>
+            {creditInfo.isEligible ? (
+              <div className="flex flex-wrap gap-4">
+                <div>
+                  <span className="font-medium">Available Credit:</span> {formatCurrency(creditInfo.availableCredit)}
+                </div>
+                <div>
+                  <span className="font-medium">Credit Limit:</span> {formatCurrency(creditInfo.creditLimit)}
+                </div>
+                <div>
+                  <span className="font-medium">Pending Payments:</span> {formatCurrency(creditInfo.pendingPayments)}
+                </div>
+              </div>
+            ) : (
+              "Your credit account is currently frozen or you don't have a credit profile. Please contact admin for assistance."
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Shopping Controls */}
       <Card>
         <CardHeader>
@@ -342,7 +460,7 @@ const AgrovetShoppingInterface = ({ farmerId, availableCredit }: { farmerId: str
                           <Button 
                             size="sm" 
                             onClick={() => addToCart(product)}
-                            disabled={product.current_stock <= 0}
+                            disabled={product.current_stock <= 0 || !creditInfo?.isEligible}
                           >
                             <ShoppingCart className="w-4 h-4 mr-1" />
                             Add
@@ -424,14 +542,47 @@ const AgrovetShoppingInterface = ({ farmerId, availableCredit }: { farmerId: str
                       <span>{formatCurrency(cartTotal)}</span>
                     </div>
                     
-                    <div className="mt-2 text-sm text-blue-600">
-                      <span>Your request will be reviewed by an admin</span>
-                    </div>
+                    {creditInfo && (
+                      <div className="mt-2 text-sm">
+                        <div className="flex justify-between">
+                          <span>Available Credit:</span>
+                          <span className={creditInfo.availableCredit >= cartTotal ? "text-green-600" : "text-red-600"}>
+                            {formatCurrency(creditInfo.availableCredit)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Remaining After Purchase:</span>
+                          <span className={creditInfo.availableCredit - cartTotal >= 0 ? "text-green-600" : "text-red-600"}>
+                            {formatCurrency(creditInfo.availableCredit - cartTotal)}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {!creditInfo?.isEligible && (
+                      <Alert variant="destructive" className="mt-2">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertTitle>Credit Not Available</AlertTitle>
+                        <AlertDescription>
+                          You cannot make credit purchases at this time.
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                    
+                    {creditInfo?.isEligible && creditInfo.availableCredit < cartTotal && (
+                      <Alert variant="destructive" className="mt-2">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertTitle>Insufficient Credit</AlertTitle>
+                        <AlertDescription>
+                          You don't have enough credit for this purchase.
+                        </AlertDescription>
+                      </Alert>
+                    )}
                     
                     <Button 
                       className="w-full mt-4"
                       onClick={requestCredit}
-                      disabled={cart.length === 0}
+                      disabled={!canRequestCredit}
                     >
                       <CreditCard className="w-4 h-4 mr-2" />
                       Request Credit

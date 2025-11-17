@@ -32,6 +32,11 @@ class DataCache {
   clearKey(key: string) {
     this.cache.delete(key);
   }
+  
+  // Method to clear all farmer-related cache
+  clearFarmerCache() {
+    this.clearKey('approvedFarmers');
+  }
 }
 
 const cache = new DataCache();
@@ -64,6 +69,8 @@ interface Farmer {
   id: string;
   full_name: string;
   kyc_status: string;
+  registration_number?: string;
+  phone_number?: string;
 }
 
 interface Payment {
@@ -156,6 +163,11 @@ export class StaffDataService {
 
   constructor(userId: string | null) {
     this.userId = userId;
+  }
+
+  // Method to clear farmer cache
+  clearFarmerCache() {
+    cache.clearFarmerCache();
   }
 
   async getStaffInfo(): Promise<StaffData | null> {
@@ -265,38 +277,122 @@ export class StaffDataService {
   async getApprovedFarmers() {
     const cacheKey = 'approvedFarmers';
     const cached = cache.get(cacheKey);
+    
+    // Log cache status for debugging
+    console.log('getApprovedFarmers called');
+    console.log('Cache hit:', !!cached);
+    if (cached) {
+      console.log('Cached data:', cached);
+    }
+
     if (cached) {
       return cached;
     }
 
     try {
+      console.log('Fetching farmers from database...');
       const { data, error } = await supabase
         .from('farmers')
         .select(`
           id,
-          profiles (
-            full_name
-          )
+          full_name,
+          kyc_status
         `)
         .eq('kyc_status', 'approved')
-        .order('full_name', { referencedTable: 'profiles', ascending: true });
+        .order('full_name', { ascending: true });
 
       if (error) {
         console.error('Error fetching farmers:', error);
         throw new Error(`Failed to fetch farmers: ${error.message}`);
       }
 
+      console.log('Database response:', data);
+
       const result = (data || []).map(farmer => ({
         id: farmer.id,
-        full_name: farmer.profiles?.full_name || 'Unknown Farmer',
-        kyc_status: 'approved'
+        full_name: farmer.full_name || 'Unknown Farmer',
+        kyc_status: farmer.kyc_status
       }));
+
+      console.log('Processed result:', result);
 
       cache.set(cacheKey, result);
       return result;
     } catch (error: any) {
       console.error('Error in getApprovedFarmers:', error);
       throw new Error(`Failed to fetch farmers: ${error.message || 'Unknown error'}`);
+    }
+  }
+
+  // New method that matches admin farmers page query pattern
+  async getFarmersData(currentPage: number, pageSize: number) {
+    try {
+      // For pagination, we need to get the total count first
+      const { count, error: countError } = await supabase
+        .from('farmers')
+        .select('*', { count: 'exact', head: true });
+      
+      if (countError) {
+        throw countError;
+      }
+      
+      // Then fetch the paginated data
+      const { data, error } = await supabase
+        .from('farmers')
+        .select('id, registration_number, full_name, phone_number, kyc_status')
+        .order('created_at', { ascending: false })
+        .range((currentPage - 1) * pageSize, currentPage * pageSize - 1);
+        
+      if (error) {
+        throw error;
+      }
+      
+      return {
+        farmers: data || [],
+        totalCount: count || 0
+      };
+    } catch (error: any) {
+      console.error('Error in getFarmersData:', error);
+      throw new Error(`Failed to fetch farmers data: ${error.message || 'Unknown error'}`);
+    }
+  }
+
+  // Simplified method for all farmers without pagination
+  async getAllFarmers() {
+    try {
+      const { data, error } = await supabase
+        .from('farmers')
+        .select('id, registration_number, full_name, phone_number, kyc_status')
+        .order('created_at', { ascending: false });
+        
+      if (error) {
+        throw error;
+      }
+      
+      return data || [];
+    } catch (error: any) {
+      console.error('Error in getAllFarmers:', error);
+      throw new Error(`Failed to fetch all farmers: ${error.message || 'Unknown error'}`);
+    }
+  }
+
+  // Method for approved farmers only (used in collector portal)
+  async getApprovedFarmersData() {
+    try {
+      const { data, error } = await supabase
+        .from('farmers')
+        .select('id, registration_number, full_name, phone_number, kyc_status')
+        .eq('kyc_status', 'approved')
+        .order('full_name', { ascending: true });
+        
+      if (error) {
+        throw error;
+      }
+      
+      return data || [];
+    } catch (error: any) {
+      console.error('Error in getApprovedFarmersData:', error);
+      throw new Error(`Failed to fetch approved farmers: ${error.message || 'Unknown error'}`);
     }
   }
 

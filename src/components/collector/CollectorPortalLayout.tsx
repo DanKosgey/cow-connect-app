@@ -109,7 +109,7 @@ export function CollectorPortalLayout({ children }: { children: React.ReactNode 
   }, [navigate, toast]);
 
   // Show a message if user is authenticated but has no staff record
-  if (!staffInfo && user?.id && !staffLoading && userRole !== 'staff') {
+  if (!staffInfo && user?.id && !staffLoading && userRole !== UserRole.COLLECTOR) {
     return (
       <DashboardLayout>
         <div className="flex flex-col items-center justify-center min-h-screen p-4">

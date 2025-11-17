@@ -26,7 +26,7 @@ console.log('Connecting to Supabase at:', supabaseUrl);
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // Password for all accounts (at least 6 characters for Supabase)
-const PASSWORD = 'dan123';
+const PASSWORD = 'Test1234!';
 
 // Utility function to add delay
 function delay(ms: number) {
@@ -38,7 +38,7 @@ async function createStaffAccount() {
   
   // First, create the user account
   const { data: authData, error: authError } = await supabase.auth.signUp({
-    email: 'staff@gmail.com',
+    email: 'staff@' + process.env.VITE_APP_NAME?.toLowerCase() + '.com',
     password: PASSWORD,
     options: {
       data: {
@@ -51,7 +51,7 @@ async function createStaffAccount() {
     console.error('Error creating staff auth account:', authError);
     // If user already exists, try to sign in
     const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-      email: 'staff@gmail.com',
+      email: 'staff@' + process.env.VITE_APP_NAME?.toLowerCase() + '.com',
       password: PASSWORD
     });
     
@@ -82,7 +82,7 @@ async function createStaffAccount() {
     const profileData = {
       id: signInData.user.id,
       full_name: 'Test Staff Member',
-      email: 'staff@gmail.com',
+      email: 'staff@' + process.env.VITE_APP_NAME?.toLowerCase() + '.com',
       updated_at: new Date().toISOString(),
     };
 
@@ -143,7 +143,7 @@ async function createStaffAccount() {
   const profileData = {
     id: authData.user.id,
     full_name: 'Test Staff Member',
-    email: 'staff@gmail.com',
+    email: 'staff@' + process.env.VITE_APP_NAME?.toLowerCase() + '.com',
     updated_at: new Date().toISOString(),
   };
 
@@ -369,7 +369,7 @@ async function setupTestAccounts() {
     
     // Create verified farmer
     const verifiedFarmer = await createFarmerAccount(
-      'verified.farmer@gmail.com', 
+      'verified.farmer@' + process.env.VITE_APP_NAME?.toLowerCase() + '.com', 
       'Verified Farmer', 
       'approved'
     );
@@ -379,21 +379,21 @@ async function setupTestAccounts() {
     
     // Create unverified farmer
     const unverifiedFarmer = await createFarmerAccount(
-      'unverified.farmer@gmail.com', 
+      'unverified.farmer@' + process.env.VITE_APP_NAME?.toLowerCase() + '.com', 
       'Unverified Farmer', 
       'pending'
     );
     
     console.log('\n=== ACCOUNT SETUP COMPLETE ===');
     console.log('Staff Account:');
-    console.log('  Email: staff@gmail.com');
-    console.log('  Password: dan123');
+    console.log('  Email: staff@' + process.env.VITE_APP_NAME?.toLowerCase() + '.com');
+    console.log('  Password: Test1234!');
     console.log('\nVerified Farmer Account:');
-    console.log('  Email: verified.farmer@gmail.com');
-    console.log('  Password: dan123');
+    console.log('  Email: verified.farmer@' + process.env.VITE_APP_NAME?.toLowerCase() + '.com');
+    console.log('  Password: Test1234!');
     console.log('\nUnverified Farmer Account:');
-    console.log('  Email: unverified.farmer@gmail.com');
-    console.log('  Password: dan123');
+    console.log('  Email: unverified.farmer@' + process.env.VITE_APP_NAME?.toLowerCase() + '.com');
+    console.log('  Password: Test1234!');
     console.log('\nAll accounts have been set up successfully!');
     
   } catch (error) {

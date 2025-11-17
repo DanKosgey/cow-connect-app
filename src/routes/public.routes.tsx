@@ -7,15 +7,15 @@ import { preloadRouteWhenIdle } from '@/utils/routePreloader';
 // Lazy load public components
 const Landing = lazy(() => import("../pages/Landing"));
 const Login = lazy(() => import("../pages/auth/Login"));
-const AuthTestPage = lazy(() => import("../pages/auth/AuthTestPage"));
-const AuthFlowTest = lazy(() => import("../pages/auth/AuthFlowTest"));
+
+
 const FarmerSignup = lazy(() => import("../pages/auth/FarmerSignup"));
 const EmailVerificationWaiting = lazy(() => import("../pages/auth/EmailVerificationWaiting"));
 const ForgotPassword = lazy(() => import("../pages/auth/ForgotPassword"));
 const ResetPassword = lazy(() => import("../pages/auth/ResetPassword"));
-const PasswordResetTest = lazy(() => import("../pages/auth/PasswordResetTest"));
-const TestDBConnection = lazy(() => import("../pages/TestDBConnection"));
-const TestAuthFlow = lazy(() => import("../pages/TestAuthFlow"));
+
+
+
 const AuthCallback = lazy(() => import("../pages/AuthCallback"));
 const EmailVerificationCallback = lazy(() => import("../pages/farmer/EmailVerificationCallback"));
 const AcceptInvitePage = lazy(() => import("../pages/accept-invite"));
@@ -45,12 +45,12 @@ export default function PublicRoutes() {
         } />
         <Route path="/auth-test" element={
           <PageTransition>
-            <AuthTestPage />
+            <NotFound />
           </PageTransition>
         } />
         <Route path="/auth-flow-test" element={
           <PageTransition>
-            <AuthFlowTest />
+            <NotFound />
           </PageTransition>
         } />
         <Route path="/register" element={
@@ -85,17 +85,17 @@ export default function PublicRoutes() {
         } />
         <Route path="/auth/reset-test" element={
           <PageTransition>
-            <PasswordResetTest />
+            <NotFound />
           </PageTransition>
         } />
         <Route path="/test-db" element={
           <PageTransition>
-            <TestDBConnection />
+            <NotFound />
           </PageTransition>
         } />
         <Route path="/test-auth" element={
           <PageTransition>
-            <TestAuthFlow />
+            <NotFound />
           </PageTransition>
         } />
         <Route path="/accept-invite" element={

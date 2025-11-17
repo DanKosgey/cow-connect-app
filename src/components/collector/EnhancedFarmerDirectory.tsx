@@ -22,17 +22,40 @@ import useToastNotifications from '@/hooks/useToastNotifications';
 import { supabase } from '@/integrations/supabase/client';
 import { LoadingSkeleton } from '@/components/LoadingSkeleton';
 import { format } from 'date-fns';
-import { useFarmerDirectory, useFarmerCollectionHistory } from '@/hooks/useStaffData';
+import { useApprovedFarmersData, useAllFarmers } from '@/hooks/useFarmersData'; // Updated import
+import { useFarmerCollectionHistory } from '@/hooks/useStaffData';
+
+interface Farmer {
+  id: string;
+  registration_number: string;
+  full_name: string;
+  phone_number: string;
+  kyc_status: string;
+  national_id?: string;
+  farm_location?: string;
+  address?: string;
+  created_at?: string;
+  stats?: {
+    total_collections?: number;
+    total_liters?: number;
+    avg_quality_score?: number;
+    current_month_earnings?: number;
+    current_month_liters?: number;
+    last_collection_date?: string;
+  };
+}
 
 export default function EnhancedFarmerDirectory() {
   const { show, error: showError } = useToastNotifications();
-  const { farmers, loading: farmersLoading } = useFarmerDirectory();
+  // Updated to use the new hook
+  const { data: farmersData, isLoading: farmersLoading } = useApprovedFarmersData();
+  const farmers = farmersData || [];
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFarmer, setSelectedFarmer] = useState<string | null>(null);
   const { collections: collectionHistory, loading: collectionHistoryLoading } = useFarmerCollectionHistory(selectedFarmer);
 
   useEffect(() => {
-    // Data is now loaded through the useFarmerDirectory hook
+    // Data is now loaded through the useApprovedFarmersData hook
   }, []);
 
   const loadCollectionHistory = async (farmerId: string) => {
@@ -68,7 +91,7 @@ export default function EnhancedFarmerDirectory() {
   const filteredFarmers = farmers.filter(farmer =>
     farmer.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     farmer.registration_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    farmer.national_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (farmer.national_id && farmer.national_id.toLowerCase().includes(searchTerm.toLowerCase())) ||
     farmer.phone_number.includes(searchTerm)
   );
 
@@ -138,7 +161,7 @@ export default function EnhancedFarmerDirectory() {
                         {farmer.farm_location || 'Location not set'}
                       </div>
                       <div className="flex items-center gap-1">
-                        <span className="font-medium">National ID:</span> {farmer.national_id}
+                        <span className="font-medium">National ID:</span> {farmer.national_id || 'N/A'}
                       </div>
                     </div>
 
@@ -314,7 +337,7 @@ export default function EnhancedFarmerDirectory() {
                                 </div>
                                 <div className="flex justify-between">
                                   <span className="text-muted-foreground">National ID</span>
-                                  <span>{farmer.national_id}</span>
+                                  <span>{farmer.national_id || 'Not provided'}</span>
                                 </div>
                                 <div className="flex justify-between">
                                   <span className="text-muted-foreground">Phone</span>
@@ -336,7 +359,11 @@ export default function EnhancedFarmerDirectory() {
                                 </div>
                                 <div className="flex justify-between">
                                   <span className="text-muted-foreground">Registration Date</span>
-                                  <span>{format(new Date(farmer.created_at), 'MMM dd, yyyy')}</span>
+                                  <span>
+                                    {farmer.created_at 
+                                      ? format(new Date(farmer.created_at), 'MMM dd, yyyy') 
+                                      : 'N/A'}
+                                  </span>
                                 </div>
                               </div>
                             </div>

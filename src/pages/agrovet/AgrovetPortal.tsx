@@ -1,11 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingCart, CheckCircle, Clock, AlertCircle, User, Package, DollarSign, Calendar } from 'lucide-react';
-import { supabase } from '@/lib/supabaseClient';
+import { ShoppingCart, CheckCircle, Clock, AlertCircle, User, Package, DollarSign, Calendar, RefreshCw, Bell } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import CreditRequestCard from '@/components/agrovet/CreditRequestCard';
-import { useCreditService } from '@/hooks/useCreditService';
+import { CreditService } from '@/services/credit-service';
 
 const AgrovetPortal = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -13,13 +22,19 @@ const AgrovetPortal = () => {
   const [creditRequests, setCreditRequests] = useState([]);
   const [activeTab, setActiveTab] = useState('pending');
   const [loading, setLoading] = useState(true);
+  const [inventory, setInventory] = useState([]);
+  const [selectedProduct, setSelectedProduct] = useState('');
+  const [quantity, setQuantity] = useState(1);
+  const [showManualEntry, setShowManualEntry] = useState(false);
+  const [farmerId, setFarmerId] = useState('');
+  const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
   const { toast } = useToast();
-  const { calculateFarmerCredit } = useCreditService();
 
   useEffect(() => {
     checkSession();
     if (isLoggedIn) {
       loadCreditRequests();
+      loadInventory();
     }
   }, [isLoggedIn, activeTab]);
 
@@ -39,11 +54,25 @@ const AgrovetPortal = () => {
     }
   };
 
+  const loadInventory = async () => {
+    try {
+      const inventoryItems = await CreditService.getAgrovetInventory();
+      setInventory(inventoryItems);
+    } catch (error) {
+      console.error('Error loading inventory:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load inventory',
+        variant: 'destructive'
+      });
+    }
+  };
+
   const loadCreditRequests = async () => {
     try {
       const { data, error } = await supabase
         .from('agrovet_credit_requests')
-        .select(\`
+        .select(`
           *,
           farmers:farmer_id (
             full_name,
@@ -53,11 +82,15 @@ const AgrovetPortal = () => {
             name,
             unit
           )
-        \`)
+        `)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
       setCreditRequests(data || []);
+      
+      // Update pending requests count
+      const pendingCount = data?.filter(r => r.status === 'pending').length || 0;
+      setPendingRequestsCount(pendingCount);
     } catch (error) {
       console.error('Error loading credit requests:', error);
       toast({
@@ -78,13 +111,7 @@ const AgrovetPortal = () => {
       const request = creditRequests.find(r => r.id === requestId);
       if (!request) throw new Error('Request not found');
 
-      // Check farmer's credit eligibility
-      const creditInfo = await calculateFarmerCredit(request.farmer_id);
-      if (!creditInfo.isEligible) {
-        throw new Error('Farmer is not eligible for credit');
-      }
-
-      // Process the credit request
+      // Process the credit request using the stored procedure
       const { error } = await supabase.rpc('process_agrovet_credit_request', {
         request_id: requestId,
         staff_id: staff.id,
@@ -139,6 +166,74 @@ const AgrovetPortal = () => {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleManualPurchase = async () => {
+    try {
+      if (!farmerId || !selectedProduct || quantity <= 0) {
+        toast({
+          title: 'Validation Error',
+          description: 'Please fill in all required fields',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      // Get farmer credit status
+      const creditStatus = await CreditService.getCreditStatus(farmerId);
+      if (!creditStatus) {
+        toast({
+          title: 'Error',
+          description: 'Farmer does not have a credit profile',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      // Get product details
+      const product = inventory.find(item => item.id === selectedProduct);
+      if (!product) {
+        toast({
+          title: 'Error',
+          description: 'Selected product not found',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      // Calculate total amount
+      const totalAmount = quantity * product.selling_price;
+
+      // Create agrovet purchase with credit payment
+      await CreditService.createAgrovetPurchase(
+        farmerId,
+        selectedProduct,
+        quantity,
+        'credit',
+        staff.id
+      );
+
+      toast({
+        title: 'Success',
+        description: `Purchase completed successfully for KES ${totalAmount.toFixed(2)}`,
+      });
+
+      // Reset form
+      setFarmerId('');
+      setSelectedProduct('');
+      setQuantity(1);
+      setShowManualEntry(false);
+      
+      // Reload data
+      loadCreditRequests();
+    } catch (error) {
+      console.error('Error processing manual purchase:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to process manual purchase',
+        variant: 'destructive'
+      });
     }
   };
 
@@ -217,10 +312,17 @@ const AgrovetPortal = () => {
               <div>
                 <p className="text-gray-600 text-sm">Pending Requests</p>
                 <p className="text-3xl font-bold text-yellow-600">
-                  {creditRequests.filter(r => r.status === 'pending').length}
+                  {pendingRequestsCount}
                 </p>
               </div>
-              <Clock className="w-10 h-10 text-yellow-600" />
+              <div className="relative">
+                <Bell className="w-10 h-10 text-yellow-600" />
+                {pendingRequestsCount > 0 && (
+                  <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                    {pendingRequestsCount}
+                  </span>
+                )}
+              </div>
             </div>
           </Card>
 
@@ -270,24 +372,100 @@ const AgrovetPortal = () => {
           </Card>
         </div>
 
+        {/* Manual Entry Section */}
+        <Card className="mb-6">
+          <div className="p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold text-gray-800">Manual Credit Purchase</h2>
+              <Button 
+                variant="outline" 
+                onClick={() => setShowManualEntry(!showManualEntry)}
+              >
+                {showManualEntry ? 'Hide' : 'Show'} Manual Entry
+              </Button>
+            </div>
+            
+            {showManualEntry && (
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
+                <div>
+                  <Label htmlFor="farmerId">Farmer ID</Label>
+                  <Input
+                    id="farmerId"
+                    value={farmerId}
+                    onChange={(e) => setFarmerId(e.target.value)}
+                    placeholder="Enter farmer ID"
+                  />
+                </div>
+                
+                <div>
+                  <Label htmlFor="product">Product</Label>
+                  <Select value={selectedProduct} onValueChange={setSelectedProduct}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select product" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {inventory
+                        .filter(item => item.is_credit_eligible)
+                        .map(item => (
+                          <SelectItem key={item.id} value={item.id}>
+                            {item.name} (KES {item.selling_price})
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div>
+                  <Label htmlFor="quantity">Quantity</Label>
+                  <Input
+                    id="quantity"
+                    type="number"
+                    min="1"
+                    value={quantity}
+                    onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                  />
+                </div>
+                
+                <div className="flex items-end">
+                  <Button 
+                    onClick={handleManualPurchase}
+                    className="w-full bg-green-600 hover:bg-green-700"
+                    disabled={loading}
+                  >
+                    {loading ? (
+                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <CheckCircle className="w-4 h-4 mr-2" />
+                    )}
+                    Process Purchase
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </Card>
+
         {/* Tabs */}
         <div className="flex space-x-2 mb-6">
           <Button
             variant={activeTab === 'pending' ? 'default' : 'outline'}
             onClick={() => setActiveTab('pending')}
           >
-            Pending
+            <Clock className="w-4 h-4 mr-2" />
+            Pending ({pendingRequestsCount})
           </Button>
           <Button
             variant={activeTab === 'disbursed' ? 'default' : 'outline'}
             onClick={() => setActiveTab('disbursed')}
           >
+            <CheckCircle className="w-4 h-4 mr-2" />
             Disbursed
           </Button>
           <Button
             variant={activeTab === 'rejected' ? 'default' : 'outline'}
             onClick={() => setActiveTab('rejected')}
           >
+            <AlertCircle className="w-4 h-4 mr-2" />
             Rejected
           </Button>
           <Button
@@ -296,12 +474,21 @@ const AgrovetPortal = () => {
           >
             All Requests
           </Button>
+          <Button
+            variant="outline"
+            onClick={loadCreditRequests}
+            disabled={loading}
+          >
+            <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
         </div>
 
         {/* Credit Requests List */}
         <div className="space-y-4">
           {loading ? (
             <Card className="p-8 text-center">
+              <RefreshCw className="w-8 h-8 mx-auto mb-4 animate-spin" />
               <p>Loading requests...</p>
             </Card>
           ) : getFilteredRequests().length === 0 ? (

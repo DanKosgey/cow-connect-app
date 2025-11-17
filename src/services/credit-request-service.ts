@@ -1,6 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { logger } from '@/utils/logger';
 import { CreditServiceEssentials } from './credit-service-essentials';
+import { formatCurrency } from '@/utils/formatters';
 
 export interface CreditRequest {
   id: string;
@@ -100,8 +101,8 @@ export class CreditRequestService {
     }
   }
 
-  // Approve a credit request
-  static async approveCreditRequest(requestId: string, approvedBy?: string): Promise<boolean> {
+  // Approve a credit request with enhanced enforcement
+  static async approveCreditRequest(requestId: string, approvedBy?: string): Promise<{ success: boolean; errorMessage?: string; enforcementDetails?: any }> {
     try {
       // Get the request details
       const { data: request, error: fetchError } = await supabase
@@ -116,7 +117,22 @@ export class CreditRequestService {
       }
 
       if (!request) {
-        throw new Error('Credit request not found');
+        return { success: false, errorMessage: 'Credit request not found' };
+      }
+
+      // Pre-approval credit limit enforcement check
+      const preApprovalCheck = await CreditServiceEssentials.enforceCreditLimit(
+        request.farmer_id,
+        request.total_amount,
+        'credit_used'
+      );
+      
+      if (!preApprovalCheck.isAllowed) {
+        return { 
+          success: false, 
+          errorMessage: `Pre-approval check failed: ${preApprovalCheck.reason}`,
+          enforcementDetails: preApprovalCheck
+        };
       }
 
       // Process the credit transaction
@@ -144,13 +160,23 @@ export class CreditRequestService {
           throw updateError;
         }
 
-        return true;
+        return { 
+          success: true,
+          enforcementDetails: result.enforcementDetails
+        };
       } else {
-        throw new Error(result.errorMessage || 'Failed to process credit transaction');
+        return { 
+          success: false, 
+          errorMessage: result.errorMessage || 'Failed to process credit transaction',
+          enforcementDetails: result.enforcementDetails
+        };
       }
     } catch (error) {
       logger.errorWithContext('CreditRequestService - approveCreditRequest', error);
-      throw error;
+      return { 
+        success: false, 
+        errorMessage: (error as Error).message 
+      };
     }
   }
 

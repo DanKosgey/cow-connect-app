@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { logger } from '@/utils/logger';
+import { formatCurrency } from '@/utils/formatters';
 
 export interface FarmerCreditProfile {
   id: string;
@@ -412,13 +413,117 @@ export class CreditServiceEssentials {
     return this.processCreditTransaction(farmerId, productId, quantity, usedBy);
   }
 
-  // Process credit transaction for approved requests
+  // Enhanced credit limit enforcement with multiple validation layers
+  static async enforceCreditLimit(
+    farmerId: string, 
+    requestedAmount: number,
+    transactionType: string = 'credit_used'
+  ): Promise<{ 
+    isAllowed: boolean; 
+    reason: string;
+    availableCredit: number;
+    creditLimit: number;
+    utilizationPercentage: number;
+  }> {
+    try {
+      // Get farmer's credit profile
+      const creditProfile = await this.getCreditProfile(farmerId);
+      
+      if (!creditProfile) {
+        return {
+          isAllowed: false,
+          reason: 'No credit profile found for farmer',
+          availableCredit: 0,
+          creditLimit: 0,
+          utilizationPercentage: 0
+        };
+      }
+
+      // Check if credit is frozen
+      if (creditProfile.is_frozen) {
+        return {
+          isAllowed: false,
+          reason: creditProfile.freeze_reason || 'Credit account is frozen',
+          availableCredit: 0,
+          creditLimit: creditProfile.max_credit_amount,
+          utilizationPercentage: 100
+        };
+      }
+
+      // Check if requested amount exceeds available credit
+      if (requestedAmount > creditProfile.current_credit_balance) {
+        return {
+          isAllowed: false,
+          reason: `Requested amount (${formatCurrency(requestedAmount)}) exceeds available credit (${formatCurrency(creditProfile.current_credit_balance)})`,
+          availableCredit: creditProfile.current_credit_balance,
+          creditLimit: creditProfile.max_credit_amount,
+          utilizationPercentage: creditProfile.max_credit_amount > 0 
+            ? ((creditProfile.max_credit_amount - creditProfile.current_credit_balance) / creditProfile.max_credit_amount) * 100 
+            : 100
+        };
+      }
+
+      // Check if this transaction would exceed the credit limit
+      const newBalance = creditProfile.current_credit_balance - requestedAmount;
+      const utilizationPercentage = creditProfile.max_credit_amount > 0 
+        ? ((creditProfile.max_credit_amount - newBalance) / creditProfile.max_credit_amount) * 100 
+        : 100;
+
+      // Warning thresholds
+      const warningThreshold = 80;
+      const criticalThreshold = 95;
+
+      if (utilizationPercentage > criticalThreshold) {
+        return {
+          isAllowed: false,
+          reason: `Transaction would result in critical credit utilization (${utilizationPercentage.toFixed(1)}%). Maximum allowed is ${criticalThreshold}%.`,
+          availableCredit: creditProfile.current_credit_balance,
+          creditLimit: creditProfile.max_credit_amount,
+          utilizationPercentage
+        };
+      }
+
+      // Additional checks for specific transaction types
+      if (transactionType === 'credit_used') {
+        // For credit usage, check if farmer has any pending settlements that might affect this
+        if (creditProfile.pending_deductions > 0) {
+          const totalObligations = creditProfile.pending_deductions + requestedAmount;
+          const obligationsToLimitRatio = creditProfile.max_credit_amount > 0 
+            ? (totalObligations / creditProfile.max_credit_amount) * 100 
+            : 100;
+            
+          if (obligationsToLimitRatio > 100) {
+            return {
+              isAllowed: false,
+              reason: `Total obligations (${formatCurrency(totalObligations)}) would exceed credit limit (${formatCurrency(creditProfile.max_credit_amount)})`,
+              availableCredit: creditProfile.current_credit_balance,
+              creditLimit: creditProfile.max_credit_amount,
+              utilizationPercentage
+            };
+          }
+        }
+      }
+
+      return {
+        isAllowed: true,
+        reason: 'Credit limit enforcement passed',
+        availableCredit: creditProfile.current_credit_balance,
+        creditLimit: creditProfile.max_credit_amount,
+        utilizationPercentage
+      };
+    } catch (error) {
+      logger.errorWithContext('CreditServiceEssentials - enforceCreditLimit', error);
+      throw error;
+    }
+  }
+
+  // Process credit transaction with enhanced enforcement
   static async processCreditTransaction(
     farmerId: string,
     productId: string,
     quantity: number,
     usedBy?: string
-  ): Promise<{ success: boolean; transactionId?: string; errorMessage?: string }> {
+  ): Promise<{ success: boolean; transactionId?: string; errorMessage?: string; enforcementDetails?: any }> {
     try {
       // Get product details
       const { data: productData, error: productError } = await supabase
@@ -443,18 +548,18 @@ export class CreditServiceEssentials {
         return { success: false, errorMessage: 'This product is not eligible for credit purchase' };
       }
 
-      // Check available credit
-      const creditInfo = await this.calculateCreditEligibility(farmerId);
-      if (!creditInfo.isEligible) {
-        return { success: false, errorMessage: 'Farmer is not eligible for credit' };
-      }
-
       // Calculate total amount
       const totalAmount = quantity * product.selling_price;
 
-      // Check if farmer has enough credit
-      if (creditInfo.availableCredit < totalAmount) {
-        return { success: false, errorMessage: 'Insufficient credit balance' };
+      // Enhanced credit limit enforcement
+      const enforcementResult = await this.enforceCreditLimit(farmerId, totalAmount, 'credit_used');
+      
+      if (!enforcementResult.isAllowed) {
+        return { 
+          success: false, 
+          errorMessage: enforcementResult.reason,
+          enforcementDetails: enforcementResult
+        };
       }
 
       // Get current credit profile
@@ -474,6 +579,14 @@ export class CreditServiceEssentials {
       }
 
       const profile = creditProfile as FarmerCreditProfile;
+
+      // Double-check balance before processing (race condition protection)
+      if (totalAmount > profile.current_credit_balance) {
+        return { 
+          success: false, 
+          errorMessage: `Insufficient credit balance. Available: ${formatCurrency(profile.current_credit_balance)}, Required: ${formatCurrency(totalAmount)}` 
+        };
+      }
 
       // Calculate new balance
       const newBalance = profile.current_credit_balance - totalAmount;
@@ -508,7 +621,7 @@ export class CreditServiceEssentials {
           product_name: product.name,
           quantity: quantity,
           unit_price: product.selling_price,
-          description: `Credit used for ${product.name} (${quantity} ${product.unit})`,
+          description: `Credit used for ${product.name} (${quantity} ${product.unit}). Utilization: ${enforcementResult.utilizationPercentage.toFixed(1)}%`,
           approved_by: usedBy,
           approval_status: 'approved'
         })
@@ -520,7 +633,11 @@ export class CreditServiceEssentials {
         throw transactionError;
       }
 
-      return { success: true, transactionId: (transactionData as CreditTransaction).id };
+      return { 
+        success: true, 
+        transactionId: (transactionData as CreditTransaction).id,
+        enforcementDetails: enforcementResult
+      };
     } catch (error) {
       logger.errorWithContext('CreditServiceEssentials - useCreditForPurchase', error);
       return { success: false, errorMessage: (error as Error).message };

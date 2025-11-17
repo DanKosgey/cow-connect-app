@@ -41,6 +41,7 @@ import { format, subDays } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart as RechartsPieChart, Pie, Cell, LineChart as RechartsLineChart, Line } from 'recharts';
 import { useStaffInfo } from '@/hooks/useStaffData';
+import { UserRole } from '@/types/auth.types';
 
 // Define interfaces at the top of the file
 interface Collection {
@@ -603,16 +604,16 @@ const EnhancedCollectorDashboard = () => {
   }
 
   // Show a message if user is authenticated but has no staff record or wrong role
-  if ((!staffInfo && user?.id && !staffLoading) || (userRole && userRole !== 'staff')) {
+  if ((!staffInfo && user?.id && !staffLoading) || (userRole && userRole !== UserRole.COLLECTOR)) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen p-4">
         <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8 text-center">
           <AlertCircle className="h-16 w-16 text-yellow-500 mx-auto mb-4" />
           <h2 className="text-2xl font-bold text-gray-900 mb-2">
-            {userRole && userRole !== 'staff' ? 'Staff Access Required' : 'Staff Record Not Found'}
+            {userRole && userRole !== UserRole.COLLECTOR ? 'Staff Access Required' : 'Staff Record Not Found'}
           </h2>
           <p className="text-gray-600 mb-6">
-            {userRole && userRole !== 'staff' 
+            {userRole && userRole !== UserRole.COLLECTOR 
               ? `Your account is authenticated as a ${userRole}, but this portal requires staff access.`
               : "Your account is authenticated, but no staff record was found."}
             Please contact your administrator to set up your staff profile or log in with a staff account.
@@ -640,434 +641,436 @@ const EnhancedCollectorDashboard = () => {
   console.log('Rendering dashboard with data:', { stats, collections, weeklyTrendData });
 
   return (
-    <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
-      {/* Header with Welcome, Notifications and Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Welcome, {staffName}</h1>
-          <p className="text-gray-600 mt-1 text-sm sm:text-base">
-            Today is {format(new Date(), 'EEEE, MMMM d, yyyy')}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2 items-center">
-          <div className="relative">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 md:p-6">
+      <div className="max-w-7xl mx-auto">
+        {/* Header with Welcome, Notifications and Actions */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Welcome, {staffName}</h1>
+            <p className="text-gray-600 mt-1 text-sm sm:text-base">
+              Today is {format(new Date(), 'EEEE, MMMM d, yyyy')}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2 items-center">
+            <div className="relative">
+              <Button 
+                variant="outline"
+                className="relative flex items-center gap-2 text-sm sm:text-base"
+                onClick={() => navigate('/collector/notifications')}
+              >
+                <Bell className="h-4 w-4" />
+                <span className="hidden xs:inline">Notifications</span>
+                {unreadCount > 0 && (
+                  <Badge className="absolute -top-2 -right-2 h-5 w-5 rounded-full p-0 flex items-center justify-center bg-red-500 text-white text-xs">
+                    {unreadCount}
+                  </Badge>
+                )}
+              </Button>
+            </div>
+            <Button 
+              className="flex items-center gap-2 text-sm sm:text-base"
+              onClick={() => navigate('/collector/collections/new')}
+            >
+              <ClipboardList className="h-4 w-4" />
+              <span className="hidden xs:inline">New Collection</span>
+              <span className="xs:hidden">New</span>
+            </Button>
             <Button 
               variant="outline"
-              className="relative flex items-center gap-2 text-sm sm:text-base"
-              onClick={() => navigate('/collector/notifications')}
+              className="flex items-center gap-2 text-sm sm:text-base"
+              onClick={() => navigate('/collector/payments/approval')}
             >
-              <Bell className="h-4 w-4" />
-              <span className="hidden xs:inline">Notifications</span>
-              {unreadCount > 0 && (
-                <Badge className="absolute -top-2 -right-2 h-5 w-5 rounded-full p-0 flex items-center justify-center bg-red-500 text-white text-xs">
-                  {unreadCount}
-                </Badge>
-              )}
+              <Wallet className="h-4 w-4" />
+              <span className="hidden xs:inline">Payments</span>
+              <span className="xs:hidden">Pay</span>
             </Button>
           </div>
-          <Button 
-            className="flex items-center gap-2 text-sm sm:text-base"
-            onClick={() => navigate('/collector/collections/new')}
-          >
-            <ClipboardList className="h-4 w-4" />
-            <span className="hidden xs:inline">New Collection</span>
-            <span className="xs:hidden">New</span>
-          </Button>
-          <Button 
-            variant="outline"
-            className="flex items-center gap-2 text-sm sm:text-base"
-            onClick={() => navigate('/collector/payments/approval')}
-          >
-            <Wallet className="h-4 w-4" />
-            <span className="hidden xs:inline">Payments</span>
-            <span className="xs:hidden">Pay</span>
-          </Button>
         </div>
-      </div>
 
-      {/* Performance Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-        <Card className="bg-card rounded-xl border shadow-sm hover:shadow-md transition-shadow duration-200 border-l-4 border-l-blue-500">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs sm:text-sm font-medium text-gray-600">Today's Collections</CardTitle>
-            <Milk className="h-5 w-5 sm:h-6 sm:w-6 text-blue-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 flex items-center">
-              {stats?.total_collections_today || 0}
-              <TrendingUp className="h-4 w-4 ml-2 text-green-500" />
-            </div>
-            <p className="text-xs text-gray-500 mt-1">
-              {stats?.total_liters_today?.toFixed(1) || 0}L collected
-            </p>
-          </CardContent>
-        </Card>
+        {/* Stats Overview */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6">
+          <Card className="bg-card rounded-xl border shadow-sm hover:shadow-md transition-shadow duration-200 border-l-4 border-l-blue-500">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-xs sm:text-sm font-medium text-gray-600">Today's Collections</CardTitle>
+              <Milk className="h-5 w-5 sm:h-6 sm:w-6 text-blue-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 flex items-center">
+                {stats?.total_collections_today || 0}
+                <TrendingUp className="h-4 w-4 ml-2 text-green-500" />
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                {stats?.total_liters_today?.toFixed(1) || 0}L collected
+              </p>
+            </CardContent>
+          </Card>
 
-        <Card className="bg-card rounded-xl border shadow-sm hover:shadow-md transition-shadow duration-200 border-l-4 border-l-green-500">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs sm:text-sm font-medium text-gray-600">Farmers Served</CardTitle>
-            <Users className="h-5 w-5 sm:h-6 sm:w-6 text-green-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 flex items-center">
-              {stats?.total_farmers_today || 0}
-              <Target className="h-4 w-4 ml-2 text-blue-500" />
-            </div>
-            <p className="text-xs text-gray-500 mt-1">
-              Unique farmers visited
-            </p>
-          </CardContent>
-        </Card>
+          <Card className="bg-card rounded-xl border shadow-sm hover:shadow-md transition-shadow duration-200 border-l-4 border-l-green-500">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-xs sm:text-sm font-medium text-gray-600">Farmers Served</CardTitle>
+              <Users className="h-5 w-5 sm:h-6 sm:w-6 text-green-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 flex items-center">
+                {stats?.total_farmers_today || 0}
+                <Target className="h-4 w-4 ml-2 text-blue-500" />
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Unique farmers visited
+              </p>
+            </CardContent>
+          </Card>
 
-        <Card className="bg-card rounded-xl border shadow-sm hover:shadow-md transition-shadow duration-200 border-l-4 border-l-purple-500">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs sm:text-sm font-medium text-gray-600">Earnings</CardTitle>
-            <Wallet className="h-5 w-5 sm:h-6 sm:w-6 text-purple-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 flex items-center">
-              KSh {stats?.total_earnings_today?.toFixed(2) || '0.00'}
-              <Zap className="h-4 w-4 ml-2 text-yellow-500" />
-            </div>
-            <p className="text-xs text-gray-500 mt-1">
-              Total value collected
-            </p>
-          </CardContent>
-        </Card>
+          <Card className="bg-card rounded-xl border shadow-sm hover:shadow-md transition-shadow duration-200 border-l-4 border-l-purple-500">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-xs sm:text-sm font-medium text-gray-600">Earnings</CardTitle>
+              <Wallet className="h-5 w-5 sm:h-6 sm:w-6 text-purple-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 flex items-center">
+                KSh {stats?.total_earnings_today?.toFixed(2) || '0.00'}
+                <Zap className="h-4 w-4 ml-2 text-yellow-500" />
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Total value collected
+              </p>
+            </CardContent>
+          </Card>
 
-        <Card className="bg-card rounded-xl border shadow-sm hover:shadow-md transition-shadow duration-200 border-l-4 border-l-yellow-500">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xs sm:text-sm font-medium text-gray-600">Avg Quality</CardTitle>
-            <Scale className="h-5 w-5 sm:h-6 sm:w-6 text-yellow-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 flex items-center">
-              {stats?.avg_quality_score?.toFixed(1) || '0.0'}/10
-              <Star className="h-4 w-4 ml-2 text-yellow-500" />
-            </div>
-            <p className="text-xs text-gray-500 mt-1">
-              Average quality score
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+          <Card className="bg-card rounded-xl border shadow-sm hover:shadow-md transition-shadow duration-200 border-l-4 border-l-yellow-500">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-xs sm:text-sm font-medium text-gray-600">Avg Quality</CardTitle>
+              <Scale className="h-5 w-5 sm:h-6 sm:w-6 text-yellow-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 flex items-center">
+                {stats?.avg_quality_score?.toFixed(1) || '0.0'}/10
+                <Star className="h-4 w-4 ml-2 text-yellow-500" />
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Average quality score
+              </p>
+            </CardContent>
+          </Card>
+        </div>
 
-      {/* Charts Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-        {/* Weekly Performance Chart */}
-        <Card className="bg-card rounded-xl border shadow-sm hover:shadow-md transition-shadow duration-200 lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
-              <BarChart3 className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
-              Weekly Performance
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="h-64 sm:h-72 md:h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={weeklyTrendData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis 
-                  dataKey="date" 
-                  tick={{ fontSize: 12 }}
-                />
-                <YAxis yAxisId="left" tick={{ fontSize: 12 }} />
-                <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12 }} />
-                <Tooltip 
-                  wrapperClassName="text-xs sm:text-sm"
-                  formatter={(value, name) => {
-                    if (name === 'collections') return [value, 'Collections'];
-                    if (name === 'liters') return [value, 'Liters'];
-                    if (name === 'earnings') return [`KSh ${value}`, 'Earnings'];
-                    return [value, name];
-                  }}
-                />
-                <Legend wrapperStyle={{ fontSize: '12px' }} />
-                <Area 
-                  yAxisId="left"
-                  type="monotone" 
-                  dataKey="collections" 
-                  stroke="#3b82f6" 
-                  fill="#3b82f6" 
-                  fillOpacity={0.2} 
-                  name="Collections"
-                />
-                <Area 
-                  yAxisId="left"
-                  type="monotone" 
-                  dataKey="liters" 
-                  stroke="#10b981" 
-                  fill="#10b981" 
-                  fillOpacity={0.2} 
-                  name="Liters"
-                />
-                <Area 
-                  yAxisId="right"
-                  type="monotone" 
-                  dataKey="earnings" 
-                  stroke="#8b5cf6" 
-                  fill="#8b5cf6" 
-                  fillOpacity={0.2} 
-                  name="Earnings (KSh)"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
+        {/* Charts Section */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+          {/* Weekly Performance Chart */}
+          <Card className="bg-card rounded-xl border shadow-sm hover:shadow-md transition-shadow duration-200 lg:col-span-2">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+                <BarChart3 className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+                Weekly Performance
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="h-64 sm:h-72 md:h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={weeklyTrendData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis 
+                    dataKey="date" 
+                    tick={{ fontSize: 12 }}
+                  />
+                  <YAxis yAxisId="left" tick={{ fontSize: 12 }} />
+                  <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12 }} />
+                  <Tooltip 
+                    wrapperClassName="text-xs sm:text-sm"
+                    formatter={(value, name) => {
+                      if (name === 'collections') return [value, 'Collections'];
+                      if (name === 'liters') return [value, 'Liters'];
+                      if (name === 'earnings') return [`KSh ${value}`, 'Earnings'];
+                      return [value, name];
+                    }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: '12px' }} />
+                  <Area 
+                    yAxisId="left"
+                    type="monotone" 
+                    dataKey="collections" 
+                    stroke="#3b82f6" 
+                    fill="#3b82f6" 
+                    fillOpacity={0.2} 
+                    name="Collections"
+                  />
+                  <Area 
+                    yAxisId="left"
+                    type="monotone" 
+                    dataKey="liters" 
+                    stroke="#10b981" 
+                    fill="#10b981" 
+                    fillOpacity={0.2} 
+                    name="Liters"
+                  />
+                  <Area 
+                    yAxisId="right"
+                    type="monotone" 
+                    dataKey="earnings" 
+                    stroke="#8b5cf6" 
+                    fill="#8b5cf6" 
+                    fillOpacity={0.2} 
+                    name="Earnings (KSh)"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
 
-        {/* Quality Distribution */}
-        <Card className="bg-card rounded-xl border shadow-sm hover:shadow-md transition-shadow duration-200">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
-              <PieChart className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
-              Quality Distribution
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="h-64 sm:h-72 md:h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <RechartsPieChart>
-                <Pie
-                  data={qualityDistributionData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ grade, percent }) => `${grade}: ${(percent * 100).toFixed(0)}%`}
-                  outerRadius={60}
-                  fill="#8884d8"
-                  dataKey="count"
-                >
-                  {qualityDistributionData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={QUALITY_COLORS[entry.grade as keyof typeof QUALITY_COLORS] || '#cccccc'} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(value) => [value, 'Collections']} />
-              </RechartsPieChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Recent Collections and Top Farmers */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-        <Card className="bg-card rounded-xl border shadow-sm hover:shadow-md transition-shadow duration-200">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
-              <Clock className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
-              Recent Collections
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {collections && collections.length > 0 ? (
-              <div className="space-y-3 sm:space-y-4">
-                {collections.slice(0, 5).map((collection) => (
-                  <div 
-                    key={collection.id} 
-                    className="flex flex-col sm:flex-row sm:items-center justify-between p-3 sm:p-4 border rounded-lg hover:bg-gray-50 transition-colors"
+          {/* Quality Distribution */}
+          <Card className="bg-card rounded-xl border shadow-sm hover:shadow-md transition-shadow duration-200">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+                <PieChart className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+                Quality Distribution
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="h-64 sm:h-72 md:h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <RechartsPieChart>
+                  <Pie
+                    data={qualityDistributionData}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ grade, percent }) => `${grade}: ${(percent * 100).toFixed(0)}%`}
+                    outerRadius={60}
+                    fill="#8884d8"
+                    dataKey="count"
                   >
-                    <div className="flex items-center gap-3 mb-2 sm:mb-0">
-                      <div className="p-2 rounded-full bg-blue-100">
-                        <Milk className="h-4 w-4 sm:h-5 sm:w-5 text-blue-500" />
-                      </div>
-                      <div>
-                        <div className="font-medium text-sm sm:text-base">
-                          {collection.farmers?.full_name || 'Unknown Farmer'}
+                    {qualityDistributionData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={QUALITY_COLORS[entry.grade as keyof typeof QUALITY_COLORS] || '#cccccc'} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(value) => [value, 'Collections']} />
+                </RechartsPieChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Recent Collections and Top Farmers */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+          <Card className="bg-card rounded-xl border shadow-sm hover:shadow-md transition-shadow duration-200">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+                <Clock className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+                Recent Collections
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {collections && collections.length > 0 ? (
+                <div className="space-y-3 sm:space-y-4">
+                  {collections.slice(0, 5).map((collection) => (
+                    <div 
+                      key={collection.id} 
+                      className="flex flex-col sm:flex-row sm:items-center justify-between p-3 sm:p-4 border rounded-lg hover:bg-gray-50 transition-colors"
+                    >
+                      <div className="flex items-center gap-3 mb-2 sm:mb-0">
+                        <div className="p-2 rounded-full bg-blue-100">
+                          <Milk className="h-4 w-4 sm:h-5 sm:w-5 text-blue-500" />
                         </div>
-                        <div className="text-xs text-gray-500">
-                          {collection.farmers?.id}
+                        <div>
+                          <div className="font-medium text-sm sm:text-base">
+                            {collection.farmers?.full_name || 'Unknown Farmer'}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {collection.farmers?.id}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="flex flex-wrap items-center gap-4">
+                        <div className="text-center">
+                          <div className="font-medium text-sm">{collection.liters}L</div>
+                          <div className="text-xs text-gray-500">Quantity</div>
+                        </div>
+                        
+                        <div className="text-center">
+                          <Badge className={`${getQualityGradeColor(collection.quality_grade || '')} text-xs`}>
+                            {collection.quality_grade || 'N/A'}
+                          </Badge>
+                          <div className="text-xs text-gray-500 mt-1">Quality</div>
+                        </div>
+                        
+                        <div className="text-center">
+                          <div className="font-medium text-sm">KSh {collection.total_amount?.toFixed(2)}</div>
+                          <div className="text-xs text-gray-500">Amount</div>
                         </div>
                       </div>
                     </div>
-                    
-                    <div className="flex flex-wrap items-center gap-4">
-                      <div className="text-center">
-                        <div className="font-medium text-sm">{collection.liters}L</div>
-                        <div className="text-xs text-gray-500">Quantity</div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-6 sm:py-8 text-gray-500">
+                  <Milk className="h-8 w-8 sm:h-12 sm:w-12 mx-auto text-gray-300 mb-2" />
+                  <p className="text-sm sm:text-base">No collections recorded today</p>
+                </div>
+              )}
+              
+              <div className="mt-4 sm:mt-6 text-center">
+                <Button 
+                  variant="outline" 
+                  onClick={() => navigate('/collector/collections/new')}
+                  className="flex items-center gap-2 mx-auto text-sm sm:text-base"
+                >
+                  <Plus className="h-4 w-4" />
+                  Record New Collection
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-card rounded-xl border shadow-sm hover:shadow-md transition-shadow duration-200">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+                <Award className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+                Top Farmers Today
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {stats?.top_farmers && stats.top_farmers.length > 0 ? (
+                <div className="space-y-3 sm:space-y-4">
+                  {stats.top_farmers.map((farmer, index) => (
+                    <div 
+                      key={index} 
+                      className="flex flex-col sm:flex-row sm:items-center justify-between p-3 sm:p-4 border rounded-lg hover:bg-gray-50 transition-colors"
+                    >
+                      <div className="flex items-center gap-3 mb-2 sm:mb-0">
+                        <div className="flex items-center justify-center w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-primary text-primary-foreground font-bold text-xs sm:text-sm">
+                          {index + 1}
+                        </div>
+                        <div>
+                          <div className="font-medium text-sm sm:text-base">{farmer.name}</div>
+                        </div>
                       </div>
                       
-                      <div className="text-center">
-                        <Badge className={`${getQualityGradeColor(collection.quality_grade || '')} text-xs`}>
-                          {collection.quality_grade || 'N/A'}
-                        </Badge>
-                        <div className="text-xs text-gray-500 mt-1">Quality</div>
-                      </div>
-                      
-                      <div className="text-center">
-                        <div className="font-medium text-sm">KSh {collection.total_amount?.toFixed(2)}</div>
-                        <div className="text-xs text-gray-500">Amount</div>
+                      <div className="flex flex-wrap items-center gap-4">
+                        <div className="text-center">
+                          <div className="font-medium text-sm">{farmer.liters}L</div>
+                          <div className="text-xs text-gray-500">Quantity</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="font-medium text-sm">{farmer.collections}</div>
+                          <div className="text-xs text-gray-500">Collections</div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-6 sm:py-8 text-gray-500">
-                <Milk className="h-8 w-8 sm:h-12 sm:w-12 mx-auto text-gray-300 mb-2" />
-                <p className="text-sm sm:text-base">No collections recorded today</p>
-              </div>
-            )}
-            
-            <div className="mt-4 sm:mt-6 text-center">
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-6 sm:py-8 text-gray-500">
+                  <Users className="h-8 w-8 sm:h-12 sm:w-12 mx-auto text-gray-300 mb-2" />
+                  <p className="text-sm sm:text-base">No farmer data available</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Quick Actions */}
+        <Card className="bg-card rounded-xl border shadow-sm hover:shadow-md transition-shadow duration-200">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+              <Activity className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+              Quick Actions
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4">
               <Button 
-                variant="outline" 
+                className="flex flex-col items-center justify-center h-20 sm:h-24 gap-1 sm:gap-2 text-xs sm:text-sm"
+                variant="outline"
                 onClick={() => navigate('/collector/collections/new')}
-                className="flex items-center gap-2 mx-auto text-sm sm:text-base"
               >
-                <Plus className="h-4 w-4" />
-                Record New Collection
+                <ClipboardList className="h-5 w-5 sm:h-6 sm:w-6" />
+                <span className="text-center">New Collection</span>
+              </Button>
+              <Button 
+                className="flex flex-col items-center justify-center h-20 sm:h-24 gap-1 sm:gap-2 text-xs sm:text-sm"
+                variant="outline"
+                onClick={() => navigate('/collector/collections/history')}
+              >
+                <Calendar className="h-5 w-5 sm:h-6 sm:w-6" />
+                <span className="text-center">Collection History</span>
+              </Button>
+              <Button 
+                className="flex flex-col items-center justify-center h-20 sm:h-24 gap-1 sm:gap-2 text-xs sm:text-sm"
+                variant="outline"
+                onClick={() => navigate('/collector/farmers')}
+              >
+                <Users className="h-5 w-5 sm:h-6 sm:w-6" />
+                <span className="text-center">Farmer Directory</span>
+              </Button>
+              <Button 
+                className="flex flex-col items-center justify-center h-20 sm:h-24 gap-1 sm:gap-2 text-xs sm:text-sm"
+                variant="outline"
+                onClick={() => navigate('/collector/payments/approval')}
+              >
+                <Wallet className="h-5 w-5 sm:h-6 sm:w-6" />
+                <span className="text-center">Payments</span>
+              </Button>
+              <Button 
+                className="flex flex-col items-center justify-center h-20 sm:h-24 gap-1 sm:gap-2 text-xs sm:text-sm"
+                variant="outline"
+                onClick={() => navigate('/collector/routes')}
+              >
+                <Route className="h-5 w-5 sm:h-6 sm:w-6" />
+                <span className="text-center">Routes</span>
+              </Button>
+              <Button 
+                className="flex flex-col items-center justify-center h-20 sm:h-24 gap-1 sm:gap-2 text-xs sm:text-sm"
+                variant="outline"
+                onClick={() => navigate('/collector/performance')}
+              >
+                <BarChart3 className="h-5 w-5 sm:h-6 sm:w-6" />
+                <span className="text-center">Performance</span>
+              </Button>
+              <Button 
+                className="flex flex-col items-center justify-center h-20 sm:h-24 gap-1 sm:gap-2 text-xs sm:text-sm"
+                variant="outline"
+                onClick={() => navigate('/collector/performance-tracking')}
+              >
+                <TrendingUp className="h-5 w-5 sm:h-6 sm:w-6" />
+                <span className="text-center hidden xs:inline">Performance Tracking</span>
+                <span className="text-center xs:hidden">Tracking</span>
+              </Button>
+              <Button 
+                className="flex flex-col items-center justify-center h-20 sm:h-24 gap-1 sm:gap-2 text-xs sm:text-sm"
+                variant="outline"
+                onClick={() => navigate('/collector/quality-control')}
+              >
+                <Beaker className="h-5 w-5 sm:h-6 sm:w-6" />
+                <span className="text-center">Quality Control</span>
+              </Button>
+              <Button 
+                className="flex flex-col items-center justify-center h-20 sm:h-24 gap-1 sm:gap-2 text-xs sm:text-sm"
+                variant="outline"
+                onClick={() => navigate('/collector/inventory')}
+              >
+                <Package className="h-5 w-5 sm:h-6 sm:w-6" />
+                <span className="text-center">Inventory</span>
+              </Button>
+              <Button 
+                className="flex flex-col items-center justify-center h-20 sm:h-24 gap-1 sm:gap-2 text-xs sm:text-sm"
+                variant="outline"
+                onClick={() => navigate('/collector/reports')}
+              >
+                <FileText className="h-5 w-5 sm:h-6 sm:w-6" />
+                <span className="text-center">Reports</span>
+              </Button>
+              <Button 
+                className="flex flex-col items-center justify-center h-20 sm:h-24 gap-1 sm:gap-2 text-xs sm:text-sm"
+                variant="outline"
+                onClick={() => navigate('/collector/analytics')}
+              >
+                <LineChart className="h-5 w-5 sm:h-6 sm:w-6" />
+                <span className="text-center hidden xs:inline">Detailed Analytics</span>
+                <span className="text-center xs:hidden">Analytics</span>
               </Button>
             </div>
           </CardContent>
         </Card>
-
-        <Card className="bg-card rounded-xl border shadow-sm hover:shadow-md transition-shadow duration-200">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
-              <Award className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
-              Top Farmers Today
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {stats?.top_farmers && stats.top_farmers.length > 0 ? (
-              <div className="space-y-3 sm:space-y-4">
-                {stats.top_farmers.map((farmer, index) => (
-                  <div 
-                    key={index} 
-                    className="flex flex-col sm:flex-row sm:items-center justify-between p-3 sm:p-4 border rounded-lg hover:bg-gray-50 transition-colors"
-                  >
-                    <div className="flex items-center gap-3 mb-2 sm:mb-0">
-                      <div className="flex items-center justify-center w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-primary text-primary-foreground font-bold text-xs sm:text-sm">
-                        {index + 1}
-                      </div>
-                      <div>
-                        <div className="font-medium text-sm sm:text-base">{farmer.name}</div>
-                      </div>
-                    </div>
-                    
-                    <div className="flex flex-wrap items-center gap-4">
-                      <div className="text-center">
-                        <div className="font-medium text-sm">{farmer.liters}L</div>
-                        <div className="text-xs text-gray-500">Quantity</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="font-medium text-sm">{farmer.collections}</div>
-                        <div className="text-xs text-gray-500">Collections</div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-6 sm:py-8 text-gray-500">
-                <Users className="h-8 w-8 sm:h-12 sm:w-12 mx-auto text-gray-300 mb-2" />
-                <p className="text-sm sm:text-base">No farmer data available</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
       </div>
-
-      {/* Quick Actions */}
-      <Card className="bg-card rounded-xl border shadow-sm hover:shadow-md transition-shadow duration-200">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
-            <Activity className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
-            Quick Actions
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4">
-            <Button 
-              className="flex flex-col items-center justify-center h-20 sm:h-24 gap-1 sm:gap-2 text-xs sm:text-sm"
-              variant="outline"
-              onClick={() => navigate('/collector/collections/new')}
-            >
-              <ClipboardList className="h-5 w-5 sm:h-6 sm:w-6" />
-              <span className="text-center">New Collection</span>
-            </Button>
-            <Button 
-              className="flex flex-col items-center justify-center h-20 sm:h-24 gap-1 sm:gap-2 text-xs sm:text-sm"
-              variant="outline"
-              onClick={() => navigate('/collector/collections/history')}
-            >
-              <Calendar className="h-5 w-5 sm:h-6 sm:w-6" />
-              <span className="text-center">Collection History</span>
-            </Button>
-            <Button 
-              className="flex flex-col items-center justify-center h-20 sm:h-24 gap-1 sm:gap-2 text-xs sm:text-sm"
-              variant="outline"
-              onClick={() => navigate('/collector/farmers')}
-            >
-              <Users className="h-5 w-5 sm:h-6 sm:w-6" />
-              <span className="text-center">Farmer Directory</span>
-            </Button>
-            <Button 
-              className="flex flex-col items-center justify-center h-20 sm:h-24 gap-1 sm:gap-2 text-xs sm:text-sm"
-              variant="outline"
-              onClick={() => navigate('/collector/payments/approval')}
-            >
-              <Wallet className="h-5 w-5 sm:h-6 sm:w-6" />
-              <span className="text-center">Payments</span>
-            </Button>
-            <Button 
-              className="flex flex-col items-center justify-center h-20 sm:h-24 gap-1 sm:gap-2 text-xs sm:text-sm"
-              variant="outline"
-              onClick={() => navigate('/collector/routes')}
-            >
-              <Route className="h-5 w-5 sm:h-6 sm:w-6" />
-              <span className="text-center">Routes</span>
-            </Button>
-            <Button 
-              className="flex flex-col items-center justify-center h-20 sm:h-24 gap-1 sm:gap-2 text-xs sm:text-sm"
-              variant="outline"
-              onClick={() => navigate('/collector/performance')}
-            >
-              <BarChart3 className="h-5 w-5 sm:h-6 sm:w-6" />
-              <span className="text-center">Performance</span>
-            </Button>
-            <Button 
-              className="flex flex-col items-center justify-center h-20 sm:h-24 gap-1 sm:gap-2 text-xs sm:text-sm"
-              variant="outline"
-              onClick={() => navigate('/collector/performance-tracking')}
-            >
-              <TrendingUp className="h-5 w-5 sm:h-6 sm:w-6" />
-              <span className="text-center hidden xs:inline">Performance Tracking</span>
-              <span className="text-center xs:hidden">Tracking</span>
-            </Button>
-            <Button 
-              className="flex flex-col items-center justify-center h-20 sm:h-24 gap-1 sm:gap-2 text-xs sm:text-sm"
-              variant="outline"
-              onClick={() => navigate('/collector/quality-control')}
-            >
-              <Beaker className="h-5 w-5 sm:h-6 sm:w-6" />
-              <span className="text-center">Quality Control</span>
-            </Button>
-            <Button 
-              className="flex flex-col items-center justify-center h-20 sm:h-24 gap-1 sm:gap-2 text-xs sm:text-sm"
-              variant="outline"
-              onClick={() => navigate('/collector/inventory')}
-            >
-              <Package className="h-5 w-5 sm:h-6 sm:w-6" />
-              <span className="text-center">Inventory</span>
-            </Button>
-            <Button 
-              className="flex flex-col items-center justify-center h-20 sm:h-24 gap-1 sm:gap-2 text-xs sm:text-sm"
-              variant="outline"
-              onClick={() => navigate('/collector/reports')}
-            >
-              <FileText className="h-5 w-5 sm:h-6 sm:w-6" />
-              <span className="text-center">Reports</span>
-            </Button>
-            <Button 
-              className="flex flex-col items-center justify-center h-20 sm:h-24 gap-1 sm:gap-2 text-xs sm:text-sm"
-              variant="outline"
-              onClick={() => navigate('/collector/analytics')}
-            >
-              <LineChart className="h-5 w-5 sm:h-6 sm:w-6" />
-              <span className="text-center hidden xs:inline">Detailed Analytics</span>
-              <span className="text-center xs:hidden">Analytics</span>
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 };

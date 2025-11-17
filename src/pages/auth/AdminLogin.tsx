@@ -8,12 +8,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import useToastNotifications from "@/hooks/useToastNotifications";
 import { useAuth } from "@/contexts/SimplifiedAuthContext";
 import { UserRole } from "@/types/auth.types";
+import AdminDebugLogger from "@/utils/adminDebugLogger";
 
 const AdminLogin = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const toast = useToastNotifications();
-  const { login, user, userRole, clearAllAuthData } = useAuth();
+  const { login, user, userRole, clearAuthCache } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loginData, setLoginData] = useState({
@@ -21,12 +22,21 @@ const AdminLogin = () => {
     password: ""
   });
 
+  AdminDebugLogger.log('AdminLogin component initialized', { 
+    hasUser: !!user, 
+    userRole: userRole,
+    locationState: location.state
+  });
+
   // Get the return URL from location state or default to dashboard
   const from = (location.state as any)?.from?.pathname || '/admin/dashboard';
+  AdminDebugLogger.log('Determined redirect path', { from });
 
   // Check if user is already logged in with correct role
   useEffect(() => {
+    AdminDebugLogger.log('User effect triggered', { user: !!user, userRole, navigateFrom: from });
     if (user && userRole === UserRole.ADMIN) {
+      AdminDebugLogger.success('User already authenticated as admin, redirecting to dashboard', { from });
       // Redirect immediately to dashboard
       navigate(from, { replace: true });
     }
@@ -35,65 +45,64 @@ const AdminLogin = () => {
   // Only clear auth data if there's a specific reason (e.g., coming from logout)
   useEffect(() => {
     const shouldClearAuth = (location.state as any)?.clearAuth;
+    AdminDebugLogger.log('Clear auth effect triggered', { shouldClearAuth, locationState: location.state });
     if (shouldClearAuth) {
+      AdminDebugLogger.log('Clearing auth cache due to location state');
       const clearAuth = async () => {
-        await clearAllAuthData();
+        await clearAuthCache();
+        AdminDebugLogger.success('Auth cache cleared');
       };
       clearAuth();
     }
-  }, [clearAllAuthData, location.state]);
+  }, [clearAuthCache, location.state]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    AdminDebugLogger.log('Form submitted, setting loading state to true');
     setLoading(true);
 
     try {
-      console.log('Attempting admin login for:', loginData.email);
+      AdminDebugLogger.log('Attempting admin login for:', loginData.email);
       
-      const { error } = await login({
+      // ✅ Pass role so auth context validates it's an admin
+      AdminDebugLogger.log('Calling login function with admin role...');
+      const { error, userRole: fetchedRole } = await login({
         email: loginData.email,
         password: loginData.password,
-        role: UserRole.ADMIN
+        role: UserRole.ADMIN // ✅ This tells auth to only allow admins
       });
+
+      AdminDebugLogger.log('Login function returned:', { error, fetchedRole });
 
       if (error) {
-        console.error('Login failed:', error);
+        AdminDebugLogger.error('Login failed:', error);
         toast.error('Access Denied', error.message || 'Please verify your admin credentials.');
         
-        // Reset button after 3 seconds as per user preference
+        // Reset button after 3 seconds
+        AdminDebugLogger.log('Setting timeout to reset button...');
         setTimeout(() => {
+          AdminDebugLogger.log('Resetting loading state after error');
           setLoading(false);
         }, 3000);
-      } else {
-        toast.success('Welcome Back, Admin', 'Accessing admin dashboard...');
-        // Redirect to the originally requested page or default dashboard
-        navigate(from, { replace: true });
+        return;
       }
+
+      // Success - auth context already verified it's an admin
+      AdminDebugLogger.success('Login successful, showing success toast and navigating...');
+      toast.success('Welcome Back, Admin', 'Accessing admin dashboard...');
+      navigate(from, { replace: true });
+      
     } catch (err) {
-      console.error('Authentication error:', err);
+      AdminDebugLogger.error('Authentication error:', err);
+      AdminDebugLogger.error('Authentication error stack:', err instanceof Error ? err.stack : 'No stack trace');
       toast.error('Authentication Error', err instanceof Error ? err.message : 'Failed to authenticate');
       
-      // Reset button after 3 seconds as per user preference
+      // Reset button after 3 seconds
+      AdminDebugLogger.log('Setting timeout to reset button after exception...');
       setTimeout(() => {
+        AdminDebugLogger.log('Resetting loading state after exception');
         setLoading(false);
       }, 3000);
-    }
-  };
-
-  // Add a function to handle manual sign out
-  const handleSignOut = async () => {
-    try {
-      await clearAllAuthData();
-      // Reset form
-      setLoginData({
-        email: "",
-        password: ""
-      });
-      // Show success message
-      toast.success('Signed Out', 'You have been successfully signed out.');
-    } catch (error) {
-      console.error('Sign out error:', error);
-      toast.error('Sign Out Error', 'Failed to sign out properly.');
     }
   };
 

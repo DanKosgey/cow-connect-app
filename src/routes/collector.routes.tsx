@@ -18,7 +18,7 @@ const CollectorDashboard = lazy(() => {
   return promise;
 });
 
-const CollectorLogin = lazy(() => import("../pages/auth/CollectorLogin"));
+const CollectorLogin = lazy(() => import("../pages/auth/CollectorOnlyLogin"));
 const CollectionForm = lazy(() => import("../components/collector/EnhancedCollectionForm"));
 const CollectionHistory = lazy(() => import("../components/collector/CollectionHistoryPage"));
 const DetailedAnalytics = lazy(() => import("../components/collector/DetailedAnalyticsDashboard"));
@@ -61,7 +61,7 @@ export default function CollectorRoutes() {
       <Routes>
         <Route path="login" element={<CollectorLogin />} />
         <Route path="/*" element={
-          <ProtectedRoute requiredRole={UserRole.STAFF}>
+          <ProtectedRoute requiredRole={UserRole.COLLECTOR}>
             <CollectorPortalLayout>
               <Routes>
                 <Route path="dashboard" element={<CollectorDashboard />} />

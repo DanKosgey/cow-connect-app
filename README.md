@@ -21,6 +21,40 @@ See [SECURITY_GUIDELINES.md](SECURITY_GUIDELINES.md) for detailed instructions.
 
 ---
 
+## 🛠️ **TROUBLESHOOTING**
+
+### **PostgreSQL Role "admin" Does Not Exist Error**
+
+If you encounter an error related to the PostgreSQL role "admin" not existing, please see the detailed fix guide:
+[FIX_GET_USER_ROLE_ISSUE.md](FIX_GET_USER_ROLE_ISSUE.md)
+
+This error occurs when the `get_user_role_secure` function tries to switch to a PostgreSQL role that hasn't been created. The fix involves:
+
+1. Creating the missing `admin` PostgreSQL role
+2. Updating the `get_user_role_secure` function to not use `SET ROLE`
+3. Setting up proper Row Level Security policies
+4. Granting necessary permissions
+
+To apply the fix:
+```bash
+# Run the PowerShell script (Windows)
+.\scripts\apply-role-fix.ps1
+
+# Or apply the migration manually
+supabase db push
+```
+
+### **User Roles Policy Conflicts**
+
+If you experience issues with user role access or permissions, there may be conflicting RLS policies on the `user_roles` table. Apply the consolidation migration:
+```
+supabase/migrations/20251117000200_consolidate_user_roles_policies.sql
+```
+
+This migration ensures all necessary policies are in place without conflicts.
+
+---
+
 ## 🎯 **SYSTEM OVERVIEW**
 
 Dairy Farmers of Trans-Nzoia is a comprehensive, enterprise-grade dairy management system that streamlines the entire dairy supply chain from farmer registration to payment processing. Built with modern technologies and designed for scalability, reliability, and user experience.

@@ -8,6 +8,12 @@ import { DashboardLayout } from '@/components/DashboardLayout';
 // Lazy load creditor components
 const CreditorLogin = lazy(() => import("../pages/auth/CreditorLogin"));
 const CreditorDashboard = lazy(() => import("../pages/creditor/CreditorDashboard"));
+const CreditManagement = lazy(() => import("../pages/creditor/CreditManagement"));
+const CreditReports = lazy(() => import("../pages/creditor/CreditReports"));
+const FarmerProfiles = lazy(() => import("../pages/creditor/FarmerProfiles"));
+const FarmerProfileDetail = lazy(() => import("../pages/creditor/FarmerProfileDetail"));
+const PaymentTracking = lazy(() => import("../pages/creditor/PaymentTracking"));
+const ProductManagement = lazy(() => import("../pages/creditor/ProductManagement"));
 
 export default function CreditorRoutes() {
   return (
@@ -19,6 +25,12 @@ export default function CreditorRoutes() {
             <DashboardLayout>
               <Routes>
                 <Route path="dashboard" element={<CreditorDashboard />} />
+                <Route path="credit-management" element={<CreditManagement />} />
+                <Route path="product-management" element={<ProductManagement />} />
+                <Route path="credit-reports" element={<CreditReports />} />
+                <Route path="farmer-profiles" element={<FarmerProfiles />} />
+                <Route path="farmer-profiles/:farmerId" element={<FarmerProfileDetail />} />
+                <Route path="payment-tracking" element={<PaymentTracking />} />
                 <Route index element={<CreditorDashboard />} />
                 <Route path="*" element={<Navigate to="/creditor/dashboard" replace />} />
               </Routes>

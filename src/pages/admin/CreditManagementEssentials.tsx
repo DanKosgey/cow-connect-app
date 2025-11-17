@@ -18,7 +18,11 @@ import {
   History,
   Settings,
   Pause,
-  Play
+  Play,
+  RefreshCw,
+  Bell,
+  Check,
+  X
 } from "lucide-react";
 import { formatCurrency } from "@/utils/formatters";
 import { Button } from "@/components/ui/button";
@@ -47,6 +51,18 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/components/ui/use-toast";
 import CreditApprovalQueue from "@/components/admin/CreditApprovalQueue";
 import CreditAnalyticsDashboard from "@/components/admin/CreditAnalyticsDashboard";
 
@@ -60,6 +76,10 @@ const CreditManagementEssentials = () => {
   const [activeTab, setActiveTab] = useState<'farmers' | 'approvals' | 'analytics'>('farmers');
   const [adjustCreditDialog, setAdjustCreditDialog] = useState<{open: boolean, farmerId: string, farmerName: string, currentLimit: number}>({open: false, farmerId: '', farmerName: '', currentLimit: 0});
   const [newCreditLimit, setNewCreditLimit] = useState(0);
+  const [rejectionDialog, setRejectionDialog] = useState<{open: boolean, requestId: string, farmerName: string}>({open: false, requestId: '', farmerName: ''});
+  const [rejectionReason, setRejectionReason] = useState("");
+  const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
+  const { toast } = useToast();
 
   const fetchData = useCallback(async () => {
     try {
@@ -118,6 +138,16 @@ const CreditManagementEssentials = () => {
 
       setFarmers(farmerCreditData);
       setFilteredFarmers(farmerCreditData);
+      
+      // Get pending requests count
+      const { count, error: countError } = await supabase
+        .from('credit_requests')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'pending');
+
+      if (!countError) {
+        setPendingRequestsCount(count || 0);
+      }
     } catch (err) {
       console.error("Error fetching credit management data:", err);
       setError("Failed to load credit management data");
@@ -160,17 +190,34 @@ const CreditManagementEssentials = () => {
   const handleGrantCredit = async (farmerId: string, farmerName: string) => {
     try {
       await CreditServiceEssentials.grantCreditToFarmer(farmerId);
-      alert(`Credit granted to ${farmerName}`);
+      toast({
+        title: "Credit Granted",
+        description: `Credit successfully granted to ${farmerName}`,
+      });
       // Refresh data
       fetchData();
     } catch (error: any) {
-      alert(`Error granting credit: ${error.message}`);
+      toast({
+        title: "Error",
+        description: `Error granting credit: ${error.message}`,
+        variant: "destructive",
+      });
     }
   };
 
   const handleAdjustCreditLimit = async () => {
     try {
       const { farmerId, currentLimit } = adjustCreditDialog;
+      
+      // Validate input
+      if (newCreditLimit <= 0) {
+        toast({
+          title: "Invalid Input",
+          description: "Credit limit must be greater than zero",
+          variant: "destructive",
+        });
+        return;
+      }
       
       // Update credit profile with new limit
       const { data: creditProfile, error: profileError } = await supabase
@@ -211,11 +258,18 @@ const CreditManagementEssentials = () => {
 
       setAdjustCreditDialog({open: false, farmerId: '', farmerName: '', currentLimit: 0});
       setNewCreditLimit(0);
-      alert('Credit limit adjusted successfully');
+      toast({
+        title: "Credit Limit Adjusted",
+        description: "Credit limit adjusted successfully",
+      });
       // Refresh data
       fetchData();
     } catch (error: any) {
-      alert(`Error adjusting credit limit: ${error.message}`);
+      toast({
+        title: "Error",
+        description: `Error adjusting credit limit: ${error.message}`,
+        variant: "destructive",
+      });
     }
   };
 
@@ -258,18 +312,69 @@ const CreditManagementEssentials = () => {
 
       if (transactionError) throw transactionError;
 
-      alert(`Credit ${freeze ? 'frozen' : 'unfrozen'} for ${farmerName}`);
+      toast({
+        title: "Credit Status Updated",
+        description: `Credit ${freeze ? 'frozen' : 'unfrozen'} for ${farmerName}`,
+      });
       // Refresh data
       fetchData();
     } catch (error: any) {
-      alert(`Error ${freeze ? 'freezing' : 'unfreezing'} credit: ${error.message}`);
+      toast({
+        title: "Error",
+        description: `Error ${freeze ? 'freezing' : 'unfreezing'} credit: ${error.message}`,
+        variant: "destructive",
+      });
     }
   };
 
   const handleViewHistory = async (farmerId: string) => {
     // This would typically open a modal with detailed history
-    // For now, we'll just show an alert
-    alert(`Viewing detailed transaction history for farmer ${farmerId}`);
+    // For now, we'll just show a toast
+    toast({
+      title: "View History",
+      description: `Viewing detailed transaction history for farmer ${farmerId}`,
+    });
+  };
+
+  const handleRejectRequest = async () => {
+    try {
+      if (!rejectionReason.trim()) {
+        toast({
+          title: "Reason Required",
+          description: "Please provide a reason for rejection",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const { error } = await supabase
+        .from('credit_requests')
+        .update({
+          status: 'rejected',
+          rejection_reason: rejectionReason,
+          approved_by: (await supabase.auth.getUser()).data.user?.id,
+          approved_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', rejectionDialog.requestId);
+
+      if (error) throw error;
+
+      setRejectionDialog({open: false, requestId: '', farmerName: ''});
+      setRejectionReason("");
+      toast({
+        title: "Request Rejected",
+        description: `Credit request for ${rejectionDialog.farmerName} has been rejected`,
+      });
+      // Refresh data
+      fetchData();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: `Error rejecting credit request: ${error.message}`,
+        variant: "destructive",
+      });
+    }
   };
 
   if (loading) {
@@ -292,6 +397,13 @@ const CreditManagementEssentials = () => {
             <h3 className="text-lg font-semibold text-red-900">Error</h3>
           </div>
           <p className="text-red-700">{error}</p>
+          <Button 
+            className="mt-4" 
+            onClick={fetchData}
+          >
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Retry
+          </Button>
         </div>
       </div>
     );
@@ -301,8 +413,22 @@ const CreditManagementEssentials = () => {
     <div className="min-h-screen bg-gray-50 p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Credit Management</h1>
-          <p className="text-gray-600 mt-2">Manage farmer credit limits and monitor credit usage</p>
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Credit Management</h1>
+              <p className="text-gray-600 mt-2">Manage farmer credit limits and monitor credit usage</p>
+            </div>
+            <div className="mt-4 md:mt-0 flex items-center gap-4">
+              <div className="flex items-center gap-2 bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full">
+                <Bell className="w-4 h-4" />
+                <span className="font-medium">{pendingRequestsCount} pending requests</span>
+              </div>
+              <Button variant="outline" onClick={fetchData}>
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Refresh
+              </Button>
+            </div>
+          </div>
           
           {/* Tabs */}
           <div className="flex border-b border-gray-200 mt-6">
@@ -314,11 +440,16 @@ const CreditManagementEssentials = () => {
               Farmers Overview
             </button>
             <button
-              className={`py-2 px-4 font-medium text-sm ${activeTab === 'approvals' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+              className={`py-2 px-4 font-medium text-sm relative ${activeTab === 'approvals' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
               onClick={() => setActiveTab('approvals')}
             >
               <ShoppingCart className="w-4 h-4 inline mr-2" />
               Approval Queue
+              {pendingRequestsCount > 0 && (
+                <span className="absolute -top-1 -right-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                  {pendingRequestsCount}
+                </span>
+              )}
             </button>
             <button
               className={`py-2 px-4 font-medium text-sm ${activeTab === 'analytics' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
@@ -556,6 +687,35 @@ const CreditManagementEssentials = () => {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Rejection Reason Dialog */}
+      <AlertDialog open={rejectionDialog.open} onOpenChange={(open) => {
+        setRejectionDialog({...rejectionDialog, open});
+        if (!open) setRejectionReason("");
+      }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reject Credit Request</AlertDialogTitle>
+            <AlertDialogDescription>
+              Please provide a reason for rejecting the credit request for {rejectionDialog.farmerName}.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="py-4">
+            <Textarea
+              placeholder="Enter rejection reason..."
+              value={rejectionReason}
+              onChange={(e) => setRejectionReason(e.target.value)}
+              rows={4}
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleRejectRequest} className="bg-red-600 hover:bg-red-700">
+              Reject Request
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

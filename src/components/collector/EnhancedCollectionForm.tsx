@@ -36,13 +36,17 @@ import {
   Gauge
 } from 'lucide-react';
 import { WarehouseService } from '@/services/warehouse-service';
-import { useStaffInfo, useApprovedFarmers } from '@/hooks/useStaffData';
+import { useStaffInfo } from '@/hooks/useStaffData';
+import { useApprovedFarmersData } from '@/hooks/useFarmersData'; // Updated import
 import { generateUUID } from '@/utils/uuid';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface Farmer {
   id: string;
   full_name: string;
   kyc_status: string;
+  registration_number?: string;
+  phone_number?: string;
 }
 
 interface QualityParameters {
@@ -58,8 +62,11 @@ const EnhancedCollectionForm = () => {
   const { user } = useAuth();
   const toast = useToastNotifications();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { staffInfo, loading: staffLoading } = useStaffInfo();
-  const { farmers, loading: farmersLoading } = useApprovedFarmers();
+  // Updated to use the new hook
+  const { data: farmersData, isLoading: farmersLoading } = useApprovedFarmersData();
+  const farmers = farmersData || [];
   
   // Form state
   const [selectedFarmer, setSelectedFarmer] = useState('');
@@ -355,6 +362,9 @@ const EnhancedCollectionForm = () => {
       setQualityGrade('B');
       setNotes('');
       setPhotoUrl('');
+      
+      // Invalidate and refetch farmer data to keep it fresh
+      queryClient.invalidateQueries({ queryKey: ['ADMIN_FARMERS', 'approved'] });
       
       // Refresh data
       fetchData();

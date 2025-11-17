@@ -64,9 +64,14 @@ export interface CreditTransactionAudit {
   farmer_name: string;
   transaction_type: 'credit_granted' | 'credit_used' | 'credit_repaid' | 'credit_adjusted' | 'settlement' | 'dispute_resolution';
   amount: number;
+  balance_before: number;
+  balance_after: number;
   status: 'pending' | 'approved' | 'rejected';
   approved_by?: string;
   notes?: string;
+  product_name?: string;
+  quantity?: number;
+  unit_price?: number;
 }
 
 export interface CreditSettingsConfig {
@@ -469,9 +474,14 @@ export class ComprehensiveCreditAnalyticsService {
           farmer_name: farmerMap.get(transaction.farmer_id) || 'Unknown Farmer',
           transaction_type: transaction.transaction_type as any,
           amount: transaction.amount,
+          balance_before: transaction.balance_before,
+          balance_after: transaction.balance_after,
           status: transaction.approval_status as 'pending' | 'approved' | 'rejected' || 'approved',
           approved_by: transaction.approved_by || undefined,
-          notes: transaction.description || undefined
+          notes: transaction.description || undefined,
+          product_name: transaction.product_name || undefined,
+          quantity: transaction.quantity || undefined,
+          unit_price: transaction.unit_price || undefined
         }));
 
         console.log("Final reports:", reports);

@@ -7,7 +7,11 @@ import {
   Search, 
   Filter,
   User,
-  Package
+  Package,
+  RefreshCw,
+  Bell,
+  Check,
+  X
 } from "lucide-react";
 import { formatCurrency } from "@/utils/formatters";
 import { Button } from "@/components/ui/button";
@@ -20,6 +24,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
 import { CreditRequestService } from "@/services/credit-request-service";
 
@@ -46,6 +61,8 @@ const CreditApprovalQueue = () => {
   const [filteredRequests, setFilteredRequests] = useState<CreditRequest[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("pending");
+  const [rejectionDialog, setRejectionDialog] = useState<{open: boolean, requestId: string, farmerName: string}>({open: false, requestId: '', farmerName: ''});
+  const [rejectionReason, setRejectionReason] = useState("");
   const { toast } = useToast();
 
   const fetchData = useCallback(async () => {
@@ -73,8 +90,8 @@ const CreditApprovalQueue = () => {
       // Enhance requests with farmer details
       const enhancedRequests = (data || []).map(request => ({
         ...request,
-        farmer_name: request.farmers?.profiles?.full_name || 'Unknown Farmer',
-        farmer_phone: request.farmers?.profiles?.phone || 'No phone'
+        farmer_name: request.farmer?.profiles?.full_name || 'Unknown Farmer',
+        farmer_phone: request.farmer?.profiles?.phone || 'No phone'
       }));
 
       setRequests(enhancedRequests);
@@ -93,6 +110,39 @@ const CreditApprovalQueue = () => {
 
   useEffect(() => {
     fetchData();
+    
+    // Set up real-time subscription for credit requests
+    const channel = supabase
+      .channel('credit_requests_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'credit_requests',
+        },
+        (payload) => {
+          console.log('New credit request:', payload.new);
+          fetchData();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'credit_requests',
+        },
+        (payload) => {
+          console.log('Credit request updated:', payload.new);
+          fetchData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [fetchData]);
 
   useEffect(() => {
@@ -127,13 +177,6 @@ const CreditApprovalQueue = () => {
         (await supabase.auth.getUser()).data.user?.id
       );
 
-      // Update local state
-      setRequests(requests.map(req => 
-        req.id === requestId 
-          ? { ...req, status: 'approved', approved_at: new Date().toISOString() } 
-          : req
-      ));
-
       toast({
         title: "Request Approved",
         description: `Credit request for ${request.farmer_name} has been approved`,
@@ -148,25 +191,33 @@ const CreditApprovalQueue = () => {
     }
   };
 
-  const handleRejectRequest = async (requestId: string, reason: string) => {
+  const handleRejectRequest = async () => {
     try {
+      if (!rejectionReason.trim()) {
+        toast({
+          title: "Reason Required",
+          description: "Please provide a reason for rejection",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const request = requests.find(r => r.id === rejectionDialog.requestId);
+      if (!request) return;
+
       await CreditRequestService.rejectCreditRequest(
-        requestId,
-        reason,
+        rejectionDialog.requestId,
+        rejectionReason,
         (await supabase.auth.getUser()).data.user?.id
       );
 
-      // Update local state
-      setRequests(requests.map(req => 
-        req.id === requestId 
-          ? { ...req, status: 'rejected', rejection_reason: reason, approved_at: new Date().toISOString() } 
-          : req
-      ));
-
       toast({
         title: "Request Rejected",
-        description: "Credit request has been rejected",
+        description: `Credit request for ${rejectionDialog.farmerName} has been rejected`,
       });
+      
+      setRejectionDialog({open: false, requestId: '', farmerName: ''});
+      setRejectionReason("");
     } catch (error) {
       console.error("Error rejecting credit request:", error);
       toast({
@@ -222,6 +273,11 @@ const CreditApprovalQueue = () => {
             <SelectItem value="rejected">Rejected</SelectItem>
           </SelectContent>
         </Select>
+        
+        <Button variant="outline" onClick={fetchData}>
+          <RefreshCw className="w-4 h-4 mr-2" />
+          Refresh
+        </Button>
       </div>
 
       {/* Requests List */}
@@ -290,12 +346,11 @@ const CreditApprovalQueue = () => {
                             size="sm" 
                             variant="outline" 
                             className="text-red-600 border-red-600 hover:bg-red-50"
-                            onClick={() => {
-                              const reason = prompt("Enter rejection reason:");
-                              if (reason) {
-                                handleRejectRequest(request.id, reason);
-                              }
-                            }}
+                            onClick={() => setRejectionDialog({
+                              open: true, 
+                              requestId: request.id, 
+                              farmerName: request.farmer_name || 'Unknown Farmer'
+                            })}
                           >
                             <XCircle className="w-4 h-4 mr-1" />
                             Reject
@@ -328,6 +383,35 @@ const CreditApprovalQueue = () => {
           </div>
         </CardContent>
       </Card>
+
+      {/* Rejection Reason Dialog */}
+      <AlertDialog open={rejectionDialog.open} onOpenChange={(open) => {
+        setRejectionDialog({...rejectionDialog, open});
+        if (!open) setRejectionReason("");
+      }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reject Credit Request</AlertDialogTitle>
+            <AlertDialogDescription>
+              Please provide a reason for rejecting the credit request for {rejectionDialog.farmerName}.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="py-4">
+            <Textarea
+              placeholder="Enter rejection reason..."
+              value={rejectionReason}
+              onChange={(e) => setRejectionReason(e.target.value)}
+              rows={4}
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleRejectRequest} className="bg-red-600 hover:bg-red-700">
+              Reject Request
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
