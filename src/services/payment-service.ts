@@ -271,8 +271,14 @@ export class PaymentService {
     }
   }
 
-  // Approval workflow method for admins (creates payment record for approval)
-  static async createPaymentForApproval(farmerId: string, collectionIds: string[], totalAmount: number, notes?: string, approvedBy?: string) {
+  // Create payment for approval (admin function to approve payments)
+  static async createPaymentForApproval(
+    farmerId: string, 
+    collectionIds: string[], 
+    totalAmount: number, 
+    notes?: string,
+    approvedBy?: string
+  ) {
     try {
       // First, get the staff ID from the staff table using the user ID
       let staffId = null;

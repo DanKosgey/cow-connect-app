@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useAuth } from '@/contexts/SimplifiedAuthContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -10,7 +11,14 @@ import { supabase } from '@/integrations/supabase/client';
 import type { RoutePoint } from '@/types/staff.types';
 import type { Database } from '@/types/database.types';
 
+interface RouteData {
+  routes: {
+    route_points: any[];
+  };
+}
+
 export default function RouteManagement() {
+  const { user } = useAuth();
   const { show, error: showError } = useToastNotifications();
   const [loading, setLoading] = useState(true);
   const [route, setRoute] = useState<RoutePoint[]>([]);
@@ -19,52 +27,42 @@ export default function RouteManagement() {
 
   useEffect(() => {
     const loadRoute = async () => {
+      if (!user?.id) {
+        setLoading(false);
+        return;
+      }
+
+      setLoading(true);
+      setNoRouteFound(false);
+      
       try {
-        const user = await supabase.auth.getUser();
-        if (!user.data.user?.id) throw new Error('Not authenticated');
-
-        interface RouteData {
-          routes: {
-            id: string;
-            name: string;
-            route_points: Array<{
-              id: string;
-              sequence_number: number;
-              collection_point: {
-                id: string;
-                name: string;
-                location: {
-                  coordinates: [number, number];
-                };
-              };
-            }>;
-          };
+        // Convert user ID to staff ID
+        let staffId = user.id;
+        const { data: staffData, error: staffError } = await supabase
+          .from('staff')
+          .select('id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+          
+        if (staffError) {
+          console.error('Error fetching staff data:', staffError);
+          throw staffError;
+        }
+        
+        if (staffData?.id) {
+          staffId = staffData.id;
+        } else {
+          console.warn('Staff record not found for user ID, using user ID directly', user.id);
         }
 
-        interface Collection {
-          farmer_id: string;
-          collection_point_id: string;
-        }
-
-        interface AssignedFarmer {
-          farmer_id: string;
-          full_name: string;
-          collection_point_id: string;
-        }
-
-        // Load route points with collection status
-        // Try different approaches to resolve the ambiguous relationship issue
-        let staffRoutes: any = null;
+        // Try approach 1: Direct join query (may fail due to ambiguous relationships)
+        let staffRoutes: any[] = [];
         let routeError: any = null;
         
-        // For debugging - you can uncomment this in development
-        // console.log('Attempting to load route data for staff ID:', user.data.user.id);
-        
-        // Try approach 1: Using the constraint name explicitly
         const result1 = await supabase
           .from('staff_routes')
           .select(`
-            routes!staff_routes_route_id_fkey (
+            routes (
               id,
               name,
               route_points (
@@ -78,26 +76,18 @@ export default function RouteManagement() {
               )
             )
           `)
-          .eq('staff_id', user.data.user.id)
+          .eq('staff_id', staffId) // Use the converted staff ID
           .eq('is_active', true)
           .limit(1);
-          
-        // For debugging - you can uncomment this in development
-        // console.log('Result from approach 1:', result1);
-          
+
         if (result1.error && result1.error.code === 'PGRST201') {
-          // For debugging - you can uncomment this in development
-          // console.log('First approach failed with PGRST201, trying alternative approach');
           // Try approach 2: Fetch staff_routes first, then fetch routes separately
           const staffRoutesResult = await supabase
             .from('staff_routes')
             .select('route_id')
-            .eq('staff_id', user.data.user.id)
+            .eq('staff_id', staffId)
             .eq('is_active', true)
             .limit(1);
-            
-          // For debugging - you can uncomment this in development
-          // console.log('Staff routes result:', staffRoutesResult);
             
           if (staffRoutesResult.error) {
             throw staffRoutesResult.error;
@@ -111,8 +101,6 @@ export default function RouteManagement() {
           }
           
           const routeId = staffRoutesResult.data[0].route_id;
-          // For debugging - you can uncomment this in development
-          // console.log('Found route ID:', routeId);
           
           if (!routeId) {
             setNoRouteFound(true);
@@ -138,9 +126,7 @@ export default function RouteManagement() {
               )
             `)
             .eq('id', routeId);
-            // Removed .single() to avoid PGRST116 error when no records found
-            
-          // Check if we have data and handle accordingly
+
           const routeData = routeResult.data && routeResult.data.length > 0 ? routeResult.data[0] : null;
           
           if (routeResult.error) {
@@ -161,9 +147,6 @@ export default function RouteManagement() {
         }
 
         if (routeError) throw routeError;
-        
-        // For debugging - you can uncomment this in development
-        // console.log('Final staffRoutes data:', staffRoutes);
         
         // Check if we have any routes
         if (!staffRoutes || staffRoutes.length === 0) {
@@ -192,7 +175,7 @@ export default function RouteManagement() {
         const { data: collections, error: collectionsError } = await supabase
           .from('collections')
           .select('farmer_id, collection_date')
-          .eq('staff_id', user.data.user.id)
+          .eq('staff_id', staffId)
           .gte('collection_date', today.toISOString())
           .lt('collection_date', tomorrow.toISOString());
 
@@ -200,7 +183,7 @@ export default function RouteManagement() {
 
         // Load assigned farmers using the RPC function
         const { data: farmers, error: farmersError } = await supabase
-          .rpc('get_assigned_farmers', { staff_id: user.data.user.id });
+          .rpc('get_assigned_farmers', { staff_id: staffId });
 
         if (farmersError) throw farmersError;
 
@@ -260,7 +243,7 @@ export default function RouteManagement() {
     };
 
     loadRoute();
-  }, []);
+  }, [user, showError]);
 
   const getStatusIcon = (status: string) => {
     switch (status) {

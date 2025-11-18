@@ -51,11 +51,12 @@ export const useFarmerCollectionsData = (farmerId: string | null, timeframe: str
           startDate = subDays(now, 30);
       }
 
-      // Fetch collections with date filtering
+      // Fetch collections with date filtering - only show approved collections
       const { data: collectionsData, error } = await supabase
         .from('collections')
         .select('*')
         .eq('farmer_id', farmerId)
+        .eq('approved_for_company', true)
         .gte('collection_date', startDate.toISOString())
         .order('collection_date', { ascending: false });
 

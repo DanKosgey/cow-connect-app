@@ -282,13 +282,10 @@ export default function CollectionHistoryPage() {
   };
 
   const getStatusIcon = (status: string) => {
+    // Simplified status icons for collectors - hide approval details
     switch (status) {
       case 'Collected':
         return <CheckCircle className="h-4 w-4 text-green-500" />;
-      case 'Pending':
-        return <Clock className="h-4 w-4 text-yellow-500" />;
-      case 'Rejected':
-        return <XCircle className="h-4 w-4 text-red-500" />;
       default:
         return <Clock className="h-4 w-4 text-gray-500" />;
     }
@@ -471,7 +468,7 @@ export default function CollectionHistoryPage() {
                         <td className="py-3 px-4">
                           <div className="flex items-center gap-2">
                             {getStatusIcon(collection.status)}
-                            <span>{collection.status}</span>
+                            <span>Recorded</span> {/* Hide actual status from collectors */}
                           </div>
                         </td>
                       </tr>

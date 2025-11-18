@@ -35,6 +35,8 @@ export default function MilkApprovalRoutes() {
             </MilkApprovalDashboardLayout>
           </ProtectedRoute>
         } />
+        {/* Redirect any other paths to login */}
+        <Route path="*" element={<Navigate to="/milk-approval/login" replace />} />
       </Routes>
     </Suspense>
   );

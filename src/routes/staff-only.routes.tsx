@@ -11,6 +11,7 @@ const StaffPortalDashboard = lazy(() => import("../pages/staff-portal/StaffPorta
 const MilkApprovalPage = lazy(() => import("../pages/staff-portal/MilkApprovalPage"));
 const VarianceReportPage = lazy(() => import("../pages/staff-portal/VarianceReportPage"));
 const CollectorPerformanceDashboard = lazy(() => import("../pages/staff-portal/CollectorPerformanceDashboard"));
+const BatchApprovalPage = lazy(() => import("../pages/staff-portal/BatchApprovalPage"));
 
 export default function StaffOnlyRoutes() {
   return (
@@ -23,6 +24,7 @@ export default function StaffOnlyRoutes() {
               <Routes>
                 <Route path="dashboard" element={<StaffPortalDashboard />} />
                 <Route path="milk-approval" element={<MilkApprovalPage />} />
+                <Route path="batch-approval" element={<BatchApprovalPage />} />
                 <Route path="variance-reports" element={<VarianceReportPage />} />
                 <Route path="collector-performance" element={<CollectorPerformanceDashboard />} />
                 <Route index element={<StaffPortalDashboard />} />
@@ -31,6 +33,8 @@ export default function StaffOnlyRoutes() {
             </StaffPortalLayout>
           </ProtectedRoute>
         } />
+        {/* Redirect any other paths to login */}
+        <Route path="*" element={<Navigate to="/staff-only/login" replace />} />
       </Routes>
     </Suspense>
   );

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { MilkApprovalService } from '@/services/milk-approval-service';
+import { supabase } from '@/integrations/supabase/client';
 import useToastNotifications from '@/hooks/useToastNotifications';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -25,6 +26,8 @@ import {
 import { format } from 'date-fns';
 import RefreshButton from '@/components/ui/RefreshButton';
 import { Badge } from '@/components/ui/badge';
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
+import * as RechartsPrimitive from "recharts";
 
 interface VarianceRecord {
   id: string;
@@ -51,6 +54,13 @@ const VarianceReportPage: React.FC = () => {
   const [varianceRecords, setVarianceRecords] = useState<VarianceRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [timeframe, setTimeframe] = useState<'week' | 'month' | 'quarter'>('month');
+  const [summaryData, setSummaryData] = useState({
+    totalCollections: 0,
+    positiveVariances: 0,
+    negativeVariances: 0,
+    totalPenalties: 0
+  });
+  const [topCollectors, setTopCollectors] = useState<any[]>([]);
 
   useEffect(() => {
     fetchVarianceReports();
@@ -59,39 +69,80 @@ const VarianceReportPage: React.FC = () => {
   const fetchVarianceReports = async () => {
     setIsLoading(true);
     try {
-      // In a real implementation, we would filter by timeframe
-      // For now, we'll create a mock implementation to demonstrate the UI
-      // In a complete implementation, we would fetch from the database
+      // Calculate date range based on timeframe
+      const now = new Date();
+      let startDate = new Date();
       
-      // Mock data for demonstration
-      const mockData: VarianceRecord[] = [
-        {
-          id: '1',
-          collection_id: 'COL-001',
-          company_received_liters: 100.5,
-          variance_liters: 2.5,
-          variance_percentage: 2.5,
-          variance_type: 'positive',
-          penalty_amount: 25.0,
-          approved_at: new Date().toISOString(),
-          farmers: { full_name: 'John Doe' },
-          staff: { profiles: { full_name: 'Collector One' } }
-        },
-        {
-          id: '2',
-          collection_id: 'COL-002',
-          company_received_liters: 85.0,
-          variance_liters: -1.2,
-          variance_percentage: -1.4,
-          variance_type: 'negative',
-          penalty_amount: 10.0,
-          approved_at: new Date(Date.now() - 86400000).toISOString(),
-          farmers: { full_name: 'Jane Smith' },
-          staff: { profiles: { full_name: 'Collector Two' } }
-        }
-      ];
+      switch (timeframe) {
+        case 'week':
+          startDate.setDate(now.getDate() - 7);
+          break;
+        case 'month':
+          startDate.setMonth(now.getMonth() - 1);
+          break;
+        case 'quarter':
+          startDate.setMonth(now.getMonth() - 3);
+          break;
+      }
       
-      setVarianceRecords(mockData);
+      // Fetch variance records
+      const { data: varianceData, error: varianceError } = await supabase
+        .from('milk_approvals')
+        .select(`
+          id,
+          collection_id,
+          company_received_liters,
+          variance_liters,
+          variance_percentage,
+          variance_type,
+          penalty_amount,
+          approved_at,
+          collections!milk_approvals_collection_id_fkey (
+            farmers (
+              full_name
+            )
+          ),
+          staff!milk_approvals_staff_id_fkey (
+            profiles (
+              full_name
+            )
+          )
+        `)
+        .gte('approved_at', startDate.toISOString())
+        .order('approved_at', { ascending: false })
+        .limit(50);
+
+      if (varianceError) throw varianceError;
+      
+      // Transform data to match interface
+      const transformedData = (varianceData || []).map(item => ({
+        ...item,
+        farmers: item.collections?.farmers || null,
+        staff: item.staff || null
+      }));
+      
+      setVarianceRecords(transformedData);
+      
+      // Calculate summary data
+      const totalCollections = varianceData?.length || 0;
+      const positiveVariances = varianceData?.filter(v => v.variance_type === 'positive').length || 0;
+      const negativeVariances = varianceData?.filter(v => v.variance_type === 'negative').length || 0;
+      const totalPenalties = varianceData?.reduce((sum, v) => sum + (v.penalty_amount || 0), 0) || 0;
+      
+      setSummaryData({
+        totalCollections,
+        positiveVariances,
+        negativeVariances,
+        totalPenalties
+      });
+      
+      // Fetch top collectors data
+      const { data: collectorData, error: collectorError } = await supabase
+        .rpc('get_top_collectors_by_performance', { p_limit: 5 });
+      
+      if (!collectorError) {
+        setTopCollectors(collectorData || []);
+      }
     } catch (error: any) {
       console.error('Error fetching variance reports:', error);
       showError('Error', String(error?.message || 'Failed to fetch variance reports'));
@@ -170,7 +221,7 @@ const VarianceReportPage: React.FC = () => {
             <Milk className="h-4 w-4 text-blue-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">142</div>
+            <div className="text-2xl font-bold">{summaryData.totalCollections}</div>
             <p className="text-xs text-muted-foreground">+12% from last month</p>
           </CardContent>
         </Card>
@@ -181,7 +232,7 @@ const VarianceReportPage: React.FC = () => {
             <TrendingUp className="h-4 w-4 text-green-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">24</div>
+            <div className="text-2xl font-bold">{summaryData.positiveVariances}</div>
             <p className="text-xs text-muted-foreground">Average +2.3% variance</p>
           </CardContent>
         </Card>
@@ -192,7 +243,7 @@ const VarianceReportPage: React.FC = () => {
             <TrendingDown className="h-4 w-4 text-red-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">18</div>
+            <div className="text-2xl font-bold">{summaryData.negativeVariances}</div>
             <p className="text-xs text-muted-foreground">Average -1.8% variance</p>
           </CardContent>
         </Card>
@@ -203,7 +254,7 @@ const VarianceReportPage: React.FC = () => {
             <Activity className="h-4 w-4 text-purple-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">KSh 2,450</div>
+            <div className="text-2xl font-bold">KSh {summaryData.totalPenalties.toFixed(2)}</div>
             <p className="text-xs text-muted-foreground">KSh 15.20 per variance</p>
           </CardContent>
         </Card>
@@ -224,7 +275,9 @@ const VarianceReportPage: React.FC = () => {
               <div className="text-center">
                 <PieChart className="h-16 w-16 mx-auto text-muted-foreground" />
                 <p className="mt-2 text-muted-foreground">Variance distribution chart</p>
-                <p className="text-sm text-muted-foreground">Positive: 57%, Negative: 43%</p>
+                <p className="text-sm text-muted-foreground">
+                  Positive: {summaryData.positiveVariances}, Negative: {summaryData.negativeVariances}
+                </p>
               </div>
             </div>
           </CardContent>
@@ -235,15 +288,17 @@ const VarianceReportPage: React.FC = () => {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <BarChart3 className="h-5 w-5" />
-              Variance Trend
+              Collector Performance
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="h-64 flex items-center justify-center">
               <div className="text-center">
                 <BarChart3 className="h-16 w-16 mx-auto text-muted-foreground" />
-                <p className="mt-2 text-muted-foreground">Variance trend over time</p>
-                <p className="text-sm text-muted-foreground">Showing {timeframe} data</p>
+                <p className="mt-2 text-muted-foreground">Top collector performance</p>
+                <p className="text-sm text-muted-foreground">
+                  Showing {Math.min(5, topCollectors.length)} top collectors
+                </p>
               </div>
             </div>
           </CardContent>
@@ -272,30 +327,26 @@ const VarianceReportPage: React.FC = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                <TableRow>
-                  <TableCell className="font-medium">Collector One</TableCell>
-                  <TableCell>42</TableCell>
-                  <TableCell className="text-green-600">+1.2%</TableCell>
-                  <TableCell>8</TableCell>
-                  <TableCell>3</TableCell>
-                  <TableCell>KSh 320</TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell className="font-medium">Collector Two</TableCell>
-                  <TableCell>38</TableCell>
-                  <TableCell className="text-red-600">-0.8%</TableCell>
-                  <TableCell>5</TableCell>
-                  <TableCell>6</TableCell>
-                  <TableCell>KSh 480</TableCell>
-                </TableRow>
-                <TableRow>
-                  <TableCell className="font-medium">Collector Three</TableCell>
-                  <TableCell>35</TableCell>
-                  <TableCell className="text-green-600">+0.5%</TableCell>
-                  <TableCell>4</TableCell>
-                  <TableCell>2</TableCell>
-                  <TableCell>KSh 180</TableCell>
-                </TableRow>
+                {topCollectors.length > 0 ? (
+                  topCollectors.map((collector, index) => (
+                    <TableRow key={collector.staff_id || index}>
+                      <TableCell className="font-medium">{collector.collector_name || 'Unknown Collector'}</TableCell>
+                      <TableCell>{collector.total_collections || 0}</TableCell>
+                      <TableCell className={collector.average_variance_percentage >= 0 ? 'text-green-600' : 'text-red-600'}>
+                        {collector.average_variance_percentage?.toFixed(2) || '0.00'}%
+                      </TableCell>
+                      <TableCell>{collector.positive_variances || 0}</TableCell>
+                      <TableCell>{collector.negative_variances || 0}</TableCell>
+                      <TableCell>KSh {collector.total_penalty_amount?.toFixed(2) || '0.00'}</TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center py-8">
+                      <p className="text-muted-foreground">No collector performance data found</p>
+                    </TableCell>
+                  </TableRow>
+                )}
               </TableBody>
             </Table>
           </div>

@@ -81,6 +81,8 @@ export default function CollectorOnlyRoutes() {
             </CollectorPortalLayout>
           </ProtectedRoute>
         } />
+        {/* Redirect any other paths to login */}
+        <Route path="*" element={<Navigate to="/collector-only/login" replace />} />
       </Routes>
     </Suspense>
   );

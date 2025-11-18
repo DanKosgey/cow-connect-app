@@ -54,6 +54,7 @@ const CreditSettings = lazy(() => import('@/components/admin/CreditSettings'));
 const PenaltyManagementPage = lazy(() => import('@/pages/admin/PenaltyManagementPage'));
 const ErrorReportingDashboard = lazy(() => import('@/pages/admin/ErrorReportingDashboard'));
 const VarianceReportingDashboard = lazy(() => import('@/pages/admin/VarianceReportingDashboard'));
+const VarianceInsightsDashboard = lazy(() => import('@/pages/admin/VarianceInsightsDashboard'));
 
 export const adminRoutes = [
   { path: '/admin/login', element: <AdminLogin /> },
@@ -85,6 +86,8 @@ export const adminRoutes = [
   { path: '/admin/credit-settings', element: <CreditSettings /> },
   { path: '/admin/error-reporting', element: <ErrorReportingDashboard /> },
   { path: '/admin/variance-reporting', element: <VarianceReportingDashboard /> },
+  { path: '/admin/variance-insights', element: <VarianceInsightsDashboard /> },
+  { path: '/admin/penalty-management', element: <PenaltyManagementPage /> },
   { path: '/admin', element: <Navigate to="/admin/dashboard" replace /> },
 ];
 
@@ -172,6 +175,8 @@ export default function AdminRoutes() {
                 <Route path="credit-settings" element={<CreditSettings />} />
                 <Route path="error-reporting" element={<ErrorReportingDashboard />} />
                 <Route path="variance-reporting" element={<VarianceReportingDashboard />} />
+                <Route path="variance-insights" element={<VarianceInsightsDashboard />} />
+                <Route path="penalty-management" element={<PenaltyManagementPage />} />
                 <Route index element={<Navigate to="dashboard" replace />} />
                 <Route path="*" element={<Navigate to="/admin" replace />} />
               </Routes>
@@ -255,13 +260,13 @@ export default function AdminRoutes() {
             </PageTransition>
           </ProtectedRoute>
         } />
-          <Route path="notifications" element={
-            <ProtectedRoute requiredRole={UserRole.ADMIN}>
-              <PageTransition>
-                <AdminNotifications />
-              </PageTransition>
-            </ProtectedRoute>
-          } />
+        <Route path="notifications" element={
+          <ProtectedRoute requiredRole={UserRole.ADMIN}>
+            <PageTransition>
+              <AdminNotifications />
+            </PageTransition>
+          </ProtectedRoute>
+        } />
         <Route path="analytics" element={
           <ProtectedRoute requiredRole={UserRole.ADMIN}>
             <PageTransition>

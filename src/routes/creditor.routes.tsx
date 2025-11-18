@@ -37,6 +37,8 @@ export default function CreditorRoutes() {
             </DashboardLayout>
           </ProtectedRoute>
         } />
+        {/* Redirect any other paths to login */}
+        <Route path="*" element={<Navigate to="/creditor/login" replace />} />
       </Routes>
     </Suspense>
   );

@@ -993,7 +993,7 @@ const VarianceReportingDashboard: React.FC = () => {
                       <p className="text-muted-foreground">No collector performance data found</p>
                     </TableCell>
                   </TableRow>
-                )
+                )}
               </TableBody>
             </Table>
           </div>

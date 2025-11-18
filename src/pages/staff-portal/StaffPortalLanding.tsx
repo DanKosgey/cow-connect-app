@@ -15,7 +15,8 @@ import {
   Wallet,
   AlertCircle,
   Scale,
-  Award
+  Award,
+  CheckCircle
 } from 'lucide-react';
 import { useAuth } from '@/contexts/SimplifiedAuthContext';
 import RefreshButton from '@/components/ui/RefreshButton';
@@ -27,7 +28,7 @@ interface StaffStats {
   total_earnings_today: number;
 }
 
-export default function StaffPortalLanding() {
+const StaffPortalLanding: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { useStaffStats } = useStaffPortalData();
@@ -268,7 +269,36 @@ export default function StaffPortalLanding() {
             </Button>
           </CardContent>
         </Card>
+        
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <CheckCircle className="h-5 w-5" />
+              Batch Processing
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Button 
+              onClick={() => navigate('/staff-only/batch-approval')}
+              className="w-full justify-start gap-2"
+              variant="outline"
+            >
+              <Users className="h-4 w-4" />
+              Batch Approve Collections
+            </Button>
+            <Button 
+              onClick={() => navigate('/staff-only/batch-variance-reports')}
+              className="w-full justify-start gap-2"
+              variant="outline"
+            >
+              <TrendingUp className="h-4 w-4" />
+              Batch Variance Reports
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
-}
+};
+
+export default StaffPortalLanding;

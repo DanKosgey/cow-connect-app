@@ -97,6 +97,25 @@ export class MilkApprovalService {
         throw new Error('Collection not found');
       }
 
+      // Convert user ID to staff ID
+      let staffId = approvalData.staffId;
+      const { data: staffData, error: staffError } = await supabase
+        .from('staff')
+        .select('id')
+        .eq('user_id', approvalData.staffId)
+        .maybeSingle();
+        
+      if (staffError) {
+        logger.errorWithContext('MilkApprovalService - fetching staff data', staffError);
+        throw staffError;
+      }
+      
+      if (staffData?.id) {
+        staffId = staffData.id;
+      } else {
+        logger.warn('Staff record not found for user ID, using user ID directly', approvalData.staffId);
+      }
+
       // Calculate variance
       const varianceData = this.calculateVariance(
         collection.liters, 
@@ -111,7 +130,7 @@ export class MilkApprovalService {
         .from('milk_approvals')
         .insert({
           collection_id: approvalData.collectionId,
-          staff_id: approvalData.staffId,
+          staff_id: staffId, // Use the converted staff ID
           company_received_liters: approvalData.companyReceivedLiters,
           variance_liters: varianceData.varianceLiters,
           variance_percentage: varianceData.variancePercentage,
@@ -160,7 +179,7 @@ export class MilkApprovalService {
       // Log audit entry
       await this.logAuditEntry(
         approvalData.collectionId,
-        approvalData.staffId,
+        staffId, // Use the converted staff ID
         varianceData,
         penaltyAmount,
         approval.id
@@ -169,6 +188,55 @@ export class MilkApprovalService {
       return { success: true, data: approval };
     } catch (error) {
       logger.errorWithContext('MilkApprovalService - approveMilkCollection', error);
+      return { success: false, error };
+    }
+  }
+
+  /**
+   * Batch approve all collections for a collector on a specific date
+   */
+  static async batchApproveCollections(
+    staffId: string,
+    collectorId: string,
+    collectionDate: string,
+    defaultReceivedLiters?: number
+  ) {
+    try {
+      // Validate inputs
+      if (!staffId || !collectorId || !collectionDate) {
+        return { success: false, error: new Error('Staff ID, collector ID, and collection date are required') };
+      }
+
+      // Validate default received liters if provided
+      if (defaultReceivedLiters !== undefined && defaultReceivedLiters < 0) {
+        return { success: false, error: new Error('Default received liters cannot be negative') };
+      }
+
+      // Call the database function for batch approval
+      const { data, error } = await supabase
+        .rpc('batch_approve_collector_collections', {
+          p_staff_id: staffId,
+          p_collector_id: collectorId,
+          p_collection_date: collectionDate,
+          p_default_received_liters: defaultReceivedLiters
+        });
+
+      if (error) {
+        logger.errorWithContext('MilkApprovalService - batch approving collections', error);
+        return { success: false, error };
+      }
+
+      // Log audit entry for batch operation
+      await this.logBatchAuditEntry(
+        staffId,
+        collectorId,
+        collectionDate,
+        data?.[0] || {}
+      );
+
+      return { success: true, data: data?.[0] || {} };
+    } catch (error) {
+      logger.errorWithContext('MilkApprovalService - batchApproveCollections', error);
       return { success: false, error };
     }
   }
@@ -394,6 +462,106 @@ export class MilkApprovalService {
   }
 
   /**
+   * Log audit entry for batch approval operation
+   */
+  static async logBatchAuditEntry(
+    staffId: string,
+    collectorId: string,
+    collectionDate: string,
+    summaryData: any
+  ) {
+    try {
+      const auditData = {
+        collector_id: collectorId,
+        collection_date: collectionDate,
+        approved_count: summaryData.approved_count,
+        total_liters_collected: summaryData.total_liters_collected,
+        total_liters_received: summaryData.total_liters_received,
+        total_variance: summaryData.total_variance,
+        total_penalty_amount: summaryData.total_penalty_amount,
+        timestamp: new Date().toISOString(),
+        staff_name: await this.getStaffName(staffId)
+      };
+
+      const { error: auditError } = await supabase
+        .from('audit_logs')
+        .insert({
+          table_name: 'collections',
+          operation: 'batch_approve_collections',
+          changed_by: staffId,
+          new_data: auditData,
+          description: `Batch approval performed by ${auditData.staff_name} for collector ${collectorId} on ${collectionDate}. ${summaryData.approved_count} collections approved.`
+        });
+
+      if (auditError) {
+        logger.warn('Warning: Failed to log batch audit entry', auditError);
+      }
+      
+      // Also send notification to collector about batch approval
+      await this.sendBatchApprovalNotification(collectorId, collectionDate, summaryData);
+    } catch (error) {
+      logger.errorWithContext('MilkApprovalService - logBatchAuditEntry', error);
+      // Don't throw error as this is supplementary functionality
+      console.warn('Failed to log batch audit entry:', error);
+    }
+  }
+
+  /**
+   * Send notification about batch approval to collector
+   */
+  static async sendBatchApprovalNotification(
+    collectorId: string,
+    collectionDate: string,
+    summaryData: any
+  ) {
+    try {
+      // Get the collector's user ID
+      const { data: collector, error: collectorError } = await supabase
+        .from('staff')
+        .select('user_id')
+        .eq('id', collectorId)
+        .maybeSingle();
+
+      if (collectorError) {
+        logger.errorWithContext('MilkApprovalService - fetching collector for notification', collectorError);
+        throw collectorError;
+      }
+
+      if (!collector || !collector.user_id) {
+        // No user ID found, skip notification
+        return;
+      }
+
+      // Create notification message
+      let message = `Batch approval completed for ${collectionDate}. `;
+      message += `${summaryData.approved_count} collections approved. `;
+      message += `Total variance: ${summaryData.total_variance.toFixed(2)}L. `;
+      
+      if (summaryData.total_penalty_amount > 0) {
+        message += `Total penalties applied: KSh ${summaryData.total_penalty_amount.toFixed(2)}.`;
+      }
+
+      const { error: notificationError } = await supabase
+        .from('notifications')
+        .insert({
+          user_id: collector.user_id,
+          title: 'Batch Milk Collections Approved',
+          message: message,
+          type: 'info',
+          category: 'collection_approval'
+        });
+
+      if (notificationError) {
+        logger.warn('Warning: Failed to send batch approval notification', notificationError);
+      }
+    } catch (error) {
+      logger.errorWithContext('MilkApprovalService - sendBatchApprovalNotification', error);
+      // Don't throw error as this is supplementary functionality
+      console.warn('Failed to send batch approval notification:', error);
+    }
+  }
+
+  /**
    * Get pending collections for approval
    */
   static async getPendingCollections() {
@@ -469,6 +637,33 @@ export class MilkApprovalService {
     } catch (error) {
       logger.errorWithContext('MilkApprovalService - getCollectionApprovalHistory', error);
       return { success: false, error };
+    }
+  }
+
+  /**
+   * Get staff name by ID
+   */
+  static async getStaffName(staffId: string): Promise<string> {
+    try {
+      const { data, error } = await supabase
+        .from('staff')
+        .select(`
+          profiles (
+            full_name
+          )
+        `)
+        .eq('id', staffId)
+        .maybeSingle();
+
+      if (error) {
+        logger.errorWithContext('MilkApprovalService - fetching staff name', error);
+        return 'Unknown Staff';
+      }
+
+      return data?.profiles?.full_name || 'Unknown Staff';
+    } catch (error) {
+      logger.errorWithContext('MilkApprovalService - getStaffName', error);
+      return 'Unknown Staff';
     }
   }
 

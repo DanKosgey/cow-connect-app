@@ -185,6 +185,8 @@ const FarmerRoutes = () => {
           </ProtectedRoute>
         } />
         <Route path="/" element={<Navigate to="/farmer/dashboard" replace />} />
+        {/* Redirect any other paths to login */}
+        <Route path="*" element={<Navigate to="/farmer/login" replace />} />
       </Routes>
     </Suspense>
   );

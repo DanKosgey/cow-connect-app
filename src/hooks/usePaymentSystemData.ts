@@ -346,7 +346,7 @@ export const usePaymentSystemData = (timeFrame: string = 'all', customDateRange:
   return useQuery<PaymentSystemData>({
     queryKey: [CACHE_KEYS.ADMIN_PAYMENTS, timeFrame, customDateRange],
     queryFn: async () => {
-      // Fetch collections with farmer data
+      // Fetch collections with farmer data that are approved for payment
       const { data: collectionsData, error: collectionsError } = await supabase
         .from('collections')
         .select(`
@@ -366,6 +366,7 @@ export const usePaymentSystemData = (timeFrame: string = 'all', customDateRange:
             credit_used
           )
         `)
+        .eq('approved_for_payment', true) // Only fetch collections approved for payment
         .order('collection_date', { ascending: false });
 
       if (collectionsError) {
