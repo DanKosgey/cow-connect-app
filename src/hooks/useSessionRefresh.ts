@@ -12,7 +12,7 @@ interface UseSessionRefreshOptions {
  * @param options - Configuration options for session refresh
  */
 export function useSessionRefresh(options: UseSessionRefreshOptions = {}) {
-  const { enabled = true, refreshInterval = 90 * 60 * 1000 } = options; // Increased to 90 minutes (1.5 hours) to prevent rate limiting
+  const { enabled = true, refreshInterval = 45 * 60 * 1000 } = options; // Refresh every 45 minutes
   const isMountedRef = useRef(true);
   const lastRefreshRef = useRef<number>(0);
   const refreshAttemptCountRef = useRef<number>(0);
@@ -20,15 +20,15 @@ export function useSessionRefresh(options: UseSessionRefreshOptions = {}) {
 
   const refreshSession = useCallback(async () => {
     try {
-      // Prevent too frequent refreshes (at least 30 minutes between refreshes)
+      // Prevent too frequent refreshes (at least 15 minutes between refreshes)
       const now = Date.now();
-      if (now - lastRefreshRef.current < 30 * 60 * 1000) {
+      if (now - lastRefreshRef.current < 15 * 60 * 1000) {
         logger.debug('Skipping session refresh - too soon since last refresh');
         return { success: true, session: null };
       }
 
       // Limit refresh attempts to prevent excessive requests
-      if (refreshAttemptCountRef.current >= 2) {
+      if (refreshAttemptCountRef.current >= 3) {
         logger.warn('Skipping session refresh - too many attempts');
         return { success: true, session: null };
       }
@@ -51,6 +51,15 @@ export function useSessionRefresh(options: UseSessionRefreshOptions = {}) {
         if (error) {
           logger.errorWithContext('Auto session refresh', error);
           refreshAttemptCountRef.current++;
+          
+          // If it's an auth error, sign out
+          if (error.message?.includes('Invalid authentication credentials') || 
+              error.message?.includes('JWT expired') ||
+              error.message?.includes('Not authenticated')) {
+            logger.info('Session invalid during refresh, signing out...');
+            await supabase.auth.signOut();
+          }
+          
           return { success: false, error };
         }
         
@@ -104,7 +113,8 @@ export function useSessionRefresh(options: UseSessionRefreshOptions = {}) {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible' && isMountedRef.current) {
         const now = Date.now();
-        if (now - lastRefreshRef.current > 30 * 60 * 1000) { // At least 30 minutes since last refresh
+        // Refresh if it's been more than 30 minutes since last refresh
+        if (now - lastRefreshRef.current > 30 * 60 * 1000) {
           refreshSession();
         }
       }
@@ -114,7 +124,8 @@ export function useSessionRefresh(options: UseSessionRefreshOptions = {}) {
     const handleFocus = () => {
       if (isMountedRef.current) {
         const now = Date.now();
-        if (now - lastRefreshRef.current > 30 * 60 * 1000) { // At least 30 minutes since last refresh
+        // Refresh if it's been more than 30 minutes since last refresh
+        if (now - lastRefreshRef.current > 30 * 60 * 1000) {
           refreshSession();
         }
       }

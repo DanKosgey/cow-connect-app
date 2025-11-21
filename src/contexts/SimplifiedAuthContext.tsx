@@ -45,7 +45,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 // ============================================
 
 const ROLE_CACHE_KEY = 'auth_role_cache';
-const ROLE_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const ROLE_CACHE_TTL = 10 * 60 * 1000; // Increased to 10 minutes
 
 // Get cached role
 const getCachedRole = (userId: string): UserRole | null => {
@@ -72,6 +72,9 @@ const setCachedRole = (userId: string, role: UserRole) => {
       `${ROLE_CACHE_KEY}_${userId}`,
       JSON.stringify({ role, timestamp: Date.now() })
     );
+    // Also set a global cached role for quick access
+    localStorage.setItem('cached_role', role);
+    localStorage.setItem('auth_cache_timestamp', Date.now().toString());
   } catch (error) {
     AdminDebugLogger.error('Failed to cache role:', error);
   }
@@ -82,7 +85,8 @@ const clearAuthCache = () => {
   try {
     const keys = Object.keys(localStorage);
     keys.forEach(key => {
-      if (key.startsWith(ROLE_CACHE_KEY) || key.startsWith('sb-') || key.startsWith('supabase-')) {
+      if (key.startsWith(ROLE_CACHE_KEY) || key.startsWith('sb-') || key.startsWith('supabase-') || 
+          key === 'cached_role' || key === 'auth_cache_timestamp') {
         localStorage.removeItem(key);
       }
     });
@@ -104,6 +108,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   
   const initializingRef = useRef(false);
   const mounted = useRef(true);
+  const sessionCheckTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // ============================================
   // GET USER ROLE
@@ -444,8 +449,24 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       const { data, error } = await supabase.auth.refreshSession();
 
-      if (error) throw error;
-      if (!data.session) throw new Error('No session returned');
+      if (error) {
+        AdminDebugLogger.error('Session refresh error:', error);
+        
+        // If it's an auth error, sign out
+        if (error.message?.includes('Invalid authentication credentials') || 
+            error.message?.includes('JWT expired') ||
+            error.message?.includes('Not authenticated')) {
+          AdminDebugLogger.log('Session invalid during refresh, signing out...');
+          await signOut();
+        }
+        
+        throw error;
+      }
+      
+      if (!data.session) {
+        AdminDebugLogger.warn('No session returned from refresh');
+        throw new Error('No session returned');
+      }
 
       setUser(data.session.user);
       setSession(data.session);
@@ -460,7 +481,41 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       AdminDebugLogger.error('Refresh session error:', error);
       return { success: false, error };
     }
-  }, [getUserRole]);
+  }, [getUserRole, signOut]);
+
+  // ============================================
+  // SESSION VALIDITY CHECK
+  // ============================================
+  const checkSessionValidity = useCallback(async () => {
+    try {
+      AdminDebugLogger.log('Checking session validity...');
+      
+      // Get current session
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        AdminDebugLogger.log('No active session found');
+        setUser(null);
+        setSession(null);
+        setUserRole(null);
+        return false;
+      }
+      
+      // Check if session is expired
+      const expiresAt = session.expires_at;
+      if (expiresAt && Date.now() >= expiresAt * 1000) {
+        AdminDebugLogger.warn('Session expired, attempting refresh...');
+        const { success } = await refreshSession();
+        return success;
+      }
+      
+      AdminDebugLogger.log('Session is valid');
+      return true;
+    } catch (error) {
+      AdminDebugLogger.error('Session validity check error:', error);
+      return false;
+    }
+  }, [refreshSession]);
 
   // ============================================
   // INITIALIZE AUTH
@@ -530,6 +585,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     // Cleanup
     return () => {
       mounted.current = false;
+      if (sessionCheckTimeoutRef.current) {
+        clearTimeout(sessionCheckTimeoutRef.current);
+      }
       subscription.unsubscribe();
     };
   }, [getUserRole]);
@@ -561,7 +619,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
 // ============================================
 // USE AUTH HOOK
-// ============================================
+// // ============================================
 
 export const useAuth = () => {
   const context = useContext(AuthContext);

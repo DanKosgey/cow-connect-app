@@ -47,7 +47,12 @@ const EXCLUDE_FROM_CACHE = [
   'chrome-extension:',
   // Bundle files that should be handled by the browser
   '.js',
-  '.css'
+  '.css',
+  // Auth-related paths that should not be cached
+  '/auth/',
+  '/login',
+  '/logout',
+  '/api/auth'
 ];
 
 // Install event - cache static assets
@@ -131,7 +136,7 @@ self.addEventListener('fetch', (event) => {
   }
   
   // Skip caching for auth requests
-  if (url.pathname.startsWith('/auth/')) {
+  if (url.pathname.startsWith('/auth/') || url.pathname.includes('login') || url.pathname.includes('logout')) {
     return;
   }
 

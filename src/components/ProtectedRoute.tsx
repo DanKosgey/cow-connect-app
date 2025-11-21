@@ -11,10 +11,11 @@ interface ProtectedRouteProps {
 }
 
 export const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) => {
-  const { user, userRole, loading } = useAuth();
+  const { user, userRole, loading, refreshSession, signOut } = useAuth();
   const location = useLocation();
   const [showLoader, setShowLoader] = useState(false);
   const [loadingTimeout, setLoadingTimeout] = useState(false);
+  const [sessionChecked, setSessionChecked] = useState(false);
   
   AdminDebugLogger.log('Rendering ProtectedRoute component', { 
     requiredRole, 
@@ -51,35 +52,72 @@ export const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) 
       const timer = setTimeout(() => {
         AdminDebugLogger.log('Debounce timer finished, showing loader');
         setShowLoader(true);
-      }, 500); // Increased debounce time to 500ms
+      }, 500); // Reduced debounce time
+      
       return () => {
-        AdminDebugLogger.log('Clearing debounce timer');
+        AdminDebugLogger.log('Clearing loader debounce timer');
         clearTimeout(timer);
       };
     } else {
-      AdminDebugLogger.log('Loading finished, hiding loader');
+      AdminDebugLogger.log('Loading finished, hiding loader immediately');
       setShowLoader(false);
     }
   }, [loading]);
 
-  // Helper function to get cached role info
+  // Check session validity when component mounts and when loading state changes
+  useEffect(() => {
+    const checkSession = async () => {
+      if (loading && !sessionChecked) {
+        setSessionChecked(true);
+        AdminDebugLogger.log('Checking session validity...');
+        
+        try {
+          // Try to refresh the session if it might be expired
+          const { success, error } = await refreshSession();
+          
+          if (!success) {
+            AdminDebugLogger.error('Session refresh failed:', error);
+            
+            // If it's an auth error, sign out and redirect to login
+            if (error?.message?.includes('Invalid authentication credentials') || 
+                error?.message?.includes('JWT expired') ||
+                error?.message?.includes('Not authenticated')) {
+              AdminDebugLogger.log('Session invalid, signing out...');
+              await signOut();
+            }
+          } else {
+            AdminDebugLogger.log('Session refresh successful');
+          }
+        } catch (error) {
+          AdminDebugLogger.error('Error during session check:', error);
+        }
+      }
+    };
+    
+    checkSession();
+  }, [loading, sessionChecked, refreshSession, signOut]);
+
   const getCachedRoleInfo = () => {
-    AdminDebugLogger.log('Checking for cached role info');
-    const cachedRole = localStorage.getItem('cached_role');
-    const cacheTimestamp = localStorage.getItem('auth_cache_timestamp');
-    
-    AdminDebugLogger.log('Cached role data:', { cachedRole, cacheTimestamp });
-    
-    if (!cachedRole || !cacheTimestamp) {
-      AdminDebugLogger.log('No cached role found');
+    try {
+      const cachedRole = localStorage.getItem('cached_role');
+      const cacheTimestamp = localStorage.getItem('auth_cache_timestamp');
+      
+      AdminDebugLogger.log('Checking cached role info', { cachedRole, cacheTimestamp });
+      
+      if (!cachedRole || !cacheTimestamp) {
+        AdminDebugLogger.log('No cached role found');
+        return null;
+      }
+      
+      const cacheAge = Date.now() - parseInt(cacheTimestamp);
+      const isValid = cacheAge < 30 * 60 * 1000; // 30 minutes
+      
+      AdminDebugLogger.log('Cache validation:', { cacheAge, isValid });
+      return { cachedRole, isValid };
+    } catch (error) {
+      AdminDebugLogger.error('Error checking cached role:', error);
       return null;
     }
-    
-    const cacheAge = Date.now() - parseInt(cacheTimestamp);
-    const isValid = cacheAge < 30 * 60 * 1000; // 30 minutes
-    
-    AdminDebugLogger.log('Cache validation:', { cacheAge, isValid });
-    return { cachedRole, isValid };
   };
 
   // Memoize the redirect paths to prevent unnecessary re-renders
@@ -162,9 +200,9 @@ export const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) 
       return <>{children}</>;
     }
     
-    // No valid cached role, continue showing loader
-    AdminDebugLogger.log('Loading timeout and no valid cached role, showing loader');
-    return <PageLoader type="dashboard" />;
+    // No valid cached role, redirect to login
+    AdminDebugLogger.log('Loading timeout and no valid cached role, redirecting to login');
+    return <Navigate to={loginRoutes[requiredRole]} state={{ from: location, sessionExpired: true }} replace />;
   }
 
   // User is authenticated and has the correct role

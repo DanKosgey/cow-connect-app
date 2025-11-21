@@ -437,11 +437,15 @@ export class MilkApprovalService {
    */
   static async convertUserIdToStaffId(userId: string): Promise<string> {
     try {
+      console.log('Converting user ID to staff ID:', userId);
+      
       const { data: staffData, error: staffError } = await supabase
         .from('staff')
         .select('id')
         .eq('user_id', userId)
         .maybeSingle();
+
+      console.log('Staff data lookup result:', { staffData, staffError });
 
       if (staffError) {
         logger.errorWithContext('MilkApprovalService - converting user ID to staff ID', staffError);
@@ -568,6 +572,13 @@ export class MilkApprovalService {
     defaultReceivedLiters?: number
   ) {
     try {
+      console.log('Batch approve collections called with:', {
+        staffId,
+        collectorId,
+        collectionDate,
+        defaultReceivedLiters
+      });
+
       // Validate inputs
       if (!staffId || !collectorId || !collectionDate) {
         logger.errorWithContext('MilkApprovalService - batchApproveCollections - Missing required parameters', {
@@ -597,14 +608,23 @@ export class MilkApprovalService {
         return { success: false, error: new Error('Default received liters cannot be negative') };
       }
 
+      console.log('Calling RPC with parameters:', {
+        p_staff_id: actualStaffId,
+        p_collector_id: collectorId,
+        p_collection_date: collectionDate,
+        p_total_received_liters: defaultReceivedLiters
+      });
+
       // Call the database function for batch approval
       const { data, error } = await supabase
         .rpc('batch_approve_collector_collections', {
           p_staff_id: actualStaffId,
           p_collector_id: collectorId,
           p_collection_date: collectionDate,
-          p_default_received_liters: defaultReceivedLiters
+          p_total_received_liters: defaultReceivedLiters
         });
+
+      console.log('RPC result:', { data, error });
 
       if (error) {
         logger.errorWithContext('MilkApprovalService - batch approving collections FAILED', {

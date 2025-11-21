@@ -163,7 +163,7 @@ const MilkApprovalPage: React.FC = () => {
   };
 
   const handleBatchApprove = async () => {
-    if (!batchGroup) return;
+    if (!batchGroup || !user) return;
     const received = parseFloat(batchFormData.totalReceived);
     if (isNaN(received) || received < 0) {
       toast({ title: "Error", description: "Please enter a valid positive number for received liters", variant: "destructive" });
@@ -175,8 +175,9 @@ const MilkApprovalPage: React.FC = () => {
       const promises = batchGroup.collections.map(async (col) => {
         const factor = totalExpected > 0 ? col.liters / totalExpected : 0;
         const receivedLiters = factor * received;
-        return MilkApprovalService.approveCollection({
+        return MilkApprovalService.approveMilkCollection({
           collectionId: col.id,
+          staffId: user.id,
           companyReceivedLiters: receivedLiters,
           approvalNotes: batchFormData.notes
         });

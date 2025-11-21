@@ -97,6 +97,23 @@ const App = () => {
         console.log('Auth cache present');
       }
     }
+    
+    // Add event listener for storage changes to handle cross-tab logout
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'sb-current-session' && e.newValue === null) {
+        // Session was cleared in another tab, redirect to login
+        if (window.location.pathname !== '/' && !window.location.pathname.includes('/login')) {
+          window.location.href = '/';
+        }
+      }
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    
+    // Cleanup
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+    };
   }, []);
 
   return (
