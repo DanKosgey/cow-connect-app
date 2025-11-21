@@ -4,6 +4,7 @@ import { UserRole } from '@/types/auth.types';
 import { PageLoader } from '@/components/PageLoader';
 import { useEffect, useState, useMemo } from 'react';
 import AdminDebugLogger from '@/utils/adminDebugLogger';
+import { authManager } from '@/utils/authManager';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -72,30 +73,41 @@ export const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) 
         AdminDebugLogger.log('Checking session validity...');
         
         try {
-          // Try to refresh the session if it might be expired
-          const { success, error } = await refreshSession();
+          // Use auth manager to validate and refresh session
+          const isValid = await authManager.validateAndRefreshSession();
           
-          if (!success) {
-            AdminDebugLogger.error('Session refresh failed:', error);
+          if (!isValid) {
+            AdminDebugLogger.error('Session is not valid');
             
-            // If it's an auth error, sign out and redirect to login
-            if (error?.message?.includes('Invalid authentication credentials') || 
-                error?.message?.includes('JWT expired') ||
-                error?.message?.includes('Not authenticated')) {
-              AdminDebugLogger.log('Session invalid, signing out...');
-              await signOut();
-            }
+            // Sign out and redirect to login
+            AdminDebugLogger.log('Session invalid, signing out...');
+            await authManager.signOut();
           } else {
-            AdminDebugLogger.log('Session refresh successful');
+            AdminDebugLogger.log('Session is valid');
           }
         } catch (error) {
           AdminDebugLogger.error('Error during session check:', error);
+          
+          // Try a fallback validation
+          try {
+            const isFallbackValid = await authManager.isSessionValid();
+            if (!isFallbackValid) {
+              // Sign out on error
+              await authManager.signOut();
+            } else {
+              AdminDebugLogger.log('Fallback validation successful');
+            }
+          } catch (fallbackError) {
+            AdminDebugLogger.error('Error during fallback session check:', fallbackError);
+            // Sign out on error
+            await authManager.signOut();
+          }
         }
       }
     };
     
     checkSession();
-  }, [loading, sessionChecked, refreshSession, signOut]);
+  }, [loading, sessionChecked]);
 
   const getCachedRoleInfo = () => {
     try {

@@ -1,8 +1,5 @@
--- Migration: 20251121000100_add_notifications_rls_policies.sql
--- Description: Add RLS policies for notifications table to allow users to manage their own notifications
--- and allow staff/admins to send notifications on behalf of the system
-
-BEGIN;
+-- SQL Commands to add RLS policies for notifications table
+-- Run these commands in the Supabase Dashboard SQL editor
 
 -- Ensure RLS is enabled on notifications
 ALTER TABLE IF EXISTS public.notifications ENABLE ROW LEVEL SECURITY;
@@ -45,8 +42,3 @@ CREATE POLICY "Admins can delete notifications" ON public.notifications
       AND ur.active = true
     )
   );
-
--- Grant necessary permissions
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.notifications TO authenticated;
-
-COMMIT;

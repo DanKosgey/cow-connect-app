@@ -9,6 +9,7 @@ import { NotificationProvider } from '@/contexts/NotificationContext';
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { lazy, Suspense, useEffect } from 'react';
 import { PageLoader } from '@/components/PageLoader';
+import { authManager } from '@/utils/authManager';
 
 // Ensure React is properly imported
 if (typeof React === 'undefined') {
@@ -77,15 +78,9 @@ const App = () => {
       const timeSinceLastClear = Date.now() - parseInt(lastClearTime);
       // If it's been more than 1 hour since last clear, do a full clear
       if (timeSinceLastClear > 60 * 60 * 1000) {
-        // Clear specific Supabase items
-        Object.keys(localStorage).forEach(key => {
-          if (key.startsWith('sb-') || key.startsWith('supabase-')) {
-            localStorage.removeItem(key);
-          }
-        });
-        localStorage.removeItem('last_auth_clear_time');
+        authManager.clearAuthData();
         if (import.meta.env.DEV) {
-          console.log('Cleared old Supabase auth items');
+          console.log('Cleared old auth data');
         }
       }
     }
@@ -100,7 +95,8 @@ const App = () => {
     
     // Add event listener for storage changes to handle cross-tab logout
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'sb-current-session' && e.newValue === null) {
+      // Enhanced session key detection
+      if ((e.key === 'sb-current-session' || e.key?.includes('supabase')) && e.newValue === null) {
         // Session was cleared in another tab, redirect to login
         if (window.location.pathname !== '/' && !window.location.pathname.includes('/login')) {
           window.location.href = '/';
@@ -113,6 +109,8 @@ const App = () => {
     // Cleanup
     return () => {
       window.removeEventListener('storage', handleStorageChange);
+      // Cleanup auth manager
+      authManager.cleanup();
     };
   }, []);
 

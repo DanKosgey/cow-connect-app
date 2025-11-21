@@ -1,6 +1,7 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { logger } from '@/utils/logger';
+import { authManager } from '@/utils/authManager';
 
 interface UseSessionRefreshOptions {
   enabled?: boolean;
@@ -35,44 +36,25 @@ export function useSessionRefresh(options: UseSessionRefreshOptions = {}) {
 
       logger.debug('Auto-refreshing session');
       
-      // Get current session first
-      const { data: { session } } = await supabase.auth.getSession();
+      // Use auth manager to refresh session
+      const success = await authManager.refreshSession();
       
-      // Check if component is still mounted
-      if (!isMountedRef.current) return { success: false, error: new Error('Component unmounted') };
-      
-      // Only refresh if we have a session
-      if (session) {
-        const { data, error } = await supabase.auth.refreshSession();
-        
-        // Check if component is still mounted
-        if (!isMountedRef.current) return { success: false, error: new Error('Component unmounted') };
-        
-        if (error) {
-          logger.errorWithContext('Auto session refresh', error);
-          refreshAttemptCountRef.current++;
-          
-          // If it's an auth error, sign out
-          if (error.message?.includes('Invalid authentication credentials') || 
-              error.message?.includes('JWT expired') ||
-              error.message?.includes('Not authenticated')) {
-            logger.info('Session invalid during refresh, signing out...');
-            await supabase.auth.signOut();
-          }
-          
-          return { success: false, error };
-        }
-        
-        // Reset attempt count on success
-        refreshAttemptCountRef.current = 0;
-        
-        // Update last refresh time
-        lastRefreshRef.current = Date.now();
-        logger.info('Session auto-refreshed successfully');
-        return { success: true, session: data?.session };
+      if (!success) {
+        logger.error('Session refresh failed');
+        refreshAttemptCountRef.current++;
+        return { success: false, error: new Error('Session refresh failed') };
       }
       
-      return { success: true, session: null };
+      // Get updated session
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      // Reset attempt count on success
+      refreshAttemptCountRef.current = 0;
+      
+      // Update last refresh time
+      lastRefreshRef.current = Date.now();
+      logger.info('Session auto-refreshed successfully');
+      return { success: true, session };
     } catch (error) {
       // Check if component is still mounted
       if (!isMountedRef.current) return { success: false, error: new Error('Component unmounted') };
@@ -83,6 +65,21 @@ export function useSessionRefresh(options: UseSessionRefreshOptions = {}) {
       // If it's a network error, we might want to retry
       if (error instanceof Error && (error.message.includes('NetworkError') || error.message.includes('Failed to fetch'))) {
         logger.warn('Network error during session refresh, will retry on next attempt');
+        // Don't increment attempt count for network errors
+        refreshAttemptCountRef.current = Math.max(0, refreshAttemptCountRef.current - 1);
+      }
+      
+      // Try to get current session as fallback
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          logger.info('Fallback: Current session still valid');
+          refreshAttemptCountRef.current = 0;
+          lastRefreshRef.current = Date.now();
+          return { success: true, session };
+        }
+      } catch (fallbackError) {
+        logger.errorWithContext('Fallback session check failed', fallbackError);
       }
       
       return { success: false, error };

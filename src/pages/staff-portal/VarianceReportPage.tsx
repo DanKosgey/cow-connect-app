@@ -20,7 +20,7 @@ import {
   User,
   Milk,
   BarChart3,
-  PieChart,
+  PieChart as PieChartIcon,
   Activity,
   Check,
   X
@@ -29,7 +29,21 @@ import { format } from 'date-fns';
 import RefreshButton from '@/components/ui/RefreshButton';
 import { Badge } from '@/components/ui/badge';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
-import * as RechartsPrimitive from "recharts";
+
+// Add the missing Recharts imports
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell
+} from 'recharts';
 
 interface VarianceRecord {
   id: string;
@@ -46,6 +60,8 @@ interface VarianceRecord {
   } | null;
   // Collector information from collections table (staff_id)
   collection_staff: {
+    id: string;
+    user_id: string;
     profiles: {
       full_name: string;
     } | null;
@@ -73,6 +89,25 @@ interface CollectorVarianceSummary {
   first_approval_date: string;
 }
 
+// Interface for the data returned by get_all_collectors_summary RPC function
+interface CollectorSummary {
+  collector_id: string;
+  collector_name: string;
+  collection_date?: string;
+  total_collections: number;
+  total_liters_collected?: number;
+  total_liters_received?: number;
+  total_variance?: number;
+  average_variance_percentage: number;
+  total_penalty_amount: number;
+  approved_collections?: number;
+  pending_collections?: number;
+  // Additional properties from collector_performance table
+  positive_variances?: number;
+  negative_variances?: number;
+  staff_id?: string;
+}
+
 const VarianceReportPage: React.FC = () => {
   const { error: showError } = useToastNotifications();
   
@@ -86,36 +121,36 @@ const VarianceReportPage: React.FC = () => {
     negativeVariances: 0,
     totalPenalties: 0
   });
-  const [topCollectors, setTopCollectors] = useState<any[]>([]);
+  const [topCollectors, setTopCollectors] = useState<CollectorSummary[]>([]);
   const [viewMode, setViewMode] = useState<'individual' | 'collector'>('collector'); // New state for view mode
 
   useEffect(() => {
     fetchVarianceReports();
   }, [timeframe]);
 
-  const fetchVarianceReports = async () => {
-    setIsLoading(true);
+  // Calculate date range based on timeframe
+  const calculateDateRange = () => {
+    const now = new Date();
+    let startDate = new Date();
+    
+    switch (timeframe) {
+      case 'week':
+        startDate.setDate(startDate.getDate() - 7);
+        break;
+      case 'month':
+        startDate.setMonth(startDate.getMonth() - 1);
+        break;
+      case 'quarter':
+        startDate.setMonth(startDate.getMonth() - 3);
+        break;
+    }
+    
+    return { startDate, endDate: now };
+  };
+
+  // Fetch variance records with both collector and approver information
+  const fetchVarianceRecords = async (startDate: Date, endDate: Date) => {
     try {
-      // Calculate date range based on timeframe
-      const now = new Date();
-      let startDate = new Date();
-      
-      switch (timeframe) {
-        case 'week':
-          startDate.setDate(startDate.getDate() - 7);
-          break;
-        case 'month':
-          startDate.setMonth(startDate.getMonth() - 1);
-          break;
-        case 'quarter':
-          startDate.setMonth(startDate.getMonth() - 3);
-          break;
-      }
-      
-      console.log('Date range:', { startDate: startDate.toISOString(), endDate: now.toISOString() });
-      
-      // Fetch variance records with both collector and approver information
-      // Using explicit relationship names to avoid PGRST201 error
       let query = supabase
         .from('milk_approvals')
         .select(`
@@ -128,13 +163,16 @@ const VarianceReportPage: React.FC = () => {
           penalty_amount,
           approved_at,
           collections!milk_approvals_collection_id_fkey (
+            id,
             liters,
+            staff_id,
             farmers (
               full_name
             ),
-            staff!collections_staff_id_fkey (
+            staff:staff_id (
               id,
-              profiles (
+              user_id,
+              profiles:user_id (
                 full_name
               )
             )
@@ -146,59 +184,16 @@ const VarianceReportPage: React.FC = () => {
           )
         `)
         .gte('approved_at', startDate.toISOString())
+        .lte('approved_at', endDate.toISOString())
         .order('approved_at', { ascending: false })
         .limit(100);
       
-      let { data: varianceData, error: varianceError } = await query;
+      const { data, error } = await query;
       
-      // If no data found with date filter, try without date filter for debugging
-      if (!varianceData || varianceData.length === 0) {
-        console.log('No data found with date filter, trying without date filter');
-        const { data: allData, error: allError } = await supabase
-          .from('milk_approvals')
-          .select(`
-            id,
-            collection_id,
-            company_received_liters,
-            variance_liters,
-            variance_percentage,
-            variance_type,
-            penalty_amount,
-            approved_at,
-            collections!milk_approvals_collection_id_fkey (
-              liters,
-              farmers (
-                full_name
-              ),
-              staff!collections_staff_id_fkey (
-                id,
-                profiles (
-                  full_name
-                )
-              )
-            ),
-            staff!milk_approvals_staff_id_fkey (
-              profiles (
-                full_name
-              )
-            )
-          `)
-          .order('approved_at', { ascending: false })
-          .limit(100);
-        
-        if (!allError) {
-          varianceData = allData;
-          varianceError = null;
-          console.log('Found data without date filter:', allData);
-        }
-      }
-
-      if (varianceError) throw varianceError;
-      
-      console.log('Variance data fetched:', varianceData);
+      if (error) throw error;
       
       // Transform data to match interface
-      const transformedData = (varianceData || []).map(item => ({
+      const transformedData = (data || []).map(item => ({
         ...item,
         liters: item.collections?.liters || 0, // Collected liters
         farmers: item.collections?.farmers || null,
@@ -206,80 +201,180 @@ const VarianceReportPage: React.FC = () => {
         approval_staff: item.staff || null // Approver
       }));
       
-      console.log('Transformed data:', transformedData);
+      return transformedData;
+    } catch (error) {
+      console.error('Error fetching variance records:', error);
+      throw error;
+    }
+  };
+
+  // Group records by collector and compute summary
+  const groupRecordsByCollector = (records: VarianceRecord[]) => {
+    const collectorMap = new Map<string, CollectorVarianceSummary>();
+    
+    records.forEach(record => {
+      // Get collector information
+      // Based on the query structure and data transformation:
+      // record.collection_staff is the staff object from collections.staff
+      const collectorId = record.collection_staff?.id || 'unassigned_collectors';
+      const collectorName = record.collection_staff?.profiles?.full_name || 'Unassigned Collector';
       
-      setVarianceRecords(transformedData);
+      if (!collectorMap.has(collectorId)) {
+        collectorMap.set(collectorId, {
+          collector_id: collectorId,
+          collector_name: collectorName,
+          total_collections: 0,
+          total_collected_liters: 0,
+          total_received_liters: 0,
+          total_variance_liters: 0,
+          average_variance_percentage: 0,
+          variance_type: 'none',
+          total_penalty_amount: 0,
+          collections: [],
+          first_approval_date: record.approved_at
+        });
+      }
+      
+      const summary = collectorMap.get(collectorId)!;
+      summary.total_collections += 1;
+      summary.total_collected_liters += record.liters || 0;
+      summary.total_received_liters += record.company_received_liters || 0;
+      summary.total_variance_liters += record.variance_liters || 0;
+      summary.total_penalty_amount += record.penalty_amount || 0;
+      summary.collections.push(record);
+      
+      // Update first approval date if this record is earlier
+      if (new Date(record.approved_at) < new Date(summary.first_approval_date)) {
+        summary.first_approval_date = record.approved_at;
+      }
+    });
+    
+    // Calculate average variance percentage for each collector
+    collectorMap.forEach(summary => {
+      if (summary.total_collected_liters > 0) {
+        summary.average_variance_percentage = (summary.total_variance_liters / summary.total_collected_liters) * 100;
+      } else {
+        summary.average_variance_percentage = 0;
+      }
+      
+      // Determine overall variance type for collector
+      if (summary.total_variance_liters > 0) {
+        summary.variance_type = 'positive';
+      } else if (summary.total_variance_liters < 0) {
+        summary.variance_type = 'negative';
+      } else {
+        summary.variance_type = 'none';
+      }
+    });
+    
+    return Array.from(collectorMap.values());
+  };
+
+  // Fetch top collectors data
+  const fetchTopCollectors = async () => {
+    try {
+      // First check if the collector_performance table exists
+      const { error: testError } = await supabase
+        .from('collector_performance')
+        .select('staff_id')
+        .limit(1);
+      
+      if (testError && testError.code === 'PGRST205') {
+        // Table doesn't exist, return empty array
+        return [];
+      }
+      
+      // Try to use the RPC function
+      const { data: rpcData, error: rpcError } = await supabase
+        .rpc('get_all_collectors_summary', { p_collection_date: new Date().toISOString().split('T')[0] });
+      
+      if (!rpcError && rpcData) {
+        return rpcData;
+      }
+      
+      // Fallback to direct table query
+      const { data: tableData, error: tableError } = await supabase
+        .from('collector_performance')
+        .select(`
+          staff_id,
+          total_collections,
+          average_variance_percentage,
+          positive_variances,
+          negative_variances,
+          total_penalty_amount
+        `)
+        .limit(10);
+      
+      if (!tableError && tableData) {
+        // Get staff names
+        const staffIds = [...new Set(tableData.map(item => item.staff_id).filter(Boolean))];
+        if (staffIds.length > 0) {
+          const { data: staffData, error: staffError } = await supabase
+            .from('staff')
+            .select('id, profiles (full_name)')
+            .in('id', staffIds);
+          
+          if (!staffError && staffData) {
+            const staffMap = staffData.reduce((acc, staff) => {
+              acc[staff.id] = staff.profiles?.full_name || 'Unknown Collector';
+              return acc;
+            }, {} as Record<string, string>);
+            
+            return tableData.map(item => ({
+              ...item,
+              collector_name: staffMap[item.staff_id] || 'Unknown Collector'
+            }));
+          }
+        }
+        
+        // If we can't get staff names, use the data as is
+        return tableData.map(item => ({
+          ...item,
+          collector_name: 'Unknown Collector'
+        }));
+      }
+      
+      return [];
+    } catch (error) {
+      console.error('Error fetching top collectors:', error);
+      return [];
+    }
+  };
+
+  // Compute top collectors from grouped data as fallback
+  const computeTopCollectorsFromGroupedData = (summaries: CollectorVarianceSummary[]): CollectorSummary[] => {
+    return summaries
+      .sort((a, b) => b.average_variance_percentage - a.average_variance_percentage)
+      .slice(0, 10)
+      .map(summary => ({
+        collector_id: summary.collector_id,
+        collector_name: summary.collector_name,
+        total_collections: summary.total_collections,
+        average_variance_percentage: summary.average_variance_percentage,
+        positive_variances: summary.collections.filter(c => c.variance_type === 'positive').length,
+        negative_variances: summary.collections.filter(c => c.variance_type === 'negative').length,
+        total_penalty_amount: summary.total_penalty_amount
+      }));
+  };
+
+  const fetchVarianceReports = async () => {
+    setIsLoading(true);
+    try {
+      const { startDate, endDate } = calculateDateRange();
+      
+      // Fetch variance records
+      const varianceData = await fetchVarianceRecords(startDate, endDate);
+      setVarianceRecords(varianceData);
       
       // Group by collector to create collector summaries
-      const collectorMap = new Map<string, CollectorVarianceSummary>();
-      
-      transformedData.forEach(record => {
-        // Get collector information
-        const staffInfo = record.collection_staff;
-        // Use the staff ID as the unique identifier, fallback to name if ID is not available
-        const collectorId = staffInfo?.id || staffInfo?.profiles?.full_name || 'Unknown Collector';
-        const collectorName = staffInfo?.profiles?.full_name || 'Unknown Collector';
-        
-        if (!collectorMap.has(collectorId)) {
-          collectorMap.set(collectorId, {
-            collector_id: collectorId,
-            collector_name: collectorName,
-            total_collections: 0,
-            total_collected_liters: 0,
-            total_received_liters: 0,
-            total_variance_liters: 0,
-            average_variance_percentage: 0,
-            variance_type: 'none',
-            total_penalty_amount: 0,
-            collections: [],
-            first_approval_date: record.approved_at
-          });
-        }
-        
-        const summary = collectorMap.get(collectorId)!;
-        summary.total_collections += 1;
-        summary.total_collected_liters += record.liters || 0;
-        summary.total_received_liters += record.company_received_liters || 0;
-        summary.total_variance_liters += record.variance_liters || 0;
-        summary.total_penalty_amount += record.penalty_amount || 0;
-        summary.collections.push(record);
-        
-        // Update first approval date if this record is earlier
-        if (new Date(record.approved_at) < new Date(summary.first_approval_date)) {
-          summary.first_approval_date = record.approved_at;
-        }
-      });
-      
-      // Calculate average variance percentage for each collector
-      collectorMap.forEach((summary, collectorId) => {
-        if (summary.total_collected_liters > 0) {
-          summary.average_variance_percentage = (summary.total_variance_liters / summary.total_collected_liters) * 100;
-        } else {
-          summary.average_variance_percentage = 0;
-        }
-        
-        // Determine overall variance type for collector
-        if (summary.total_variance_liters > 0) {
-          summary.variance_type = 'positive';
-        } else if (summary.total_variance_liters < 0) {
-          summary.variance_type = 'negative';
-        } else {
-          summary.variance_type = 'none';
-        }
-      });
-      
-      const summariesArray = Array.from(collectorMap.values());
-      console.log('Collector summaries:', summariesArray);
-      
+      const summariesArray = groupRecordsByCollector(varianceData);
       setCollectorSummaries(summariesArray);
       
       // Calculate summary data
-      const totalCollections = varianceData?.length || 0;
-      const positiveVariances = varianceData?.filter(v => v.variance_type === 'positive').length || 0;
-      const negativeVariances = varianceData?.filter(v => v.variance_type === 'negative').length || 0;
-      const totalPenalties = varianceData?.reduce((sum, v) => sum + (v.penalty_amount || 0), 0) || 0;
-      
-      console.log('Summary data:', { totalCollections, positiveVariances, negativeVariances, totalPenalties });
+      const totalCollections = varianceData.length;
+      const positiveVariances = varianceData.filter(v => v.variance_type === 'positive').length;
+      const negativeVariances = varianceData.filter(v => v.variance_type === 'negative').length;
+      const totalPenalties = varianceData.reduce((sum, v) => sum + (v.penalty_amount || 0), 0);
       
       setSummaryData({
         totalCollections,
@@ -289,102 +384,28 @@ const VarianceReportPage: React.FC = () => {
       });
       
       // Fetch top collectors data
-      try {
-        // First check if the collector_performance table exists
-        const { error: testError } = await supabase
-          .from('collector_performance')
-          .select('staff_id')
-          .limit(1);
-        
-        if (testError && testError.code === 'PGRST205') {
-          console.log('Collector performance table does not exist');
-          setTopCollectors([]);
-          return;
-        }
-        
-        // Use the correct RPC function name
-        const { data: collectorData, error: collectorError } = await supabase
-          .rpc('get_all_collectors_summary');
-        
-        if (collectorError) {
-          console.error('Error fetching top collectors:', collectorError);
-          // Try to fetch from collector_performance table directly as fallback
-          const { data: fallbackData, error: fallbackError } = await supabase
-            .from('collector_performance')
-            .select(`
-              staff_id,
-              total_collections,
-              average_variance_percentage,
-              positive_variances,
-              negative_variances,
-              total_penalty_amount
-            `)
-            .limit(5);
-          
-          if (!fallbackError && fallbackData && fallbackData.length > 0) {
-            // Get staff names
-            const staffIds = [...new Set(fallbackData.map(item => item.staff_id).filter(Boolean))];
-            if (staffIds.length > 0) {
-              const { data: staffData, error: staffError } = await supabase
-                .from('staff')
-                .select('id, profiles (full_name)')
-                .in('id', staffIds);
-              
-              if (!staffError && staffData) {
-                const staffMap = staffData.reduce((acc, staff) => {
-                  acc[staff.id] = staff.profiles?.full_name || 'Unknown Collector';
-                  return acc;
-                }, {} as Record<string, string>);
-                
-                const enrichedData = fallbackData.map(item => ({
-                  ...item,
-                  collector_name: staffMap[item.staff_id] || 'Unknown Collector'
-                }));
-                
-                console.log('Fallback collector data:', enrichedData);
-                setTopCollectors(enrichedData);
-              } else {
-                // If we can't get staff names, use the data as is
-                const enrichedData = fallbackData.map(item => ({
-                  ...item,
-                  collector_name: 'Unknown Collector'
-                }));
-                console.log('Fallback collector data (no staff names):', enrichedData);
-                setTopCollectors(enrichedData);
-              }
-            } else {
-              // If no staff IDs, use the data as is
-              const enrichedData = fallbackData.map(item => ({
-                ...item,
-                collector_name: 'Unknown Collector'
-              }));
-              console.log('Fallback collector data (no staff IDs):', enrichedData);
-              setTopCollectors(enrichedData);
-            }
-          } else {
-            console.log('No fallback data available');
-            setTopCollectors([]);
-          }
-        } else {
-          console.log('Top collectors data:', collectorData);
-          // Transform the data to match the expected format
-          const transformedData = (collectorData || []).map((item: any) => ({
-            staff_id: item.staff_id,
-            collector_name: item.collector_name || 'Unknown Collector',
-            total_collections: item.total_collections || 0,
-            average_variance_percentage: item.average_variance_percentage || 0,
-            positive_variances: item.positive_variances || 0,
-            negative_variances: item.negative_variances || 0,
-            total_penalty_amount: item.total_penalty_amount || 0
-          }));
-          setTopCollectors(transformedData);
-        }
-      } catch (rpcError) {
-        console.error('RPC call failed:', rpcError);
+      const topCollectorsData = await fetchTopCollectors();
+      
+      if (topCollectorsData.length > 0) {
+        setTopCollectors(topCollectorsData);
+      } else {
+        // Fallback to computing from grouped data
+        const computedTopCollectors = computeTopCollectorsFromGroupedData(summariesArray);
+        setTopCollectors(computedTopCollectors);
       }
     } catch (error: any) {
       console.error('Error fetching variance reports:', error);
       showError('Error', String(error?.message || 'Failed to fetch variance reports'));
+      // Set empty states on error
+      setVarianceRecords([]);
+      setCollectorSummaries([]);
+      setSummaryData({
+        totalCollections: 0,
+        positiveVariances: 0,
+        negativeVariances: 0,
+        totalPenalties: 0
+      });
+      setTopCollectors([]);
     } finally {
       setIsLoading(false);
     }
@@ -528,40 +549,75 @@ const VarianceReportPage: React.FC = () => {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <PieChart className="h-5 w-5" />
+              <PieChartIcon className="h-5 w-5" />
               Variance Distribution
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-64 flex items-center justify-center">
-              <div className="text-center">
-                <PieChart className="h-16 w-16 mx-auto text-muted-foreground" />
-                <p className="mt-2 text-muted-foreground">Variance distribution chart</p>
-                <p className="text-sm text-muted-foreground">
-                  Positive: {summaryData.positiveVariances}, Negative: {summaryData.negativeVariances}
-                </p>
-              </div>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={[
+                      { name: 'Positive', value: summaryData.positiveVariances },
+                      { name: 'Negative', value: summaryData.negativeVariances }
+                    ]}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="value"
+                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                  >
+                    <Cell key="cell-0" fill="#10B981" />
+                    <Cell key="cell-1" fill="#EF4444" />
+                  </Pie>
+                  <Tooltip formatter={(value) => [value, 'Count']} />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
             </div>
           </CardContent>
         </Card>
         
-        {/* Variance Trend Chart */}
+        {/* Collector Performance Chart */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <BarChart3 className="h-5 w-5" />
-              Collector Performance
+              Top Collectors Performance
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-64 flex items-center justify-center">
-              <div className="text-center">
-                <BarChart3 className="h-16 w-16 mx-auto text-muted-foreground" />
-                <p className="mt-2 text-muted-foreground">Top collector performance</p>
-                <p className="text-sm text-muted-foreground">
-                  Showing {Math.min(5, topCollectors.length)} top collectors
-                </p>
-              </div>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={topCollectors.slice(0, 5).map(collector => ({
+                    name: collector.collector_name || 'Unknown Collector',
+                    'Avg. Variance %': collector.average_variance_percentage || 0
+                  }))}
+                  margin={{
+                    top: 5,
+                    right: 30,
+                    left: 20,
+                    bottom: 40,
+                  }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis 
+                    dataKey="name" 
+                    angle={-45} 
+                    textAnchor="end" 
+                    height={60}
+                    tick={{ fontSize: 12 }}
+                  />
+                  <YAxis />
+                  <Tooltip />
+                  <Legend />
+                  <Bar dataKey="Avg. Variance %" fill="#8884d8" />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           </CardContent>
         </Card>
@@ -583,22 +639,22 @@ const VarianceReportPage: React.FC = () => {
                   <TableHead>Collector</TableHead>
                   <TableHead>Collections</TableHead>
                   <TableHead>Avg. Variance %</TableHead>
-                  <TableHead>Positive</TableHead>
-                  <TableHead>Negative</TableHead>
+                  <TableHead>Approved/Pending</TableHead>
+                  <TableHead>Pending/Collections</TableHead>
                   <TableHead>Total Penalties</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {topCollectors.length > 0 ? (
                   topCollectors.map((collector, index) => (
-                    <TableRow key={collector.staff_id || index}>
+                    <TableRow key={collector.collector_id || index}>
                       <TableCell className="font-medium">{collector.collector_name || 'Unknown Collector'}</TableCell>
                       <TableCell>{collector.total_collections || 0}</TableCell>
                       <TableCell className={collector.average_variance_percentage >= 0 ? 'text-green-600' : 'text-red-600'}>
                         {collector.average_variance_percentage?.toFixed(2) || '0.00'}%
                       </TableCell>
-                      <TableCell>{collector.positive_variances || 0}</TableCell>
-                      <TableCell>{collector.negative_variances || 0}</TableCell>
+                      <TableCell>{collector.approved_collections !== undefined ? collector.approved_collections : collector.positive_variances || 0}</TableCell>
+                      <TableCell>{collector.pending_collections !== undefined ? collector.pending_collections : collector.negative_variances || 0}</TableCell>
                       <TableCell>KSh {collector.total_penalty_amount?.toFixed(2) || '0.00'}</TableCell>
                     </TableRow>
                   ))

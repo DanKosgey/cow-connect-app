@@ -3,6 +3,7 @@ import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { UserRole } from '@/types/auth.types';
 import AdminDebugLogger from '@/utils/adminDebugLogger';
+import { authManager } from '@/utils/authManager';
 
 // ============================================
 // TYPES
@@ -124,97 +125,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return cached;
       }
 
-      AdminDebugLogger.log('Fetching role using secure function for user:', userId);
+      // Use the auth manager to get user role
+      const role = await authManager.getUserRole(userId);
       
-      // Use the secure function that bypasses RLS
-      AdminDebugLogger.log('Calling supabase.rpc get_user_role_secure...');
-      const { data, error } = await supabase.rpc('get_user_role_secure', {
-        user_id_param: userId
-      });
-
-      AdminDebugLogger.log('RPC call completed:', { data, error: error?.message });
-
-      // Handle errors
-      if (error) {
-        AdminDebugLogger.error('Error calling secure function:', error);
-        
-        // Check if it's the specific "role does not exist" error or permission denied error
-        if (error.message && (error.message.includes('role "admin" does not exist') || error.message.includes('permission denied to set role'))) {
-          AdminDebugLogger.error('Known database function issue detected. Trying fallback method...');
-          // We can still try to get the role directly from the user_roles table as a fallback
-          AdminDebugLogger.log('Trying fallback query on user_roles table...');
-          const { data: roleData, error: roleError } = await supabase
-            .from('user_roles')
-            .select('role')
-            .eq('user_id', userId)
-            .eq('active', true)
-            .single();
-          
-          AdminDebugLogger.log('Fallback query result:', { roleData, roleError: roleError?.message });
-          
-          if (roleError) {
-            AdminDebugLogger.error('Fallback query also failed:', roleError);
-            throw error; // Throw the original error
-          }
-          
-          if (roleData) {
-            AdminDebugLogger.success('Role from fallback query:', roleData.role);
-            const role = roleData.role as UserRole;
-            
-            // Validate role is one of expected values
-            const validRoles = [UserRole.ADMIN, UserRole.STAFF, UserRole.FARMER, UserRole.COLLECTOR, UserRole.CREDITOR];
-            if (!validRoles.includes(role as UserRole)) {
-              AdminDebugLogger.error('Invalid role value:', role);
-              return null;
-            }
-            
-            // Cache the role
-            setCachedRole(userId, role);
-            return role;
-          }
-        }
-        
-        throw error;
+      if (role) {
+        // Cache the role
+        setCachedRole(userId, role);
+        return role;
       }
-
-      // No role found
-      if (!data) {
-        AdminDebugLogger.warn('No active role found for user:', userId);
-        return null;
-      }
-
-      // The function returns a text string
-      const roleValue = data as string;
-      AdminDebugLogger.success('Role from secure function:', roleValue);
-
-      // Map string values to enum values
-      let role: UserRole | null = null;
-      switch (roleValue.toLowerCase()) {
-        case 'admin':
-          role = UserRole.ADMIN;
-          break;
-        case 'staff':
-          role = UserRole.STAFF;
-          break;
-        case 'farmer':
-          role = UserRole.FARMER;
-          break;
-        case 'collector':
-          role = UserRole.COLLECTOR;
-          break;
-        case 'creditor':
-          role = UserRole.CREDITOR;
-          break;
-        default:
-          AdminDebugLogger.error('Invalid role value:', roleValue);
-          return null;
-      }
-
-      // Cache the role
-      setCachedRole(userId, role);
       
-      AdminDebugLogger.success('Role fetched and cached:', role);
-      return role;
+      return null;
     } catch (error: any) {
       AdminDebugLogger.error('Exception getting user role:', error);
       AdminDebugLogger.error('Exception stack:', error.stack);
@@ -237,17 +157,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       AdminDebugLogger.log('Signing out...');
       
-      // Sign out from Supabase
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
+      // Use auth manager to sign out
+      await authManager.signOut();
 
       // Clear state
       setUser(null);
       setSession(null);
       setUserRole(null);
-
-      // Clear cache
-      clearAuthCache();
 
       AdminDebugLogger.success('Signed out successfully');
     } catch (error) {
@@ -447,38 +363,67 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       AdminDebugLogger.log('Refreshing session...');
 
-      const { data, error } = await supabase.auth.refreshSession();
-
-      if (error) {
-        AdminDebugLogger.error('Session refresh error:', error);
-        
-        // If it's an auth error, sign out
-        if (error.message?.includes('Invalid authentication credentials') || 
-            error.message?.includes('JWT expired') ||
-            error.message?.includes('Not authenticated')) {
-          AdminDebugLogger.log('Session invalid during refresh, signing out...');
-          await signOut();
-        }
-        
-        throw error;
-      }
+      // Use auth manager to refresh session
+      const success = await authManager.refreshSession();
       
-      if (!data.session) {
-        AdminDebugLogger.warn('No session returned from refresh');
-        throw new Error('No session returned');
+      if (!success) {
+        AdminDebugLogger.error('Session refresh failed');
+        return { success: false, error: new Error('Session refresh failed') };
       }
 
-      setUser(data.session.user);
-      setSession(data.session);
+      // Get updated session
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        AdminDebugLogger.warn('No session returned from refresh');
+        return { success: false, error: new Error('No session returned') };
+      }
+
+      setUser(session.user);
+      setSession(session);
 
       // Update role
-      const role = await getUserRole(data.session.user.id);
+      const role = await getUserRole(session.user.id);
       setUserRole(role);
 
       AdminDebugLogger.success('Session refreshed');
       return { success: true };
     } catch (error: any) {
       AdminDebugLogger.error('Refresh session error:', error);
+      
+      // If it's an auth error, sign out
+      const authErrorIndicators = [
+        'Invalid authentication credentials',
+        'JWT expired',
+        'Not authenticated',
+        'invalid token',
+        'token expired'
+      ];
+      
+      const isAuthError = authErrorIndicators.some(indicator => 
+        error.message?.includes(indicator)
+      );
+      
+      if (isAuthError) {
+        AdminDebugLogger.log('Session invalid during refresh, signing out...');
+        await signOut();
+      }
+      
+      // Try fallback approach
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          setUser(session.user);
+          setSession(session);
+          const role = await getUserRole(session.user.id);
+          setUserRole(role);
+          AdminDebugLogger.success('Fallback session retrieval successful');
+          return { success: true };
+        }
+      } catch (fallbackError) {
+        AdminDebugLogger.error('Fallback session retrieval error:', fallbackError);
+      }
+      
       return { success: false, error };
     }
   }, [getUserRole, signOut]);
@@ -489,6 +434,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const checkSessionValidity = useCallback(async () => {
     try {
       AdminDebugLogger.log('Checking session validity...');
+      
+      // Use auth manager to validate session
+      const isValid = await authManager.validateAndRefreshSession();
+      
+      if (!isValid) {
+        AdminDebugLogger.log('Session is not valid');
+        setUser(null);
+        setSession(null);
+        setUserRole(null);
+        return false;
+      }
       
       // Get current session
       const { data: { session } } = await supabase.auth.getSession();
@@ -501,21 +457,32 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return false;
       }
       
-      // Check if session is expired
-      const expiresAt = session.expires_at;
-      if (expiresAt && Date.now() >= expiresAt * 1000) {
-        AdminDebugLogger.warn('Session expired, attempting refresh...');
-        const { success } = await refreshSession();
-        return success;
-      }
-      
       AdminDebugLogger.log('Session is valid');
       return true;
     } catch (error) {
       AdminDebugLogger.error('Session validity check error:', error);
+      
+      // Try fallback validation
+      try {
+        const isFallbackValid = await authManager.isSessionValid();
+        if (isFallbackValid) {
+          AdminDebugLogger.log('Fallback validation successful');
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.user) {
+            setUser(session.user);
+            setSession(session);
+            const role = await getUserRole(session.user.id);
+            setUserRole(role);
+            return true;
+          }
+        }
+      } catch (fallbackError) {
+        AdminDebugLogger.error('Fallback validation error:', fallbackError);
+      }
+      
       return false;
     }
-  }, [refreshSession]);
+  }, []);
 
   // ============================================
   // INITIALIZE AUTH

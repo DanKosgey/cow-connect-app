@@ -21,11 +21,15 @@ export const useDashboardStats = () => {
     queryKey: ['dashboard-stats'],
     queryFn: async () => {
       try {
-        // Fetch pending reviews count (milk approvals pending review)
-        const { count: pendingReviewsCount } = await supabase
-          .from('milk_approvals')
+        // Fetch pending reviews count (collections pending approval for company)
+        const { count: pendingReviewsCount, error: pendingError } = await supabase
+          .from('collections')
           .select('*', { count: 'exact', head: true })
-          .is('approved_at', null);
+          .eq('approved_for_company', false);
+        
+        if (pendingError) {
+          console.error('Error fetching pending collections:', pendingError);
+        }
         
         // Fetch today's variance data
         const today = new Date();
