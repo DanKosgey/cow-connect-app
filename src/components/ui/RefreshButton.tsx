@@ -4,24 +4,27 @@ import { RefreshCw } from 'lucide-react';
 
 interface RefreshButtonProps extends ButtonProps {
   isRefreshing?: boolean;
+  isLoading?: boolean;
   onRefresh: () => void;
   label?: string;
   iconOnly?: boolean;
 }
 
 const RefreshButton = React.forwardRef<HTMLButtonElement, RefreshButtonProps>(
-  ({ isRefreshing = false, onRefresh, label = 'Refresh', iconOnly = false, ...props }, ref) => {
+  ({ isRefreshing = false, isLoading = false, onRefresh, label = 'Refresh', iconOnly = false, ...props }, ref) => {
+    const loading = isRefreshing || isLoading;
+
     return (
       <Button
         ref={ref}
         onClick={onRefresh}
-        disabled={isRefreshing}
+        disabled={loading}
         {...props}
       >
-        <RefreshCw 
-          className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''} ${iconOnly ? '' : 'mr-2'}`} 
+        <RefreshCw
+          className={`h-4 w-4 ${loading ? 'animate-spin' : ''} ${iconOnly ? '' : 'mr-2'}`}
         />
-        {!iconOnly && (isRefreshing ? 'Refreshing...' : label)}
+        {!iconOnly && (loading ? 'Refreshing...' : label)}
       </Button>
     );
   }

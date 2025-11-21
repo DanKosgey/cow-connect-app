@@ -2,6 +2,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '@/utils/logger';
 import { CreditService } from './credit-service';
+import { CollectionNotificationService } from './collection-notification-service';
 
 interface Collection {
   id: string;
@@ -24,6 +25,34 @@ export class PaymentService {
   // Direct payment method for admin (marks collection as paid immediately)
   static async markCollectionAsPaid(collectionId: string, farmerId: string, collection: Collection) {
     try {
+      // First, verify that the collection is approved for payment
+      const { data: collectionData, error: collectionError } = await supabase
+        .from('collections')
+        .select('id, approved_for_payment, status')
+        .eq('id', collectionId)
+        .maybeSingle();
+
+      if (collectionError) {
+        logger.errorWithContext('PaymentService - fetching collection for verification', collectionError);
+        throw collectionError;
+      }
+
+      if (!collectionData) {
+        throw new Error(`Collection ${collectionId} not found`);
+      }
+
+      // Check if collection is approved for payment
+      if (!collectionData.approved_for_payment) {
+        logger.errorWithContext('PaymentService - collection not approved for payment', { collectionId });
+        throw new Error(`Collection ${collectionId} is not approved for payment`);
+      }
+
+      // Check if collection is already paid
+      if (collectionData.status === 'Paid') {
+        logger.errorWithContext('PaymentService - collection already paid', { collectionId });
+        throw new Error(`Collection ${collectionId} is already marked as paid`);
+      }
+
       // First, check if there's an existing active payment batch or create one
       let batchId: string | null = null;
       const { data: existingBatch, error: batchError } = await supabase
@@ -126,7 +155,7 @@ export class PaymentService {
       }
       
       // Update collection status to 'Paid'
-      const { error: collectionError } = await supabase
+      const { error: updateCollectionError } = await supabase
         .from('collections')
         .update({ 
           status: 'Paid',
@@ -134,9 +163,19 @@ export class PaymentService {
         })
         .eq('id', collectionId);
 
-      if (collectionError) {
-        logger.errorWithContext('PaymentService - updating collection status', collectionError);
-        throw collectionError;
+      if (updateCollectionError) {
+        logger.errorWithContext('PaymentService - updating collection status', updateCollectionError);
+        throw updateCollectionError;
+      }
+
+      // Send notification to farmer
+      try {
+        await CollectionNotificationService.sendCollectionPaidNotification(
+          collectionId,
+          farmerId
+        );
+      } catch (notificationError) {
+        logger.warn('Warning: Failed to send payment notification', notificationError);
       }
 
       // If credit was used, deduct it from the farmer's credit balance
@@ -226,44 +265,6 @@ export class PaymentService {
         }
       }
 
-      // Send notification
-      if (farmerId) {
-        try {
-          // Get the user_id from the farmers table
-          const { data: farmerData, error: farmerError } = await supabase
-            .from('farmers')
-            .select('user_id')
-            .eq('id', farmerId)
-            .maybeSingle();
-
-          if (farmerError) {
-            logger.warn('Warning: Failed to fetch farmer user_id', farmerError);
-          } else if (farmerData && farmerData.user_id) {
-            // Make the notification more unique by including timestamp
-            const timestamp = new Date().toISOString();
-            const { error: notificationError } = await supabase
-              .from('notifications')
-              .insert({
-                user_id: farmerData.user_id, // Use the correct user_id from profiles table
-                title: 'Payment Received',
-                message: `Your payment of KES ${parseFloat(collection.total_amount?.toString() || '0').toFixed(2)} has been processed for collection ${collectionId.substring(0, 8)} at ${new Date().toLocaleTimeString()}. Credit used: KES ${creditUsed.toFixed(2)}, Net payment: KES ${netPayment.toFixed(2)}`,
-                type: 'payment',
-                category: 'payment'
-              });
-
-            // Log notification error but don't fail the entire operation
-            if (notificationError) {
-              logger.warn('Warning: Failed to send payment notification', notificationError);
-            }
-          } else {
-            logger.warn('Warning: Farmer user_id not found for farmerId', farmerId);
-          }
-        } catch (notificationException) {
-          // Handle any exceptions during notification sending
-          logger.warn('Warning: Exception while sending payment notification', notificationException);
-        }
-      }
-
       return { success: true, data: paymentData };
     } catch (error) {
       logger.errorWithContext('PaymentService - markCollectionAsPaid', error);
@@ -280,6 +281,33 @@ export class PaymentService {
     approvedBy?: string
   ) {
     try {
+      // First, verify that all collections are approved for payment
+      const { data: collectionsData, error: collectionsError } = await supabase
+        .from('collections')
+        .select('id, approved_for_payment, status')
+        .in('id', collectionIds);
+
+      if (collectionsError) {
+        logger.errorWithContext('PaymentService - fetching collections for verification', collectionsError);
+        throw collectionsError;
+      }
+
+      // Check if all collections are approved for payment
+      const unapprovedCollections = collectionsData?.filter(c => !c.approved_for_payment) || [];
+      if (unapprovedCollections.length > 0) {
+        const unapprovedIds = unapprovedCollections.map(c => c.id).join(', ');
+        logger.errorWithContext('PaymentService - unapproved collections found', { unapprovedIds });
+        throw new Error(`Collections ${unapprovedIds} are not approved for payment`);
+      }
+
+      // Check if any collections are already paid
+      const paidCollections = collectionsData?.filter(c => c.status === 'Paid') || [];
+      if (paidCollections.length > 0) {
+        const paidIds = paidCollections.map(c => c.id).join(', ');
+        logger.errorWithContext('PaymentService - paid collections found', { paidIds });
+        throw new Error(`Collections ${paidIds} are already marked as paid`);
+      }
+
       // First, get the staff ID from the staff table using the user ID
       let staffId = null;
       if (approvedBy) {
@@ -348,23 +376,6 @@ export class PaymentService {
   // Mark payment as paid (for admins to finalize approved payments)
   static async markPaymentAsPaid(paymentId: string, paidBy?: string) {
     try {
-      // First, get the staff ID from the staff table using the user ID
-      let staffId = null;
-      if (paidBy) {
-        const { data: staffData, error: staffError } = await supabase
-          .from('staff')
-          .select('id')
-          .eq('user_id', paidBy)
-          .maybeSingle();
-          
-        if (staffError) {
-          logger.errorWithContext('PaymentService - fetching staff data for markPaymentAsPaid', staffError);
-          throw staffError;
-        }
-        
-        staffId = staffData?.id || null;
-      }
-
       // Get the payment details to calculate credit deduction
       const { data: paymentData, error: fetchError } = await supabase
         .from('farmer_payments')
@@ -381,8 +392,52 @@ export class PaymentService {
         throw new Error('Payment not found');
       }
 
+      // Verify that all collections associated with this payment are approved for payment
+      const { data: collectionsData, error: collectionsError } = await supabase
+        .from('collections')
+        .select('id, approved_for_payment, status')
+        .in('id', paymentData.collection_ids);
+
+      if (collectionsError) {
+        logger.errorWithContext('PaymentService - fetching collections for verification', collectionsError);
+        throw collectionsError;
+      }
+
+      // Check if all collections are approved for payment
+      const unapprovedCollections = collectionsData?.filter(c => !c.approved_for_payment) || [];
+      if (unapprovedCollections.length > 0) {
+        const unapprovedIds = unapprovedCollections.map(c => c.id).join(', ');
+        logger.errorWithContext('PaymentService - unapproved collections found', { unapprovedIds });
+        throw new Error(`Collections ${unapprovedIds} are not approved for payment`);
+      }
+
+      // Check if any collections are already paid
+      const paidCollections = collectionsData?.filter(c => c.status === 'Paid') || [];
+      if (paidCollections.length > 0) {
+        const paidIds = paidCollections.map(c => c.id).join(', ');
+        logger.warn('PaymentService - collections already paid', { paidIds });
+        // This is just a warning, not an error, as we might be reprocessing
+      }
+
       const farmerId = paymentData.farmer_id;
       const totalAmount = paymentData.total_amount;
+
+      // First, get the staff ID from the staff table using the user ID
+      let staffId = null;
+      if (paidBy) {
+        const { data: staffData, error: staffError } = await supabase
+          .from('staff')
+          .select('id')
+          .eq('user_id', paidBy)
+          .maybeSingle();
+          
+        if (staffError) {
+          logger.errorWithContext('PaymentService - fetching staff data for markPaymentAsPaid', staffError);
+          throw staffError;
+        }
+        
+        staffId = staffData?.id || null;
+      }
 
       // Calculate credit deduction for this payment
       const creditInfo = await CreditService.calculateAvailableCredit(farmerId);
@@ -475,6 +530,19 @@ export class PaymentService {
       if (updateCollectionsError) {
         logger.errorWithContext('PaymentService - updating collections to paid', updateCollectionsError);
         throw updateCollectionsError;
+      }
+
+      // Send notifications to farmer for each collection
+      try {
+        for (const collectionId of paymentData.collection_ids) {
+          await CollectionNotificationService.sendCollectionPaidNotification(
+            collectionId,
+            farmerId,
+            paidBy
+          );
+        }
+      } catch (notificationError) {
+        logger.warn('Warning: Failed to send payment notifications', notificationError);
       }
 
       return { success: true, data };

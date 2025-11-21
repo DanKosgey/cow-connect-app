@@ -14,6 +14,7 @@ const FarmerProfiles = lazy(() => import("../pages/creditor/FarmerProfiles"));
 const FarmerProfileDetail = lazy(() => import("../pages/creditor/FarmerProfileDetail"));
 const PaymentTracking = lazy(() => import("../pages/creditor/PaymentTracking"));
 const ProductManagement = lazy(() => import("../pages/creditor/ProductManagement"));
+const DisbursementPage = lazy(() => import("../pages/creditor/DisbursementPage"));
 
 export default function CreditorRoutes() {
   return (
@@ -31,6 +32,7 @@ export default function CreditorRoutes() {
                 <Route path="farmer-profiles" element={<FarmerProfiles />} />
                 <Route path="farmer-profiles/:farmerId" element={<FarmerProfileDetail />} />
                 <Route path="payment-tracking" element={<PaymentTracking />} />
+                <Route path="disbursement" element={<DisbursementPage />} />
                 <Route index element={<CreditorDashboard />} />
                 <Route path="*" element={<Navigate to="/creditor/dashboard" replace />} />
               </Routes>

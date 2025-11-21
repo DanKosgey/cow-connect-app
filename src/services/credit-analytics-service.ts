@@ -72,10 +72,12 @@ export class CreditAnalyticsService {
       // Calculate pending payments for all farmers
       let totalPendingPayments = 0;
       for (const farmer of farmers || []) {
+        // Get pending payments from approved collections only
         const { data: pendingCollections, error: collectionsError } = await supabase
           .from('collections')
           .select('total_amount')
           .eq('farmer_id', farmer.id)
+          .eq('approved_for_company', true) // Only consider approved collections
           .neq('status', 'Paid');
 
         if (!collectionsError && pendingCollections) {

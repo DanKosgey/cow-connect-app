@@ -85,7 +85,7 @@ export const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) 
   // Memoize the redirect paths to prevent unnecessary re-renders
   const loginRoutes = useMemo(() => ({
     [UserRole.ADMIN]: '/admin/login',
-    [UserRole.STAFF]: '/staff/login',
+    [UserRole.STAFF]: '/staff-only/login',
     [UserRole.COLLECTOR]: '/collector/login',
     [UserRole.CREDITOR]: '/creditor/login',
     [UserRole.FARMER]: '/farmer/login'
@@ -93,7 +93,7 @@ export const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) 
 
   const dashboardRoutes = useMemo(() => ({
     [UserRole.ADMIN]: '/admin/dashboard',
-    [UserRole.STAFF]: '/staff/dashboard',
+    [UserRole.STAFF]: '/staff-only/dashboard',
     [UserRole.COLLECTOR]: '/collector/dashboard',
     [UserRole.CREDITOR]: '/creditor/dashboard',
     [UserRole.FARMER]: '/farmer/dashboard'

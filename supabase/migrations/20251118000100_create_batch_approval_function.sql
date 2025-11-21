@@ -37,31 +37,35 @@ DECLARE
     v_variance_percentage numeric;
     v_variance_type text;
 BEGIN
+    -- Log the input parameters for debugging
+    RAISE LOG 'batch_approve_collector_collections called with: staff_id=%, collector_id=%, collection_date=%, default_received_liters=%', 
+              p_staff_id, p_collector_id, p_collection_date, p_default_received_liters;
+    
     -- Validate inputs
     IF p_staff_id IS NULL THEN
-        RAISE EXCEPTION 'Staff ID is required';
+        RAISE EXCEPTION 'Staff ID is required. Received NULL value.';
     END IF;
     
     IF p_collector_id IS NULL THEN
-        RAISE EXCEPTION 'Collector ID is required';
+        RAISE EXCEPTION 'Collector ID is required. Received NULL value.';
     END IF;
     
     IF p_collection_date IS NULL THEN
-        RAISE EXCEPTION 'Collection date is required';
+        RAISE EXCEPTION 'Collection date is required. Received NULL value.';
     END IF;
     
     IF p_default_received_liters IS NOT NULL AND p_default_received_liters < 0 THEN
-        RAISE EXCEPTION 'Default received liters cannot be negative';
+        RAISE EXCEPTION 'Default received liters cannot be negative. Received: %', p_default_received_liters;
     END IF;
     
     -- Validate that staff ID exists and is a valid staff member
     IF NOT EXISTS (SELECT 1 FROM public.staff WHERE id = p_staff_id) THEN
-        RAISE EXCEPTION 'Invalid staff ID';
+        RAISE EXCEPTION 'Invalid approving staff ID: %. No matching record found in staff table.', p_staff_id;
     END IF;
     
     -- Validate that collector ID exists and is a valid collector
     IF NOT EXISTS (SELECT 1 FROM public.staff WHERE id = p_collector_id) THEN
-        RAISE EXCEPTION 'Invalid collector ID';
+        RAISE EXCEPTION 'Invalid collector ID: %. No matching record found in staff table.', p_collector_id;
     END IF;
     
     -- Validate that the staff member has permission to approve collections
@@ -71,19 +75,41 @@ BEGIN
         JOIN public.user_roles ur ON s.user_id = ur.user_id
         WHERE s.id = p_staff_id 
         AND ur.role IN ('staff', 'admin')
+        AND ur.active = true
     ) THEN
-        RAISE EXCEPTION 'Staff member does not have permission to approve collections';
+        -- Check if user exists but doesn't have proper role
+        DECLARE
+            user_roles TEXT;
+        BEGIN
+            -- Check what roles the user actually has
+            SELECT string_agg(role, ', ') INTO user_roles
+            FROM public.user_roles 
+            WHERE user_id = (SELECT user_id FROM public.staff WHERE id = p_staff_id LIMIT 1)
+            AND active = true;
+            
+            IF user_roles IS NULL THEN
+                RAISE EXCEPTION 'Staff member (ID: %) does not have any active roles assigned.', p_staff_id;
+            ELSE
+                RAISE EXCEPTION 'Staff member (ID: %) does not have permission to approve collections. Current roles: %', p_staff_id, user_roles;
+            END IF;
+        END;
     END IF;
+
+    -- Log successful validation
+    RAISE LOG 'All validations passed. Processing collections for collector_id=% on date=%', p_collector_id, p_collection_date;
 
     -- Process each collection for the collector on the specified date
     FOR v_collection_record IN
         SELECT id, liters, farmer_id, staff_id
         FROM public.collections
         WHERE staff_id = p_collector_id
-        AND collection_date = p_collection_date
+        AND collection_date::date = p_collection_date
         AND status = 'Collected'
         AND approved_for_company = false
     LOOP
+        -- Log each collection being processed
+        RAISE LOG 'Processing collection ID=%, liters=%', v_collection_record.id, v_collection_record.liters;
+        
         -- Use default received liters or match collected liters if not provided
         v_collected_liters := v_collection_record.liters;
         v_received_liters := COALESCE(p_default_received_liters, v_collected_liters);

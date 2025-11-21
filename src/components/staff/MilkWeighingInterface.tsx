@@ -176,7 +176,7 @@ const MilkWeighingInterface: React.FC = () => {
           liters,
           farmer_id,
           staff_id,
-          farmers!fk_collections_farmer_id (
+          farmers (
             full_name,
             id
           )

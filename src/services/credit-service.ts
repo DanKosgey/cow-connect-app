@@ -53,7 +53,7 @@ export interface AgrovetPurchase {
   total_amount: number;
   payment_method: 'cash' | 'credit';
   credit_transaction_id?: string;
-  status: 'pending' | 'completed' | 'cancelled';
+  status: 'pending' | 'completed' | 'cancelled' | 'pending_collection';
   purchased_by?: string;
   created_at: string;
 }
@@ -126,7 +126,7 @@ export class CreditService {
       if (!requestId) {
         throw new Error('Request ID is required');
       }
-      
+
       if (!rejectionReason) {
         throw new Error('Rejection reason is required');
       }
@@ -216,7 +216,7 @@ export class CreditService {
 
       // Calculate repayment rate (simplified calculation)
       // In a real implementation, this would be based on actual repayment data
-      const creditRepaymentRate = activeFarmers && activeFarmers > 0 ? 
+      const creditRepaymentRate = activeFarmers && activeFarmers > 0 ?
         Math.min(95, Math.max(75, 100 - (pendingApplications || 0) / (activeFarmers || 1) * 20)) : 0;
 
       return {
@@ -232,9 +232,9 @@ export class CreditService {
   }
 
   // Calculate available credit for a farmer based on pending collections
-  static async calculateAvailableCredit(farmerId: string): Promise<{ 
-    availableCredit: number; 
-    pendingPayments: number; 
+  static async calculateAvailableCredit(farmerId: string): Promise<{
+    availableCredit: number;
+    pendingPayments: number;
     creditLimit: number;
     currentBalance: number;
   }> {
@@ -271,15 +271,15 @@ export class CreditService {
         throw collectionsError;
       }
 
-      const pendingPayments = pendingCollections?.reduce((sum, collection) => 
+      const pendingPayments = pendingCollections?.reduce((sum, collection) =>
         sum + (collection.total_amount || 0), 0) || 0;
 
       // Calculate credit limit based on percentage
       const calculatedCreditLimit = pendingPayments * (creditLimitRecord.credit_limit_percentage / 100);
-      
+
       // Apply maximum credit amount cap
       const finalCreditLimit = Math.min(calculatedCreditLimit, creditLimitRecord.max_credit_amount);
-      
+
       // Available credit is the lesser of:
       // 1. Final credit limit
       // 2. Current credit balance (what they haven't used yet)
@@ -327,8 +327,8 @@ export class CreditService {
 
   // Use credit for an agrovet purchase
   static async useCreditForPurchase(
-    farmerId: string, 
-    purchaseId: string, 
+    farmerId: string,
+    purchaseId: string,
     amount: number,
     usedBy?: string
   ): Promise<FarmerCreditTransaction> {
@@ -337,15 +337,15 @@ export class CreditService {
       if (!farmerId) {
         throw new Error('Farmer ID is required');
       }
-      
+
       if (!purchaseId) {
         throw new Error('Purchase ID is required');
       }
-      
+
       if (amount <= 0) {
         throw new Error('Purchase amount must be greater than zero');
       }
-      
+
       // Get current credit limit record
       const { data: creditLimitData, error: creditLimitError } = await supabase
         .from('farmer_credit_limits')
@@ -364,7 +364,7 @@ export class CreditService {
       }
 
       const creditLimitRecord = creditLimitData as FarmerCreditLimit;
-      
+
       // Check if farmer has enough credit
       if (creditLimitRecord.current_credit_balance < amount) {
         throw new Error('Insufficient credit balance');
@@ -436,7 +436,7 @@ export class CreditService {
       try {
         const creditLimit = creditLimitRecord.max_credit_amount;
         const utilization = creditLimit > 0 ? ((creditLimit - newBalance) / creditLimit) * 100 : 0;
-        
+
         if (utilization > 80 && utilization <= 90) {
           await CreditNotificationService.sendLowCreditWarning(
             farmerId,
@@ -463,8 +463,8 @@ export class CreditService {
 
   // Adjust credit limit for a farmer
   static async adjustCreditLimit(
-    farmerId: string, 
-    creditLimitPercentage: number, 
+    farmerId: string,
+    creditLimitPercentage: number,
     maxCreditAmount: number
   ): Promise<void> {
     try {
@@ -472,11 +472,11 @@ export class CreditService {
       if (!farmerId) {
         throw new Error('Farmer ID is required');
       }
-      
+
       if (creditLimitPercentage < 0 || creditLimitPercentage > 100) {
         throw new Error('Credit limit percentage must be between 0 and 100');
       }
-      
+
       if (maxCreditAmount < 0) {
         throw new Error('Maximum credit amount cannot be negative');
       }
@@ -728,15 +728,15 @@ export class CreditService {
       if (!farmerId) {
         throw new Error('Farmer ID is required');
       }
-      
+
       if (!itemId) {
         throw new Error('Item ID is required');
       }
-      
+
       if (quantity <= 0) {
         throw new Error('Quantity must be greater than zero');
       }
-      
+
       if (!paymentMethod) {
         throw new Error('Payment method is required');
       }
@@ -784,7 +784,7 @@ export class CreditService {
             unit_price: item.selling_price,
             total_amount: totalAmount,
             payment_method: paymentMethod,
-            status: 'completed',
+            status: 'pending_collection',
             purchased_by: purchasedBy
           })
           .select()
@@ -799,9 +799,9 @@ export class CreditService {
 
         // Use credit for the purchase
         const transaction = await this.useCreditForPurchase(
-          farmerId, 
-          purchase.id, 
-          totalAmount, 
+          farmerId,
+          purchase.id,
+          totalAmount,
           purchasedBy
         );
 
@@ -848,9 +848,38 @@ export class CreditService {
     }
   }
 
+  // Confirm collection of purchased items
+  static async confirmPurchaseCollection(purchaseId: string, confirmedBy?: string): Promise<void> {
+    try {
+      if (!purchaseId) {
+        throw new Error('Purchase ID is required');
+      }
+
+      // Update the purchase status to 'completed'
+      const { error: updateError } = await supabase
+        .from('agrovet_purchases')
+        .update({
+          status: 'completed',
+        })
+        .eq('id', purchaseId);
+
+      if (updateError) {
+        logger.errorWithContext('CreditService - confirming purchase collection', updateError);
+        throw updateError;
+      }
+
+      // Log the confirmation action
+      logger.info(`Purchase ${purchaseId} confirmed collected by ${confirmedBy || 'system'}`);
+
+    } catch (error) {
+      logger.errorWithContext('CreditService - confirmPurchaseCollection', error);
+      throw error;
+    }
+  }
+
   // Repay credit for a farmer
   static async repayCredit(
-    farmerId: string, 
+    farmerId: string,
     amount: number,
     repaymentMethod: string = 'cash',
     referenceId?: string,
@@ -861,7 +890,7 @@ export class CreditService {
       if (!farmerId) {
         throw new Error('Farmer ID is required');
       }
-      
+
       if (amount <= 0) {
         throw new Error('Repayment amount must be greater than zero');
       }
@@ -884,7 +913,7 @@ export class CreditService {
       }
 
       const creditLimitRecord = creditLimitData as FarmerCreditLimit;
-      
+
       // Calculate new balance (increase credit balance when repaying)
       const newBalance = creditLimitRecord.current_credit_balance + amount;
       const newTotalUsed = Math.max(0, creditLimitRecord.total_credit_used - amount);
@@ -953,7 +982,7 @@ export class CreditService {
       // This would fetch actual overdue payments from the database
       // For now, we'll return an empty array as a placeholder
       // In a real implementation, this would query for payments that are past due
-      
+
       const { data, error } = await supabase
         .from('farmer_credit_transactions')
         .select(`
@@ -990,7 +1019,7 @@ export class CreditService {
       // This would fetch actual payment schedules from the database
       // For now, we'll return an empty array as a placeholder
       // In a real implementation, this would query for scheduled payments
-      
+
       const { data, error } = await supabase
         .from('payment_schedules')
         .select('*')

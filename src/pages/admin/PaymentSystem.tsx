@@ -1014,7 +1014,7 @@ const PaymentSystem = () => {
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Credit Used</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Net Payment</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Approval Status</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1048,7 +1048,19 @@ const PaymentSystem = () => {
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium">
                                 {formatCurrency(collection.total_amount - (collection.collection_payments?.[0]?.credit_used || 0))}
                               </td>
-
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                {collection.approved_for_payment ? (
+                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                    <CheckCircle className="w-3 h-3 mr-1" />
+                                    Approved
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                    <Clock className="w-3 h-3 mr-1" />
+                                    Pending
+                                  </span>
+                                )}
+                              </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                 <Button
                                   size="sm"
@@ -1089,6 +1101,7 @@ const PaymentSystem = () => {
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Credit Used</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Net Payment</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Approval Status</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1121,6 +1134,19 @@ const PaymentSystem = () => {
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium">
                                 {formatCurrency(collection.total_amount - (collection.collection_payments?.[0]?.credit_used || 0))}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                {collection.approved_for_payment ? (
+                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                    <CheckCircle className="w-3 h-3 mr-1" />
+                                    Approved
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                    <Clock className="w-3 h-3 mr-1" />
+                                    Pending
+                                  </span>
+                                )}
                               </td>
 
                             </tr>

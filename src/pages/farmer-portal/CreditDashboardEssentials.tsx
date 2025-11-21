@@ -1,14 +1,14 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { CreditServiceEssentials } from "@/services/credit-service-essentials";
-import { 
-  CreditCard, 
-  Wallet, 
-  ShoppingCart, 
-  History, 
-  AlertCircle, 
-  CheckCircle, 
-  Clock, 
+import {
+  CreditCard,
+  Wallet,
+  ShoppingCart,
+  History,
+  AlertCircle,
+  CheckCircle,
+  Clock,
   TrendingUp,
   Package,
   DollarSign,
@@ -45,7 +45,7 @@ const CreditDashboardEssentials = () => {
       try {
         setLoading(true);
         const { data: { user } } = await supabase.auth.getUser();
-        
+
         if (!user) {
           setError("Not authenticated");
           setLoading(false);
@@ -71,7 +71,7 @@ const CreditDashboardEssentials = () => {
 
         // Get credit profile
         let profile = await CreditServiceEssentials.getCreditProfile(farmerId);
-        
+
         // If no credit profile exists, create a default one
         if (!profile) {
           try {
@@ -95,7 +95,7 @@ const CreditDashboardEssentials = () => {
           .neq('status', 'Paid');
 
         if (collectionsError) throw collectionsError;
-        const pendingTotal = pendingCollections?.reduce((sum, collection) => 
+        const pendingTotal = pendingCollections?.reduce((sum, collection) =>
           sum + (collection.total_amount || 0), 0) || 0;
         setPendingPayments(pendingTotal);
 
@@ -162,7 +162,7 @@ const CreditDashboardEssentials = () => {
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">Credit Dashboard</h1>
           <p className="text-gray-600 mt-2">Manage your credit against produce</p>
-          
+
           {/* Tabs */}
           <div className="flex border-b border-gray-200 mt-6">
             <button
@@ -208,8 +208,8 @@ const CreditDashboardEssentials = () => {
                         </span>
                       </div>
                       <div className="mt-2 w-full bg-gray-200 rounded-full h-2">
-                        <div 
-                          className="bg-blue-600 h-2 rounded-full" 
+                        <div
+                          className="bg-blue-600 h-2 rounded-full"
                           style={{ width: `${creditPercentage}%` }}
                         ></div>
                       </div>
@@ -292,11 +292,10 @@ const CreditDashboardEssentials = () => {
                       creditTransactions.map((transaction) => (
                         <div key={transaction.id} className="flex items-center justify-between p-3 border border-gray-100 rounded-lg">
                           <div className="flex items-center gap-3">
-                            <div className={`p-2 rounded-full ${
-                              transaction.transaction_type === 'credit_granted' ? 'bg-green-100' :
-                              transaction.transaction_type === 'credit_used' ? 'bg-red-100' :
-                              'bg-blue-100'
-                            }`}>
+                            <div className={`p-2 rounded-full ${transaction.transaction_type === 'credit_granted' ? 'bg-green-100' :
+                                transaction.transaction_type === 'credit_used' ? 'bg-red-100' :
+                                  'bg-blue-100'
+                              }`}>
                               {transaction.transaction_type === 'credit_granted' ? (
                                 <CheckCircle className="w-4 h-4 text-green-600" />
                               ) : transaction.transaction_type === 'credit_used' ? (
@@ -315,9 +314,8 @@ const CreditDashboardEssentials = () => {
                             </div>
                           </div>
                           <div className="text-right">
-                            <p className={`font-semibold ${
-                              transaction.transaction_type === 'credit_granted' ? 'text-green-600' : 'text-red-600'
-                            }`}>
+                            <p className={`font-semibold ${transaction.transaction_type === 'credit_granted' ? 'text-green-600' : 'text-red-600'
+                              }`}>
                               {transaction.transaction_type === 'credit_granted' ? '+' : '-'}
                               {formatCurrency(transaction.amount)}
                             </p>
@@ -351,11 +349,10 @@ const CreditDashboardEssentials = () => {
                       creditRequests.map((request) => (
                         <div key={request.id} className="flex items-center justify-between p-3 border border-gray-100 rounded-lg">
                           <div className="flex items-center gap-3">
-                            <div className={`p-2 rounded-full ${
-                              request.status === 'pending' ? 'bg-yellow-100' :
-                              request.status === 'approved' ? 'bg-green-100' :
-                              'bg-red-100'
-                            }`}>
+                            <div className={`p-2 rounded-full ${request.status === 'pending' ? 'bg-yellow-100' :
+                                request.status === 'approved' ? 'bg-green-100' :
+                                  'bg-red-100'
+                              }`}>
                               {request.status === 'pending' ? (
                                 <Clock className="w-4 h-4 text-yellow-600" />
                               ) : request.status === 'approved' ? (
@@ -374,11 +371,10 @@ const CreditDashboardEssentials = () => {
                             </div>
                           </div>
                           <div className="text-right">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                              request.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                              request.status === 'approved' ? 'bg-green-100 text-green-800' :
-                              'bg-red-100 text-red-800'
-                            }`}>
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${request.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                                request.status === 'approved' ? 'bg-green-100 text-green-800' :
+                                  'bg-red-100 text-red-800'
+                              }`}>
                               {request.status.charAt(0).toUpperCase() + request.status.slice(1)}
                             </span>
                             <p className="text-sm text-gray-500 mt-1">
@@ -436,23 +432,23 @@ const CreditDashboardEssentials = () => {
                         )}
                       </div>
                     </div>
-                    
+
                     <div>
                       <h3 className="font-semibold text-gray-900 mb-3">Settlement Information</h3>
                       <div className="space-y-2">
                         <div className="flex justify-between">
                           <span className="text-gray-600">Next Settlement:</span>
                           <span className="font-medium">
-                            {creditProfile?.next_settlement_date 
-                              ? new Date(creditProfile.next_settlement_date).toLocaleDateString() 
+                            {creditProfile?.next_settlement_date
+                              ? new Date(creditProfile.next_settlement_date).toLocaleDateString()
                               : 'Not scheduled'}
                           </span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-600">Last Settlement:</span>
                           <span className="font-medium">
-                            {creditProfile?.last_settlement_date 
-                              ? new Date(creditProfile.last_settlement_date).toLocaleDateString() 
+                            {creditProfile?.last_settlement_date
+                              ? new Date(creditProfile.last_settlement_date).toLocaleDateString()
                               : 'Never'}
                           </span>
                         </div>
@@ -486,9 +482,9 @@ const CreditDashboardEssentials = () => {
             </div>
           </>
         ) : activeTab === 'shop' ? (
-          <AgrovetShoppingInterface 
-            farmerId={farmerId} 
-            availableCredit={availableCredit} 
+          <AgrovetShoppingInterface
+            farmerId={farmerId}
+            availableCredit={availableCredit}
           />
         ) : (
           <CreditHistory farmerId={farmerId} />

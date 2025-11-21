@@ -135,7 +135,7 @@ const EnhancedCollectorDashboard = () => {
           total_amount,
           collection_date,
           status,
-          farmers!fk_collections_farmer_id (
+          farmers (
             full_name,
             id
           )
@@ -403,7 +403,11 @@ const EnhancedCollectorDashboard = () => {
           liters,
           total_amount,
           collection_date,
-          farmer_id
+          farmer_id,
+          farmers (
+            full_name,
+            id
+          )
         `)
         .gte('collection_date', oneWeekAgo.toISOString())
         .order('collection_date', { ascending: true })

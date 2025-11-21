@@ -228,11 +228,15 @@ const AdminDashboard = () => {
 
   const { refreshSession } = useSessionRefresh({ refreshInterval: 10 * 60 * 1000 });
 
-  // Clear cache when timeframe changes
+  // Clear cache when timeframe changes with debounce
   useEffect(() => {
     // Clear the cache for the previous timeframe to ensure fresh data
-    queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.ADMIN_DASHBOARD] });
-    dataCache.clear();
+    const timeoutId = setTimeout(() => {
+      queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.ADMIN_DASHBOARD] });
+      dataCache.clear();
+    }, 300); // Debounce for 300ms
+    
+    return () => clearTimeout(timeoutId);
   }, [timeRange, queryClient]);
 
   const getDateFilter = useCallback(() => {
@@ -564,7 +568,7 @@ const AdminDashboard = () => {
       // Always fetch fresh data to ensure charts update properly
       setLoading(true);
       
-      // Fetch collections with staff and approved_by IDs only (simplified query)
+      // Fetch collections with staff and approval information
       const { data: rawCollections, error: collectionsError } = await supabase
         .from('collections')
         .select(`
@@ -582,6 +586,7 @@ const AdminDashboard = () => {
           notes,
           farmers!inner(full_name)
         `)
+        .eq('approved_for_company', true)  // Only fetch approved collections
         .gte('collection_date', startDate)
         .lte('collection_date', endDate)
         .order('collection_date', { ascending: false })
@@ -634,11 +639,11 @@ const AdminDashboard = () => {
       // If we have collections data, fetch staff profiles for collector and approver
       let enrichedCollections = rawCollections || [];
       if (rawCollections && rawCollections.length > 0) {
-        // Extract unique staff IDs from collections
+        // Extract unique staff IDs from collections (both collectors and approvers)
         const staffIds = new Set<string>();
         rawCollections.forEach(collection => {
           if (collection.staff_id) staffIds.add(collection.staff_id);
-          if (collection.approved_by) staffIds.add(collection.approved_by);
+          if (collection.milk_approvals?.staff_id) staffIds.add(collection.milk_approvals.staff_id);
         });
         
         // Fetch profiles for all staff members referenced in collections
@@ -662,7 +667,7 @@ const AdminDashboard = () => {
             enrichedCollections = rawCollections.map(collection => ({
               ...collection,
               staff: collection.staff_id ? { profiles: staffProfileMap.get(collection.staff_id) } : null,
-              approved_by: collection.approved_by ? { profiles: staffProfileMap.get(collection.approved_by) } : null
+              approved_by: collection.milk_approvals?.staff_id ? { profiles: staffProfileMap.get(collection.milk_approvals.staff_id) } : null
             }));
           }
         }
@@ -1032,6 +1037,7 @@ const AdminDashboard = () => {
           notes,
           farmers!inner(full_name)
         `)
+        .eq('approved_for_company', true)  // Only fetch approved collections
         .gte('collection_date', startDate)
         .lte('collection_date', endDate)
         .order('collection_date', { ascending: false })
@@ -1084,11 +1090,11 @@ const AdminDashboard = () => {
       // If we have collections data, fetch staff profiles for collector and approver
       let enrichedCollections = rawCollections || [];
       if (rawCollections && rawCollections.length > 0) {
-        // Extract unique staff IDs from collections
+        // Extract unique staff IDs from collections (both collectors and approvers)
         const staffIds = new Set<string>();
         rawCollections.forEach(collection => {
           if (collection.staff_id) staffIds.add(collection.staff_id);
-          if (collection.approved_by) staffIds.add(collection.approved_by);
+          if (collection.milk_approvals?.staff_id) staffIds.add(collection.milk_approvals.staff_id);
         });
         
         // Fetch profiles for all staff members referenced in collections
@@ -1112,7 +1118,7 @@ const AdminDashboard = () => {
             enrichedCollections = rawCollections.map(collection => ({
               ...collection,
               staff: collection.staff_id ? { profiles: staffProfileMap.get(collection.staff_id) } : null,
-              approved_by: collection.approved_by ? { profiles: staffProfileMap.get(collection.approved_by) } : null
+              approved_by: collection.milk_approvals?.staff_id ? { profiles: staffProfileMap.get(collection.milk_approvals.staff_id) } : null
             }));
           }
         }
@@ -1190,10 +1196,16 @@ const AdminDashboard = () => {
         <div className="flex items-center space-x-3">
           <Select value={timeRange} onValueChange={(value) => {
             setTimeRange(value);
-            // Trigger immediate refresh when timeframe changes
-            setTimeout(() => {
+            // Trigger refresh with debounce when timeframe changes
+            const timeoutId = setTimeout(() => {
               refetch();
-            }, 100);
+            }, 500); // Debounce for 500ms
+            
+            // Clear previous timeout if exists
+            if ((window as any).dashboardTimeRangeTimeout) {
+              clearTimeout((window as any).dashboardTimeRangeTimeout);
+            }
+            (window as any).dashboardTimeRangeTimeout = timeoutId;
           }}>
             <SelectTrigger className="w-[180px] bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded-lg shadow-sm">
               <SelectValue placeholder="Select time range" />
@@ -1209,10 +1221,15 @@ const AdminDashboard = () => {
           <RefreshButton 
             isRefreshing={isDashboardLoading || loading} 
             onRefresh={() => {
-              // Clear cache and refetch data
-              dataCache.clear();
-              queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.ADMIN_DASHBOARD, timeRange] });
-              refetch();
+              // Clear cache and refetch data with debounce
+              const timeoutId = setTimeout(() => {
+                dataCache.clear();
+                queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.ADMIN_DASHBOARD, timeRange] });
+                refetch();
+              }, 300); // Debounce for 300ms
+              
+              // Store timeout ID to clear if needed
+              (window as any).dashboardRefreshTimeout = timeoutId;
             }} 
             className="bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg shadow-sm"
           />

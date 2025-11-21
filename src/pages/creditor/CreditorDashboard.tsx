@@ -2,14 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { 
-  CreditCard, 
-  TrendingUp, 
-  User, 
+import {
+  CreditCard,
+  TrendingUp,
+  User,
   BarChart3,
   FileText,
   Calendar,
-  Package
+  Package,
+  CheckCircle
 } from 'lucide-react';
 import RefreshButton from '@/components/ui/RefreshButton';
 import { CreditService } from '@/services/credit-service';
@@ -90,6 +91,13 @@ const CreditorDashboard = () => {
       color: "bg-indigo-500"
     },
     {
+      title: "Disbursement",
+      description: "Confirm product collection by farmers",
+      icon: <CheckCircle className="h-8 w-8" />,
+      path: "/creditor/disbursement",
+      color: "bg-emerald-500"
+    },
+    {
       title: "Credit Reports",
       description: "View detailed credit analytics and reports",
       icon: <TrendingUp className="h-8 w-8" />,
@@ -124,9 +132,9 @@ const CreditorDashboard = () => {
             </div>
           </div>
           <div className="mt-4 md:mt-0">
-            <RefreshButton 
-              isRefreshing={loading} 
-              onRefresh={fetchDashboardStats} 
+            <RefreshButton
+              isRefreshing={loading}
+              onRefresh={fetchDashboardStats}
               className="bg-white/20 border-white/30 hover:bg-white/30 text-white rounded-md shadow-sm"
               variant="outline"
             />
@@ -137,7 +145,7 @@ const CreditorDashboard = () => {
       {/* Features Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
         {features.map((feature, index) => (
-          <Card 
+          <Card
             key={feature.title}
             className="hover:shadow-lg transition-all duration-300 hover:-translate-y-1 border-border"
           >
@@ -149,7 +157,7 @@ const CreditorDashboard = () => {
             </CardHeader>
             <CardContent>
               <div className="text-muted-foreground mb-4">{feature.description}</div>
-              <Button 
+              <Button
                 onClick={() => navigate(feature.path)}
                 className="w-full"
                 variant="outline"
@@ -174,7 +182,7 @@ const CreditorDashboard = () => {
             </div>
           </CardContent>
         </Card>
-        
+
         <Card className="border-l-4 border-l-green-500">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
@@ -186,7 +194,7 @@ const CreditorDashboard = () => {
             </div>
           </CardContent>
         </Card>
-        
+
         <Card className="border-l-4 border-l-purple-500">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
@@ -198,7 +206,7 @@ const CreditorDashboard = () => {
             </div>
           </CardContent>
         </Card>
-        
+
         <Card className="border-l-4 border-l-orange-500">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">

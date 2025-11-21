@@ -166,6 +166,7 @@ const useCollectionsData = () => {
           total_amount,
           collection_date,
           status,
+          approved_for_company,
           gps_latitude,
           gps_longitude,
           farmers!inner (
@@ -184,6 +185,7 @@ const useCollectionsData = () => {
             )
           )
         `)
+        .eq('approved_for_company', true) // Only fetch approved collections
         .order('collection_date', { ascending: false });
 
       if (collectionsError) {
@@ -848,6 +850,7 @@ const CollectionsAnalyticsDashboard = () => {
                     <TableHead>Rate</TableHead>
                     <TableHead>Amount</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Approval</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -874,6 +877,13 @@ const CollectionsAnalyticsDashboard = () => {
                       <TableCell className="font-medium text-green-600">{formatCurrency(c.total_amount)}</TableCell>
                       <TableCell>
                         <Badge variant={getStatusVariant(c.status)}>{c.status}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        {c.approved_for_company ? (
+                          <Badge variant="default">Approved</Badge>
+                        ) : (
+                          <Badge variant="destructive">Pending</Badge>
+                        )}
                       </TableCell>
                       <TableCell>
                         <Dialog>

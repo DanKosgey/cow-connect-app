@@ -24,6 +24,9 @@ const MilkApprovalRoutes = lazy(() => import("./routes/milkApproval.routes"));
 const CollectorOnlyRoutes = lazy(() => import("./routes/collector-only.routes"));
 const StaffOnlyRoutes = lazy(() => import("./routes/staff-only.routes"));
 const CreditorRoutes = lazy(() => import("./routes/creditor.routes"));
+const CreditDashboard = lazy(() => import("./pages/farmer-portal/CreditDashboard"));
+const ShopPage = lazy(() => import("./pages/farmer-portal/ShopPage"));
+const CommunityForumPage = lazy(() => import("./pages/farmer-portal/CommunityForumPage"));
 
 // Configure React Query with performance optimizations
 const queryClient = new QueryClient({
@@ -52,7 +55,7 @@ const App = () => {
     if (import.meta.env.DEV) {
       console.log('App starting');
     }
-    
+
     // Clear expired cache items
     const cacheTimestamp = localStorage.getItem('auth_cache_timestamp');
     if (cacheTimestamp) {
@@ -67,7 +70,7 @@ const App = () => {
         }
       }
     }
-    
+
     // Also clear any potentially corrupted auth data
     const lastClearTime = localStorage.getItem('last_auth_clear_time');
     if (lastClearTime) {
@@ -86,7 +89,7 @@ const App = () => {
         }
       }
     }
-    
+
     // Minimal auth state logging for debugging
     if (import.meta.env.DEV) {
       const hasCachedData = localStorage.getItem('cached_user') || localStorage.getItem('cached_role');
@@ -99,8 +102,8 @@ const App = () => {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-      <SkipLink targetId="main-content">Skip to main content</SkipLink>
+        <TooltipProvider>
+          <SkipLink targetId="main-content">Skip to main content</SkipLink>
           <BrowserRouter future={{
             v7_startTransition: true,
             v7_relativeSplatPath: true
@@ -112,7 +115,7 @@ const App = () => {
                     <Routes>
                       {/* Public routes including unified login */}
                       <Route path="/*" element={<PublicRoutes />} />
-                      
+
                       {/* Role-specific routes with their own login pages */}
                       <Route path="/admin/*" element={<AdminRoutes />} />
                       <Route path="/collector/*" element={<CollectorRoutes />} />
@@ -121,6 +124,11 @@ const App = () => {
                       <Route path="/collector-only/*" element={<CollectorOnlyRoutes />} />
                       <Route path="/staff-only/*" element={<StaffOnlyRoutes />} />
                       <Route path="/creditor/*" element={<CreditorRoutes />} />
+
+                      {/* Direct routes for farmer portal pages if needed, though they should be under /farmer/* */}
+                      <Route path="/farmer-portal/credit" element={<CreditDashboard />} />
+                      <Route path="/farmer-portal/shop" element={<ShopPage />} />
+                      <Route path="/farmer-portal/community" element={<CommunityForumPage />} />
                     </Routes>
                   </Suspense>
                 </main>

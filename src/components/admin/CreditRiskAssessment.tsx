@@ -73,7 +73,8 @@ const CreditRiskAssessment = () => {
         // Get collections data for pending payments
         const { data: collections, error: collectionsError } = await supabase
           .from('collections')
-          .select('farmer_id, total_amount, status');
+          .select('farmer_id, total_amount, status')
+          .eq('approved_for_company', true); // Only consider approved collections
 
         if (collectionsError) throw collectionsError;
 

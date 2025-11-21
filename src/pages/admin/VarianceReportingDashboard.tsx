@@ -948,8 +948,8 @@ const VarianceReportingDashboard: React.FC = () => {
                   <TableHead>Positive</TableHead>
                   <TableHead>Negative</TableHead>
                   <TableHead>Penalties (KSh)</TableHead>
-                  <TableHead>Performance Score</TableHead> {/* Add this column */}
-                  <TableHead>Last Collection</TableHead> {/* Add this column */}
+                  <TableHead>Performance Score</TableHead>
+                  <TableHead>Last Collection</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1028,7 +1028,6 @@ const VarianceReportingDashboard: React.FC = () => {
                   <TableHead className="cursor-pointer" onClick={() => handleSort('company_received_liters')}>
                     Received (L) {sortBy === 'company_received_liters' && (sortOrder === 'asc' ? '↑' : '↓')}
                   </TableHead>
-                  <TableHead>Variance</TableHead>
                   <TableHead className="cursor-pointer" onClick={() => handleSort('variance_type')}>
                     Type {sortBy === 'variance_type' && (sortOrder === 'asc' ? '↑' : '↓')}
                   </TableHead>
@@ -1043,7 +1042,7 @@ const VarianceReportingDashboard: React.FC = () => {
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center py-8">
+                    <TableCell colSpan={9} className="text-center py-8">
                       <div className="flex justify-center">
                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
                       </div>
@@ -1077,17 +1076,6 @@ const VarianceReportingDashboard: React.FC = () => {
                         {variance.company_received_liters?.toFixed(2) || '0.00'}
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-1">
-                          {getVarianceIcon(variance.variance_type || 'none')}
-                          <span className={variance.variance_liters >= 0 ? 'text-green-600' : 'text-red-600'}>
-                            {variance.variance_liters?.toFixed(2) || '0.00'}L
-                          </span>
-                          <Badge className={getVarianceSeverityColor(variance.variance_percentage || 0)}>
-                            {variance.variance_percentage?.toFixed(2) || '0.00'}%
-                          </Badge>
-                        </div>
-                      </TableCell>
-                      <TableCell>
                         <Badge className={getVarianceTypeColor(variance.variance_type || 'none')}>
                           {variance.variance_type 
                             ? variance.variance_type.charAt(0).toUpperCase() + variance.variance_type.slice(1)
@@ -1112,7 +1100,7 @@ const VarianceReportingDashboard: React.FC = () => {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center py-8">
+                    <TableCell colSpan={9} className="text-center py-8">
                       <p className="text-muted-foreground">No variances found</p>
                     </TableCell>
                   </TableRow>

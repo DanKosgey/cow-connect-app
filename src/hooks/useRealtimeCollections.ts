@@ -67,7 +67,7 @@ export function useRealtimeCollections(farmerId?: string, staffId?: string) {
       .from('collections')
       .select(`
         *,
-        farmers!fk_collections_farmer_id (
+        farmers (
           id,
           user_id,
           profiles!user_id (
@@ -247,7 +247,7 @@ export function useRealtimeCollections(farmerId?: string, staffId?: string) {
               .from('collections')
               .select(`
                 *,
-                farmers!fk_collections_farmer_id (
+                farmers (
                   id,
                   user_id,
                   profiles!user_id (

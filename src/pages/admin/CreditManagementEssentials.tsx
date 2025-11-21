@@ -109,11 +109,12 @@ const CreditManagementEssentials = () => {
           // Get credit profile
           const creditProfile = await CreditServiceEssentials.getCreditProfile(farmer.id);
           
-          // Get pending payments
+          // Get pending payments from approved collections only
           const { data: pendingCollections, error: collectionsError } = await supabase
             .from('collections')
             .select('total_amount')
             .eq('farmer_id', farmer.id)
+            .eq('approved_for_company', true) // Only consider approved collections
             .neq('status', 'Paid');
 
           if (collectionsError) {

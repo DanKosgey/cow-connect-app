@@ -110,7 +110,7 @@ export default function QualityControlManagement() {
           collection_date,
           status,
           notes,
-          farmers!fk_collections_farmer_id (
+          farmers (
             full_name,
             id
           )

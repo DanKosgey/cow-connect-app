@@ -240,7 +240,7 @@ export class StaffDataService {
           collection_date,
           status,
           notes,
-          farmers!fk_collections_farmer_id (
+          farmers (
             full_name,
             id
           )

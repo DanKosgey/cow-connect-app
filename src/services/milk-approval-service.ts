@@ -1,5 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { logger } from '@/utils/logger';
+import { EnhancedAuditService } from './enhanced-audit-service';
+import { CollectionNotificationService } from './collection-notification-service';
 
 interface MilkApprovalData {
   collectionId: string;
@@ -16,23 +18,379 @@ interface VarianceData {
   varianceType: 'positive' | 'negative' | 'none';
 }
 
+interface StaffInfo {
+  staffId: string;
+  userId: string;
+  fullName: string;
+  email: string;
+  roles: string[];
+}
+
 export class MilkApprovalService {
+  /**
+   * Get staff information by staff ID with proper role identification
+   */
+  static async getStaffInfo(staffId: string): Promise<StaffInfo | null> {
+    try {
+      const { data, error } = await supabase
+        .from('staff')
+        .select(`
+          id,
+          user_id,
+          profiles!staff_user_id_fkey (
+            id,
+            full_name,
+            email
+          )
+        `)
+        .eq('id', staffId)
+        .maybeSingle();
+
+      if (error) {
+        logger.errorWithContext('MilkApprovalService - fetching staff info', error);
+        return null;
+      }
+
+      if (!data) {
+        logger.warn('MilkApprovalService - staff not found', { staffId });
+        return null;
+      }
+
+      // Fetch roles separately using the user_id
+      let roles: string[] = [];
+      if (data.user_id) {
+        const { data: rolesData, error: rolesError } = await supabase
+          .from('user_roles')
+          .select('role')
+          .eq('user_id', data.user_id)
+          .eq('active', true)
+          .maybeSingle();
+
+        if (!rolesError && rolesData) {
+          roles = [rolesData.role];
+        }
+      }
+
+      return {
+        staffId: data.id,
+        userId: data.user_id,
+        fullName: data.profiles?.full_name || 'Unknown',
+        email: data.profiles?.email || '',
+        roles
+      };
+    } catch (error) {
+      logger.errorWithContext('MilkApprovalService - getStaffInfo', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get all staff members with their roles (for filtering collectors vs staff)
+   */
+  static async getAllStaff(): Promise<StaffInfo[]> {
+    try {
+      const { data, error } = await supabase
+        .from('staff')
+        .select(`
+          id,
+          user_id,
+          profiles!staff_user_id_fkey (
+            id,
+            full_name,
+            email
+          )
+        `);
+
+      if (error) {
+        logger.errorWithContext('MilkApprovalService - fetching all staff', error);
+        return [];
+      }
+
+      // Fetch roles for all staff members
+      const userIds = (data || [])
+        .map((staff: any) => staff.user_id)
+        .filter(Boolean);
+
+      let rolesMap = new Map<string, string[]>();
+
+      if (userIds.length > 0) {
+        const { data: allRoles, error: rolesError } = await supabase
+          .from('user_roles')
+          .select('user_id, role')
+          .in('user_id', userIds)
+          .eq('active', true);
+
+        if (!rolesError && allRoles) {
+          allRoles.forEach((ur: any) => {
+            if (!rolesMap.has(ur.user_id)) {
+              rolesMap.set(ur.user_id, []);
+            }
+            rolesMap.get(ur.user_id)?.push(ur.role);
+          });
+        }
+      }
+
+      return (data || []).map((staff: any) => {
+        const roles = rolesMap.get(staff.user_id) || [];
+        return {
+          staffId: staff.id,
+          userId: staff.user_id,
+          fullName: staff.profiles?.full_name || 'Unknown',
+          email: staff.profiles?.email || '',
+          roles
+        };
+      });
+    } catch (error) {
+      logger.errorWithContext('MilkApprovalService - getAllStaff', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get collectors only
+   */
+  static async getCollectors(): Promise<StaffInfo[]> {
+    const allStaff = await this.getAllStaff();
+    return allStaff.filter(staff => staff.roles.includes('collector'));
+  }
+
+  /**
+   * Get staff members (non-collectors)
+   */
+  static async getStaffMembers(): Promise<StaffInfo[]> {
+    const allStaff = await this.getAllStaff();
+    return allStaff.filter(staff => staff.roles.includes('staff'));
+  }
+
+  /**
+   * Get pending collections with enriched collector information
+   * These collections are ready for approval by staff members
+   */
+  static async getPendingCollections() {
+    try {
+      // First, fetch pending collections (collections not yet approved for company)
+      const { data: collections, error: collectionsError } = await supabase
+        .from('collections')
+        .select(`
+          id,
+          collection_date,
+          liters,
+          farmer_id,
+          staff_id,
+          status,
+          approved_for_company,
+          company_approval_id,
+          created_at
+        `)
+        .eq('approved_for_company', false)
+        .order('collection_date', { ascending: false })
+        .order('created_at', { ascending: false });
+
+      if (collectionsError) {
+        logger.errorWithContext('MilkApprovalService - fetching collections', collectionsError);
+        throw collectionsError;
+      }
+
+      logger.info('MilkApprovalService - fetched pending collections', {
+        collectionCount: collections?.length || 0
+      });
+
+      if (!collections || collections.length === 0) {
+        return { success: true, data: [] };
+      }
+
+      // Get unique collector staff IDs (these are the people who collected the milk)
+      const collectorStaffIds = [...new Set(collections.map(c => c.staff_id).filter(Boolean))];
+
+      logger.info('MilkApprovalService - unique collector staff IDs', {
+        collectorCount: collectorStaffIds.length,
+        collectorIds: collectorStaffIds
+      });
+
+      // Fetch collector information for all collectors
+      const { data: collectorData, error: collectorError } = await supabase
+        .from('staff')
+        .select(`
+          id,
+          user_id,
+          profiles!staff_user_id_fkey (
+            id,
+            full_name,
+            email
+          )
+        `)
+        .in('id', collectorStaffIds);
+
+      if (collectorError) {
+        logger.errorWithContext('MilkApprovalService - fetching collector data', {
+          error: collectorError.message,
+          code: collectorError.code,
+          details: collectorError.details
+        });
+      }
+
+      logger.info('MilkApprovalService - fetched collector profiles', {
+        profileCount: collectorData?.length || 0,
+        error: collectorError?.message,
+        collectorStaffIds
+      });
+
+      // If query returned no results, try using RPC or check RLS policies
+      if (!collectorData || collectorData.length === 0) {
+        logger.warn('MilkApprovalService - Staff table query returned no results. Possible RLS policy issue.', {
+          queriedIds: collectorStaffIds,
+          suggestion: 'Check RLS policies on staff table for current user'
+        });
+      }
+
+      // Fetch roles separately for all collectors to verify they have 'collector' role
+      let rolesMap = new Map<string, string[]>();
+      const userIds = (collectorData || [])
+        .map((staff: any) => staff.user_id)
+        .filter(Boolean);
+
+      if (userIds.length > 0) {
+        const { data: allRoles, error: rolesError } = await supabase
+          .from('user_roles')
+          .select('user_id, role')
+          .in('user_id', userIds)
+          .eq('active', true);
+
+        if (!rolesError && allRoles) {
+          allRoles.forEach((ur: any) => {
+            if (!rolesMap.has(ur.user_id)) {
+              rolesMap.set(ur.user_id, []);
+            }
+            rolesMap.get(ur.user_id)?.push(ur.role);
+          });
+        } else if (rolesError) {
+          logger.errorWithContext('MilkApprovalService - fetching user roles', rolesError);
+        }
+      }
+
+      // Create a map of collector info by staff_id
+      const collectorMap = new Map<string, StaffInfo>();
+      (collectorData || []).forEach((staff: any) => {
+        const roles = rolesMap.get(staff.user_id) || [];
+
+        collectorMap.set(staff.id, {
+          staffId: staff.id,
+          userId: staff.user_id,
+          fullName: staff.profiles?.full_name || 'Unknown',
+          email: staff.profiles?.email || '',
+          roles
+        });
+      });
+
+      // Get unique farmer IDs to fetch farmer information
+      const farmerIds = [...new Set(collections.map(c => c.farmer_id).filter(Boolean))];
+
+      logger.info('MilkApprovalService - unique farmer IDs', {
+        farmerCount: farmerIds.length,
+        farmerIds
+      });
+
+      // Fetch farmer information
+      let farmerMap = new Map<string, any>();
+      if (farmerIds.length > 0) {
+        const { data: farmerData, error: farmerError } = await supabase
+          .from('farmers')
+          .select(`
+            id,
+            full_name,
+            phone_number,
+            registration_number
+          `)
+          .in('id', farmerIds);
+
+        if (farmerError) {
+          logger.errorWithContext('MilkApprovalService - fetching farmer data', farmerError);
+        }
+
+        logger.info('MilkApprovalService - fetched farmer profiles', {
+          farmerCount: farmerData?.length || 0
+        });
+
+        (farmerData || []).forEach((farmer: any) => {
+          farmerMap.set(farmer.id, {
+            id: farmer.id,
+            fullName: farmer.full_name || 'Unknown Farmer',
+            phoneNumber: farmer.phone_number || '',
+            registrationNumber: farmer.registration_number || ''
+          });
+        });
+      }
+
+      // Enrich collections with collector and farmer info
+      const enrichedCollections = collections.map(collection => {
+        const collectorInfo = collectorMap.get(collection.staff_id);
+        const farmerInfo = farmerMap.get(collection.farmer_id);
+
+        if (!collectorInfo) {
+          logger.warn('MilkApprovalService - collector not found for collection', {
+            collectionId: collection.id,
+            collectorStaffId: collection.staff_id
+          });
+        }
+
+        if (!farmerInfo) {
+          logger.warn('MilkApprovalService - farmer not found for collection', {
+            collectionId: collection.id,
+            farmerId: collection.farmer_id
+          });
+        }
+
+        return {
+          ...collection,
+          status: collection.status || 'pending',
+          // collector is the staff member who collected the milk
+          collector: collectorInfo || {
+            staffId: collection.staff_id,
+            userId: '',
+            fullName: 'Unknown Collector',
+            email: '',
+            roles: ['collector']
+          },
+          // farmer is the milk producer
+          farmer: farmerInfo || {
+            id: collection.farmer_id,
+            fullName: 'Unknown Farmer',
+            phoneNumber: '',
+            registrationNumber: ''
+          }
+        };
+      });
+
+      logger.info('MilkApprovalService - final enriched collections', {
+        collectionCount: enrichedCollections.length,
+        foundCollectorCount: enrichedCollections.filter((c: any) => c.collector?.fullName !== 'Unknown Collector').length,
+        foundFarmerCount: enrichedCollections.filter((c: any) => c.farmer?.fullName !== 'Unknown Farmer').length,
+        sampleCollections: enrichedCollections.slice(0, 2)
+      });
+
+      return { success: true, data: enrichedCollections };
+    } catch (error) {
+      logger.errorWithContext('MilkApprovalService - getPendingCollections', error);
+      return { success: false, error };
+    }
+  }
+
   /**
    * Calculate variance between collected and received milk amounts
    */
   static calculateVariance(collectedLiters: number, receivedLiters: number): VarianceData {
     const varianceLiters = receivedLiters - collectedLiters;
-    const variancePercentage = collectedLiters > 0 
-      ? (varianceLiters / collectedLiters) * 100 
+    const variancePercentage = collectedLiters > 0
+      ? (varianceLiters / collectedLiters) * 100
       : 0;
-    
+
     let varianceType: 'positive' | 'negative' | 'none' = 'none';
     if (varianceLiters > 0) {
       varianceType = 'positive';
     } else if (varianceLiters < 0) {
       varianceType = 'negative';
     }
-    
+
     return {
       collectedLiters,
       receivedLiters,
@@ -64,15 +422,45 @@ export class MilkApprovalService {
       }
 
       if (!data) {
-        // No matching penalty configuration found, return 0
         return 0;
       }
 
-      // Calculate penalty: |variance_liters| * penalty_rate_per_liter
       return Math.abs(varianceData.varianceLiters) * data.penalty_rate_per_liter;
     } catch (error) {
       logger.errorWithContext('MilkApprovalService - calculatePenalty', error);
       throw error;
+    }
+  }
+
+  /**
+   * Convert user ID to staff ID
+   */
+  static async convertUserIdToStaffId(userId: string): Promise<string> {
+    try {
+      const { data: staffData, error: staffError } = await supabase
+        .from('staff')
+        .select('id')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (staffError) {
+        logger.errorWithContext('MilkApprovalService - converting user ID to staff ID', staffError);
+        throw staffError;
+      }
+
+      if (staffData?.id) {
+        logger.info('MilkApprovalService - converted user ID to staff ID', {
+          userId,
+          staffId: staffData.id
+        });
+        return staffData.id;
+      }
+
+      logger.warn('Staff record not found for user ID, using user ID directly', userId);
+      return userId;
+    } catch (error) {
+      logger.errorWithContext('MilkApprovalService - convertUserIdToStaffId', error);
+      return userId;
     }
   }
 
@@ -97,28 +485,12 @@ export class MilkApprovalService {
         throw new Error('Collection not found');
       }
 
-      // Convert user ID to staff ID
-      let staffId = approvalData.staffId;
-      const { data: staffData, error: staffError } = await supabase
-        .from('staff')
-        .select('id')
-        .eq('user_id', approvalData.staffId)
-        .maybeSingle();
-        
-      if (staffError) {
-        logger.errorWithContext('MilkApprovalService - fetching staff data', staffError);
-        throw staffError;
-      }
-      
-      if (staffData?.id) {
-        staffId = staffData.id;
-      } else {
-        logger.warn('Staff record not found for user ID, using user ID directly', approvalData.staffId);
-      }
+      // Convert user ID to staff ID if needed
+      const staffId = await this.convertUserIdToStaffId(approvalData.staffId);
 
       // Calculate variance
       const varianceData = this.calculateVariance(
-        collection.liters, 
+        collection.liters,
         approvalData.companyReceivedLiters
       );
 
@@ -130,7 +502,7 @@ export class MilkApprovalService {
         .from('milk_approvals')
         .insert({
           collection_id: approvalData.collectionId,
-          staff_id: staffId, // Use the converted staff ID
+          staff_id: staffId,
           company_received_liters: approvalData.companyReceivedLiters,
           variance_liters: varianceData.varianceLiters,
           variance_percentage: varianceData.variancePercentage,
@@ -157,35 +529,29 @@ export class MilkApprovalService {
         .eq('id', approvalData.collectionId);
 
       if (updateError) {
-        logger.errorWithContext('MilkApprovalService - updating collection', updateError);
+        logger.errorWithContext('MilkApprovalService - updating collection approval status', updateError);
         throw updateError;
       }
 
-      // Update collector performance metrics
-      await this.updateCollectorPerformance(
-        collection.staff_id, 
-        varianceData, 
-        penaltyAmount
-      );
+      // Send notification to farmer
+      try {
+        await CollectionNotificationService.sendCollectionApprovedForPaymentNotification(
+          approvalData.collectionId,
+          collection.farmer_id,
+          staffId
+        );
+      } catch (notificationError) {
+        logger.warn('Warning: Failed to send approval notification', notificationError);
+      }
 
-      // Send notification to collector about approval
-      await this.sendApprovalNotification(
-        collection.staff_id,
-        approvalData.collectionId,
-        varianceData,
-        penaltyAmount
-      );
-
-      // Log audit entry
-      await this.logAuditEntry(
-        approvalData.collectionId,
-        staffId, // Use the converted staff ID
-        varianceData,
-        penaltyAmount,
-        approval.id
-      );
-
-      return { success: true, data: approval };
+      return {
+        success: true,
+        data: {
+          approval,
+          collectionId: approvalData.collectionId,
+          farmerId: collection.farmer_id
+        }
+      };
     } catch (error) {
       logger.errorWithContext('MilkApprovalService - approveMilkCollection', error);
       return { success: false, error };
@@ -204,305 +570,89 @@ export class MilkApprovalService {
     try {
       // Validate inputs
       if (!staffId || !collectorId || !collectionDate) {
+        logger.errorWithContext('MilkApprovalService - batchApproveCollections - Missing required parameters', {
+          staffId: !!staffId,
+          collectorId: !!collectorId,
+          collectionDate: !!collectionDate
+        });
         return { success: false, error: new Error('Staff ID, collector ID, and collection date are required') };
       }
 
+      // Convert user ID to staff ID if needed
+      const actualStaffId = await this.convertUserIdToStaffId(staffId);
+
+      logger.info('MilkApprovalService - batchApproveCollections called with parameters', {
+        staffId: actualStaffId,
+        originalStaffId: staffId,
+        collectorId,
+        collectionDate,
+        defaultReceivedLiters
+      });
+
       // Validate default received liters if provided
       if (defaultReceivedLiters !== undefined && defaultReceivedLiters < 0) {
+        logger.errorWithContext('MilkApprovalService - batchApproveCollections - Negative default received liters', {
+          defaultReceivedLiters
+        });
         return { success: false, error: new Error('Default received liters cannot be negative') };
       }
 
       // Call the database function for batch approval
       const { data, error } = await supabase
         .rpc('batch_approve_collector_collections', {
-          p_staff_id: staffId,
+          p_staff_id: actualStaffId,
           p_collector_id: collectorId,
           p_collection_date: collectionDate,
           p_default_received_liters: defaultReceivedLiters
         });
 
       if (error) {
-        logger.errorWithContext('MilkApprovalService - batch approving collections', error);
+        logger.errorWithContext('MilkApprovalService - batch approving collections FAILED', {
+          error: error.message,
+          staffId: actualStaffId,
+          originalStaffId: staffId,
+          collectorId,
+          collectionDate
+        });
         return { success: false, error };
       }
 
+      logger.info('MilkApprovalService - batch approving collections SUCCESS', {
+        approvedCount: data?.[0]?.approved_count,
+        staffId: actualStaffId,
+        originalStaffId: staffId,
+        collectorId,
+        collectionDate
+      });
+
       // Log audit entry for batch operation
       await this.logBatchAuditEntry(
-        staffId,
+        actualStaffId,
         collectorId,
         collectionDate,
         data?.[0] || {}
       );
 
+      // Send notification to collector
+      try {
+        await this.sendBatchApprovalNotification(
+          collectorId,
+          collectionDate,
+          data?.[0] || {}
+        );
+      } catch (notificationError) {
+        logger.warn('Warning: Failed to send batch approval notification', notificationError);
+      }
+
       return { success: true, data: data?.[0] || {} };
     } catch (error) {
-      logger.errorWithContext('MilkApprovalService - batchApproveCollections', error);
+      logger.errorWithContext('MilkApprovalService - batchApproveCollections - Unexpected error', {
+        error,
+        staffId,
+        collectorId,
+        collectionDate
+      });
       return { success: false, error };
-    }
-  }
-
-  /**
-   * Update collector performance metrics
-   */
-  static async updateCollectorPerformance(
-    collectorId: string, 
-    varianceData: VarianceData, 
-    penaltyAmount: number
-  ) {
-    try {
-      // Get current performance record for this collector for the current period
-      // For simplicity, we'll use the current month as the period
-      const now = new Date();
-      const periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
-      const periodEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-
-      // Try to get existing performance record
-      const { data: existingPerformance, error: fetchError } = await supabase
-        .from('collector_performance')
-        .select('*')
-        .eq('staff_id', collectorId)
-        .eq('period_start', periodStart.toISOString().split('T')[0])
-        .eq('period_end', periodEnd.toISOString().split('T')[0])
-        .maybeSingle();
-
-      if (fetchError) {
-        logger.errorWithContext('MilkApprovalService - fetching performance record', fetchError);
-        throw fetchError;
-      }
-
-      if (existingPerformance) {
-        // Update existing record
-        const updates: any = {
-          total_collections: existingPerformance.total_collections + 1,
-          total_liters_collected: existingPerformance.total_liters_collected + varianceData.collectedLiters,
-          total_liters_received: existingPerformance.total_liters_received + varianceData.receivedLiters,
-          total_variance: existingPerformance.total_variance + varianceData.varianceLiters,
-          total_penalty_amount: existingPerformance.total_penalty_amount + penaltyAmount,
-          updated_at: new Date().toISOString()
-        };
-
-        // Update variance type counters
-        if (varianceData.varianceType === 'positive') {
-          updates.positive_variances = existingPerformance.positive_variances + 1;
-        } else if (varianceData.varianceType === 'negative') {
-          updates.negative_variances = existingPerformance.negative_variances + 1;
-        }
-
-        // Recalculate average variance percentage
-        if (updates.total_collections > 0) {
-          updates.average_variance_percentage = (updates.total_variance / updates.total_liters_collected) * 100;
-        }
-
-        // Recalculate performance score (simplified formula)
-        // Performance score decreases with higher penalties and variances
-        const baseScore = 100;
-        const penaltyDeduction = (updates.total_penalty_amount / 1000) * 5; // 5 points per 1000 penalty
-        const varianceDeduction = Math.abs(updates.total_variance) * 0.1; // 0.1 points per liter variance
-        updates.performance_score = Math.max(0, baseScore - penaltyDeduction - varianceDeduction);
-
-        const { error: updateError } = await supabase
-          .from('collector_performance')
-          .update(updates)
-          .eq('id', existingPerformance.id);
-
-        if (updateError) {
-          logger.errorWithContext('MilkApprovalService - updating performance record', updateError);
-          throw updateError;
-        }
-      } else {
-        // Create new performance record
-        const performanceData: any = {
-          staff_id: collectorId,
-          period_start: periodStart.toISOString().split('T')[0],
-          period_end: periodEnd.toISOString().split('T')[0],
-          total_collections: 1,
-          total_liters_collected: varianceData.collectedLiters,
-          total_liters_received: varianceData.receivedLiters,
-          total_variance: varianceData.varianceLiters,
-          total_penalty_amount: penaltyAmount,
-          average_variance_percentage: varianceData.variancePercentage,
-          performance_score: 100 // Start with perfect score
-        };
-
-        // Set variance type counters
-        if (varianceData.varianceType === 'positive') {
-          performanceData.positive_variances = 1;
-          performanceData.negative_variances = 0;
-        } else if (varianceData.varianceType === 'negative') {
-          performanceData.positive_variances = 0;
-          performanceData.negative_variances = 1;
-        } else {
-          performanceData.positive_variances = 0;
-          performanceData.negative_variances = 0;
-        }
-
-        // Calculate performance score
-        const penaltyDeduction = (penaltyAmount / 1000) * 5;
-        const varianceDeduction = Math.abs(varianceData.varianceLiters) * 0.1;
-        performanceData.performance_score = Math.max(0, 100 - penaltyDeduction - varianceDeduction);
-
-        const { error: insertError } = await supabase
-          .from('collector_performance')
-          .insert(performanceData);
-
-        if (insertError) {
-          logger.errorWithContext('MilkApprovalService - creating performance record', insertError);
-          throw insertError;
-        }
-      }
-    } catch (error) {
-      logger.errorWithContext('MilkApprovalService - updateCollectorPerformance', error);
-      // Don't throw error as this is supplementary functionality
-      console.warn('Failed to update collector performance metrics:', error);
-    }
-  }
-
-  /**
-   * Send notification about approval status
-   */
-  static async sendApprovalNotification(
-    collectorId: string,
-    collectionId: string,
-    varianceData: VarianceData,
-    penaltyAmount: number
-  ) {
-    try {
-      // Get the collector's user ID
-      const { data: collector, error: collectorError } = await supabase
-        .from('staff')
-        .select('user_id')
-        .eq('id', collectorId)
-        .maybeSingle();
-
-      if (collectorError) {
-        logger.errorWithContext('MilkApprovalService - fetching collector', collectorError);
-        throw collectorError;
-      }
-
-      if (!collector || !collector.user_id) {
-        // No user ID found, skip notification
-        return;
-      }
-
-      // Create notification message
-      let message = `Milk collection ${collectionId.substring(0, 8)} has been approved. `;
-      
-      if (varianceData.varianceType === 'positive') {
-        message += `Positive variance of ${varianceData.varianceLiters.toFixed(2)}L (${varianceData.variancePercentage.toFixed(2)}%). `;
-      } else if (varianceData.varianceType === 'negative') {
-        message += `Negative variance of ${varianceData.varianceLiters.toFixed(2)}L (${varianceData.variancePercentage.toFixed(2)}%). `;
-      } else {
-        message += 'No variance detected. ';
-      }
-      
-      if (penaltyAmount > 0) {
-        message += `Penalty applied: KSh ${penaltyAmount.toFixed(2)}.`;
-      }
-
-      const { error: notificationError } = await supabase
-        .from('notifications')
-        .insert({
-          user_id: collector.user_id,
-          title: 'Milk Collection Approved',
-          message: message,
-          type: 'info',
-          category: 'collection_approval'
-        });
-
-      if (notificationError) {
-        logger.warn('Warning: Failed to send approval notification', notificationError);
-      }
-    } catch (error) {
-      logger.errorWithContext('MilkApprovalService - sendApprovalNotification', error);
-      // Don't throw error as this is supplementary functionality
-      console.warn('Failed to send approval notification:', error);
-    }
-  }
-
-  /**
-   * Log audit entry for milk approval action
-   */
-  static async logAuditEntry(
-    collectionId: string,
-    staffId: string,
-    varianceData: VarianceData,
-    penaltyAmount: number,
-    approvalId: string
-  ) {
-    try {
-      const auditData = {
-        collection_id: collectionId,
-        staff_id: staffId,
-        company_received_liters: varianceData.receivedLiters,
-        variance_liters: varianceData.varianceLiters,
-        variance_percentage: varianceData.variancePercentage,
-        variance_type: varianceData.varianceType,
-        penalty_amount: penaltyAmount,
-        approval_id: approvalId
-      };
-
-      const { error: auditError } = await supabase
-        .from('audit_logs')
-        .insert({
-          table_name: 'milk_approvals',
-          record_id: approvalId,
-          operation: 'approve_collection',
-          changed_by: staffId,
-          new_data: auditData
-        });
-
-      if (auditError) {
-        logger.warn('Warning: Failed to log audit entry', auditError);
-      }
-    } catch (error) {
-      logger.errorWithContext('MilkApprovalService - logAuditEntry', error);
-      // Don't throw error as this is supplementary functionality
-      console.warn('Failed to log audit entry:', error);
-    }
-  }
-
-  /**
-   * Log audit entry for batch approval operation
-   */
-  static async logBatchAuditEntry(
-    staffId: string,
-    collectorId: string,
-    collectionDate: string,
-    summaryData: any
-  ) {
-    try {
-      const auditData = {
-        collector_id: collectorId,
-        collection_date: collectionDate,
-        approved_count: summaryData.approved_count,
-        total_liters_collected: summaryData.total_liters_collected,
-        total_liters_received: summaryData.total_liters_received,
-        total_variance: summaryData.total_variance,
-        total_penalty_amount: summaryData.total_penalty_amount,
-        timestamp: new Date().toISOString(),
-        staff_name: await this.getStaffName(staffId)
-      };
-
-      const { error: auditError } = await supabase
-        .from('audit_logs')
-        .insert({
-          table_name: 'collections',
-          operation: 'batch_approve_collections',
-          changed_by: staffId,
-          new_data: auditData,
-          description: `Batch approval performed by ${auditData.staff_name} for collector ${collectorId} on ${collectionDate}. ${summaryData.approved_count} collections approved.`
-        });
-
-      if (auditError) {
-        logger.warn('Warning: Failed to log batch audit entry', auditError);
-      }
-      
-      // Also send notification to collector about batch approval
-      await this.sendBatchApprovalNotification(collectorId, collectionDate, summaryData);
-    } catch (error) {
-      logger.errorWithContext('MilkApprovalService - logBatchAuditEntry', error);
-      // Don't throw error as this is supplementary functionality
-      console.warn('Failed to log batch audit entry:', error);
     }
   }
 
@@ -528,15 +678,14 @@ export class MilkApprovalService {
       }
 
       if (!collector || !collector.user_id) {
-        // No user ID found, skip notification
         return;
       }
 
       // Create notification message
       let message = `Batch approval completed for ${collectionDate}. `;
       message += `${summaryData.approved_count} collections approved. `;
-      message += `Total variance: ${summaryData.total_variance.toFixed(2)}L. `;
-      
+      message += `Total variance: ${summaryData.total_variance?.toFixed(2) || 0}L. `;
+
       if (summaryData.total_penalty_amount > 0) {
         message += `Total penalties applied: KSh ${summaryData.total_penalty_amount.toFixed(2)}.`;
       }
@@ -556,114 +705,52 @@ export class MilkApprovalService {
       }
     } catch (error) {
       logger.errorWithContext('MilkApprovalService - sendBatchApprovalNotification', error);
-      // Don't throw error as this is supplementary functionality
-      console.warn('Failed to send batch approval notification:', error);
     }
   }
 
   /**
-   * Get pending collections for approval
+   * Log audit entry for batch approval operation
    */
-  static async getPendingCollections() {
+  static async logBatchAuditEntry(
+    staffId: string,
+    collectorId: string,
+    collectionDate: string,
+    summaryData: any
+  ) {
     try {
-      const { data, error } = await supabase
-        .from('collections')
-        .select(`
-          id,
-          collection_id,
-          liters,
-          collection_date,
-          status,
-          approved_for_company,
-          farmers (
-            full_name,
-            id
-          ),
-          staff!collections_staff_id_fkey (
-            id,
-            user_id
-          )
-        `)
-        .eq('status', 'Collected')
-        .eq('approved_for_company', false)
-        .order('collection_date', { ascending: false });
+      // Get staff name
+      const staffInfo = await this.getStaffInfo(staffId);
+      const staffName = staffInfo?.fullName || 'Unknown Staff';
 
-      if (error) {
-        logger.errorWithContext('MilkApprovalService - fetching pending collections', error);
-        throw error;
+      const auditData = {
+        collector_id: collectorId,
+        collection_date: collectionDate,
+        approved_count: summaryData.approved_count,
+        total_liters_collected: summaryData.total_liters_collected,
+        total_liters_received: summaryData.total_liters_received,
+        total_variance: summaryData.total_variance,
+        total_penalty_amount: summaryData.total_penalty_amount,
+        timestamp: new Date().toISOString(),
+        staff_name: staffName
+      };
+
+      const { error: auditError } = await supabase
+        .from('audit_logs')
+        .insert({
+          table_name: 'collections',
+          operation: 'batch_approve_collections',
+          changed_by: staffId,
+          new_data: {
+            ...auditData,
+            description: `Batch approval performed by ${staffName} for collector ${collectorId} on ${collectionDate}. ${summaryData.approved_count} collections approved.`
+          }
+        });
+
+      if (auditError) {
+        logger.warn('Warning: Failed to log batch audit entry', auditError);
       }
-
-      return { success: true, data };
     } catch (error) {
-      logger.errorWithContext('MilkApprovalService - getPendingCollections', error);
-      return { success: false, error };
-    }
-  }
-
-  /**
-   * Get approval history for a collection
-   */
-  static async getCollectionApprovalHistory(collectionId: string) {
-    try {
-      const { data, error } = await supabase
-        .from('milk_approvals')
-        .select(`
-          id,
-          company_received_liters,
-          variance_liters,
-          variance_percentage,
-          variance_type,
-          penalty_amount,
-          approval_notes,
-          approved_at,
-          created_at,
-          staff!milk_approvals_staff_id_fkey (
-            id,
-            user_id,
-            profiles (
-              full_name
-            )
-          )
-        `)
-        .eq('collection_id', collectionId)
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        logger.errorWithContext('MilkApprovalService - fetching approval history', error);
-        throw error;
-      }
-
-      return { success: true, data };
-    } catch (error) {
-      logger.errorWithContext('MilkApprovalService - getCollectionApprovalHistory', error);
-      return { success: false, error };
-    }
-  }
-
-  /**
-   * Get staff name by ID
-   */
-  static async getStaffName(staffId: string): Promise<string> {
-    try {
-      const { data, error } = await supabase
-        .from('staff')
-        .select(`
-          profiles (
-            full_name
-          )
-        `)
-        .eq('id', staffId)
-        .maybeSingle();
-
-      if (error) {
-        logger.errorWithContext('MilkApprovalService - fetching staff name', error);
-        return 'Unknown Staff';
-      }
-
-      return data?.profiles?.full_name || 'Unknown Staff';
-    } catch (error) {
-      logger.errorWithContext('MilkApprovalService - getStaffName', error);
-      return 'Unknown Staff';
+      logger.errorWithContext('MilkApprovalService - logBatchAuditEntry', error);
     }
   }
 
@@ -677,7 +764,7 @@ export class MilkApprovalService {
         .select('*')
         .eq('staff_id', collectorId)
         .order('period_start', { ascending: false })
-        .limit(12); // Last 12 periods (months)
+        .limit(12);
 
       if (error) {
         logger.errorWithContext('MilkApprovalService - fetching collector performance', error);

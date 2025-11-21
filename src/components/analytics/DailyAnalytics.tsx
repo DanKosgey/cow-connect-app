@@ -91,13 +91,14 @@ const DailyAnalytics = () => {
         .from('collections')
         .select(`
           *,
-          farmers!fk_collections_farmer_id!inner (
+          farmers!inner (
             farmer_id,
             profiles!inner (
               full_name
             )
           )
         `)
+        .eq('approved_for_company', true) // Only fetch approved collections
         .gte('collection_date', startDate.toISOString())
         .lte('collection_date', endDate.toISOString())
         .order('collection_date');

@@ -72,7 +72,7 @@ export class GPSVerificationService {
         .from('collections')
         .select(`
           farmer_id,
-          farmers!fk_collections_farmer_id (
+          farmers (
             id,
             gps_latitude,
             gps_longitude

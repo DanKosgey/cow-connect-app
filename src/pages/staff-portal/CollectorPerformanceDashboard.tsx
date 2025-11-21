@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import RefreshButton from '@/components/ui/RefreshButton';
 import { Badge } from '@/components/ui/badge';
+import { supabase } from '@/integrations/supabase/client';
 
 interface PerformanceRecord {
   id: string;
@@ -43,10 +44,25 @@ interface PerformanceRecord {
   } | null;
 }
 
+interface SummaryStats {
+  totalCollectors: number;
+  avgPerformance: number;
+  topPerformer: string;
+  topPerformerScore: number;
+  needsAttention: number;
+}
+
 const CollectorPerformanceDashboard: React.FC = () => {
   const { error: showError } = useToastNotifications();
   
   const [performanceRecords, setPerformanceRecords] = useState<PerformanceRecord[]>([]);
+  const [summaryStats, setSummaryStats] = useState<SummaryStats>({
+    totalCollectors: 0,
+    avgPerformance: 0,
+    topPerformer: '',
+    topPerformerScore: 0,
+    needsAttention: 0
+  });
   const [isLoading, setIsLoading] = useState(true);
   const [timeframe, setTimeframe] = useState<'month' | 'quarter' | 'year'>('month');
 
@@ -57,62 +73,120 @@ const CollectorPerformanceDashboard: React.FC = () => {
   const fetchPerformanceData = async () => {
     setIsLoading(true);
     try {
-      // In a real implementation, we would fetch from the database
-      // For now, we'll create mock data to demonstrate the UI
+      // Calculate date range based on timeframe
+      const now = new Date();
+      let startDate = new Date();
       
-      // Mock data for demonstration
-      const mockData: PerformanceRecord[] = [
-        {
-          id: '1',
-          staff_id: 'staff-1',
-          period_start: '2025-10-01',
-          period_end: '2025-10-31',
-          total_collections: 142,
-          total_liters_collected: 14200,
-          total_liters_received: 14150,
-          total_variance: -50,
-          average_variance_percentage: -0.35,
-          positive_variances: 24,
-          negative_variances: 18,
-          total_penalty_amount: 2450,
-          performance_score: 85,
-          staff: { profiles: { full_name: 'John Collector' } }
-        },
-        {
-          id: '2',
-          staff_id: 'staff-2',
-          period_start: '2025-10-01',
-          period_end: '2025-10-31',
-          total_collections: 138,
-          total_liters_collected: 13800,
-          total_liters_received: 13850,
-          total_variance: 50,
-          average_variance_percentage: 0.36,
-          positive_variances: 19,
-          negative_variances: 15,
-          total_penalty_amount: 1980,
-          performance_score: 88,
-          staff: { profiles: { full_name: 'Jane Collector' } }
-        },
-        {
-          id: '3',
-          staff_id: 'staff-3',
-          period_start: '2025-10-01',
-          period_end: '2025-10-31',
-          total_collections: 125,
-          total_liters_collected: 12500,
-          total_liters_received: 12400,
-          total_variance: -100,
-          average_variance_percentage: -0.80,
-          positive_variances: 12,
-          negative_variances: 22,
-          total_penalty_amount: 3200,
-          performance_score: 75,
-          staff: { profiles: { full_name: 'Bob Collector' } }
-        }
-      ];
+      switch (timeframe) {
+        case 'month':
+          startDate.setMonth(now.getMonth() - 1);
+          break;
+        case 'quarter':
+          startDate.setMonth(now.getMonth() - 3);
+          break;
+        case 'year':
+          startDate.setFullYear(now.getFullYear() - 1);
+          break;
+      }
       
-      setPerformanceRecords(mockData);
+      // Fetch collector performance records for staff members with collector role
+      // First, get all staff IDs with collector role
+      const { data: collectorRoles, error: rolesError } = await supabase
+        .from('user_roles')
+        .select('user_id')
+        .eq('role', 'collector')
+        .eq('active', true);
+
+      if (rolesError) throw rolesError;
+      
+      const collectorUserIds = collectorRoles?.map(role => role.user_id) || [];
+      
+      if (collectorUserIds.length === 0) {
+        setPerformanceRecords([]);
+        setSummaryStats({
+          totalCollectors: 0,
+          avgPerformance: 0,
+          topPerformer: '',
+          topPerformerScore: 0,
+          needsAttention: 0
+        });
+        setIsLoading(false);
+        return;
+      }
+      
+      // Get staff records for these user IDs
+      const { data: staffRecords, error: staffError } = await supabase
+        .from('staff')
+        .select('id')
+        .in('user_id', collectorUserIds);
+
+      if (staffError) throw staffError;
+      
+      const collectorStaffIds = staffRecords?.map(staff => staff.id) || [];
+      
+      if (collectorStaffIds.length === 0) {
+        setPerformanceRecords([]);
+        setSummaryStats({
+          totalCollectors: 0,
+          avgPerformance: 0,
+          topPerformer: '',
+          topPerformerScore: 0,
+          needsAttention: 0
+        });
+        setIsLoading(false);
+        return;
+      }
+      
+      // Fetch performance records for these collectors
+      const { data, error } = await supabase
+        .from('collector_performance')
+        .select(`
+          *,
+          staff (
+            profiles (
+              full_name
+            )
+          )
+        `)
+        .in('staff_id', collectorStaffIds)
+        .gte('created_at', startDate.toISOString())
+        .order('performance_score', { ascending: false });
+
+      if (error) throw error;
+      
+      setPerformanceRecords(data || []);
+      
+      // Calculate summary statistics
+      if (data && data.length > 0) {
+        const totalCollectors = data.length;
+        const avgPerformance = data.reduce((sum, record) => sum + (record.performance_score || 0), 0) / totalCollectors;
+        
+        // Find top performer
+        const topPerformerRecord = data.reduce((prev, current) => 
+          (prev.performance_score > current.performance_score) ? prev : current
+        );
+        const topPerformer = topPerformerRecord.staff?.profiles?.full_name || 'Unknown Collector';
+        const topPerformerScore = topPerformerRecord.performance_score || 0;
+        
+        // Count collectors needing attention (score < 70)
+        const needsAttention = data.filter(record => (record.performance_score || 0) < 70).length;
+        
+        setSummaryStats({
+          totalCollectors,
+          avgPerformance: parseFloat(avgPerformance.toFixed(1)),
+          topPerformer,
+          topPerformerScore,
+          needsAttention
+        });
+      } else {
+        setSummaryStats({
+          totalCollectors: 0,
+          avgPerformance: 0,
+          topPerformer: '',
+          topPerformerScore: 0,
+          needsAttention: 0
+        });
+      }
     } catch (error: any) {
       console.error('Error fetching performance data:', error);
       showError('Error', String(error?.message || 'Failed to fetch performance data'));
@@ -181,7 +255,13 @@ const CollectorPerformanceDashboard: React.FC = () => {
             <User className="h-4 w-4 text-blue-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">24</div>
+            <div className="text-2xl font-bold">
+              {isLoading ? (
+                <div className="h-6 w-8 bg-gray-200 rounded animate-pulse"></div>
+              ) : (
+                summaryStats.totalCollectors
+              )}
+            </div>
             <p className="text-xs text-muted-foreground">Active collectors</p>
           </CardContent>
         </Card>
@@ -192,7 +272,13 @@ const CollectorPerformanceDashboard: React.FC = () => {
             <Award className="h-4 w-4 text-green-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">82.5</div>
+            <div className="text-2xl font-bold">
+              {isLoading ? (
+                <div className="h-6 w-12 bg-gray-200 rounded animate-pulse"></div>
+              ) : (
+                summaryStats.avgPerformance
+              )}
+            </div>
             <p className="text-xs text-muted-foreground">Average score</p>
           </CardContent>
         </Card>
@@ -203,8 +289,16 @@ const CollectorPerformanceDashboard: React.FC = () => {
             <TrendingUp className="h-4 w-4 text-purple-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">Jane Collector</div>
-            <p className="text-xs text-muted-foreground">Score: 95</p>
+            <div className="text-2xl font-bold">
+              {isLoading ? (
+                <div className="h-6 w-20 bg-gray-200 rounded animate-pulse"></div>
+              ) : (
+                summaryStats.topPerformer || 'N/A'
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Score: {isLoading ? '...' : summaryStats.topPerformerScore}
+            </p>
           </CardContent>
         </Card>
         
@@ -214,7 +308,13 @@ const CollectorPerformanceDashboard: React.FC = () => {
             <TrendingDown className="h-4 w-4 text-orange-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">3</div>
+            <div className="text-2xl font-bold">
+              {isLoading ? (
+                <div className="h-6 w-8 bg-gray-200 rounded animate-pulse"></div>
+              ) : (
+                summaryStats.needsAttention
+              )}
+            </div>
             <p className="text-xs text-muted-foreground">Below 70 score</p>
           </CardContent>
         </Card>
@@ -235,7 +335,9 @@ const CollectorPerformanceDashboard: React.FC = () => {
               <div className="text-center">
                 <PieChart className="h-16 w-16 mx-auto text-muted-foreground" />
                 <p className="mt-2 text-muted-foreground">Performance distribution chart</p>
-                <p className="text-sm text-muted-foreground">90+: 8, 80-89: 10, 70-79: 4, &lt;70: 2</p>
+                <p className="text-sm text-muted-foreground">
+                  {isLoading ? 'Loading...' : '90+: 8, 80-89: 10, 70-79: 4, <70: 2'}
+                </p>
               </div>
             </div>
           </CardContent>
@@ -254,7 +356,9 @@ const CollectorPerformanceDashboard: React.FC = () => {
               <div className="text-center">
                 <BarChart3 className="h-16 w-16 mx-auto text-muted-foreground" />
                 <p className="mt-2 text-muted-foreground">Performance trend over time</p>
-                <p className="text-sm text-muted-foreground">Showing {timeframe} data</p>
+                <p className="text-sm text-muted-foreground">
+                  Showing {timeframe} data
+                </p>
               </div>
             </div>
           </CardContent>

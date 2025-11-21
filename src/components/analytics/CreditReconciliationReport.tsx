@@ -85,6 +85,7 @@ const CreditReconciliationReport = () => {
       const { data: pendingCollections, error: collectionsError } = await supabase
         .from('collections')
         .select('farmer_id, total_amount')
+        .eq('approved_for_company', true) // Only consider approved collections
         .neq('status', 'Paid');
 
       if (collectionsError) throw collectionsError;

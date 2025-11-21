@@ -13,9 +13,12 @@ import {
   Award
 } from 'lucide-react';
 import RefreshButton from '@/components/ui/RefreshButton';
+import { useDashboardStats } from '@/hooks/useDashboardStats';
 
 const StaffPortalDashboard = () => {
   const navigate = useNavigate();
+  
+  const { data: dashboardStats, isLoading, refetch } = useDashboardStats();
 
   const features = [
     {
@@ -34,7 +37,7 @@ const StaffPortalDashboard = () => {
     },
     {
       title: "Collector Performance",
-      description: "Monitor field staff performance and metrics",
+      description: "Monitor collector performance and metrics",
       icon: <User className="h-8 w-8" />,
       path: "/staff-only/collector-performance",
       color: "bg-purple-500"
@@ -54,8 +57,8 @@ const StaffPortalDashboard = () => {
           </div>
           <div className="mt-4 md:mt-0">
             <RefreshButton 
-              isRefreshing={false} 
-              onRefresh={() => window.location.reload()} 
+              isRefreshing={isLoading} 
+              onRefresh={refetch} 
               className="bg-white/20 border-white/30 hover:bg-white/30 text-white rounded-md shadow-sm"
               variant="outline"
             />
@@ -97,7 +100,13 @@ const StaffPortalDashboard = () => {
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-sm font-medium text-muted-foreground">Pending Reviews</div>
-                <div className="text-2xl font-bold">24</div>
+                <div className="text-2xl font-bold">
+                  {isLoading ? (
+                    <div className="h-6 w-8 bg-gray-200 rounded animate-pulse"></div>
+                  ) : (
+                    dashboardStats?.pendingReviews || 0
+                  )}
+                </div>
               </div>
               <Scale className="h-8 w-8 text-blue-500" />
             </div>
@@ -109,7 +118,13 @@ const StaffPortalDashboard = () => {
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-sm font-medium text-muted-foreground">Variance Today</div>
-                <div className="text-2xl font-bold">+2.5%</div>
+                <div className="text-2xl font-bold">
+                  {isLoading ? (
+                    <div className="h-6 w-12 bg-gray-200 rounded animate-pulse"></div>
+                  ) : (
+                    `${dashboardStats?.varianceToday >= 0 ? '+' : ''}${dashboardStats?.varianceToday || 0}%`
+                  )}
+                </div>
               </div>
               <TrendingUp className="h-8 w-8 text-green-500" />
             </div>
@@ -120,8 +135,14 @@ const StaffPortalDashboard = () => {
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-sm font-medium text-muted-foreground">Field Staff</div>
-                <div className="text-2xl font-bold">18</div>
+                <div className="text-sm font-medium text-muted-foreground">Collectors</div>
+                <div className="text-2xl font-bold">
+                  {isLoading ? (
+                    <div className="h-6 w-8 bg-gray-200 rounded animate-pulse"></div>
+                  ) : (
+                    dashboardStats?.fieldStaff || 0
+                  )}
+                </div>
               </div>
               <User className="h-8 w-8 text-purple-500" />
             </div>

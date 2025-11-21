@@ -312,7 +312,7 @@ export const useStaffPortalData = () => {
             collection_date,
             status,
             notes,
-            farmers!fk_collections_farmer_id (
+            farmers (
               full_name,
               id
             )
@@ -620,7 +620,7 @@ export const useStaffPortalData = () => {
             collection_date,
             status,
             notes,
-            farmers!fk_collections_farmer_id (
+            farmers (
               full_name,
               id
             )

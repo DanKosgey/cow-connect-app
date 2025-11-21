@@ -157,7 +157,7 @@ export default function ComprehensiveReporting() {
           total_amount,
           collection_date,
           status,
-          farmers!fk_collections_farmer_id (
+          farmers (
             full_name
           )
         `)
@@ -251,7 +251,7 @@ export default function ComprehensiveReporting() {
           test_date,
           collection!collection_id (
             collection_id,
-            farmers!fk_collections_farmer_id (
+            farmers (
               full_name
             )
           )

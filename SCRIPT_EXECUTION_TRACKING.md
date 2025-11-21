@@ -111,6 +111,7 @@ This document tracks which scripts and migrations have been executed in your Sup
 | 20251117000100_fix_get_user_role_function.sql | ❓ Unknown | Fixes get_user_role function |
 | 20251117000200_consolidate_user_roles_policies.sql | ❓ Unknown | Consolidates user roles policies |
 | 20251117000300_fix_admin_role_and_function.sql | ❓ Unknown | Fixes admin role and function |
+| 20251119000100_fix_farmer_credit_profiles_rls.sql | ⏳ Pending | Fixes farmer credit profiles RLS policies to allow farmers to create their own profiles |
 
 ## Standalone SQL Files (16 files)
 
@@ -132,6 +133,7 @@ This document tracks which scripts and migrations have been executed in your Sup
 | function-check.sql | ❓ Unknown | Checks functions |
 | market_prices_table.sql | ❓ Unknown | Creates market prices table |
 | schema_check.sql | ❓ Unknown | Checks schema |
+| apply_farmer_credit_profiles_fix.sql | ⏳ Pending | Direct SQL script to fix farmer credit profiles RLS policies |
 
 ## Python Scripts
 
@@ -153,6 +155,7 @@ This document tracks which scripts and migrations have been executed in your Sup
 |--------|--------|---------|
 | apply-role-fix.ps1 | ❓ Unknown | Applies role fix |
 | create_admin.ps1 | ❓ Unknown | Creates admin user |
+| scripts/apply-farmer-credit-profiles-fix.ps1 | ⏳ Pending | PowerShell script to apply RLS policy fix for farmer_credit_profiles table |
 
 ## TypeScript/JavaScript Scripts
 

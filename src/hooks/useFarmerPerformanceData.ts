@@ -142,6 +142,7 @@ export const useFarmerPerformanceData = () => {
             total_amount,
             collection_date
           `)
+          .eq('approved_for_company', true) // Only fetch approved collections
           .order('collection_date', { ascending: false });
 
         if (collectionsError) throw collectionsError;

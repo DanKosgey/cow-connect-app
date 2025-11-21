@@ -183,7 +183,7 @@ export default function StaffPerformanceTracking() {
           total_amount,
           collection_date,
           status,
-          farmers!fk_collections_farmer_id (
+          farmers (
             full_name
           )
         `)

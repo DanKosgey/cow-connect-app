@@ -311,8 +311,9 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
           collection_date,
           gps_latitude,
           gps_longitude,
-          farmers!fk_collections_farmer_id (full_name, registration_number)
+          farmers (full_name, registration_number)
         `)
+        .eq('approved_for_company', true) // Only fetch approved collections
         .not('gps_latitude', 'is', null)
         .not('gps_longitude', 'is', null)
         .gte('collection_date', startDate.toISOString())

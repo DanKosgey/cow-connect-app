@@ -94,7 +94,7 @@ export const useCollectionAnalyticsData = () => {
           .from('collections')
           .select(`
             *,
-            farmers!fk_collections_farmer_id (
+            farmers (
               id,
               user_id,
               profiles!user_id (full_name, phone)
@@ -105,6 +105,7 @@ export const useCollectionAnalyticsData = () => {
               profiles!user_id (full_name)
             )
           `)
+          .eq('approved_for_company', true) // Only fetch approved collections
           .gte('collection_date', dateFilter)
           .order('collection_date', { ascending: false })
           .limit(1000);
@@ -152,7 +153,7 @@ export const useCollectionAnalyticsData = () => {
           .from('collections')
           .select(`
             *,
-            farmers!fk_collections_farmer_id (
+            farmers (
               id,
               user_id,
               profiles!user_id (full_name, phone)
@@ -163,6 +164,7 @@ export const useCollectionAnalyticsData = () => {
               profiles!user_id (full_name)
             )
           `)
+          .eq('approved_for_company', true) // Only fetch approved collections
           .gte('collection_date', filters.dateRange)
           .order('collection_date', { ascending: false })
           .limit(1000);

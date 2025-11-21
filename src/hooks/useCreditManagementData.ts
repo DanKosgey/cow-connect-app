@@ -74,11 +74,12 @@ export const useCreditManagementData = (searchTerm: string, filterStatus: string
       
       for (const farmer of farmersData || []) {
         try {
-          // Get pending payments
+          // Get pending payments from approved collections only
           const { data: pendingCollections, error: collectionsError } = await supabase
             .from('collections')
             .select('total_amount')
             .eq('farmer_id', farmer.id)
+            .eq('approved_for_company', true) // Only consider approved collections
             .neq('status', 'Paid');
 
           if (collectionsError) {
