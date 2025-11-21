@@ -1,5 +1,34 @@
+import React, { useState, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { format } from 'date-fns';
+import { cn } from '@/lib/utils';
+import useToastNotifications from '@/hooks/useToastNotifications';
+import { MilkApprovalService } from '@/services/milk-approval-service';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar as CalendarComponent } from '@/components/ui/calendar';
+import { CheckCircle, Calendar, Milk, Users } from 'lucide-react';
 
-const [collectors, setCollectors] = useState<Collector[]>([]);
+interface Collector {
+  id: string;
+  full_name: string;
+}
+
+interface BatchApprovalSummary {
+  approved_count: number;
+  total_liters_collected: number;
+  total_liters_received: number;
+  total_variance: number;
+  total_penalty_amount: number;
+}
+
+const BatchApprovalForm = () => {
+  const { show, error: showError } = useToastNotifications();
+  const [collectors, setCollectors] = useState<Collector[]>([]);
 const [selectedCollector, setSelectedCollector] = useState<string>('');
 const [collectionDate, setCollectionDate] = useState<Date>(new Date());
 const [defaultReceivedLiters, setDefaultReceivedLiters] = useState<string>('');
@@ -303,7 +332,7 @@ return (
                 </div>
                 <div>
                   <p className="font-semibold text-red-800">Estimated Penalty: KSh {previewData.estimatedPenalty.toFixed(2)}</p>
-                  <p className="text-xs text-red-700">Based on negative variance > 0.5%</p>
+                  <p className="text-xs text-red-700">Based on negative variance &gt; 0.5%</p>
                 </div>
               </div>
             )}
@@ -377,6 +406,6 @@ return (
     </CardContent>
   </Card>
 );
-};
+}
 
 export default BatchApprovalForm;

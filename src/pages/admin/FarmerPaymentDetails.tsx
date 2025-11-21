@@ -28,8 +28,6 @@ interface Collection {
   approved_for_company: boolean;
 }
 
-}
-
 interface Farmer {
   id: string;
   full_name: string;

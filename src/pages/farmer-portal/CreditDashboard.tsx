@@ -20,7 +20,7 @@ import {
   PieChart,
   Settings
 } from 'lucide-react';
-import { supabase } from '../lib/supabase'; // Adjust path to your Supabase client
+import { supabase } from '@/lib/supabase'; // Adjust path to your Supabase client
 
 // Types
 const ProductCategories = {
