@@ -53,6 +53,14 @@ supabase/migrations/20251117000200_consolidate_user_roles_policies.sql
 
 This migration ensures all necessary policies are in place without conflicts.
 
+### **Staff Performance Dashboard**
+
+The system now includes a Staff Performance Dashboard that tracks the performance of staff members who approve milk collections. See [STAFF_PERFORMANCE_DASHBOARD.md](STAFF_PERFORMANCE_DASHBOARD.md) for details.
+
+### **Staff RLS Troubleshooting**
+
+For troubleshooting Row Level Security issues with staff permissions, see [STAFF_RLS_TROUBLESHOOTING.md](STAFF_RLS_TROUBLESHOOTING.md).
+
 ---
 
 ## 🎯 **SYSTEM OVERVIEW**

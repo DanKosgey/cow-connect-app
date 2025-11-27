@@ -10,8 +10,10 @@ const StaffLogin = lazy(() => import("../pages/auth/StaffLogin"));
 const StaffPortalDashboard = lazy(() => import("../pages/staff-portal/StaffPortalDashboard"));
 const MilkApprovalPage = lazy(() => import("../pages/staff-portal/MilkApprovalPage"));
 const VarianceReportPage = lazy(() => import("../pages/staff-portal/VarianceReportPage"));
-const CollectorPerformanceDashboard = lazy(() => import("../pages/staff-portal/CollectorPerformanceDashboard"));
+const StaffPerformanceDashboard = lazy(() => import("../pages/staff-portal/StaffPerformanceDashboard"));
 const BatchApprovalPage = lazy(() => import("../pages/staff-portal/BatchApprovalPage"));
+const CollectorApprovalHistoryPage = lazy(() => import("../pages/staff-portal/CollectorApprovalHistoryPage"));
+const StaffProfilePage = lazy(() => import("../pages/staff-portal/StaffProfilePage"));
 
 export default function StaffOnlyRoutes() {
   return (
@@ -26,7 +28,9 @@ export default function StaffOnlyRoutes() {
                 <Route path="milk-approval" element={<MilkApprovalPage />} />
                 <Route path="batch-approval" element={<BatchApprovalPage />} />
                 <Route path="variance-reports" element={<VarianceReportPage />} />
-                <Route path="collector-performance" element={<CollectorPerformanceDashboard />} />
+                <Route path="staff-performance" element={<StaffPerformanceDashboard />} />
+                <Route path="collector-history" element={<CollectorApprovalHistoryPage />} />
+                <Route path="profile" element={<StaffProfilePage />} />
                 <Route index element={<StaffPortalDashboard />} />
                 <Route path="*" element={<Navigate to="/staff-only/dashboard" replace />} />
               </Routes>

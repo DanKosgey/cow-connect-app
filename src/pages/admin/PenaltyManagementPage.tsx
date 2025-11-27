@@ -310,7 +310,7 @@ const PenaltyManagementPage: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-3xl font-bold">Penalty & Variance Management</h1>
-          <p className="text-muted-foreground">Configure penalty rates and monitor milk collection variances</p>
+          <p className="text-muted-foreground">Configure penalty rates for negative variances only (positive variances do not incur penalties)</p>
         </div>
         <div className="mt-4 md:mt-0 flex gap-2">
           <RefreshButton 
@@ -370,6 +370,11 @@ const PenaltyManagementPage: React.FC = () => {
           <CardTitle>Add New Penalty Configuration</CardTitle>
         </CardHeader>
         <CardContent>
+          <div className="mb-4 p-4 bg-blue-50 rounded-lg">
+            <p className="text-sm text-blue-800">
+              <strong>Note:</strong> Only negative variances will incur penalties. Positive variances will not be penalized.
+            </p>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
             <div className="md:col-span-1">
               <Label htmlFor="varianceType">Variance Type</Label>
@@ -464,6 +469,11 @@ const PenaltyManagementPage: React.FC = () => {
           <CardTitle>Penalty Configurations</CardTitle>
         </CardHeader>
         <CardContent>
+          <div className="mb-4 p-4 bg-blue-50 rounded-lg">
+            <p className="text-sm text-blue-800">
+              <strong>Note:</strong> Only configurations for negative variances will be applied. Positive variances do not incur penalties.
+            </p>
+          </div>
           <div className="border rounded-md">
             <Table>
               <TableHeader>
@@ -628,6 +638,11 @@ const PenaltyManagementPage: React.FC = () => {
           <CardTitle>Recent Collection Variances</CardTitle>
         </CardHeader>
         <CardContent>
+          <div className="mb-4 p-4 bg-blue-50 rounded-lg">
+            <p className="text-sm text-blue-800">
+              <strong>Note:</strong> Only negative variances result in penalties. Positive variances show $0.00 penalty.
+            </p>
+          </div>
           <div className="border rounded-md">
             <Table>
               <TableHeader>
@@ -734,9 +749,7 @@ const PenaltyManagementPage: React.FC = () => {
               <h3 className="font-medium text-green-800 mb-2">Positive Variance Example</h3>
               <p className="text-sm text-green-700">
                 If a collector reports 100L but 105L is received (5% positive variance), 
-                and the penalty rate is KSh 5.00/L, the penalty would be:
-                <br />
-                <strong>5L × KSh 5.00 = KSh 25.00</strong>
+                <strong>NO PENALTY IS APPLIED</strong> as per policy.
               </p>
             </div>
             <div className="p-4 bg-red-50 rounded-lg">
@@ -763,21 +776,22 @@ const PenaltyManagementPage: React.FC = () => {
               <h3 className="font-medium text-green-800 mb-2">Positive Variances</h3>
               <p className="text-sm text-green-700">
                 Occur when the company receives more milk than was collected by the collector. 
-                This could indicate measurement errors or other factors.
+                <strong>No penalties are applied for positive variances.</strong>
               </p>
             </div>
             <div className="p-4 bg-red-50 rounded-lg">
               <h3 className="font-medium text-red-800 mb-2">Negative Variances</h3>
               <p className="text-sm text-red-700">
                 Occur when the company receives less milk than was collected by the collector. 
-                This could indicate spillage, theft, or measurement errors.
+                Penalties are automatically calculated based on variance percentages and applied 
+                according to the configured penalty rates.
               </p>
             </div>
             <div className="p-4 bg-blue-50 rounded-lg">
               <h3 className="font-medium text-blue-800 mb-2">Penalty System</h3>
               <p className="text-sm text-blue-700">
-                Penalties are automatically calculated based on variance percentages and applied 
-                according to the configured penalty rates.
+                <strong>Only negative variances incur penalties.</strong> 
+                Penalties are calculated as: |variance_liters| × penalty_rate_per_liter
               </p>
             </div>
           </div>

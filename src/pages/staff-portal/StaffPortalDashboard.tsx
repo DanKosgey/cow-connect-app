@@ -36,10 +36,10 @@ const StaffPortalDashboard = () => {
       color: "bg-orange-500"
     },
     {
-      title: "Collector Performance",
-      description: "Monitor collector performance and metrics",
+      title: "Staff Performance",
+      description: "Monitor staff performance and approval metrics",
       icon: <User className="h-8 w-8" />,
-      path: "/staff-only/collector-performance",
+      path: "/staff-only/staff-performance",
       color: "bg-purple-500"
     }
   ];

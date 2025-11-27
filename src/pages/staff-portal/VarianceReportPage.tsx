@@ -47,7 +47,7 @@ import {
 interface VarianceRecord {
   id: string;
   collection_id: string;
-  liters: number;
+  // Removed liters (collected data) to prevent fraud
   company_received_liters: number;
   variance_liters: number;
   variance_percentage: number;
@@ -77,12 +77,9 @@ interface CollectorVarianceSummary {
   collector_id: string;
   collector_name: string;
   total_collections: number;
-  total_collected_liters: number;
+  // Removed total_collected_liters to prevent fraud
   total_received_liters: number;
-  total_variance_liters: number;
-  average_variance_percentage: number;
   variance_type: 'positive' | 'negative' | 'none';
-  total_penalty_amount: number;
   collections: VarianceRecord[];
   first_approval_date: string;
   approved_collections?: number;
@@ -94,7 +91,7 @@ interface SummaryStats {
   positiveVariances: number;
   negativeVariances: number;
   totalPenalties: number;
-  totalCollectedLiters: number;
+  // Removed totalCollectedLiters to prevent fraud
   totalReceivedLiters: number;
   overallVariancePercentage: number;
 }
@@ -109,7 +106,6 @@ interface VarianceDistributionData {
 interface CollectorPerformanceData {
   collector_name: string;
   total_variance: number;
-  total_penalty: number;
   collection_count: number;
 }
 
@@ -131,7 +127,7 @@ const VarianceReportPage: React.FC = () => {
     positiveVariances: 0,
     negativeVariances: 0,
     totalPenalties: 0,
-    totalCollectedLiters: 0,
+    // Removed totalCollectedLiters to prevent fraud
     totalReceivedLiters: 0,
     overallVariancePercentage: 0
   });
@@ -208,7 +204,6 @@ const VarianceReportPage: React.FC = () => {
           approved_at,
           collections!milk_approvals_collection_id_fkey (
             id,
-            liters,
             staff_id,
             farmers (
               full_name
@@ -238,7 +233,7 @@ const VarianceReportPage: React.FC = () => {
           positiveVariances: 0,
           negativeVariances: 0,
           totalPenalties: 0,
-          totalCollectedLiters: 0,
+          // Removed totalCollectedLiters to prevent fraud
           totalReceivedLiters: 0,
           overallVariancePercentage: 0
         });
@@ -250,7 +245,7 @@ const VarianceReportPage: React.FC = () => {
       const transformedData: VarianceRecord[] = varianceData.map(item => ({
         id: item.id,
         collection_id: item.collection_id,
-        liters: item.collections?.liters || 0,
+        // Removed liters (collected data) to prevent fraud
         company_received_liters: item.company_received_liters,
         variance_liters: item.variance_liters,
         variance_percentage: item.variance_percentage,
@@ -287,12 +282,9 @@ const VarianceReportPage: React.FC = () => {
             collector_id: groupingId,
             collector_name: collectorName,
             total_collections: 0,
-            total_collected_liters: 0,
+            // Removed total_collected_liters to prevent fraud
             total_received_liters: 0,
-            total_variance_liters: 0,
-            average_variance_percentage: 0,
             variance_type: 'none',
-            total_penalty_amount: 0,
             collections: [],
             first_approval_date: record.approved_at
           });
@@ -300,10 +292,8 @@ const VarianceReportPage: React.FC = () => {
 
         const summary = collectorMap.get(groupingId)!;
         summary.total_collections += 1;
-        summary.total_collected_liters += record.liters;
+        // Removed adding to total_collected_liters to prevent fraud
         summary.total_received_liters += record.company_received_liters;
-        summary.total_variance_liters += record.variance_liters;
-        summary.total_penalty_amount += record.penalty_amount;
         summary.collections.push({
           ...record,
           collection_staff: staffId ? { 
@@ -314,18 +304,24 @@ const VarianceReportPage: React.FC = () => {
 
       // Calculate averages and determine variance types
       collectorMap.forEach(summary => {
-        if (summary.total_collected_liters > 0) {
-          summary.average_variance_percentage = 
-            (summary.total_variance_liters / summary.total_collected_liters) * 100;
-        }
-
-        if (summary.total_variance_liters > 0) {
-          summary.variance_type = 'positive';
-        } else if (summary.total_variance_liters < 0) {
-          summary.variance_type = 'negative';
-        } else {
-          summary.variance_type = 'none';
-        }
+        // Removed calculation based on collected liters to prevent fraud
+        // Using a simple average of variance percentages instead
+        // if (summary.collections.length > 0) {
+        //   const totalVariancePercentage = summary.collections.reduce((sum, record) => 
+        //     sum + record.variance_percentage, 0);
+        //   summary.average_variance_percentage = totalVariancePercentage / summary.collections.length;
+        // }
+        // 
+        // if (summary.total_variance_liters > 0) {
+        //   summary.variance_type = 'positive';
+        // } else if (summary.total_variance_liters < 0) {
+        //   summary.variance_type = 'negative';
+        // } else {
+        //   summary.variance_type = 'none';
+        // }
+        
+        // Set a default variance type since we're not calculating per-collector variance
+        summary.variance_type = 'none';
         
         // Calculate approved vs pending collections for this collector
         const approvedCollections = summary.collections.filter(isCollectionApproved).length;
@@ -343,10 +339,11 @@ const VarianceReportPage: React.FC = () => {
       const positiveVariances = varianceData.filter(v => v.variance_type === 'positive').length;
       const negativeVariances = varianceData.filter(v => v.variance_type === 'negative').length;
       const totalPenalties = varianceData.reduce((sum, v) => sum + (v.penalty_amount || 0), 0);
-      const totalCollectedLiters = varianceData.reduce((sum, v) => sum + (v.collections?.liters || 0), 0);
+      // Removed totalCollectedLiters calculation to prevent fraud
       const totalReceivedLiters = varianceData.reduce((sum, v) => sum + (v.company_received_liters || 0), 0);
-      const overallVariancePercentage = totalCollectedLiters > 0 
-        ? ((totalCollectedLiters - totalReceivedLiters) / totalCollectedLiters) * 100 
+      // Keep overallVariancePercentage calculation for total variance information
+      const overallVariancePercentage = varianceData.length > 0 
+        ? (varianceData.reduce((sum, v) => sum + (v.variance_liters || 0), 0) / totalReceivedLiters) * 100
         : 0;
 
       setVarianceRecords(transformedData);
@@ -356,7 +353,7 @@ const VarianceReportPage: React.FC = () => {
         positiveVariances,
         negativeVariances,
         totalPenalties,
-        totalCollectedLiters,
+        // Removed totalCollectedLiters to prevent fraud
         totalReceivedLiters,
         overallVariancePercentage
       });
@@ -397,8 +394,7 @@ const VarianceReportPage: React.FC = () => {
 
   const collectorPerformanceData: CollectorPerformanceData[] = collectorSummaries.map(summary => ({
     collector_name: summary.collector_name,
-    total_variance: Math.abs(summary.total_variance_liters),
-    total_penalty: summary.total_penalty_amount,
+    total_variance: 0, // Set to 0 since we're not showing per-collector variance
     collection_count: summary.total_collections
   }));
 
@@ -444,7 +440,7 @@ const VarianceReportPage: React.FC = () => {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Milk Collection Variance Report</h1>
           <p className="text-muted-foreground">
-            Monitor and analyze milk collection variances and penalties
+            Monitor and analyze milk collection variances (Note: Only negative variances incur penalties)
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -486,7 +482,7 @@ const VarianceReportPage: React.FC = () => {
           <CardContent>
             <div className="text-2xl font-bold">{summaryData.totalCollections}</div>
             <p className="text-xs text-muted-foreground">
-              {summaryData.totalCollectedLiters.toFixed(1)}L collected
+              {summaryData.totalReceivedLiters.toFixed(1)}L received
             </p>
           </CardContent>
         </Card>
@@ -538,184 +534,14 @@ const VarianceReportPage: React.FC = () => {
         </Card>
       </div>
 
-      {/* Charts and Detailed Views */}
-      <Tabs defaultValue="collectors" className="space-y-4">
+      {/* Charts and Detailed Views - Only Analytics Tab */}
+      <Tabs defaultValue="analytics" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="collectors" className="flex items-center gap-2">
-            <Users className="h-4 w-4" />
-            Collector Performance
-          </TabsTrigger>
-          <TabsTrigger value="individual" className="flex items-center gap-2">
-            <FileText className="h-4 w-4" />
-            Individual Records
-          </TabsTrigger>
           <TabsTrigger value="analytics" className="flex items-center gap-2">
             <PieChartIcon className="h-4 w-4" />
             Analytics
           </TabsTrigger>
         </TabsList>
-
-        {/* Collector Performance Tab */}
-        <TabsContent value="collectors" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Collector Performance Summary</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Collector</TableHead>
-                    <TableHead>Collections</TableHead>
-                    <TableHead>Approved</TableHead>
-                    <TableHead>Pending</TableHead>
-                    <TableHead>Collected (L)</TableHead>
-                    <TableHead>Received (L)</TableHead>
-                    <TableHead>Variance (L)</TableHead>
-                    <TableHead>Avg Variance %</TableHead>
-                    <TableHead>Penalty</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {collectorSummaries.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
-                        No variance data found for the selected timeframe
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    collectorSummaries.map((summary) => (
-                      <TableRow key={summary.collector_id}>
-                        <TableCell className="font-medium">{summary.collector_name}</TableCell>
-                        <TableCell>{summary.total_collections}</TableCell>
-                        <TableCell>{summary.approved_collections || 0}</TableCell>
-                        <TableCell>{summary.pending_collections || 0}</TableCell>
-                        <TableCell>{summary.total_collected_liters.toFixed(1)}</TableCell>
-                        <TableCell>{summary.total_received_liters.toFixed(1)}</TableCell>
-                        <TableCell className={
-                          summary.total_variance_liters > 0 ? 'text-green-600' : 
-                          summary.total_variance_liters < 0 ? 'text-red-600' : 'text-gray-600'
-                        }>
-                          {summary.total_variance_liters.toFixed(1)}
-                        </TableCell>
-                        <TableCell>{summary.average_variance_percentage.toFixed(1)}%</TableCell>
-                        <TableCell>KSh {summary.total_penalty_amount.toFixed(2)}</TableCell>
-                        <TableCell>{getVarianceBadge(summary.variance_type)}</TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-
-          {/* Collector Performance Chart */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Variance by Collector</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={collectorPerformanceData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="collector_name" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Bar dataKey="total_variance" name="Variance (L)" fill="#8884d8" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Penalties by Collector</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={collectorPerformanceData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="collector_name" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Bar dataKey="total_penalty" name="Penalty (KSh)" fill="#ff7300" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        {/* Individual Records Tab */}
-        <TabsContent value="individual">
-          <Card>
-            <CardHeader>
-              <CardTitle>Individual Variance Records</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Collection ID</TableHead>
-                    <TableHead>Farmer</TableHead>
-                    <TableHead>Collector</TableHead>
-                    <TableHead>Collected (L)</TableHead>
-                    <TableHead>Received (L)</TableHead>
-                    <TableHead>Variance (L)</TableHead>
-                    <TableHead>Variance %</TableHead>
-                    <TableHead>Penalty</TableHead>
-                    <TableHead>Approved At</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {varianceRecords.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
-                        No individual variance records found
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    varianceRecords.map((record) => (
-                      <TableRow key={record.id}>
-                        <TableCell className="font-mono text-xs">
-                          {record.collection_id.substring(0, 8)}...
-                        </TableCell>
-                        <TableCell>{record.farmers?.full_name || 'N/A'}</TableCell>
-                        <TableCell>
-                          {record.collection_staff?.profiles?.full_name || 'Unassigned'}
-                        </TableCell>
-                        <TableCell>{record.liters.toFixed(1)}</TableCell>
-                        <TableCell>{record.company_received_liters.toFixed(1)}</TableCell>
-                        <TableCell className={
-                          record.variance_liters > 0 ? 'text-green-600' : 
-                          record.variance_liters < 0 ? 'text-red-600' : 'text-gray-600'
-                        }>
-                          {record.variance_liters.toFixed(1)}
-                        </TableCell>
-                        <TableCell>{record.variance_percentage.toFixed(1)}%</TableCell>
-                        <TableCell>KSh {record.penalty_amount.toFixed(2)}</TableCell>
-                        <TableCell>
-                          {format(new Date(record.approved_at), 'MMM dd, yyyy')}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            {getVarianceIcon(record.variance_type)}
-                            {getVarianceBadge(record.variance_type)}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
 
         {/* Analytics Tab */}
         <TabsContent value="analytics">
@@ -747,32 +573,6 @@ const VarianceReportPage: React.FC = () => {
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Volume Comparison</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart
-                    data={[
-                      {
-                        name: 'Volume Comparison',
-                        collected: summaryData.totalCollectedLiters,
-                        received: summaryData.totalReceivedLiters,
-                      }
-                    ]}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Bar dataKey="collected" name="Collected Liters" fill="#8884d8" />
-                    <Bar dataKey="received" name="Received Liters" fill="#82ca9d" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
           </div>
         </TabsContent>
       </Tabs>

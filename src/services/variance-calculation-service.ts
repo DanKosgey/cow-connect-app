@@ -40,17 +40,18 @@ export class VarianceCalculationService {
    */
   static async calculatePenalty(varianceData: VarianceData): Promise<number> {
     try {
-      // Only calculate penalty for non-zero variances
-      if (varianceData.varianceType === 'none') {
+      // Only calculate penalty for negative variances (as per new requirement)
+      // Positive variances will not incur any penalty
+      if (varianceData.varianceType !== 'negative') {
         return 0;
       }
 
-      // Get active penalty configuration for the variance type and percentage
+      // Get active penalty configuration for negative variances
       const { data, error } = await supabase
         .from('variance_penalty_config')
         .select('penalty_rate_per_liter')
         .eq('is_active', true)
-        .eq('variance_type', varianceData.varianceType)
+        .eq('variance_type', 'negative')
         .gte('max_variance_percentage', Math.abs(varianceData.variancePercentage))
         .lte('min_variance_percentage', Math.abs(varianceData.variancePercentage))
         .limit(1)
