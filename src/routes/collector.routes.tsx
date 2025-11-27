@@ -31,7 +31,8 @@ const InventoryManagement = lazy(() => import("../components/collector/Inventory
 const ComprehensiveReporting = lazy(() => import("../components/collector/ComprehensiveReporting"));
 const MilkApprovalPage = lazy(() => import("../pages/staff-portal/MilkApprovalPage"));
 const VarianceReportPage = lazy(() => import("../pages/staff-portal/VarianceReportPage"));
-const CollectorPerformanceDashboard = lazy(() => import("../pages/staff-portal/CollectorPerformanceDashboard"));
+// Fixed: Changed import from missing CollectorPerformanceDashboard to existing CollectorPerformanceTracking
+const CollectorPerformanceDashboard = lazy(() => import("../components/collector/CollectorPerformanceTracking"));
 
 // New components
 const CollectorNotifications = lazy(() => import("../components/collector/CollectorNotifications"));
