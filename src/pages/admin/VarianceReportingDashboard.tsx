@@ -50,6 +50,12 @@ interface VarianceRecord {
     collection_id: string;
     liters: number;
     collection_date: string;
+    staff_id?: string;
+    staff?: {
+      profiles: {
+        full_name: string;
+      } | null;
+    } | null;
     farmers: {
       full_name: string;
     } | null;
@@ -154,6 +160,9 @@ const VarianceReportingDashboard: React.FC = () => {
   const [filterCollector, setFilterCollector] = useState<string>('');
   const [filterVarianceType, setFilterVarianceType] = useState<string>('all');
   
+  // Add timeframe state
+  const [timeframe, setTimeframe] = useState<string>('monthly'); // daily, weekly, monthly
+  
   const [collectors, setCollectors] = useState<{id: string, full_name: string}[]>([]);
 
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -175,7 +184,7 @@ const VarianceReportingDashboard: React.FC = () => {
     fetchVarianceData();
     fetchTrendData();
     fetchComparisonData();
-  }, [currentPage, pageSize, dateRange, comparisonPeriod, filterCollector, filterVarianceType]);
+  }, [currentPage, pageSize, dateRange, comparisonPeriod, filterCollector, filterVarianceType, timeframe]);
 
   const fetchCollectors = async () => {
     try {
@@ -231,6 +240,12 @@ const VarianceReportingDashboard: React.FC = () => {
             collection_id,
             liters,
             collection_date,
+            staff_id,
+            staff!collections_staff_id_fkey (
+              profiles (
+                full_name
+              )
+            ),
             farmers (
               full_name
             )
@@ -279,6 +294,7 @@ const VarianceReportingDashboard: React.FC = () => {
         transformedData = transformedData.filter((variance: VarianceRecord) => 
           (variance.collection_details?.collection_id?.toLowerCase().includes(term)) ||
           (variance.collection_details?.farmers?.full_name?.toLowerCase().includes(term)) ||
+          (variance.collection_details?.staff?.profiles?.full_name?.toLowerCase().includes(term)) ||
           (variance.staff_details?.profiles?.full_name?.toLowerCase().includes(term))
         );
       }
@@ -325,7 +341,7 @@ const VarianceReportingDashboard: React.FC = () => {
         negative_variances: data?.filter((v: any) => v.variance_type === 'negative').length || 0,
         total_penalty_amount: data?.reduce((sum: number, v: any) => sum + (v.penalty_amount || 0), 0) || 0,
         average_variance_percentage: data?.length ? 
-          data.reduce((sum: number, v: any) => sum + Math.abs(v.variance_percentage || 0), 0) / data.length : 0
+          data.reduce((sum: number, v: any) => sum + (v.variance_percentage || 0), 0) / data.length : 0
       };
 
       setVarianceSummary(summary);
@@ -337,80 +353,60 @@ const VarianceReportingDashboard: React.FC = () => {
 
   const fetchCollectorPerformance = async () => {
     try {
-      // First check if the collector_performance table exists by trying a simple query
-      const { error: testError } = await supabase
-        .from('collector_performance')
-        .select('staff_id')
-        .limit(1);
-
-      // If table doesn't exist, return early
-      if (testError && testError.code === 'PGRST205') {
-        console.warn('Collector performance table not found, skipping performance data');
-        setCollectorPerformance([]);
-        return;
-      }
-
-      // If we get here, the table exists, so try to fetch data
-      const { data, error } = await supabase
-        .from('collector_performance')
-        .select(`
-          staff_id,
-          total_collections,
-          total_variance,
-          average_variance_percentage,
-          total_penalty_amount,
-          positive_variances,
-          negative_variances,
-          performance_score,
-          created_at
-        `)
-        .gte('created_at', `${dateRange.from}T00:00:00Z`)
-        .lte('created_at', `${dateRange.to}T23:59:59Z`);
-
-      if (error) {
-        // If there's an error fetching data, it might be RLS related, so skip performance data
-        console.warn('Error fetching collector performance data, skipping:', error);
-        setCollectorPerformance([]);
-        return;
-      }
-
-      // Get staff names separately to avoid complex joins
-      const staffIds = [...new Set(data?.map(item => item.staff_id) || [])];
-      let staffData: any[] = [];
+      // Calculate date range based on selected timeframe
+      let startDate = new Date(dateRange.from);
+      let endDate = new Date(dateRange.to);
       
-      if (staffIds.length > 0) {
-        const { data: staffResult, error: staffError } = await supabase
-          .from('staff')
-          .select('id, profiles (full_name)')
-          .in('id', staffIds);
-        
-        if (!staffError) {
-          staffData = staffResult || [];
-        }
+      // Adjust dates based on timeframe selection
+      switch (timeframe) {
+        case 'daily':
+          // For daily, we'll use the to date as the specific day
+          startDate = new Date(dateRange.to);
+          endDate = new Date(dateRange.to);
+          break;
+        case 'weekly':
+          // For weekly, we'll use the to date as the end of the week
+          endDate = new Date(dateRange.to);
+          startDate = new Date(endDate);
+          startDate.setDate(startDate.getDate() - 6); // 7 days including end date
+          break;
+        case 'monthly':
+          // For monthly, we'll use the to date as the end of the month
+          endDate = new Date(dateRange.to);
+          startDate = new Date(endDate.getFullYear(), endDate.getMonth(), 1);
+          break;
       }
 
-      const staffMap = staffData.reduce((acc, staff) => {
-        acc[staff.id] = staff.profiles?.full_name || 'Unknown Collector';
-        return acc;
-      }, {} as Record<string, string>);
+      // Use the new database function to calculate collector performance
+      const { data: performanceData, error: performanceError } = await supabase
+        .rpc('calculate_collector_performance', {
+          p_start_date: startDate.toISOString().split('T')[0],
+          p_end_date: endDate.toISOString().split('T')[0]
+        });
 
-      const performanceData = (data || []).map((item: any) => ({
-        collector_id: item.staff_id,
-        collector_name: staffMap[item.staff_id] || 'Unknown Collector',
+      if (performanceError) {
+        console.warn('Error calculating collector performance:', performanceError);
+        setCollectorPerformance([]);
+        return;
+      }
+
+      // Transform the data to match our interface
+      const transformedData = (performanceData || []).map((item: any) => ({
+        collector_id: item.collector_id,
+        collector_name: item.collector_name || 'Unknown Collector',
         total_collections: item.total_collections || 0,
-        total_variance: item.total_variance || 0,
-        average_variance_percentage: item.average_variance_percentage || 0,
-        total_penalty_amount: item.total_penalty_amount || 0,
+        total_variance: parseFloat(item.total_variance?.toFixed(2) || '0.00'),
+        average_variance_percentage: parseFloat(item.average_variance_percentage?.toFixed(2) || '0.00'),
+        total_penalty_amount: parseFloat(item.total_penalty_amount?.toFixed(2) || '0.00'),
         positive_variances: item.positive_variances || 0,
         negative_variances: item.negative_variances || 0,
-        performance_score: item.performance_score || 0,
-        last_collection_date: item.created_at || ''
+        performance_score: parseFloat(item.performance_score?.toFixed(0) || '0'),
+        last_collection_date: item.last_collection_date || ''
       }));
 
-      setCollectorPerformance(performanceData);
+      setCollectorPerformance(transformedData);
     } catch (error: any) {
-      console.error('Error fetching collector performance:', error);
-      // Don't show error to user for this optional data
+      console.error('Error calculating collector performance:', error);
       setCollectorPerformance([]);
     }
   };
@@ -460,7 +456,7 @@ const VarianceReportingDashboard: React.FC = () => {
         negative_variances: data?.filter((v: any) => v.variance_type === 'negative').length || 0,
         total_penalty_amount: data?.reduce((sum: number, v: any) => sum + (v.penalty_amount || 0), 0) || 0,
         average_variance_percentage: data?.length ? 
-          data.reduce((sum: number, v: any) => sum + Math.abs(v.variance_percentage || 0), 0) / data.length : 0
+          data.reduce((sum: number, v: any) => sum + (v.variance_percentage || 0), 0) / data.length : 0
       };
 
       return summary;
@@ -707,7 +703,7 @@ const VarianceReportingDashboard: React.FC = () => {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
             <div>
               <label className="text-sm font-medium text-muted-foreground">Search</label>
               <input
@@ -735,6 +731,18 @@ const VarianceReportingDashboard: React.FC = () => {
                 onChange={(e) => setDateRange({...dateRange, to: e.target.value})}
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-muted-foreground">Timeframe</label>
+              <select
+                value={timeframe}
+                onChange={(e) => setTimeframe(e.target.value)}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              >
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+              </select>
             </div>
             <div>
               <label className="text-sm font-medium text-muted-foreground">Compare With</label>
@@ -834,7 +842,9 @@ const VarianceReportingDashboard: React.FC = () => {
           </CardHeader>
           <CardContent>
             <div className="flex items-center justify-between">
-              <div className="text-2xl font-bold">{currentPeriodData.average_variance_percentage.toFixed(2)}%</div>
+              <div className={`text-2xl font-bold ${currentPeriodData.average_variance_percentage >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {currentPeriodData.average_variance_percentage >= 0 ? '+' : ''}{currentPeriodData.average_variance_percentage.toFixed(2)}%
+              </div>
               <Badge 
                 variant={avgVarianceChange >= 0 ? 'destructive' : 'default'}
                 className="flex items-center gap-1"
@@ -843,7 +853,7 @@ const VarianceReportingDashboard: React.FC = () => {
               </Badge>
             </div>
             <div className="text-sm text-muted-foreground mt-1">
-              Previous: {previousPeriodData.average_variance_percentage.toFixed(2)}%
+              Previous: {previousPeriodData.average_variance_percentage >= 0 ? '+' : ''}{previousPeriodData.average_variance_percentage.toFixed(2)}%
             </div>
           </CardContent>
         </Card>
@@ -934,7 +944,7 @@ const VarianceReportingDashboard: React.FC = () => {
       {/* Collector Performance Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Collector Performance</CardTitle>
+          <CardTitle>Collector Performance ({timeframe.charAt(0).toUpperCase() + timeframe.slice(1)})</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="border rounded-md">
@@ -965,7 +975,7 @@ const VarianceReportingDashboard: React.FC = () => {
                       </TableCell>
                       <TableCell>
                         <Badge className={getVarianceSeverityColor(collector.average_variance_percentage)}>
-                          {collector.average_variance_percentage.toFixed(2)}%
+                          {collector.average_variance_percentage >= 0 ? '+' : ''}{collector.average_variance_percentage.toFixed(2)}%
                         </Badge>
                       </TableCell>
                       <TableCell className="text-green-600">{collector.positive_variances}</TableCell>
@@ -1019,8 +1029,11 @@ const VarianceReportingDashboard: React.FC = () => {
                   <TableHead className="cursor-pointer" onClick={() => handleSort('collections.collection_date')}>
                     Date {sortBy === 'collections.collection_date' && (sortOrder === 'asc' ? '↑' : '↓')}
                   </TableHead>
+                  <TableHead className="cursor-pointer" onClick={() => handleSort('collections.staff.profiles.full_name')}>
+                    Collector {sortBy === 'collections.staff.profiles.full_name' && (sortOrder === 'asc' ? '↑' : '↓')}
+                  </TableHead>
                   <TableHead className="cursor-pointer" onClick={() => handleSort('staff.profiles.full_name')}>
-                    Collector {sortBy === 'staff.profiles.full_name' && (sortOrder === 'asc' ? '↑' : '↓')}
+                    Approved By {sortBy === 'staff.profiles.full_name' && (sortOrder === 'asc' ? '↑' : '↓')}
                   </TableHead>
                   <TableHead className="cursor-pointer" onClick={() => handleSort('collections.liters')}>
                     Collected (L) {sortBy === 'collections.liters' && (sortOrder === 'asc' ? '↑' : '↓')}
@@ -1065,6 +1078,9 @@ const VarianceReportingDashboard: React.FC = () => {
                         {variance.collection_details?.collection_date 
                           ? format(new Date(variance.collection_details.collection_date), 'MMM dd, yyyy')
                           : 'N/A'}
+                      </TableCell>
+                      <TableCell>
+                        {variance.collection_details?.staff?.profiles?.full_name || 'Unknown Collector'}
                       </TableCell>
                       <TableCell>
                         {variance.staff_details?.profiles?.full_name || 'Unknown Staff'}

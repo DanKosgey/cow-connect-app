@@ -258,13 +258,6 @@ const CreditAnalyticsDashboard = () => {
       <div className="flex flex-wrap gap-4">
         <Button 
           variant="outline" 
-          onClick={() => navigate('/admin/credit-reports')}
-        >
-          <BarChart3 className="w-4 h-4 mr-2" />
-          Generate Detailed Report
-        </Button>
-        <Button 
-          variant="outline" 
           onClick={() => navigate('/admin/credit-risk-assessment')}
         >
           <Users className="w-4 h-4 mr-2" />

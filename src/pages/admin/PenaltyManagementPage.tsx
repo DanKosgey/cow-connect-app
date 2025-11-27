@@ -45,6 +45,12 @@ interface VarianceRecord {
     collection_id: string;
     liters: number;
     collection_date: string;
+    staff_id?: string;
+    staff?: {
+      profiles: {
+        full_name: string;
+      } | null;
+    } | null;
     farmers: {
       full_name: string;
     } | null;
@@ -131,6 +137,12 @@ const PenaltyManagementPage: React.FC = () => {
             collection_id,
             liters,
             collection_date,
+            staff_id,
+            staff!collections_staff_id_fkey (
+              profiles (
+                full_name
+              )
+            ),
             farmers (
               full_name
             )
@@ -651,6 +663,7 @@ const PenaltyManagementPage: React.FC = () => {
                   <TableHead>Farmer</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead>Collector</TableHead>
+                  <TableHead>Approved By</TableHead>
                   <TableHead>Collected (L)</TableHead>
                   <TableHead>Received (L)</TableHead>
                   <TableHead>Variance</TableHead>
@@ -681,6 +694,9 @@ const PenaltyManagementPage: React.FC = () => {
                         {variance.collection_details?.collection_date 
                           ? format(new Date(variance.collection_details.collection_date), 'MMM dd, yyyy')
                           : 'N/A'}
+                      </TableCell>
+                      <TableCell>
+                        {variance.collection_details?.staff?.profiles?.full_name || 'Unknown Collector'}
                       </TableCell>
                       <TableCell>
                         {variance.staff_details?.profiles?.full_name || 'Unknown Staff'}
