@@ -37,7 +37,7 @@ export class MilkApprovalService {
         .select(`
           id,
           user_id,
-          profiles!staff_user_id_fkey (
+          profiles (
             id,
             full_name,
             email
@@ -56,18 +56,20 @@ export class MilkApprovalService {
         return null;
       }
 
-      // Fetch roles separately using the user_id
+      // Fetch roles as an ARRAY (not maybeSingle)
+      // A user can have multiple roles, and maybeSingle fails if multiple rows exist
       let roles: string[] = [];
       if (data.user_id) {
         const { data: rolesData, error: rolesError } = await supabase
           .from('user_roles')
           .select('role')
           .eq('user_id', data.user_id)
-          .eq('active', true)
-          .maybeSingle();
+          .eq('active', true);
 
-        if (!rolesError && rolesData) {
-          roles = [rolesData.role];
+        if (rolesError) {
+          logger.warn('MilkApprovalService - fetching roles for staff', rolesError);
+        } else if (rolesData) {
+          roles = rolesData.map((r: any) => r.role);
         }
       }
 
@@ -94,7 +96,7 @@ export class MilkApprovalService {
         .select(`
           id,
           user_id,
-          profiles!staff_user_id_fkey (
+          profiles (
             id,
             full_name,
             email
@@ -165,10 +167,15 @@ export class MilkApprovalService {
   /**
    * Get pending collections with enriched collector information
    * These collections are ready for approval by staff members
+   * 
+   * FIXED: Uses nested joins in the original query to avoid RLS issues
    */
   static async getPendingCollections() {
     try {
-      // First, fetch pending collections (collections not yet approved for company)
+      console.log('Fetching pending collections...');
+      
+      // Fetch collections WITH nested staff and farmer data in a single query
+      // This avoids RLS policy issues with separate queries
       const { data: collections, error: collectionsError } = await supabase
         .from('collections')
         .select(`
@@ -180,7 +187,16 @@ export class MilkApprovalService {
           status,
           approved_for_company,
           company_approval_id,
-          created_at
+          created_at,
+          staff!collections_staff_id_fkey (
+            id,
+            user_id
+          ),
+          farmers!collections_farmer_id_fkey (
+            id,
+            user_id,
+            registration_number
+          )
         `)
         .eq('approved_for_company', false)
         .order('collection_date', { ascending: false })
@@ -195,60 +211,21 @@ export class MilkApprovalService {
         collectionCount: collections?.length || 0
       });
 
+      console.log('Raw collections data with nested joins:', collections);
+
       if (!collections || collections.length === 0) {
         return { success: true, data: [] };
       }
 
-      // Get unique collector staff IDs (these are the people who collected the milk)
-      const collectorStaffIds = [...new Set(collections.map(c => c.staff_id).filter(Boolean))];
-
-      logger.info('MilkApprovalService - unique collector staff IDs', {
-        collectorCount: collectorStaffIds.length,
-        collectorIds: collectorStaffIds
-      });
-
-      // Fetch collector information for all collectors
-      const { data: collectorData, error: collectorError } = await supabase
-        .from('staff')
-        .select(`
-          id,
-          user_id,
-          profiles!staff_user_id_fkey (
-            id,
-            full_name,
-            email
-          )
-        `)
-        .in('id', collectorStaffIds);
-
-      if (collectorError) {
-        logger.errorWithContext('MilkApprovalService - fetching collector data', {
-          error: collectorError.message,
-          code: collectorError.code,
-          details: collectorError.details
-        });
-      }
-
-      logger.info('MilkApprovalService - fetched collector profiles', {
-        profileCount: collectorData?.length || 0,
-        error: collectorError?.message,
-        collectorStaffIds
-      });
-
-      // If query returned no results, try using RPC or check RLS policies
-      if (!collectorData || collectorData.length === 0) {
-        logger.warn('MilkApprovalService - Staff table query returned no results. Possible RLS policy issue.', {
-          queriedIds: collectorStaffIds,
-          suggestion: 'Check RLS policies on staff table for current user'
-        });
-      }
-
-      // Fetch roles separately for all collectors to verify they have 'collector' role
-      let rolesMap = new Map<string, string[]>();
-      const userIds = (collectorData || [])
-        .map((staff: any) => staff.user_id)
+      // Collect user_ids for staff present in collections
+      const userIds = collections
+        .map((c: any) => c.staff?.user_id)
         .filter(Boolean);
 
+      console.log('User IDs to fetch roles for:', userIds);
+
+      // Bulk fetch roles for those user_ids
+      const rolesMap = new Map<string, string[]>();
       if (userIds.length > 0) {
         const { data: allRoles, error: rolesError } = await supabase
           .from('user_roles')
@@ -256,117 +233,136 @@ export class MilkApprovalService {
           .in('user_id', userIds)
           .eq('active', true);
 
-        if (!rolesError && allRoles) {
+        if (rolesError) {
+          logger.warn('MilkApprovalService - bulk fetching roles for collectors', rolesError);
+        } else if (allRoles) {
           allRoles.forEach((ur: any) => {
             if (!rolesMap.has(ur.user_id)) {
               rolesMap.set(ur.user_id, []);
             }
             rolesMap.get(ur.user_id)?.push(ur.role);
           });
-        } else if (rolesError) {
-          logger.errorWithContext('MilkApprovalService - fetching user roles', rolesError);
         }
       }
 
-      // Create a map of collector info by staff_id
-      const collectorMap = new Map<string, StaffInfo>();
-      (collectorData || []).forEach((staff: any) => {
-        const roles = rolesMap.get(staff.user_id) || [];
+      console.log('Roles map created:', rolesMap);
 
-        collectorMap.set(staff.id, {
-          staffId: staff.id,
-          userId: staff.user_id,
-          fullName: staff.profiles?.full_name || 'Unknown',
-          email: staff.profiles?.email || '',
-          roles
-        });
-      });
+      // Fetch profiles for all staff members
+      let profilesMap = new Map<string, any>();
+      if (userIds.length > 0) {
+        const { data: profilesData, error: profilesError } = await supabase
+          .from('profiles')
+          .select('id, full_name, email, phone')
+          .in('id', userIds);  // profiles.id matches user_id from auth
 
-      // Get unique farmer IDs to fetch farmer information
-      const farmerIds = [...new Set(collections.map(c => c.farmer_id).filter(Boolean))];
-
-      logger.info('MilkApprovalService - unique farmer IDs', {
-        farmerCount: farmerIds.length,
-        farmerIds
-      });
-
-      // Fetch farmer information
-      let farmerMap = new Map<string, any>();
-      if (farmerIds.length > 0) {
-        const { data: farmerData, error: farmerError } = await supabase
-          .from('farmers')
-          .select(`
-            id,
-            full_name,
-            phone_number,
-            registration_number
-          `)
-          .in('id', farmerIds);
-
-        if (farmerError) {
-          logger.errorWithContext('MilkApprovalService - fetching farmer data', farmerError);
-        }
-
-        logger.info('MilkApprovalService - fetched farmer profiles', {
-          farmerCount: farmerData?.length || 0
-        });
-
-        (farmerData || []).forEach((farmer: any) => {
-          farmerMap.set(farmer.id, {
-            id: farmer.id,
-            fullName: farmer.full_name || 'Unknown Farmer',
-            phoneNumber: farmer.phone_number || '',
-            registrationNumber: farmer.registration_number || ''
+        if (profilesError) {
+          logger.warn('MilkApprovalService - fetching profiles for staff', profilesError);
+        } else if (profilesData) {
+          profilesData.forEach((profile: any) => {
+            profilesMap.set(profile.id, profile);  // Use profile.id as key
           });
-        });
+        }
       }
+
+      console.log('Profiles map created:', profilesMap);
+
+      // Fetch farmer profiles
+      const farmerUserIds = collections
+        .map((c: any) => c.farmers?.user_id)
+        .filter(Boolean);
+
+      let farmerProfilesMap = new Map<string, any>();
+      if (farmerUserIds.length > 0) {
+        const { data: farmerProfilesData, error: farmerProfilesError } = await supabase
+          .from('profiles')
+          .select('id, full_name, phone')
+          .in('id', farmerUserIds);  // profiles.id matches user_id from auth
+
+        if (farmerProfilesError) {
+          logger.warn('MilkApprovalService - fetching profiles for farmers', farmerProfilesError);
+        } else if (farmerProfilesData) {
+          farmerProfilesData.forEach((profile: any) => {
+            farmerProfilesMap.set(profile.id, profile);  // Use profile.id as key
+          });
+        }
+      }
+
+      console.log('Farmer profiles map created:', farmerProfilesMap);
 
       // Enrich collections with collector and farmer info
-      const enrichedCollections = collections.map(collection => {
-        const collectorInfo = collectorMap.get(collection.staff_id);
-        const farmerInfo = farmerMap.get(collection.farmer_id);
+      const enrichedCollections = collections.map((collection: any, index: number) => {
+        const staffUserId = collection.staff?.user_id;
 
-        if (!collectorInfo) {
-          logger.warn('MilkApprovalService - collector not found for collection', {
-            collectionId: collection.id,
-            collectorStaffId: collection.staff_id
-          });
-        }
+        // Build collector info from the nested staff object and separately fetched profiles
+        const collectorInfo = collection.staff ? {
+          staffId: collection.staff.id,
+          userId: collection.staff.user_id,
+          fullName: staffUserId && profilesMap.has(staffUserId) 
+            ? profilesMap.get(staffUserId).full_name 
+            : 'Unknown Collector',
+          email: staffUserId && profilesMap.has(staffUserId) 
+            ? profilesMap.get(staffUserId).email 
+            : '',
+          roles: staffUserId ? (rolesMap.get(staffUserId) || []) : []
+        } : {
+          staffId: collection.staff_id,
+          userId: '',
+          fullName: 'Unknown Collector',
+          email: '',
+          roles: []
+        };
 
-        if (!farmerInfo) {
-          logger.warn('MilkApprovalService - farmer not found for collection', {
-            collectionId: collection.id,
-            farmerId: collection.farmer_id
-          });
-        }
+        // Build farmer info from the nested farmers object and separately fetched profiles
+        const farmerUserId = collection.farmers?.user_id;
+        const farmerInfo = collection.farmers ? {
+          id: collection.farmers.id,
+          fullName: farmerUserId && farmerProfilesMap.has(farmerUserId) 
+            ? farmerProfilesMap.get(farmerUserId).full_name 
+            : 'Unknown Farmer',
+          phoneNumber: farmerUserId && farmerProfilesMap.has(farmerUserId) 
+            ? farmerProfilesMap.get(farmerUserId).phone 
+            : '',
+          registrationNumber: collection.farmers.registration_number || ''
+        } : {
+          id: collection.farmer_id,
+          fullName: 'Unknown Farmer',
+          phoneNumber: '',
+          registrationNumber: ''
+        };
 
-        return {
+        const enrichedCollection = {
           ...collection,
           status: collection.status || 'pending',
-          // collector is the staff member who collected the milk
-          collector: collectorInfo || {
-            staffId: collection.staff_id,
-            userId: '',
-            fullName: 'Unknown Collector',
-            email: '',
-            roles: ['collector']
-          },
-          // farmer is the milk producer
-          farmer: farmerInfo || {
-            id: collection.farmer_id,
-            fullName: 'Unknown Farmer',
-            phoneNumber: '',
-            registrationNumber: ''
-          }
+          collector: collectorInfo,
+          farmer: farmerInfo
         };
+
+        // Log enrichment for debugging
+        if (index < 5) {
+          console.log('Enriched collection:', {
+            index,
+            originalStaffId: collection.staff_id,
+            hasNestedStaff: !!collection.staff,
+            collectorName: enrichedCollection.collector?.fullName,
+            farmerName: enrichedCollection.farmer?.fullName
+          });
+        }
+
+        return enrichedCollection;
       });
 
       logger.info('MilkApprovalService - final enriched collections', {
         collectionCount: enrichedCollections.length,
-        foundCollectorCount: enrichedCollections.filter((c: any) => c.collector?.fullName !== 'Unknown Collector').length,
-        foundFarmerCount: enrichedCollections.filter((c: any) => c.farmer?.fullName !== 'Unknown Farmer').length,
+        foundCollectorCount: enrichedCollections.filter((c: any) => 
+          c.collector?.fullName !== 'Unknown Collector'
+        ).length,
+        foundFarmerCount: enrichedCollections.filter((c: any) => 
+          c.farmer?.fullName !== 'Unknown Farmer'
+        ).length,
         sampleCollections: enrichedCollections.slice(0, 2)
       });
+
+      console.log('Final enriched collections:', enrichedCollections.slice(0, 3));
 
       return { success: true, data: enrichedCollections };
     } catch (error) {

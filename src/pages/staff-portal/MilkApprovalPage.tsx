@@ -86,6 +86,19 @@ const MilkApprovalPage: React.FC = () => {
     try {
       const result = await MilkApprovalService.getPendingCollections();
       if (result.success && result.data) {
+        console.log('Fetched pending collections count:', result.data.length);
+        
+        // Log detailed information about the first few collections
+        result.data.slice(0, 2).forEach((collection: any, index: number) => {
+          console.log(`Sample collection ${index}:`, {
+            id: collection.id,
+            collectorName: collection.collector?.fullName,
+            farmerName: collection.farmer?.fullName,
+            hasCollector: !!collection.collector,
+            hasFarmer: !!collection.farmer
+          });
+        });
+        
         setPendingCollections(result.data);
         groupCollections(result.data);
       }
@@ -102,12 +115,25 @@ const MilkApprovalPage: React.FC = () => {
   };
 
   const groupCollections = (collections: Collection[]) => {
+    console.log('Grouping collections count:', collections.length);
     const groups: { [key: string]: CollectionGroup } = {};
 
-    collections.forEach(collection => {
+    // First pass: Create initial groups with collector names from individual collections
+    collections.forEach((collection, index) => {
       // Use collector data from enriched service
-      const collectorId = collection.collector?.staffId || 'unassigned';
-      const collectorName = collection.collector?.fullName || 'Unassigned';
+      const collectorId = collection.collector?.staffId || collection.staff_id || 'unassigned';
+      const collectorName = collection.collector?.fullName || 'Unknown Collector';
+      
+      // Log detailed information about what we're using (only first 2)
+      if (index < 2) {
+        console.log(`Processing collection ${index}:`, {
+          collectionId: collection.id,
+          collectorId,
+          collectorName,
+          hasCollectorInfo: !!(collection.collector?.fullName)
+        });
+      }
+
       const date = collection.collection_date.split('T')[0];
       const key = `${collectorId}-${date}`;
 
@@ -124,7 +150,30 @@ const MilkApprovalPage: React.FC = () => {
       groups[key].totalCollections++;
     });
 
-    setGroupedCollections(Object.values(groups));
+    console.log('Initial groups created:', Object.keys(groups).length);
+
+    // Second pass: Improve collector names by finding the best name for each group
+    Object.values(groups).forEach(group => {
+      // Only try to improve names for groups that have a valid collector ID and are currently showing "Unknown Collector"
+      if (group.collectorId !== 'unassigned' && group.collectorName === 'Unknown Collector') {
+        // Look for a collection in this group with a valid collector name
+        const collectionWithValidName = group.collections.find(
+          collection => {
+            const name = collection.collector?.fullName;
+            return name && name !== 'Unknown Collector';
+          }
+        );
+        
+        if (collectionWithValidName) {
+          const betterName = collectionWithValidName.collector?.fullName || 'Unknown Collector';
+          group.collectorName = betterName;
+        }
+      }
+    });
+
+    const finalGroups = Object.values(groups);
+    console.log('Final grouped collections count:', finalGroups.length);
+    setGroupedCollections(finalGroups);
   };
 
   const formatDateSafely = (dateString: string) => {
@@ -161,6 +210,7 @@ const MilkApprovalPage: React.FC = () => {
       [name]: name === 'totalReceived' ? value : value
     }));
   };
+
 
   const handleBatchApprove = async () => {
     if (!batchGroup || !user) return;
@@ -200,11 +250,13 @@ const MilkApprovalPage: React.FC = () => {
   };
 
   const isCollectorAssigned = (collection: Collection): boolean => {
-    return collection.collector?.fullName && collection.collector.fullName !== 'Unknown Collector';
+    const collectorName = collection.collector?.fullName;
+    return !!(collectorName && collectorName !== 'Unknown Collector');
   };
 
   const isFarmerAssigned = (collection: Collection): boolean => {
-    return collection.farmer?.fullName && collection.farmer.fullName !== 'Unknown Farmer';
+    const farmerName = collection.farmer?.fullName;
+    return !!(farmerName && farmerName !== 'Unknown Farmer');
   };
 
   return (
@@ -251,7 +303,7 @@ const MilkApprovalPage: React.FC = () => {
                         {group.collectorName}
                         {group.collectorId === 'unassigned' && (
                           <Badge variant="destructive" className="ml-2" title="These collections have missing collector information and cannot be batch approved">Unassigned</Badge>
-                        )}
+                       )}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
@@ -278,7 +330,7 @@ const MilkApprovalPage: React.FC = () => {
                             <Scale className="h-4 w-4 mr-1" />
                             Batch Approve
                           </Button>
-                        )}
+                       )}
                       </TableCell>
                     </TableRow>
                   ))
@@ -399,7 +451,7 @@ const MilkApprovalPage: React.FC = () => {
                         <div className="h-6 w-12 bg-gray-200 rounded animate-pulse"></div>
                       ) : (
                         `${varianceStats?.avgVariance >= 0 ? '+' : ''}${varianceStats?.avgVariance || 0}%`
-                      )}
+                     )}
                     </div>
                   </div>
                   <TrendingUp className="h-8 w-8 text-blue-500" />
@@ -417,7 +469,7 @@ const MilkApprovalPage: React.FC = () => {
                         <div className="h-6 w-8 bg-gray-200 rounded animate-pulse"></div>
                       ) : (
                         varianceStats?.positiveVariances || 0
-                      )}
+                     )}
                     </div>
                   </div>
                   <div className="h-8 w-8 rounded-full bg-green-100 flex items-center justify-center">
@@ -437,7 +489,7 @@ const MilkApprovalPage: React.FC = () => {
                         <div className="h-6 w-8 bg-gray-200 rounded animate-pulse"></div>
                       ) : (
                         varianceStats?.negativeVariances || 0
-                      )}
+                     )}
                     </div>
                   </div>
                   <div className="h-8 w-8 rounded-full bg-red-100 flex items-center justify-center">
