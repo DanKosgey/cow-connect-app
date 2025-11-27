@@ -63,20 +63,41 @@ const BatchApprovalForm = () => {
         return;
       }
 
-      const { data, error } = await supabase
-        .from('staff')
-        .select('id, profiles (full_name)')
+      // Fetch staff members with collector role
+      const { data: userRoles, error: rolesError } = await supabase
+        .from('user_roles')
+        .select('user_id')
         .eq('role', 'collector')
-        .order('profiles.full_name');
+        .eq('active', true);
 
-      if (error) {
-        console.error('❌ Error fetching collectors from Supabase:', error);
-        throw error;
+      if (rolesError) {
+        console.error('❌ Error fetching collector roles from Supabase:', rolesError);
+        throw rolesError;
       }
 
-      console.log('📊 Raw collectors data from Supabase:', data);
+      const collectorUserIds = userRoles?.map(role => role.user_id) || [];
+      
+      if (collectorUserIds.length === 0) {
+        console.warn('⚠️ No collector roles found in the system');
+        setCollectors([]);
+        return;
+      }
 
-      const collectorData = data?.map((staff: any) => ({
+      // Fetch staff records for these user IDs
+      const { data: staffData, error: staffError } = await supabase
+        .from('staff')
+        .select('id, user_id, profiles (full_name)')
+        .in('user_id', collectorUserIds)
+        .order('profiles.full_name');
+
+      if (staffError) {
+        console.error('❌ Error fetching staff data from Supabase:', staffError);
+        throw staffError;
+      }
+
+      console.log('📊 Raw staff data from Supabase:', staffData);
+
+      const collectorData = staffData?.map((staff: any) => ({
         id: staff.id,
         full_name: staff.profiles?.full_name || 'Unknown Collector'
       })) || [];

@@ -431,7 +431,7 @@ export class MilkApprovalService {
   /**
    * Convert user ID to staff ID
    */
-  static async convertUserIdToStaffId(userId: string): Promise<string> {
+  static async convertUserIdToStaffId(userId: string): Promise<{ success: boolean; staffId?: string; error?: string }> {
     try {
       console.log('Converting user ID to staff ID:', userId);
       
@@ -445,7 +445,7 @@ export class MilkApprovalService {
 
       if (staffError) {
         logger.errorWithContext('MilkApprovalService - converting user ID to staff ID', staffError);
-        throw staffError;
+        return { success: false, error: `Database error: ${staffError.message}` };
       }
 
       if (staffData?.id) {
@@ -453,14 +453,14 @@ export class MilkApprovalService {
           userId,
           staffId: staffData.id
         });
-        return staffData.id;
+        return { success: true, staffId: staffData.id };
       }
 
-      logger.warn('Staff record not found for user ID, using user ID directly', userId);
-      return userId;
+      logger.warn('Staff record not found for user ID', userId);
+      return { success: false, error: 'User does not have a staff record. Only staff members can approve collections.' };
     } catch (error) {
       logger.errorWithContext('MilkApprovalService - convertUserIdToStaffId', error);
-      return userId;
+      return { success: false, error: 'Failed to validate staff credentials' };
     }
   }
 
@@ -486,7 +486,11 @@ export class MilkApprovalService {
       }
 
       // Convert user ID to staff ID if needed
-      const staffId = await this.convertUserIdToStaffId(approvalData.staffId);
+      const staffIdResult = await this.convertUserIdToStaffId(approvalData.staffId);
+      if (!staffIdResult.success) {
+        throw new Error(staffIdResult.error);
+      }
+      const staffId = staffIdResult.staffId!;
 
       // Calculate variance
       const varianceData = this.calculateVariance(
@@ -524,6 +528,7 @@ export class MilkApprovalService {
         .update({
           approved_for_company: true,
           company_approval_id: approval.id,
+          approved_by: staffId,
           updated_at: new Date().toISOString()
         })
         .eq('id', approvalData.collectionId);
@@ -586,7 +591,11 @@ export class MilkApprovalService {
       }
 
       // Convert user ID to staff ID if needed
-      const actualStaffId = await this.convertUserIdToStaffId(staffId);
+      const staffIdResult = await this.convertUserIdToStaffId(staffId);
+      if (!staffIdResult.success) {
+        return { success: false, error: new Error(staffIdResult.error) };
+      }
+      const actualStaffId = staffIdResult.staffId!;
 
       logger.info('MilkApprovalService - batchApproveCollections called with parameters', {
         staffId: actualStaffId,

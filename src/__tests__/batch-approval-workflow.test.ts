@@ -66,7 +66,7 @@ describe('Batch Approval Workflow', () => {
       p_staff_id: 'staff-123',
       p_collector_id: 'collector-456',
       p_collection_date: '2025-11-18',
-      p_default_received_liters: 199
+      p_total_received_liters: 199
     });
   });
 

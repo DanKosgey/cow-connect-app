@@ -11,7 +11,7 @@ async function testBatchApproval() {
       p_staff_id: '00000000-0000-0000-0000-000000000000', // Placeholder UUID
       p_collector_id: '00000000-0000-0000-0000-000000000000', // Placeholder UUID
       p_collection_date: '2025-11-18',
-      p_default_received_liters: 199
+      p_total_received_liters: 199
     });
     
     if (error) {

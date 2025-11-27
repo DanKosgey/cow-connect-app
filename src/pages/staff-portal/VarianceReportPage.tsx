@@ -145,7 +145,8 @@ const VarianceReportPage: React.FC = () => {
         .from('staff')
         .select(`
           id,
-          profiles!staff_user_id_fkey (
+          user_id,
+          profiles (
             full_name
           )
         `)

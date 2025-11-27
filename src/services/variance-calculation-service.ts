@@ -136,6 +136,7 @@ export class VarianceCalculationService {
         .update({
           approved_for_company: true,
           company_approval_id: approval.id,
+          approved_by: staffId,
           updated_at: new Date().toISOString()
         })
         .eq('id', collectionId);

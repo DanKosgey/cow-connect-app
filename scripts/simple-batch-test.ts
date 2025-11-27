@@ -65,7 +65,7 @@ async function testBatchFunction() {
       p_staff_id: staffData.id,
       p_collector_id: collectorId,
       p_collection_date: '2025-11-21',
-      p_default_received_liters: 100
+      p_total_received_liters: 100
     });
     
     if (error) {

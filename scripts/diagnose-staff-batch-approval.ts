@@ -123,7 +123,7 @@ async function diagnoseStaffBatchApproval() {
       p_staff_id: staffRecord.id,
       p_collector_id: testCollectorId,
       p_collection_date: new Date().toISOString().split('T')[0], // Today's date
-      p_default_received_liters: 100
+      p_total_received_liters: 100
     });
     
     if (testError) {

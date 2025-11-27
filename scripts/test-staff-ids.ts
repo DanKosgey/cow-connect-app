@@ -124,7 +124,7 @@ async function testStaffIds() {
       p_staff_id: staffRecord.id,
       p_collector_id: testCollector.id,
       p_collection_date: today,
-      p_default_received_liters: 100
+      p_total_received_liters: 100
     });
     
     if (batchError) {

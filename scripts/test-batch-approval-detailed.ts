@@ -13,7 +13,7 @@ async function testBatchApprovalWithDetailedLogging() {
       p_staff_id: '00000000-0000-0000-0000-000000000000', // Invalid UUID
       p_collector_id: '00000000-0000-0000-0000-000000000000', // Placeholder UUID
       p_collection_date: '2025-11-18',
-      p_default_received_liters: 199
+      p_total_received_liters: 199
     });
     
     if (error1) {
@@ -48,7 +48,7 @@ async function testBatchApprovalWithDetailedLogging() {
       p_staff_id: validStaffId,
       p_collector_id: '00000000-0000-0000-0000-000000000000', // Invalid UUID
       p_collection_date: '2025-11-18',
-      p_default_received_liters: 199
+      p_total_received_liters: 199
     });
     
     if (error2) {
@@ -76,7 +76,7 @@ async function testBatchApprovalWithDetailedLogging() {
         p_staff_id: farmerId,
         p_collector_id: validStaffId,
         p_collection_date: '2025-11-18',
-        p_default_received_liters: 199
+        p_total_received_liters: 199
       });
       
       if (error3) {

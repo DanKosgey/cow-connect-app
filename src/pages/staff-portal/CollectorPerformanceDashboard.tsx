@@ -117,7 +117,7 @@ const CollectorPerformanceDashboard: React.FC = () => {
       // Get staff records for these user IDs
       const { data: staffRecords, error: staffError } = await supabase
         .from('staff')
-        .select('id')
+        .select('id, user_id, profiles (full_name)')
         .in('user_id', collectorUserIds);
 
       if (staffError) throw staffError;
@@ -143,6 +143,7 @@ const CollectorPerformanceDashboard: React.FC = () => {
         .select(`
           *,
           staff (
+            user_id,
             profiles (
               full_name
             )
@@ -154,22 +155,34 @@ const CollectorPerformanceDashboard: React.FC = () => {
 
       if (error) throw error;
       
-      setPerformanceRecords(data || []);
+      // Enhance data with proper collector names
+      const enhancedData = (data || []).map(record => ({
+        ...record,
+        staff: {
+          ...record.staff,
+          profiles: {
+            full_name: record.staff?.profiles?.full_name || 
+                      (record.staff?.user_id ? `Collector (${record.staff.user_id.substring(0, 8)})` : 'Unknown Collector')
+          }
+        }
+      }));
+      
+      setPerformanceRecords(enhancedData);
       
       // Calculate summary statistics
-      if (data && data.length > 0) {
-        const totalCollectors = data.length;
-        const avgPerformance = data.reduce((sum, record) => sum + (record.performance_score || 0), 0) / totalCollectors;
+      if (enhancedData && enhancedData.length > 0) {
+        const totalCollectors = enhancedData.length;
+        const avgPerformance = enhancedData.reduce((sum, record) => sum + (record.performance_score || 0), 0) / totalCollectors;
         
         // Find top performer
-        const topPerformerRecord = data.reduce((prev, current) => 
+        const topPerformerRecord = enhancedData.reduce((prev, current) => 
           (prev.performance_score > current.performance_score) ? prev : current
         );
         const topPerformer = topPerformerRecord.staff?.profiles?.full_name || 'Unknown Collector';
         const topPerformerScore = topPerformerRecord.performance_score || 0;
         
         // Count collectors needing attention (score < 70)
-        const needsAttention = data.filter(record => (record.performance_score || 0) < 70).length;
+        const needsAttention = enhancedData.filter(record => (record.performance_score || 0) < 70).length;
         
         setSummaryStats({
           totalCollectors,

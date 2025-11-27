@@ -93,7 +93,7 @@ async function testBatchApproval() {
             p_staff_id: staffMember.id,
             p_collector_id: collector.id,
             p_collection_date: testDate,
-            p_default_received_liters: 100
+            p_total_received_liters: 100
         });
         
         if (error) {

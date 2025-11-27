@@ -240,7 +240,19 @@ const MilkApprovalPage: React.FC = () => {
         refetchVarianceStats();
         setShowBatchForm(false);
       } else {
-        toast({ title: "Error", description: "Some collections failed to approve", variant: "destructive" });
+        // Check if any errors are related to staff validation
+        const staffError = results.find(res => !res.success && res.error && 
+          (res.error as Error).message?.includes('staff record'));
+        
+        if (staffError) {
+          toast({ 
+            title: "Permission Error", 
+            description: (staffError.error as Error).message || "Only staff members can approve collections",
+            variant: "destructive" 
+          });
+        } else {
+          toast({ title: "Error", description: "Some collections failed to approve", variant: "destructive" });
+        }
       }
     } catch (error) {
       toast({ title: "Error", description: "Failed to batch approve", variant: "destructive" });
