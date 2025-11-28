@@ -87,6 +87,7 @@ const roleNavigation: Record<string, NavItem[]> = {
     { label: 'Collections', path: '/collector-only/collections', icon: <Milk className="h-5 w-5" />, category: 'operations' },
     { label: 'Farmers', path: '/collector-only/farmers', icon: <Users className="h-5 w-5" />, category: 'management' },
     { label: 'Performance', path: '/collector-only/performance', icon: <BarChart3 className="h-5 w-5" />, category: 'analytics' },
+    { label: 'Earnings', path: '/collector-only/earnings', icon: <DollarSign className="h-5 w-5" />, category: 'finance' },
     { label: 'Profile', path: '/collector-only/profile', icon: <UserCog className="h-5 w-5" />, category: 'settings' },
   ],
   admin: [

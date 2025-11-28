@@ -106,6 +106,13 @@ const CollectorQuickActions = () => {
       icon: <Bell className="h-6 w-6" />,
       color: "bg-rose-500",
       action: () => navigate('/collector/notifications')
+    },
+    {
+      title: "Earnings",
+      description: "View your earnings and payment history",
+      icon: <Wallet className="h-6 w-6" />,
+      color: "bg-indigo-500",
+      action: () => navigate('/collector-only/earnings')
     }
   ];
 

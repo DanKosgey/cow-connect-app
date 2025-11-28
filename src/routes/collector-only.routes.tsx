@@ -35,6 +35,7 @@ const FarmerVisitsTracker = lazy(() => import("../components/collector/FarmerVis
 const QualityReports = lazy(() => import("../components/collector/QualityReports"));
 const PerformanceInsights = lazy(() => import("../components/collector/PerformanceInsights"));
 const CollectorPortalLanding = lazy(() => import("../pages/collector-portal/CollectorPortalLanding"));
+const CollectorEarningsPage = lazy(() => import("../pages/collector-portal/CollectorEarningsPage"));
 
 export default function CollectorOnlyRoutes() {
   const location = useLocation();
@@ -75,6 +76,7 @@ export default function CollectorOnlyRoutes() {
                 <Route path="farmer-visits" element={<FarmerVisitsTracker />} />
                 <Route path="quality-reports" element={<QualityReports />} />
                 <Route path="performance-insights" element={<PerformanceInsights />} />
+                <Route path="earnings" element={<CollectorEarningsPage />} />
                 <Route index element={<CollectorPortalLanding />} />
                 <Route path="*" element={<Navigate to="/collector-only/dashboard" replace />} />
               </Routes>

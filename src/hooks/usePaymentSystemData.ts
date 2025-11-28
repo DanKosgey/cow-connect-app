@@ -351,6 +351,7 @@ export const usePaymentSystemData = (timeFrame: string = 'all', customDateRange:
         .from('collections')
         .select(`
           *,
+          approved_for_payment,
           farmers (
             id,
             user_id,

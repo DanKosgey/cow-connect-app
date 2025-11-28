@@ -26,6 +26,7 @@ import { notificationService } from '@/services/notification-service';
 import { exportService } from '@/services/export-service';
 import RefreshButton from '@/components/ui/RefreshButton';
 import { useSettingsData } from '@/hooks/useSettingsData';
+import { collectorRateService } from '@/services/collector-rate-service';
 
 // Define types for our data
 interface UserRole {
@@ -95,6 +96,12 @@ const AdminSettings = () => {
   });
   const [locationErrors, setLocationErrors] = useState<Record<string, string>>({});
 
+  // Collector rate state
+  const [collectorRate, setCollectorRate] = useState({
+    ratePerLiter: 0,
+    effectiveFrom: new Date().toISOString().split('T')[0]
+  });
+
   const {
     useSystemSettings,
     updateSettings,
@@ -116,6 +123,19 @@ const AdminSettings = () => {
     system_message: '',
     default_role: 'farmer'
   });
+
+  // Fetch collector rate on component mount
+  useEffect(() => {
+    const fetchCollectorRate = async () => {
+      const rate = await collectorRateService.getCurrentRate();
+      setCollectorRate(prev => ({
+        ...prev,
+        ratePerLiter: rate
+      }));
+    };
+    
+    fetchCollectorRate();
+  }, []);
 
   // Update local settings when data changes
   useEffect(() => {
@@ -501,6 +521,13 @@ const AdminSettings = () => {
     }
   }, [locationErrors]);
 
+  const handleCollectorRateChange = useCallback((field: string, value: string | number) => {
+    setCollectorRate(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  }, []);
+
   // Memoize users with roles to prevent unnecessary re-renders
   const usersWithRoles = useMemo(() => {
     return users.map(user => ({
@@ -623,8 +650,54 @@ const AdminSettings = () => {
                 </Select>
               </div>
 
-              {/* Additional Settings Placeholder */}
-              {/* Additional settings can be added here as needed */}
+              {/* Collector Rate Configuration */}
+              <Separator />
+              <div className="space-y-4">
+                <h3 className="font-medium text-lg">Collector Payment Settings</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="collector_rate">Collector Rate per Liter (KES)</Label>
+                    <Input
+                      id="collector_rate"
+                      type="number"
+                      step="0.01"
+                      value={collectorRate.ratePerLiter}
+                      onChange={(e) => handleCollectorRateChange('ratePerLiter', parseFloat(e.target.value) || 0)}
+                      placeholder="Enter rate per liter"
+                    />
+                    <p className="text-sm text-muted-foreground">Rate paid to collectors per liter collected</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="collector_rate_effective">Effective From</Label>
+                    <Input
+                      id="collector_rate_effective"
+                      type="date"
+                      value={collectorRate.effectiveFrom}
+                      onChange={(e) => handleCollectorRateChange('effectiveFrom', e.target.value)}
+                    />
+                  </div>
+                </div>
+                <Button 
+                  onClick={async () => {
+                    const success = await collectorRateService.updateRate(collectorRate.ratePerLiter, collectorRate.effectiveFrom);
+                    if (success) {
+                      toast({
+                        title: 'Success',
+                        description: 'Collector rate updated successfully',
+                        variant: 'success',
+                      });
+                    } else {
+                      toast({
+                        title: 'Error',
+                        description: 'Failed to update collector rate',
+                        variant: 'error',
+                      });
+                    }
+                  }}
+                >
+                  Update Collector Rate
+                </Button>
+              </div>
             </CardContent>
           </Card>
 

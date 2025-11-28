@@ -33,6 +33,7 @@ const MilkApprovalPage = lazy(() => import("../pages/staff-portal/MilkApprovalPa
 const VarianceReportPage = lazy(() => import("../pages/staff-portal/VarianceReportPage"));
 // Fixed: Changed import from missing CollectorPerformanceDashboard to existing CollectorPerformanceTracking
 const CollectorPerformanceDashboard = lazy(() => import("../components/collector/CollectorPerformanceTracking"));
+const CollectorEarningsPage = lazy(() => import("../pages/collector-portal/CollectorEarningsPage"));
 
 // New components
 const CollectorNotifications = lazy(() => import("../components/collector/CollectorNotifications"));
@@ -83,6 +84,7 @@ export default function CollectorRoutes() {
                 <Route path="milk-approval" element={<MilkApprovalPage />} />
                 <Route path="variance-reports" element={<VarianceReportPage />} />
                 <Route path="collector-performance" element={<CollectorPerformanceDashboard />} />
+                <Route path="earnings" element={<CollectorEarningsPage />} />
                 <Route index element={<CollectorPortalLanding />} />
                 <Route path="*" element={<Navigate to="/collector" replace />} />
               </Routes>

@@ -22,14 +22,6 @@ BEGIN
             WHERE collection_id = ANY(NEW.collection_ids);
         END IF;
         
-        -- If approval_status changed to 'approved', update related collections
-        IF OLD.approval_status != NEW.approval_status AND NEW.approval_status = 'approved' THEN
-            -- Update collections to 'Approved' status
-            UPDATE public.collections 
-            SET status = 'Approved'
-            WHERE id = ANY(NEW.collection_ids);
-        END IF;
-        
         RETURN NEW;
     END IF;
     

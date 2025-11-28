@@ -10,6 +10,7 @@ interface Collection {
   total_amount: number;
   rate_per_liter: number;
   status: string;
+  approved_for_payment?: boolean; // Add this property
 }
 
 interface FarmerPayment {
@@ -244,14 +245,14 @@ export class PaymentService {
       if (findPaymentsError) {
         logger.warn('Warning: Error finding related farmer payments', findPaymentsError);
       } else if (relatedPayments && relatedPayments.length > 0) {
-        // Update all related farmer_payments to mark as approved (since 'paid' is not a valid enum value)
+        // Update all related farmer_payments to mark as paid
         for (const payment of relatedPayments) {
-          // Only update if the payment is not already approved/paid
-          if (payment.approval_status !== 'approved') {
+          // Only update if the payment is not already paid
+          if (payment.approval_status !== 'paid') {
             const { error: updatePaymentError } = await supabase
               .from('farmer_payments')
               .update({ 
-                approval_status: 'approved',
+                approval_status: 'paid',
                 paid_at: new Date().toISOString(),
                 credit_used: creditUsed,
                 net_payment: netPayment
@@ -281,7 +282,7 @@ export class PaymentService {
     approvedBy?: string
   ) {
     try {
-      // First, verify that all collections are approved for payment
+      // First, verify that all collections exist and get their current status
       const { data: collectionsData, error: collectionsError } = await supabase
         .from('collections')
         .select('id, approved_for_payment, status')
@@ -290,14 +291,6 @@ export class PaymentService {
       if (collectionsError) {
         logger.errorWithContext('PaymentService - fetching collections for verification', collectionsError);
         throw collectionsError;
-      }
-
-      // Check if all collections are approved for payment
-      const unapprovedCollections = collectionsData?.filter(c => !c.approved_for_payment) || [];
-      if (unapprovedCollections.length > 0) {
-        const unapprovedIds = unapprovedCollections.map(c => c.id).join(', ');
-        logger.errorWithContext('PaymentService - unapproved collections found', { unapprovedIds });
-        throw new Error(`Collections ${unapprovedIds} are not approved for payment`);
       }
 
       // Check if any collections are already paid
@@ -325,11 +318,27 @@ export class PaymentService {
         staffId = staffData?.id || null;
       }
 
-      // Calculate credit deduction for this payment
+      // FIRST: Update collections to mark them as approved for payment
+      // This must be done before creating payment records due to database constraints
+      const { error: updateError } = await supabase
+        .from('collections')
+        .update({ 
+          approved_for_payment: true,
+          approved_by: staffId // Use the staff ID instead of user ID
+        })
+        .in('id', collectionIds);
+
+      if (updateError) {
+        logger.errorWithContext('PaymentService - updating collections for approval', updateError);
+        throw updateError;
+      }
+
+      // SECOND: Calculate credit deduction for this payment
       const creditInfo = await CreditService.calculateAvailableCredit(farmerId);
       const creditUsed = Math.min(creditInfo.availableCredit, totalAmount);
       const netPayment = totalAmount - creditUsed;
 
+      // THIRD: Create payment record in the farmer_payments table
       const { data, error } = await supabase
         .from('farmer_payments')
         .insert({
@@ -349,21 +358,6 @@ export class PaymentService {
       if (error) {
         logger.errorWithContext('PaymentService - creating payment for approval', error);
         throw error;
-      }
-      
-      // Update collections to mark them as approved for payment
-      const { error: updateError } = await supabase
-        .from('collections')
-        .update({ 
-          approved_for_payment: true,
-          approved_at: new Date().toISOString(),
-          approved_by: staffId // Use the staff ID instead of user ID
-        })
-        .in('id', collectionIds);
-
-      if (updateError) {
-        logger.errorWithContext('PaymentService - updating collections for approval', updateError);
-        throw updateError;
       }
 
       return { success: true, data };
@@ -447,7 +441,7 @@ export class PaymentService {
       const { data, error } = await supabase
         .from('farmer_payments')
         .update({
-          approval_status: 'approved', // Changed from 'paid' to 'approved' since 'paid' is not a valid enum value
+          approval_status: 'paid',
           paid_at: new Date().toISOString(),
           paid_by: staffId, // Use the staff ID instead of user ID
           credit_used: creditUsed,
@@ -555,22 +549,49 @@ export class PaymentService {
   // Mark all payments for a farmer as paid
   static async markAllFarmerPaymentsAsPaid(farmerId: string, collections: Collection[]) {
     try {
-      // Mark each collection as paid
-      const results = await Promise.all(
-        collections.map(collection => 
+      // Filter out collections that are not approved for payment
+      const approvedCollections = collections.filter(c => c.approved_for_payment);
+      
+      if (approvedCollections.length === 0) {
+        return { success: true, data: [], message: 'No approved collections to process' };
+      }
+
+      // Process each approved collection with better error handling
+      const results = await Promise.allSettled(
+        approvedCollections.map(collection => 
           this.markCollectionAsPaid(collection.id, farmerId, collection)
         )
       );
       
-      // Check if all operations were successful
-      const failedOperations = results.filter(result => !result.success);
+      // Separate successful and failed operations
+      const successfulOperations = results
+        .map((result, index) => ({ result, collection: approvedCollections[index] }))
+        .filter(({ result }) => result.status === 'fulfilled')
+        .map(({ collection }) => collection);
+        
+      const failedOperations = results
+        .map((result, index) => ({ result, collection: approvedCollections[index] }))
+        .filter(({ result }) => result.status === 'rejected')
+        .map(({ collection, result }) => ({
+          collectionId: collection.id,
+          error: result.status === 'rejected' ? result.reason : null
+        }));
+
+      // Log warnings for failed operations
       if (failedOperations.length > 0) {
-        const error = new Error(`Failed to mark ${failedOperations.length} payments as paid`);
-        logger.errorWithContext('PaymentService - markAllFarmerPaymentsAsPaid', error);
-        throw error;
+        logger.warn('Some collections failed to be marked as paid', { 
+          failedCount: failedOperations.length,
+          totalCount: approvedCollections.length,
+          failedOperations
+        });
       }
-      
-      return { success: true, data: results };
+
+      return { 
+        success: true, 
+        data: successfulOperations,
+        failedOperations,
+        message: `${successfulOperations.length} payments processed successfully, ${failedOperations.length} failed`
+      };
     } catch (error) {
       logger.errorWithContext('PaymentService - markAllFarmerPaymentsAsPaid', error);
       return { success: false, error };

@@ -62,6 +62,13 @@ export default function CollectorPortalLanding() {
       icon: <Route className="h-8 w-8" />,
       path: "/collector-only/routes",
       color: "bg-teal-500"
+    },
+    {
+      title: "Earnings",
+      description: "View your earnings and payment history",
+      icon: <Wallet className="h-8 w-8" />,
+      path: "/collector-only/earnings",
+      color: "bg-indigo-500"
     }
   ];
 

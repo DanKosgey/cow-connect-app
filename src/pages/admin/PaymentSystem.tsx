@@ -27,6 +27,7 @@ import { trendService } from '@/services/trend-service';
 import { PaymentService } from '@/services/payment-service';
 import { usePerformanceMonitor } from '@/hooks/usePerformanceMonitor';
 import { milkRateService } from '@/services/milk-rate-service';
+import { collectorRateService } from '@/services/collector-rate-service';
 import { useSessionRefresh } from '@/hooks/useSessionRefresh';
 import { useAuth } from '@/contexts/SimplifiedAuthContext';
 import { formatCurrency } from '@/utils/formatters';
@@ -39,6 +40,7 @@ import {
 import PaymentOverviewChart from '@/components/admin/PaymentOverviewChart';
 import RefreshButton from '@/components/ui/RefreshButton';
 import { usePaymentSystemData } from '@/hooks/usePaymentSystemData';
+import CollectorPaymentsSection from '@/components/admin/CollectorPaymentsSection';
 
 interface Collection {
   id: string;
@@ -138,6 +140,38 @@ const PaymentSystem = () => {
     effectiveFrom: new Date().toISOString().split('T')[0]
   });
 
+  // Collector rate configuration state
+  const [collectorRateConfig, setCollectorRateConfig] = useState({
+    ratePerLiter: 0,
+    effectiveFrom: new Date().toISOString().split('T')[0]
+  });
+
+  // Fetch current milk rate and collector rate on component mount
+  useEffect(() => {
+    const fetchRates = async () => {
+      try {
+        // Fetch milk rate
+        const currentRate = await milkRateService.getCurrentRate();
+        setRateConfig({
+          ratePerLiter: currentRate,
+          effectiveFrom: new Date().toISOString().split('T')[0]
+        });
+
+        // Fetch collector rate
+        const currentCollectorRate = await collectorRateService.getCurrentRate();
+        setCollectorRateConfig({
+          ratePerLiter: currentCollectorRate,
+          effectiveFrom: new Date().toISOString().split('T')[0]
+        });
+      } catch (error) {
+        console.error('Error fetching rates:', error);
+        toast.error('Error', 'Failed to fetch rates');
+      }
+    };
+
+    fetchRates();
+  }, []);
+
   // Initialize performance monitoring
   const { measureOperation } = usePerformanceMonitor({ 
     componentName: 'PaymentSystemPage',
@@ -175,6 +209,33 @@ const PaymentSystem = () => {
       } catch (error: any) {
         console.error('Error updating rate:', error);
         toast.error('Error', 'Failed to update rate: ' + (error.message || 'Unknown error'));
+      }
+    });
+  };
+
+  const updateCollectorRate = async () => {
+    await measureOperation('updateCollectorRate', async () => {
+      try {
+        if (collectorRateConfig.ratePerLiter <= 0) {
+          toast.error('Error', 'Rate per liter must be greater than zero');
+          return;
+        }
+        
+        if (!collectorRateConfig.effectiveFrom) {
+          toast.error('Error', 'Effective date is required');
+          return;
+        }
+        
+        const success = await collectorRateService.updateRate(collectorRateConfig.ratePerLiter, collectorRateConfig.effectiveFrom);
+        
+        if (success) {
+          toast.success('Success', 'Collector rate updated successfully!');
+        } else {
+          throw new Error('Failed to update collector rate');
+        }
+      } catch (error: any) {
+        console.error('Error updating collector rate:', error);
+        toast.error('Error', 'Failed to update collector rate: ' + (error.message || 'Unknown error'));
       }
     });
   };
@@ -233,6 +294,25 @@ const PaymentSystem = () => {
           return;
         }
         
+        // Check how many collections are approved for payment
+        const approvedCollections = pendingCollections.filter(c => c.approved_for_payment);
+        const unapprovedCount = pendingCollections.length - approvedCollections.length;
+        
+        if (unapprovedCount > 0) {
+          toast.show({ 
+            title: 'Notice', 
+            description: `${unapprovedCount} collections need approval before payment processing. Only ${approvedCollections.length} will be processed.` 
+          });
+        }
+        
+        if (approvedCollections.length === 0) {
+          toast.show({ 
+            title: 'Info', 
+            description: 'No approved collections to process for payment.' 
+          });
+          return;
+        }
+        
         // Refresh session before performing critical operation
         await refreshSession().catch(error => {
           console.warn('Session refresh failed before marking all payments as paid', error);
@@ -244,13 +324,60 @@ const PaymentSystem = () => {
           throw result.error || new Error('Unknown error occurred');
         }
 
-        toast.success('Success', `Marked ${pendingCollections.length} payments as paid successfully!`);
+        toast.success('Success', result.message || `Processed ${approvedCollections.length} payments successfully!`);
         
         // Refresh the data to ensure consistency
         await fetchAllData();
       } catch (error: any) {
         console.error('Error marking all farmer payments as paid:', error);
         toast.error('Error', 'Failed to mark all payments as paid: ' + (error.message || 'Unknown error'));
+      }
+    });
+  };
+
+  // New function to approve collections for payment
+  const approveCollectionsForPayment = async (farmerId: string, collectionIds: string[]) => {
+    await measureOperation('approveCollectionsForPayment', async () => {
+      try {
+        if (userRole !== 'admin') {
+          toast.error('Access Denied', 'Only administrators can approve collections for payment');
+          return;
+        }
+
+        // Refresh session before performing critical operation
+        await refreshSession().catch(error => {
+          console.warn('Session refresh failed before approving collections for payment', error);
+        });
+
+        // Get the total amount for these collections
+        const farmerCollections = collections.filter(c => 
+          c.farmer_id === farmerId && collectionIds.includes(c.id)
+        );
+
+        const totalAmount = farmerCollections.reduce((sum, collection) => 
+          sum + (collection.total_amount || 0), 0
+        );
+
+        // Call the payment service to approve collections for payment
+        const result = await PaymentService.createPaymentForApproval(
+          farmerId,
+          collectionIds,
+          totalAmount,
+          'Approved for payment by admin',
+          user?.id
+        );
+
+        if (!result.success) {
+          throw result.error || new Error('Unknown error occurred');
+        }
+
+        toast.success('Success', `Approved ${collectionIds.length} collections for payment successfully!`);
+        
+        // Refresh the data to ensure consistency
+        await fetchAllData();
+      } catch (error: any) {
+        console.error('Error approving collections for payment:', error);
+        toast.error('Error', 'Failed to approve collections for payment: ' + (error.message || 'Unknown error'));
       }
     });
   };
@@ -464,7 +591,7 @@ const PaymentSystem = () => {
           {/* Navigation Tabs */}
           <div className="bg-white rounded-xl shadow-lg mb-6">
             <div className="flex border-b">
-              {['overview', 'analytics', 'pending', 'paid', 'settings'].map((tab) => (
+              {['overview', 'analytics', 'pending', 'paid', 'collector-payments', 'settings'].map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
@@ -478,8 +605,9 @@ const PaymentSystem = () => {
                   {tab === 'analytics' && <PieChart className="w-4 h-4 inline mr-2" />}
                   {tab === 'pending' && <Clock className="w-4 h-4 inline mr-2" />}
                   {tab === 'paid' && <CheckCircle className="w-4 h-4 inline mr-2" />}
+                  {tab === 'collector-payments' && <Users className="w-4 h-4 inline mr-2" />}
                   {tab === 'settings' && <Settings className="w-4 h-4 inline mr-2" />}
-                  {tab}
+                  {tab === 'collector-payments' ? 'collector payments' : tab}
                 </button>
               ))}
             </div>
@@ -693,13 +821,31 @@ const PaymentSystem = () => {
                                 {formatCurrency(farmer.total_amount)}
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                <Button
-                                  size="sm"
-                                  onClick={() => markAllFarmerPaymentsAsPaid(farmer.farmer_id)}
-                                  disabled={farmer.pending_amount <= 0}
-                                >
-                                  Mark Paid
-                                </Button>
+                                <div className="flex gap-2">
+                                  {/* Check if there are any unapproved collections for this farmer */}
+                                  {collections.filter(c => c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid').length > 0 ? (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => {
+                                        const unapprovedCollections = collections.filter(c => 
+                                          c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid'
+                                        );
+                                        const collectionIds = unapprovedCollections.map(c => c.id);
+                                        approveCollectionsForPayment(farmer.farmer_id, collectionIds);
+                                      }}
+                                      className="mr-2"
+                                    >
+                                      Approve All
+                                    </Button>
+                                  ) : null}
+                                  <Button
+                                    size="sm"
+                                    onClick={() => markAllFarmerPaymentsAsPaid(farmer.farmer_id)}
+                                    disabled={farmer.pending_amount <= 0}
+                                  >
+                                    Mark Paid
+                                  </Button>
+                                </div>
                               </td>
                             </tr>
                           );
@@ -758,6 +904,24 @@ const PaymentSystem = () => {
                             </div>
                           </div>
                           <div className="mt-4">
+                            <div className="flex gap-2 mb-2">
+                              {/* Check if there are any unapproved collections for this farmer */}
+                              {collections.filter(c => c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid').length > 0 ? (
+                                <Button
+                                  size="sm"
+                                  onClick={() => {
+                                    const unapprovedCollections = collections.filter(c => 
+                                      c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid'
+                                    );
+                                    const collectionIds = unapprovedCollections.map(c => c.id);
+                                    approveCollectionsForPayment(farmer.farmer_id, collectionIds);
+                                  }}
+                                  className="flex-1"
+                                >
+                                  Approve All
+                                </Button>
+                              ) : null}
+                            </div>
                             <Button
                               className="w-full"
                               onClick={() => markAllFarmerPaymentsAsPaid(farmer.farmer_id)}
@@ -1062,12 +1226,14 @@ const PaymentSystem = () => {
                                 )}
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                <Button
-                                  size="sm"
-                                  onClick={() => markAsPaid(collection.id, collection.farmer_id)}
-                                >
-                                  Mark Paid
-                                </Button>
+                                {!collection.approved_for_payment && collection.status !== 'Paid' ? (
+                                  <Button
+                                    size="sm"
+                                    onClick={() => approveCollectionsForPayment(collection.farmer_id, [collection.id])}
+                                  >
+                                    Approve
+                                  </Button>
+                                ) : null}
                               </td>
                             </tr>
                           ))}
@@ -1159,6 +1325,11 @@ const PaymentSystem = () => {
             </div>
           )}
 
+          {/* Collector Payments Tab */}
+          {activeTab === 'collector-payments' && (
+            <CollectorPaymentsSection />
+          )}
+
           {/* Settings Tab */}
           {activeTab === 'settings' && (
             <div className="space-y-6">
@@ -1204,6 +1375,53 @@ const PaymentSystem = () => {
                   <div className="mt-6">
                     <Button onClick={updateMilkRate}>
                       Update Milk Rate
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Settings className="w-5 h-5 text-gray-600" />
+                    Collector Rate Configuration
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Collector Rate per Liter (KES)
+                      </label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={collectorRateConfig.ratePerLiter}
+                        onChange={(e) => setCollectorRateConfig({
+                          ...collectorRateConfig,
+                          ratePerLiter: parseFloat(e.target.value) || 0
+                        })}
+                        className="w-full"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Effective From
+                      </label>
+                      <Input
+                        type="date"
+                        value={collectorRateConfig.effectiveFrom}
+                        onChange={(e) => setCollectorRateConfig({
+                          ...collectorRateConfig,
+                          effectiveFrom: e.target.value
+                        })}
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-6">
+                    <Button onClick={updateCollectorRate}>
+                      Update Collector Rate
                     </Button>
                   </div>
                 </CardContent>
