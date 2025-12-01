@@ -88,6 +88,7 @@ const roleNavigation: Record<string, NavItem[]> = {
     { label: 'Farmers', path: '/collector-only/farmers', icon: <Users className="h-5 w-5" />, category: 'management' },
     { label: 'Performance', path: '/collector-only/performance', icon: <BarChart3 className="h-5 w-5" />, category: 'analytics' },
     { label: 'Earnings', path: '/collector-only/earnings', icon: <DollarSign className="h-5 w-5" />, category: 'finance' },
+    { label: 'Payments', path: '/collector-only/payments', icon: <CreditCard className="h-5 w-5" />, category: 'finance' },
     { label: 'Profile', path: '/collector-only/profile', icon: <UserCog className="h-5 w-5" />, category: 'settings' },
   ],
   admin: [
@@ -95,6 +96,7 @@ const roleNavigation: Record<string, NavItem[]> = {
     { label: 'Checkpoints', path: '/admin/checkpoints', icon: <Target className="h-5 w-5" />, category: 'operations' },
     { label: 'Collections', path: '/admin/collections', icon: <Milk className="h-5 w-5" />, category: 'operations' },
     { label: 'Payments', path: '/admin/payments', icon: <DollarSign className="h-5 w-5" />, category: 'finance' },
+    { label: 'Collectors', path: '/admin/collectors', icon: <Users className="h-5 w-5" />, category: 'finance' },
     { label: 'Credit Management', path: '/admin/credit-management', icon: <CreditCard className="h-5 w-5" />, category: 'finance' },
     { label: 'Penalty Management', path: '/admin/penalty-management', icon: <AlertTriangle className="h-5 w-5" />, category: 'finance' },
     { label: 'Variance Reporting', path: '/admin/variance-reporting', icon: <TrendingUp className="h-5 w-5" />, category: 'analytics' },

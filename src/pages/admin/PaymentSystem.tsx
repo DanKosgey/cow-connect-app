@@ -80,12 +80,15 @@ interface FarmerPaymentSummary {
   farmer_phone: string;
   total_collections: number;
   total_liters: number;
-  total_amount: number;
+  total_gross_amount: number;
+  total_collector_fees: number;
+  total_net_amount: number;
   paid_amount: number;
-  pending_amount: number;
+  pending_gross_amount: number;
+  pending_net_amount: number;
   bank_info: string;
-  credit_used: number;
-  net_payment: number;
+  credit_used?: number;
+  net_payment?: number;
 }
 
 interface PaymentAnalytics {
@@ -378,6 +381,75 @@ const PaymentSystem = () => {
       } catch (error: any) {
         console.error('Error approving collections for payment:', error);
         toast.error('Error', 'Failed to approve collections for payment: ' + (error.message || 'Unknown error'));
+      }
+    });
+  };
+
+  // Function to deduct collector fees from pending payments (individual processing)
+  const deductCollectorFees = async () => {
+    await measureOperation('deductCollectorFees', async () => {
+      try {
+        if (userRole !== 'admin') {
+          toast.error('Access Denied', 'Only administrators can deduct collector fees');
+          return;
+        }
+
+        // Get current collector rate
+        const collectorRate = await collectorRateService.getCurrentRate();
+        
+        if (collectorRate <= 0) {
+          toast.error('Error', 'Invalid collector rate. Please set a valid collector rate first.');
+          return;
+        }
+
+        // Get all pending collections that are approved for payment
+        const pendingCollections = filteredCollections.filter(
+          c => c.status !== 'Paid' && c.approved_for_payment
+        );
+        
+        if (pendingCollections.length === 0) {
+          toast.show({ title: 'Info', description: 'No approved pending payments to process.' });
+          return;
+        }
+        
+        // Process each collection to deduct collector fees
+        let successCount = 0;
+        let errorCount = 0;
+        
+        for (const collection of pendingCollections) {
+          try {
+            const result = await PaymentService.markCollectionAsPaid(
+              collection.id, 
+              collection.farmer_id, 
+              collection
+            );
+            
+            if (result.success) {
+              successCount++;
+            } else {
+              errorCount++;
+              console.error(`Failed to process collection ${collection.id}:`, result.error);
+            }
+          } catch (error) {
+            errorCount++;
+            console.error(`Error processing collection ${collection.id}:`, error);
+          }
+        }
+        
+        // Refresh the data to ensure consistency
+        await fetchAllData();
+        
+        if (errorCount === 0) {
+          toast.success('Success', `Successfully deducted collector fees from ${successCount} payments!`);
+        } else {
+          toast.show({ 
+            title: 'Partial Success', 
+            description: `Processed ${successCount} payments successfully. ${errorCount} payments failed.` 
+          });
+        }
+      } catch (error: any) {
+        console.error('Error deducting collector fees:', error);
+        toast.error('Error', 'Failed to deduct collector fees: ' + (error.message || 'Unknown error'));
       }
     });
   };
@@ -802,7 +874,7 @@ const PaymentSystem = () => {
                                 {farmer.total_liters.toFixed(2)}L
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                {formatCurrency(farmer.pending_amount)}
+                                {formatCurrency(farmer.pending_net_amount)}
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                 {formatCurrency(farmer.paid_amount)}
@@ -818,7 +890,7 @@ const PaymentSystem = () => {
                                 </span>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                {formatCurrency(farmer.total_amount)}
+                                {formatCurrency(farmer.total_gross_amount)}
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                 <div className="flex gap-2">
@@ -841,12 +913,13 @@ const PaymentSystem = () => {
                                   <Button
                                     size="sm"
                                     onClick={() => markAllFarmerPaymentsAsPaid(farmer.farmer_id)}
-                                    disabled={farmer.pending_amount <= 0}
+                                    disabled={farmer.pending_net_amount <= 0}
                                   >
                                     Mark Paid
                                   </Button>
                                 </div>
                               </td>
+
                             </tr>
                           );
                         })}
@@ -875,7 +948,7 @@ const PaymentSystem = () => {
                             <div className="flex justify-between">
                               <span className="text-sm text-gray-600">Pending:</span>
                               <span className="text-sm font-medium text-yellow-600">
-                                {formatCurrency(farmer.pending_amount)}
+                                {formatCurrency(farmer.pending_net_amount)}
                               </span>
                             </div>
                             <div className="flex justify-between">
@@ -899,7 +972,7 @@ const PaymentSystem = () => {
                             <div className="flex justify-between pt-2 border-t">
                               <span className="text-sm font-medium">Total:</span>
                               <span className="text-sm font-bold">
-                                {formatCurrency(farmer.total_amount)}
+                                {formatCurrency(farmer.total_gross_amount)}
                               </span>
                             </div>
                           </div>
@@ -925,7 +998,7 @@ const PaymentSystem = () => {
                             <Button
                               className="w-full"
                               onClick={() => markAllFarmerPaymentsAsPaid(farmer.farmer_id)}
-                              disabled={farmer.pending_amount <= 0}
+                              disabled={farmer.pending_net_amount <= 0}
                             >
                               Mark Paid
                             </Button>
@@ -968,8 +1041,9 @@ const PaymentSystem = () => {
                             .map(f => ({
                               name: f.farmer_name.split(' ')[0],
                               credit: f.credit_used,
-                              total: f.total_amount
+                              total: f.total_gross_amount
                             }))}
+
                         >
                           <CartesianGrid strokeDasharray="3 3" />
                           <XAxis dataKey="name" />
@@ -1104,8 +1178,8 @@ const PaymentSystem = () => {
                         {farmerPaymentSummaries
                           .filter(f => f.credit_used > 0)
                           .map((farmer) => {
-                            const creditPercentage = farmer.total_amount > 0 
-                              ? (farmer.credit_used / farmer.total_amount) * 100 
+                            const creditPercentage = farmer.total_gross_amount > 0 
+                              ? (farmer.credit_used / farmer.total_gross_amount) * 100 
                               : 0;
                             return (
                               <tr key={farmer.farmer_id} className="hover:bg-gray-50">
@@ -1114,7 +1188,7 @@ const PaymentSystem = () => {
                                   <div className="text-sm text-gray-500">{farmer.farmer_phone}</div>
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                  {formatCurrency(farmer.total_amount)}
+                                  {formatCurrency(farmer.total_gross_amount)}
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-purple-600 font-medium">
                                   {formatCurrency(farmer.credit_used)}
@@ -1161,10 +1235,23 @@ const PaymentSystem = () => {
             <div className="space-y-6">
               <Card>
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Clock className="w-5 h-5 text-yellow-600" />
-                    Pending Collections
-                  </CardTitle>
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-5 h-5 text-yellow-600" />
+                      <CardTitle>
+                        Pending Collections
+                      </CardTitle>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button 
+                        onClick={deductCollectorFees}
+                        className="bg-blue-600 hover:bg-blue-700 text-white"
+                      >
+                        <DollarSign className="w-4 h-4 mr-2" />
+                        Deduct Collector Fees (Individual)
+                      </Button>
+                    </div>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <div className="overflow-x-auto">
@@ -1177,6 +1264,7 @@ const PaymentSystem = () => {
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rate</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Credit Used</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Collector Fee</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Net Payment</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Approval Status</th>
                         </tr>
@@ -1184,59 +1272,70 @@ const PaymentSystem = () => {
                       <tbody>
                         {filteredCollections
                           .filter(c => c.status !== 'Paid')
-                          .map((collection) => (
-                            <tr key={collection.id} className="hover:bg-gray-50">
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="text-sm font-medium text-gray-900">
-                                  {collection.farmers?.profiles?.full_name || 'Unknown Farmer'}
-                                </div>
-                                <div className="text-sm text-gray-500">
-                                  {collection.farmers?.profiles?.phone || 'No phone'}
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                {new Date(collection.collection_date).toLocaleDateString()}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                {collection.liters.toFixed(2)}L
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                KSh {collection.rate_per_liter.toFixed(2)}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                {formatCurrency(collection.total_amount)}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-purple-600 font-medium">
-                                {formatCurrency(collection.collection_payments?.[0]?.credit_used || 0)}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium">
-                                {formatCurrency(collection.total_amount - (collection.collection_payments?.[0]?.credit_used || 0))}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                {collection.approved_for_payment ? (
-                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                    <CheckCircle className="w-3 h-3 mr-1" />
-                                    Approved
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                                    <Clock className="w-3 h-3 mr-1" />
-                                    Pending
-                                  </span>
-                                )}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                {!collection.approved_for_payment && collection.status !== 'Paid' ? (
-                                  <Button
-                                    size="sm"
-                                    onClick={() => approveCollectionsForPayment(collection.farmer_id, [collection.id])}
-                                  >
-                                    Approve
-                                  </Button>
-                                ) : null}
-                              </td>
-                            </tr>
-                          ))}
+                          .map((collection) => {
+                            // Calculate collector fee for this collection
+                            const collectorRate = collectorRateConfig.ratePerLiter;
+                            const collectorFee = (collection.liters || 0) * collectorRate;
+                            const creditUsed = collection.collection_payments?.[0]?.credit_used || 0;
+                            const netPayment = collection.total_amount - creditUsed - collectorFee;
+                            
+                            return (
+                              <tr key={collection.id} className="hover:bg-gray-50">
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                  <div className="text-sm font-medium text-gray-900">
+                                    {collection.farmers?.profiles?.full_name || 'Unknown Farmer'}
+                                  </div>
+                                  <div className="text-sm text-gray-500">
+                                    {collection.farmers?.profiles?.phone || 'No phone'}
+                                  </div>
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                  {new Date(collection.collection_date).toLocaleDateString()}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                  {collection.liters.toFixed(2)}L
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                  KSh {collection.rate_per_liter.toFixed(2)}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                  {formatCurrency(collection.total_amount)}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-purple-600 font-medium">
+                                  {formatCurrency(creditUsed)}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-orange-600 font-medium">
+                                  {formatCurrency(collectorFee)}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium">
+                                  {formatCurrency(netPayment)}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                  {collection.approved_for_payment ? (
+                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                      <CheckCircle className="w-3 h-3 mr-1" />
+                                      Approved
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                      <Clock className="w-3 h-3 mr-1" />
+                                      Pending
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                  {!collection.approved_for_payment && collection.status !== 'Paid' ? (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => approveCollectionsForPayment(collection.farmer_id, [collection.id])}
+                                    >
+                                      Approve
+                                    </Button>
+                                  ) : null}
+                                </td>
+                              </tr>
+                            );
+                          })}
                       </tbody>
                     </table>
                   </div>
@@ -1266,6 +1365,7 @@ const PaymentSystem = () => {
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rate</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Credit Used</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Collector Fee</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Net Payment</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Approval Status</th>
                         </tr>
@@ -1273,50 +1373,60 @@ const PaymentSystem = () => {
                       <tbody>
                         {filteredCollections
                           .filter(c => c.status === 'Paid')
-                          .map((collection) => (
-                            <tr key={collection.id} className="hover:bg-gray-50">
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="text-sm font-medium text-gray-900">
-                                  {collection.farmers?.profiles?.full_name || 'Unknown Farmer'}
-                                </div>
-                                <div className="text-sm text-gray-500">
-                                  {collection.farmers?.profiles?.phone || 'No phone'}
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                {new Date(collection.collection_date).toLocaleDateString()}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                {collection.liters.toFixed(2)}L
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                KSh {collection.rate_per_liter.toFixed(2)}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                {formatCurrency(collection.total_amount)}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-purple-600 font-medium">
-                                {formatCurrency(collection.collection_payments?.[0]?.credit_used || 0)}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium">
-                                {formatCurrency(collection.total_amount - (collection.collection_payments?.[0]?.credit_used || 0))}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                {collection.approved_for_payment ? (
-                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                    <CheckCircle className="w-3 h-3 mr-1" />
-                                    Approved
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                                    <Clock className="w-3 h-3 mr-1" />
-                                    Pending
-                                  </span>
-                                )}
-                              </td>
-
-                            </tr>
-                          ))}
+                          .map((collection) => {
+                            // Calculate collector fee for this collection
+                            const collectorRate = collectorRateConfig.ratePerLiter;
+                            const collectorFee = (collection.liters || 0) * collectorRate;
+                            const creditUsed = collection.collection_payments?.[0]?.credit_used || 0;
+                            const netPayment = collection.total_amount - creditUsed - collectorFee;
+                            
+                            return (
+                              <tr key={collection.id} className="hover:bg-gray-50">
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                  <div className="text-sm font-medium text-gray-900">
+                                    {collection.farmers?.profiles?.full_name || 'Unknown Farmer'}
+                                  </div>
+                                  <div className="text-sm text-gray-500">
+                                    {collection.farmers?.profiles?.phone || 'No phone'}
+                                  </div>
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                  {new Date(collection.collection_date).toLocaleDateString()}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                  {collection.liters.toFixed(2)}L
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                  KSh {collection.rate_per_liter.toFixed(2)}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                  {formatCurrency(collection.total_amount)}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-purple-600 font-medium">
+                                  {formatCurrency(creditUsed)}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-orange-600 font-medium">
+                                  {formatCurrency(collectorFee)}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium">
+                                  {formatCurrency(netPayment)}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                  {collection.approved_for_payment ? (
+                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                      <CheckCircle className="w-3 h-3 mr-1" />
+                                      Approved
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                      <Clock className="w-3 h-3 mr-1" />
+                                      Pending
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
                       </tbody>
                     </table>
                   </div>

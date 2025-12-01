@@ -127,13 +127,13 @@ export const usePaymentBatchData = () => {
       
       const { data, error } = await supabase
         .from('payment_batches')
-        .insert({
-          batch_id: batchName,
+        .insert([{
+          batch_id: batchName.toString(), // Explicitly cast to string
           batch_name: displayName,
           period_start: start,
           period_end: end,
           status: 'Generated'
-        })
+        }])
         .select()
         .single();
 

@@ -53,6 +53,7 @@ const PenaltyManagementPage = lazy(() => import('@/pages/admin/PenaltyManagement
 const ErrorReportingDashboard = lazy(() => import('@/pages/admin/ErrorReportingDashboard'));
 const VarianceReportingDashboard = lazy(() => import('@/pages/admin/VarianceReportingDashboard'));
 const VarianceInsightsDashboard = lazy(() => import('@/pages/admin/VarianceInsightsDashboard'));
+const CollectorsPage = lazy(() => import('@/pages/admin/CollectorsPage'));
 
 export const adminRoutes = [
   { path: '/admin/login', element: <AdminLogin /> },
@@ -177,6 +178,7 @@ export default function AdminRoutes() {
                 <Route path="variance-reporting" element={<VarianceReportingDashboard />} />
                 <Route path="variance-insights" element={<VarianceInsightsDashboard />} />
                 <Route path="penalty-management" element={<PenaltyManagementPage />} />
+                <Route path="collectors" element={<CollectorsPage />} />
                 <Route index element={<Navigate to="dashboard" replace />} />
                 <Route path="*" element={<Navigate to="/admin" replace />} />
               </Routes>

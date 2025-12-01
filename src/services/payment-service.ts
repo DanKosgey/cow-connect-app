@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { logger } from '@/utils/logger';
 import { CreditService } from './credit-service';
 import { CollectionNotificationService } from './collection-notification-service';
+import { collectorRateService } from '@/services/collector-rate-service';
 
 interface Collection {
   id: string;
@@ -29,7 +30,7 @@ export class PaymentService {
       // First, verify that the collection is approved for payment
       const { data: collectionData, error: collectionError } = await supabase
         .from('collections')
-        .select('id, approved_for_payment, status')
+        .select('id, approved_for_payment, status, liters, staff_id')
         .eq('id', collectionId)
         .maybeSingle();
 
@@ -75,13 +76,13 @@ export class PaymentService {
         
         const { data: batchData, error: createBatchError } = await supabase
           .from('payment_batches')
-          .insert({
-            batch_id: batchName, // Use human-readable batch ID as text
+          .insert([{
+            batch_id: batchName.toString(), // Explicitly cast to string
             batch_name: displayName,
             period_start: new Date().toISOString().slice(0, 10),
             period_end: new Date().toISOString().slice(0, 10),
             status: 'Generated'
-          })
+          }])
           .select()
           .single();
 
@@ -104,13 +105,13 @@ export class PaymentService {
             const defaultBatchName = `DEFAULT-BATCH-${Date.now()}`;
             const { data: defaultBatch, error: defaultBatchError } = await supabase
               .from('payment_batches')
-              .insert({
-                batch_id: defaultBatchName,
+              .insert([{
+                batch_id: defaultBatchName.toString(), // Explicitly cast to string
                 batch_name: `Default Batch ${new Date().toISOString().slice(0, 10)}`,
                 period_start: new Date().toISOString().slice(0, 10),
                 period_end: new Date().toISOString().slice(0, 10),
                 status: 'Generated'
-              })
+              }])
               .select()
               .single();
               
@@ -131,22 +132,27 @@ export class PaymentService {
         throw new Error('Unable to obtain valid batch ID for payment processing');
       }
 
+      // Calculate collector fee deduction for this payment
+      const collectorRate = await collectorRateService.getCurrentRate();
+      const collectorFee = (collectionData.liters || 0) * collectorRate;
+      
       // Calculate credit deduction for this payment
       const creditInfo = await CreditService.calculateAvailableCredit(farmerId);
       const creditUsed = Math.min(creditInfo.availableCredit, collection.total_amount);
-      const netPayment = collection.total_amount - creditUsed;
+      const netPayment = collection.total_amount - creditUsed - collectorFee;
 
       // Create payment record in the collection_payments table
       const { data: paymentData, error: paymentError } = await supabase
         .from('collection_payments')
-        .insert({
+        .insert([{
           collection_id: collectionId,
           amount: collection.total_amount,
           rate_applied: collection.rate_per_liter,
           batch_id: batchId, // Include the batch_id
           credit_used: creditUsed,
-          net_payment: netPayment
-        })
+          net_payment: netPayment,
+          collector_fee: collectorFee // Add collector fee to the payment record
+        }])
         .select()
         .limit(1);
 
@@ -219,7 +225,7 @@ export class PaymentService {
           // Create credit transaction record for the deduction
           const { error: transactionError } = await supabase
             .from('farmer_credit_transactions')
-            .insert({
+            .insert([{
               farmer_id: farmerId,
               transaction_type: 'credit_repaid',
               amount: creditUsed,
@@ -227,7 +233,7 @@ export class PaymentService {
               reference_type: 'payment_deduction',
               reference_id: collectionId,
               description: `Credit used to offset payment of KES ${collection.total_amount.toFixed(2)}`
-            });
+            }]);
 
           if (transactionError) {
             logger.warn('Warning: Failed to create credit deduction transaction', transactionError);
@@ -255,7 +261,8 @@ export class PaymentService {
                 approval_status: 'paid',
                 paid_at: new Date().toISOString(),
                 credit_used: creditUsed,
-                net_payment: netPayment
+                net_payment: netPayment,
+                collector_fee: collectorFee // Add collector fee to farmer payment record
               })
               .eq('id', payment.id);
 
@@ -285,7 +292,7 @@ export class PaymentService {
       // First, verify that all collections exist and get their current status
       const { data: collectionsData, error: collectionsError } = await supabase
         .from('collections')
-        .select('id, approved_for_payment, status')
+        .select('id, approved_for_payment, status, liters')
         .in('id', collectionIds);
 
       if (collectionsError) {
@@ -333,12 +340,17 @@ export class PaymentService {
         throw updateError;
       }
 
-      // SECOND: Calculate credit deduction for this payment
+      // SECOND: Calculate collector fee deduction for these payments
+      const collectorRate = await collectorRateService.getCurrentRate();
+      const totalLiters = collectionsData?.reduce((sum, collection) => sum + (collection.liters || 0), 0) || 0;
+      const totalCollectorFee = totalLiters * collectorRate;
+      
+      // THIRD: Calculate credit deduction for this payment
       const creditInfo = await CreditService.calculateAvailableCredit(farmerId);
       const creditUsed = Math.min(creditInfo.availableCredit, totalAmount);
-      const netPayment = totalAmount - creditUsed;
+      const netPayment = totalAmount - creditUsed - totalCollectorFee;
 
-      // THIRD: Create payment record in the farmer_payments table
+      // FOURTH: Create payment record in the farmer_payments table
       const { data, error } = await supabase
         .from('farmer_payments')
         .insert({
@@ -350,7 +362,8 @@ export class PaymentService {
           approved_by: staffId, // Use the staff ID instead of user ID
           notes: notes || null,
           credit_used: creditUsed,
-          net_payment: netPayment
+          net_payment: netPayment,
+          collector_fee: totalCollectorFee // Add collector fee to the payment record
         })
         .select()
         .limit(1);
@@ -747,4 +760,73 @@ export class PaymentService {
       return { success: false, error };
     }
   }
+
+  // Batch deduct collector fees from multiple collections
+  static async batchDeductCollectorFees(collections: Collection[]) {
+    try {
+      if (collections.length === 0) {
+        return { success: true, processed: 0, skipped: 0, errors: [] };
+      }
+
+      // Get current collector rate
+      const collectorRate = await collectorRateService.getCurrentRate();
+      
+      if (collectorRate <= 0) {
+        throw new Error('Invalid collector rate. Please set a valid collector rate first.');
+      }
+
+      // Process each collection
+      let processed = 0;
+      let skipped = 0;
+      const errors: { collectionId: string; error: string }[] = [];
+      
+      for (const collection of collections) {
+        try {
+          // Skip collections that are not approved for payment or already paid
+          if (!collection.approved_for_payment || collection.status === 'Paid') {
+            skipped++;
+            continue;
+          }
+          
+          const result = await this.markCollectionAsPaid(
+            collection.id, 
+            collection.farmer_id, 
+            collection
+          );
+          
+          if (result.success) {
+            processed++;
+          } else {
+            errors.push({ 
+              collectionId: collection.id, 
+              error: result.error?.message || 'Unknown error' 
+            });
+          }
+        } catch (error: any) {
+          errors.push({ 
+            collectionId: collection.id, 
+            error: error.message || 'Unknown error' 
+          });
+        }
+      }
+      
+      return { 
+        success: errors.length === 0, 
+        processed, 
+        skipped, 
+        errors,
+        total: collections.length
+      };
+    } catch (error) {
+      logger.errorWithContext('PaymentService - batchDeductCollectorFees', error);
+      return { 
+        success: false, 
+        processed: 0, 
+        skipped: 0, 
+        errors: [{ collectionId: 'N/A', error: error?.message || 'Unknown error' }],
+        total: collections.length
+      };
+    }
+  }
+
 }

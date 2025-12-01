@@ -13,7 +13,7 @@ import {
   User
 } from '@/utils/iconImports';
 import useToastNotifications from '@/hooks/useToastNotifications';
-import { PaymentManagementService } from '@/services/payment-management-service';
+import { PaymentService } from '@/services/payment-service';
 import { formatCurrency } from '@/utils/formatters';
 
 interface Collection {
@@ -149,7 +149,7 @@ const FarmerPaymentDetails = () => {
         return;
       }
 
-      const result = await PaymentManagementService.markCollectionAsPaid(
+      const result = await PaymentService.markCollectionAsPaid(
         collectionId, 
         farmerId!, 
         collection
@@ -176,7 +176,7 @@ const FarmerPaymentDetails = () => {
         return;
       }
 
-      const result = await PaymentManagementService.markAllFarmerCollectionsAsPaid(
+      const result = await PaymentService.markAllFarmerPaymentsAsPaid(
         farmerId!, 
         pendingCollections
       );

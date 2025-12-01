@@ -118,8 +118,15 @@ const CollectorPaymentsSection = () => {
         
         setCollectors(collectorsInfo);
         
-        // Fetch existing payments
-        const payments = await collectorEarningsService.getPendingPayments();
+        // Fetch all payments (both pending and paid)
+        const { data: allPayments, error: paymentsError } = await supabase
+          .from('collector_payments')
+          .select('*')
+          .order('created_at', { ascending: false });
+        
+        if (paymentsError) throw paymentsError;
+        
+        const payments = allPayments || [];
         
         // Enrich payments with collector names
         const enrichedPayments = payments.map(payment => {

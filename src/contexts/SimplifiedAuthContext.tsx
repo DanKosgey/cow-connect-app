@@ -313,7 +313,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // Create user role
       const { error: roleError } = await supabase
         .from('user_roles')
-        .insert({ user_id: userId, role: role });
+        .insert([{ user_id: userId, role: role }]);
 
       if (roleError && roleError.code !== '23505') {
         throw roleError;
@@ -323,14 +323,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (role === 'farmer') {
         const { error: farmerError } = await supabase
           .from('farmers')
-          .insert({
+          .insert([{
             user_id: userId,
             registration_number: `F-${Date.now()}`,
             full_name: fullName,
             phone_number: phone,
             kyc_status: 'pending',
             registration_completed: false
-          });
+          }]);
 
         if (farmerError && farmerError.code !== '23505') {
           throw farmerError;
@@ -338,10 +338,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       } else if (role === 'staff') {
         const { error: staffError } = await supabase
           .from('staff')
-          .insert({
+          .insert([{
             user_id: userId,
             employee_id: `STAFF-${Date.now()}`
-          });
+          }]);
 
         if (staffError && staffError.code !== '23505') {
           throw staffError;

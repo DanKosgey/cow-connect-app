@@ -203,6 +203,44 @@ export interface Database {
           updated_at?: string;
         };
       };
+      collection_payments: {
+        Row: {
+          id: number;
+          collection_id: string;
+          payment_id: string | null;
+          batch_id: string | null;
+          amount: number;
+          rate_applied: number;
+          created_at: string;
+          credit_used?: number;
+          net_payment?: number;
+          collector_fee?: number;
+        };
+        Insert: {
+          id?: number;
+          collection_id: string;
+          payment_id?: string | null;
+          batch_id?: string | null;
+          amount: number;
+          rate_applied: number;
+          created_at?: string;
+          credit_used?: number;
+          net_payment?: number;
+          collector_fee?: number;
+        };
+        Update: {
+          id?: number;
+          collection_id?: string;
+          payment_id?: string | null;
+          batch_id?: string | null;
+          amount?: number;
+          rate_applied?: number;
+          created_at?: string;
+          credit_used?: number;
+          net_payment?: number;
+          collector_fee?: number;
+        };
+      };
       kyc_documents: {
         Row: {
           id: string;
@@ -250,70 +288,6 @@ export interface Database {
           verified_at?: string | null;
         };
       };
-      payments: {
-        Row: {
-          id: string;
-          farmer_id: string;
-          amount: number;
-          period_start: string;
-          period_end: string;
-          paid_at: string | null;
-          payment_method: string | null;
-          transaction_id: string | null;
-          status: string | null;
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          farmer_id: string;
-          amount: number;
-          period_start: string;
-          period_end: string;
-          paid_at?: string | null;
-          payment_method?: string | null;
-          transaction_id?: string | null;
-          status?: string | null;
-          created_at?: string;
-        };
-        Update: {
-          id?: string;
-          farmer_id?: string;
-          amount?: number;
-          period_start?: string;
-          period_end?: string;
-          paid_at?: string | null;
-          payment_method?: string | null;
-          transaction_id?: string | null;
-          status?: string | null;
-          created_at?: string;
-        };
-      };
-      profiles: {
-        Row: {
-          id: string;
-          full_name: string | null;
-          phone: string | null;
-          avatar_url: string | null;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id: string;
-          full_name?: string | null;
-          phone?: string | null;
-          avatar_url?: string | null;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          full_name?: string | null;
-          phone?: string | null;
-          avatar_url?: string | null;
-          created_at?: string;
-          updated_at?: string;
-        };
-      };
       milk_rates: {
         Row: {
           id: string;
@@ -340,39 +314,51 @@ export interface Database {
           created_at?: string;
         };
       };
-      farmer_analytics: {
+      payment_batches: {
         Row: {
-          id: string;
-          farmer_id: string;
+          batch_id: string;
+          batch_name: string;
+          period_start: string;
+          period_end: string;
+          total_farmers: number;
           total_collections: number;
-          total_liters: number;
-          avg_quality_score: number;
-          current_month_liters: number;
-          current_month_earnings: number;
-          last_collection_date: string;
-          updated_at: string;
+          total_amount: number;
+          status: 'Generated' | 'Processing' | 'Completed' | 'Failed';
+          created_at: string;
+          processed_at: string | null;
+          completed_at: string | null;
+          total_credit_used?: number;
+          total_net_payment?: number;
         };
         Insert: {
-          id?: string;
-          farmer_id: string;
+          batch_id: string;
+          batch_name: string;
+          period_start: string;
+          period_end: string;
+          total_farmers?: number;
           total_collections?: number;
-          total_liters?: number;
-          avg_quality_score?: number;
-          current_month_liters?: number;
-          current_month_earnings?: number;
-          last_collection_date?: string;
-          updated_at?: string;
+          total_amount?: number;
+          status?: 'Generated' | 'Processing' | 'Completed' | 'Failed';
+          created_at?: string;
+          processed_at?: string | null;
+          completed_at?: string | null;
+          total_credit_used?: number;
+          total_net_payment?: number;
         };
         Update: {
-          id?: string;
-          farmer_id?: string;
+          batch_id?: string;
+          batch_name?: string;
+          period_start?: string;
+          period_end?: string;
+          total_farmers?: number;
           total_collections?: number;
-          total_liters?: number;
-          avg_quality_score?: number;
-          current_month_liters?: number;
-          current_month_earnings?: number;
-          last_collection_date?: string;
-          updated_at?: string;
+          total_amount?: number;
+          status?: 'Generated' | 'Processing' | 'Completed' | 'Failed';
+          created_at?: string;
+          processed_at?: string | null;
+          completed_at?: string | null;
+          total_credit_used?: number;
+          total_net_payment?: number;
         };
       };
       pending_farmers: {
@@ -455,60 +441,62 @@ export interface Database {
           cow_breeds?: Json | null;
         };
       };
-      // Tables that will be created with the new migration
-      routes: {
+      profiles: {
         Row: {
           id: string;
-          name: string;
-          description: string | null;
-          is_active: boolean;
+          full_name: string | null;
+          phone: string | null;
+          avatar_url: string | null;
           created_at: string;
           updated_at: string;
         };
         Insert: {
-          id?: string;
-          name: string;
-          description?: string | null;
-          is_active?: boolean;
+          id: string;
+          full_name?: string | null;
+          phone?: string | null;
+          avatar_url?: string | null;
           created_at?: string;
           updated_at?: string;
         };
         Update: {
           id?: string;
-          name?: string;
-          description?: string | null;
-          is_active?: boolean;
+          full_name?: string | null;
+          phone?: string | null;
+          avatar_url?: string | null;
           created_at?: string;
           updated_at?: string;
         };
       };
-      collection_points: {
+      quality_tests: {
         Row: {
           id: string;
-          name: string;
-          location: unknown; // PostGIS Point type
-          address: string | null;
-          is_active: boolean;
+          collection_id: string;
+          test_type: string;
+          test_result: string;
+          test_date: string;
+          performed_by: string;
+          notes: string | null;
           created_at: string;
-          updated_at: string;
         };
         Insert: {
           id?: string;
-          name: string;
-          location: unknown;
-          address?: string | null;
-          is_active?: boolean;
+          collection_id: string;
+          test_type: string;
+          test_result: string;
+          test_date?: string;
+          performed_by: string;
+          notes?: string | null;
           created_at?: string;
-          updated_at?: string;
         };
         Update: {
           id?: string;
-          name?: string;
-          location?: unknown;
-          address?: string | null;
-          is_active?: boolean;
+          collection_id?: string;
+          test_type?: string;
+          test_result?: string;
+          test_date?: string;
+          performed_by?: string;
+          notes?: string | null;
           created_at?: string;
-          updated_at?: string;
         };
       };
       route_points: {
@@ -536,6 +524,55 @@ export interface Database {
           collection_point_id?: string;
           sequence_number?: number;
           is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      routes: {
+        Row: {
+          id: string;
+          name: string;
+          description: string | null;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          description?: string | null;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          description?: string | null;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      staff: {
+        Row: {
+          id: string;
+          user_id: string;
+          employee_id: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          employee_id: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          employee_id?: string;
           created_at?: string;
           updated_at?: string;
         };
@@ -592,245 +629,26 @@ export interface Database {
           updated_at?: string;
         };
       };
-      quality_tests: {
+      user_roles: {
         Row: {
-          id: string;
-          collection_id: string;
-          test_type: string;
-          test_result: string;
-          test_date: string;
-          performed_by: string;
-          notes: string | null;
+          id: number;
+          user_id: string;
+          role: 'admin' | 'staff' | 'farmer';
+          active: boolean;
           created_at: string;
         };
         Insert: {
-          id?: string;
-          collection_id: string;
-          test_type: string;
-          test_result: string;
-          test_date?: string;
-          performed_by: string;
-          notes?: string | null;
+          id?: number;
+          user_id: string;
+          role: 'admin' | 'staff' | 'farmer';
+          active?: boolean;
           created_at?: string;
         };
         Update: {
-          id?: string;
-          collection_id?: string;
-          test_type?: string;
-          test_result?: string;
-          test_date?: string;
-          performed_by?: string;
-          notes?: string | null;
-          created_at?: string;
-        };
-      };
-      farmer_payments: {
-        Row: {
-          id: string;
-          farmer_id: string;
-          collection_ids: string[];
-          total_amount: number;
-          approval_status: string;
-          approved_at: string | null;
-          paid_at: string | null;
-          notes: string | null;
-          processed_by: string | null;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          farmer_id: string;
-          collection_ids: string[];
-          total_amount: number;
-          approval_status?: string;
-          approved_at?: string | null;
-          paid_at?: string | null;
-          notes?: string | null;
-          processed_by?: string | null;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          farmer_id?: string;
-          collection_ids?: string[];
-          total_amount?: number;
-          approval_status?: string;
-          approved_at?: string | null;
-          paid_at?: string | null;
-          notes?: string | null;
-          processed_by?: string | null;
-          created_at?: string;
-          updated_at?: string;
-        };
-      };
-      inventory_items: {
-        Row: {
-          id: string;
-          name: string;
-          description: string | null;
-          category: string;
-          unit: string;
-          current_stock: number;
-          reorder_level: number;
-          supplier: string | null;
-          cost_per_unit: number | null;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          name: string;
-          description?: string | null;
-          category: string;
-          unit: string;
-          current_stock: number;
-          reorder_level: number;
-          supplier?: string | null;
-          cost_per_unit?: number | null;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          name?: string;
-          description?: string | null;
-          category?: string;
-          unit?: string;
-          current_stock?: number;
-          reorder_level?: number;
-          supplier?: string | null;
-          cost_per_unit?: number | null;
-          created_at?: string;
-          updated_at?: string;
-        };
-      };
-      inventory_transactions: {
-        Row: {
-          id: string;
-          item_id: string;
-          transaction_type: 'in' | 'out';
-          quantity: number;
-          unit_cost: number | null;
-          total_cost: number | null;
-          reason: string | null;
-          performed_by: string;
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          item_id: string;
-          transaction_type: 'in' | 'out';
-          quantity: number;
-          unit_cost?: number | null;
-          total_cost?: number | null;
-          reason?: string | null;
-          performed_by: string;
-          created_at?: string;
-        };
-        Update: {
-          id?: string;
-          item_id?: string;
-          transaction_type?: 'in' | 'out';
-          quantity?: number;
-          unit_cost?: number | null;
-          total_cost?: number | null;
-          reason?: string | null;
-          performed_by?: string;
-          created_at?: string;
-        };
-      };
-      forum_posts: {
-        Row: {
-          id: string;
-          title: string;
-          content: string;
-          author_id: string;
-          created_at: string;
-          updated_at: string;
-          likes: number;
-          comments: number;
-        };
-        Insert: {
-          id?: string;
-          title: string;
-          content: string;
-          author_id: string;
-          created_at?: string;
-          updated_at?: string;
-          likes?: number;
-          comments?: number;
-        };
-        Update: {
-          id?: string;
-          title?: string;
-          content?: string;
-          author_id?: string;
-          created_at?: string;
-          updated_at?: string;
-          likes?: number;
-          comments?: number;
-        };
-      };
-      forum_comments: {
-        Row: {
-          id: string;
-          post_id: string;
-          content: string;
-          author_id: string;
-          created_at: string;
-          likes: number;
-        };
-        Insert: {
-          id?: string;
-          post_id: string;
-          content: string;
-          author_id: string;
-          created_at?: string;
-          likes?: number;
-        };
-        Update: {
-          id?: string;
-          post_id?: string;
-          content?: string;
-          author_id?: string;
-          created_at?: string;
-          likes?: number;
-        };
-      };
-      notifications: {
-        Row: {
-          id: string;
-          item_id: string;
-          transaction_type: 'in' | 'out';
-          quantity: number;
-          unit_cost: number | null;
-          total_cost: number | null;
-          reason: string | null;
-          performed_by: string;
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          item_id: string;
-          transaction_type: 'in' | 'out';
-          quantity: number;
-          unit_cost?: number | null;
-          total_cost?: number | null;
-          reason?: string | null;
-          performed_by: string;
-          created_at?: string;
-        };
-        Update: {
-          id?: string;
-          item_id?: string;
-          transaction_type?: 'in' | 'out';
-          quantity?: number;
-          unit_cost?: number | null;
-          total_cost?: number | null;
-          reason?: string | null;
-          performed_by?: string;
+          id?: number;
+          user_id?: string;
+          role?: 'admin' | 'staff' | 'farmer';
+          active?: boolean;
           created_at?: string;
         };
       };
@@ -846,16 +664,6 @@ export interface Database {
           quality_distribution: Json;
         };
       };
-      admin_payment_stats: {
-        Row: {
-          date: string;
-          payment_method: string;
-          status: string;
-          transaction_count: number;
-          total_amount: number;
-          avg_amount: number;
-        };
-      };
       admin_kyc_analytics: {
         Row: {
           date: string;
@@ -864,6 +672,16 @@ export interface Database {
           rejected_count: number;
           pending_count: number;
           avg_processing_hours: number;
+        };
+      };
+      admin_payment_stats: {
+        Row: {
+          date: string;
+          payment_method: string;
+          status: string;
+          transaction_count: number;
+          total_amount: number;
+          avg_amount: number;
         };
       };
       staff_performance: {
@@ -881,29 +699,17 @@ export interface Database {
       };
     };
     Functions: {
-      log_system_activity: {
+      get_admin_collection_trends: {
         Args: {
-          activity_type: string;
-          activity_details: Json;
-          performed_by: string;
-        };
-        Returns: void;
-      };
-      get_assigned_farmers: {
-        Args: {
-          staff_id: string;
+          start_date: string;
+          end_date: string;
         };
         Returns: Array<{
-          farmer_id: string;
-          registration_number: string;
-          full_name: string;
-          phone_number: string;
-          location: string;
-          collection_point_id: string;
-          route_sequence: number;
-          last_collection_date: string | null;
-          last_collection_quantity: number | null;
-          avg_daily_quantity: number | null;
+          date: string;
+          collections: number;
+          liters: number;
+          revenue: number;
+          farmers: number;
         }>;
       };
       get_admin_dashboard_metrics: {
@@ -921,42 +727,6 @@ export interface Database {
           avg_quality_score: number;
           staff_count: number;
         };
-      };
-      get_admin_collection_trends: {
-        Args: {
-          start_date: string;
-          end_date: string;
-        };
-        Returns: Array<{
-          date: string;
-          collections: number;
-          liters: number;
-          revenue: number;
-          farmers: number;
-        }>;
-      };
-      get_admin_quality_distribution: {
-        Args: {
-          start_date: string;
-          end_date: string;
-        };
-        Returns: Array<{
-          quality_grade: string;
-          count: number;
-          percentage: number;
-        }>;
-      };
-      get_admin_revenue_trends: {
-        Args: {
-          start_date: string;
-          end_date: string;
-        };
-        Returns: Array<{
-          date: string;
-          revenue: number;
-          collections: number;
-          avg_amount: number;
-        }>;
       };
       get_admin_farmer_analytics_summary: {
         Args: Record<PropertyKey, never>;
@@ -984,6 +754,54 @@ export interface Database {
           failed_payments: number;
           failed_amount: number;
         };
+      };
+      get_admin_quality_distribution: {
+        Args: {
+          start_date: string;
+          end_date: string;
+        };
+        Returns: Array<{
+          quality_grade: string;
+          count: number;
+          percentage: number;
+        }>;
+      };
+      get_admin_revenue_trends: {
+        Args: {
+          start_date: string;
+          end_date: string;
+        };
+        Returns: Array<{
+          date: string;
+          revenue: number;
+          collections: number;
+          avg_amount: number;
+        }>;
+      };
+      get_assigned_farmers: {
+        Args: {
+          staff_id: string;
+        };
+        Returns: Array<{
+          farmer_id: string;
+          registration_number: string;
+          full_name: string;
+          phone_number: string;
+          location: string;
+          collection_point_id: string;
+          route_sequence: number;
+          last_collection_date: string | null;
+          last_collection_quantity: number | null;
+          avg_daily_quantity: number | null;
+        }>;
+      };
+      log_system_activity: {
+        Args: {
+          activity_type: string;
+          activity_details: Json;
+          performed_by: string;
+        };
+        Returns: void;
       };
     };
   };

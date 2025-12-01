@@ -41,12 +41,15 @@ interface FarmerPaymentSummary {
   farmer_phone: string;
   total_collections: number;
   total_liters: number;
-  total_amount: number;
+  total_gross_amount: number;
+  total_collector_fees: number;
+  total_net_amount: number;
   paid_amount: number;
-  pending_amount: number;
+  pending_gross_amount: number;
+  pending_net_amount: number;
   bank_info: string;
-  credit_used: number;
-  net_payment: number;
+  credit_used?: number;
+  net_payment?: number;
 }
 
 interface PaymentAnalytics {
@@ -261,43 +264,52 @@ const calculateAnalytics = (collectionsData: Collection[], timeFrame: string, cu
   };
 };
 
-const calculateFarmerSummaries = async (collectionsData: Collection[], timeFrame: string, customDateRange: { from: string; to: string }) => {
+const calculateFarmerSummaries = async (
+  collections: any[], 
+  timeFrame: string, 
+  customDateRange: { from: string; to: string }
+): Promise<FarmerPaymentSummary[]> => {
   // Apply time frame filtering
-  const filteredData = filterCollectionsByTimeFrame(collectionsData, timeFrame, customDateRange);
+  const filteredCollections = filterCollectionsByTimeFrame(collections, timeFrame, customDateRange);
   
   // Group collections by farmer
-  const farmerCollections = filteredData.reduce((acc, collection) => {
+  const groupedCollections = filteredCollections.reduce((acc: any, collection: any) => {
     const farmerId = collection.farmer_id;
-    if (!farmerId) return acc;
-    
     if (!acc[farmerId]) {
       acc[farmerId] = [];
     }
     acc[farmerId].push(collection);
     return acc;
-  }, {} as Record<string, Collection[]>);
+  }, {});
+  
+  // Get current collector rate
+  const collectorRateResponse = await supabase.rpc('get_current_collector_rate');
+  const collectorRate = collectorRateResponse.data || 0;
   
   // Calculate summaries for each farmer
   const farmerSummaries: FarmerPaymentSummary[] = [];
   
-  for (const farmerId of Object.keys(farmerCollections)) {
-    const farmerCollectionsList = farmerCollections[farmerId];
-    const firstCollection = farmerCollectionsList[0];
+  for (const [farmerId, farmerCollections] of Object.entries(groupedCollections)) {
+    const collectionsArray = farmerCollections as any[];
+    const firstCollection = collectionsArray[0];
     
-    // Calculate totals
-    const totalCollections = farmerCollectionsList.length;
-    const totalLiters = farmerCollectionsList.reduce((sum, c) => sum + (c.liters || 0), 0);
-    const totalAmount = farmerCollectionsList.reduce((sum, c) => sum + (c.total_amount || 0), 0);
-    const paidAmount = farmerCollectionsList
-      .filter(c => c.status === 'Paid')
-      .reduce((sum, c) => sum + (c.total_amount || 0), 0);
-    const grossPendingAmount = totalAmount - paidAmount;
+    const totalCollections = collectionsArray.length;
+    const totalLiters = collectionsArray.reduce((sum, c) => sum + (c.liters || 0), 0);
+    const totalGrossAmount = collectionsArray.reduce((sum, c) => sum + (c.total_amount || 0), 0);
     
-    // Calculate credit used and net payment from collection payments
-    let creditUsed = 0;
+    // Calculate collector fees and net amounts
+    const totalCollectorFees = collectionsArray.reduce((sum, c) => sum + ((c.liters || 0) * collectorRate), 0);
+    const totalNetAmount = totalGrossAmount - totalCollectorFees;
     
-    // Sum credit used from all collections for this farmer
-    creditUsed = farmerCollectionsList.reduce((sum, c) => {
+    const paidCollections = collectionsArray.filter(c => c.status === 'Paid');
+    const paidAmount = paidCollections.reduce((sum, c) => sum + ((c.total_amount || 0) - ((c.liters || 0) * collectorRate)), 0);
+    
+    const pendingCollections = collectionsArray.filter(c => c.status !== 'Paid');
+    const pendingGrossAmount = pendingCollections.reduce((sum, c) => sum + (c.total_amount || 0), 0);
+    const pendingNetAmount = pendingCollections.reduce((sum, c) => sum + ((c.total_amount || 0) - ((c.liters || 0) * collectorRate)), 0);
+    
+    // Calculate credit used from collection payments
+    let creditUsed = collectionsArray.reduce((sum, c) => {
       const collectionCredit = c.collection_payments?.[0]?.credit_used || 0;
       return sum + collectionCredit;
     }, 0);
@@ -319,7 +331,7 @@ const calculateFarmerSummaries = async (collectionsData: Collection[], timeFrame
     }
 
     // Calculate net pending amount (gross pending - credit used)
-    const netPendingAmount = Math.max(0, grossPendingAmount - creditUsed);
+    const netPendingAmount = Math.max(0, pendingNetAmount - creditUsed);
     
     // Calculate net payment (same as paid amount since we're looking at what's actually paid)
     const netPayment = paidAmount;
@@ -330,9 +342,12 @@ const calculateFarmerSummaries = async (collectionsData: Collection[], timeFrame
       farmer_phone: firstCollection.farmers?.profiles?.phone || 'No phone',
       total_collections: totalCollections,
       total_liters: totalLiters,
-      total_amount: totalAmount,
+      total_gross_amount: totalGrossAmount,
+      total_collector_fees: totalCollectorFees,
+      total_net_amount: totalNetAmount,
       paid_amount: paidAmount,
-      pending_amount: netPendingAmount, // Use net pending instead of gross pending
+      pending_gross_amount: pendingGrossAmount,
+      pending_net_amount: netPendingAmount, // Use net pending instead of gross pending
       bank_info: `${firstCollection.farmers?.bank_name || 'N/A'} - ${firstCollection.farmers?.bank_account_number || 'No account'}`,
       credit_used: creditUsed,
       net_payment: netPayment
@@ -364,7 +379,8 @@ export const usePaymentSystemData = (timeFrame: string = 'all', customDateRange:
             )
           ),
           collection_payments!collection_payments_collection_id_fkey (
-            credit_used
+            credit_used,
+            collector_fee
           )
         `)
         .eq('approved_for_company', true) // Only fetch collections approved for company (milk approval)
