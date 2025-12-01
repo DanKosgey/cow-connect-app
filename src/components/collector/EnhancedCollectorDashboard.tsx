@@ -42,6 +42,7 @@ import { useToast } from '@/hooks/use-toast';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart as RechartsPieChart, Pie, Cell, LineChart as RechartsLineChart, Line } from 'recharts';
 import { useStaffInfo } from '@/hooks/useStaffData';
 import { UserRole } from '@/types/auth.types';
+import { CollectorPaymentInfo } from './CollectorPaymentInfo';
 
 // Define interfaces at the top of the file
 interface Collection {
@@ -645,50 +646,16 @@ const EnhancedCollectorDashboard = () => {
   console.log('Rendering dashboard with data:', { stats, collections, weeklyTrendData });
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 md:p-6">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50 p-4 sm:p-6">
       <div className="max-w-7xl mx-auto">
-        {/* Header with Welcome, Notifications and Actions */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Welcome, {staffName}</h1>
-            <p className="text-gray-600 mt-1 text-sm sm:text-base">
-              Today is {format(new Date(), 'EEEE, MMMM d, yyyy')}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2 items-center">
-            <div className="relative">
-              <Button 
-                variant="outline"
-                className="relative flex items-center gap-2 text-sm sm:text-base"
-                onClick={() => navigate('/collector/notifications')}
-              >
-                <Bell className="h-4 w-4" />
-                <span className="hidden xs:inline">Notifications</span>
-                {unreadCount > 0 && (
-                  <Badge className="absolute -top-2 -right-2 h-5 w-5 rounded-full p-0 flex items-center justify-center bg-red-500 text-white text-xs">
-                    {unreadCount}
-                  </Badge>
-                )}
-              </Button>
-            </div>
-            <Button 
-              className="flex items-center gap-2 text-sm sm:text-base"
-              onClick={() => navigate('/collector/collections/new')}
-            >
-              <ClipboardList className="h-4 w-4" />
-              <span className="hidden xs:inline">New Collection</span>
-              <span className="xs:hidden">New</span>
-            </Button>
-            <Button 
-              variant="outline"
-              className="flex items-center gap-2 text-sm sm:text-base"
-              onClick={() => navigate('/collector/payments/approval')}
-            >
-              <Wallet className="h-4 w-4" />
-              <span className="hidden xs:inline">Payments</span>
-              <span className="xs:hidden">Pay</span>
-            </Button>
-          </div>
+        {/* Welcome Section */}
+        <div className="mb-6 sm:mb-8">
+          <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 mb-2">
+            Welcome back, {staffName || 'Collector'}!
+          </h1>
+          <p className="text-gray-600 text-sm sm:text-base">
+            Here's your collection dashboard for {format(new Date(), 'EEEE, MMMM d, yyyy')}
+          </p>
         </div>
 
         {/* Stats Overview */}
@@ -757,6 +724,13 @@ const EnhancedCollectorDashboard = () => {
             </CardContent>
           </Card>
         </div>
+
+        {/* Payment Information */}
+        {staffInfo?.id && (
+          <div className="mb-6">
+            <CollectorPaymentInfo staffId={staffInfo.id} />
+          </div>
+        )}
 
         {/* Charts Section */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">

@@ -301,6 +301,7 @@ class CollectorPenaltyService {
           console.log(`Period: ${payment.period_start} to ${payment.period_end}`);
           console.log(`Gross Earnings: ${payment.total_earnings}`);
           console.log(`Current Status: ${payment.status}`);
+          console.log(`Total Collections in Period: ${payment.total_collections}`);
           
           let totalPenalties = 0;
           
@@ -323,7 +324,11 @@ class CollectorPenaltyService {
             const collectorIdForThisCollection = collectionToCollectorMap.get(collectionId);
             
             // Check if this collection was collected by the current payment's collector
-            return collectorIdForThisCollection === payment.collector_id;
+            const isSameCollector = collectorIdForThisCollection === payment.collector_id;
+            if (isSameCollector) {
+              console.log(`Found approval ${approval.id} for collection ${collectionId} belonging to collector ${payment.collector_id}`);
+            }
+            return isSameCollector;
           });
           
           console.log(`Found ${collectorMilkApprovals.length} penalties in milk_approvals for this collector and period`);

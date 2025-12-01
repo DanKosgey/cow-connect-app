@@ -7,7 +7,8 @@ import {
   TrendingUp, 
   Milk, 
   Calendar,
-  FileText
+  FileText,
+  Info
 } from 'lucide-react';
 import { collectorEarningsService } from '@/services/collector-earnings-service';
 import { formatCurrency } from '@/utils/formatters';
@@ -21,6 +22,12 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { supabase } from '@/integrations/supabase/client';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 interface EarningsData {
   totalCollections: number;
@@ -86,174 +93,259 @@ export default function CollectorEarningsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold">Earnings & Payments</h1>
-        <p className="text-muted-foreground">View your collection earnings and payment history</p>
-      </div>
+    <TooltipProvider>
+      <div className="space-y-6">
+        {/* Header */}
+        <div>
+          <h1 className="text-3xl font-bold">Earnings & Payments</h1>
+          <p className="text-muted-foreground">View your collection earnings and payment history</p>
+        </div>
 
-      {/* Earnings Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {/* Current Month Earnings */}
+        {/* Earnings Summary Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {/* Current Month Earnings */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Current Month</CardTitle>
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {currentEarnings ? formatCurrency(currentEarnings.totalEarnings) : 'KSh 0.00'}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {currentEarnings?.totalCollections || 0} collections, {currentEarnings?.totalLiters?.toFixed(2) || '0.00'}L
+              </p>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1 cursor-help">
+                    <Info className="h-3 w-3" />
+                    Calculation: {currentEarnings?.totalLiters?.toFixed(2) || '0.00'}L × {formatCurrency(currentEarnings?.ratePerLiter || 0)}/L
+                  </p>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className="max-w-xs">
+                    Your earnings are calculated by multiplying the total liters you've collected this month 
+                    by the current rate per liter. Only collections marked as "Collected" and "Approved for Payment" 
+                    are included in this calculation.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </CardContent>
+          </Card>
+
+          {/* Rate Per Liter */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Rate Per Liter</CardTitle>
+              <Milk className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {currentEarnings ? formatCurrency(currentEarnings.ratePerLiter) : 'KSh 0.00'}
+              </div>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <p className="text-xs text-muted-foreground cursor-help flex items-center gap-1">
+                    <Info className="h-3 w-3" />
+                    Current payment rate
+                  </p>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className="max-w-xs">
+                    This is the current rate you're paid per liter of milk collected. 
+                    This rate may change periodically based on market conditions.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </CardContent>
+          </Card>
+
+          {/* All-Time Collections */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">All-Time Collections</CardTitle>
+              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {allTimeEarnings?.totalCollections || 0}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {allTimeEarnings?.totalLiters?.toFixed(2) || '0.00'} liters collected
+              </p>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1 cursor-help">
+                    <Info className="h-3 w-3" />
+                    Total collections
+                  </p>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className="max-w-xs">
+                    This shows the total number of collections you've made and the total liters collected 
+                    throughout your time as a collector. Only collections marked as "Collected" and 
+                    "Approved for Payment" are counted.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </CardContent>
+          </Card>
+
+          {/* All-Time Earnings */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">All-Time Earnings</CardTitle>
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {allTimeEarnings ? formatCurrency(allTimeEarnings.totalEarnings) : 'KSh 0.00'}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {allTimeEarnings?.totalCollections || 0} collections, {allTimeEarnings?.totalLiters?.toFixed(2) || '0.00'}L total
+              </p>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1 cursor-help">
+                    <Info className="h-3 w-3" />
+                    Calculation: {allTimeEarnings?.totalLiters?.toFixed(2) || '0.00'}L × {formatCurrency(allTimeEarnings?.ratePerLiter || 0)}/L
+                  </p>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className="max-w-xs">
+                    Your all-time earnings are calculated by multiplying all the liters you've collected 
+                    by the current rate per liter. This represents the gross amount before any penalties 
+                    or deductions. Only collections marked as "Collected" and "Approved for Payment" 
+                    are included in this calculation.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Payment History */}
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Current Month</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              Payment History
+            </CardTitle>
+            <CardDescription>
+              Your payment records and status
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {currentEarnings ? formatCurrency(currentEarnings.totalEarnings) : 'KSh 0.00'}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {currentEarnings?.totalCollections || 0} collections, {currentEarnings?.totalLiters?.toFixed(2) || '0.00'}L
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Rate Per Liter */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Rate Per Liter</CardTitle>
-            <Milk className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {currentEarnings ? formatCurrency(currentEarnings.ratePerLiter) : 'KSh 0.00'}
-            </div>
-            <p className="text-xs text-muted-foreground">Current payment rate</p>
-          </CardContent>
-        </Card>
-
-        {/* All-Time Collections */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">All-Time Collections</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {allTimeEarnings?.totalCollections || 0}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {allTimeEarnings?.totalLiters?.toFixed(2) || '0.00'} liters collected
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* All-Time Earnings */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">All-Time Earnings</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {allTimeEarnings ? formatCurrency(allTimeEarnings.totalEarnings) : 'KSh 0.00'}
-            </div>
-            <p className="text-xs text-muted-foreground">Total earnings to date</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Payment History */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <FileText className="h-5 w-5" />
-            Payment History
-          </CardTitle>
-          <CardDescription>
-            Your payment records and status
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {paymentHistory.length > 0 ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Period</TableHead>
-                  <TableHead className="text-right">Collections</TableHead>
-                  <TableHead className="text-right">Liters</TableHead>
-                  <TableHead className="text-right">Rate</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Date</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {paymentHistory.map((payment) => (
-                  <TableRow key={payment.id}>
-                    <TableCell>
-                      {new Date(payment.period_start).toLocaleDateString()} - {new Date(payment.period_end).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell className="text-right">{payment.total_collections}</TableCell>
-                    <TableCell className="text-right">{payment.total_liters?.toFixed(2)}</TableCell>
-                    <TableCell className="text-right">{formatCurrency(payment.rate_per_liter)}</TableCell>
-                    <TableCell className="text-right font-medium">{formatCurrency(payment.total_earnings)}</TableCell>
-                    <TableCell>
-                      <Badge variant={payment.status === 'paid' ? 'default' : 'secondary'}>
-                        {payment.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {payment.payment_date 
-                        ? new Date(payment.payment_date).toLocaleDateString() 
-                        : 'N/A'}
-                    </TableCell>
+            {paymentHistory.length > 0 ? (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Period</TableHead>
+                    <TableHead className="text-right">Collections</TableHead>
+                    <TableHead className="text-right">Liters</TableHead>
+                    <TableHead className="text-right">Rate</TableHead>
+                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Date</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          ) : (
-            <div className="text-center py-8 text-muted-foreground">
-              <FileText className="h-12 w-12 mx-auto mb-4" />
-              <p>No payment history available</p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                </TableHeader>
+                <TableBody>
+                  {paymentHistory.map((payment) => (
+                    <TableRow key={payment.id}>
+                      <TableCell>
+                        {new Date(payment.period_start).toLocaleDateString()} - {new Date(payment.period_end).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell className="text-right">{payment.total_collections}</TableCell>
+                      <TableCell className="text-right">{payment.total_liters?.toFixed(2)}</TableCell>
+                      <TableCell className="text-right">{formatCurrency(payment.rate_per_liter)}</TableCell>
+                      <TableCell className="text-right font-medium">{formatCurrency(payment.total_earnings)}</TableCell>
+                      <TableCell>
+                        <Badge variant={payment.status === 'paid' ? 'default' : 'secondary'}>
+                          {payment.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {payment.payment_date 
+                          ? new Date(payment.payment_date).toLocaleDateString() 
+                          : 'N/A'}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">
+                <FileText className="h-12 w-12 mx-auto mb-4" />
+                <p>No payment history available</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
-      {/* Info Section */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Calendar className="h-5 w-5" />
-            How Earnings Are Calculated
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <div className="flex items-start gap-3">
-              <div className="mt-1 w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold">1</div>
-              <div>
-                <h3 className="font-medium">Collection Tracking</h3>
-                <p className="text-sm text-muted-foreground">
-                  All milk collections you record are tracked in the system
+        {/* Earnings Calculation Formula */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Calendar className="h-5 w-5" />
+              How Your Earnings Are Calculated
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-6">
+              <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
+                <h3 className="font-bold text-lg text-blue-800 mb-2">Earnings Formula</h3>
+                <div className="text-lg font-mono bg-white p-3 rounded border">
+                  Total Earnings = Total Liters Collected × Rate Per Liter
+                </div>
+                <p className="mt-2 text-sm text-blue-700">
+                  Example: If you collected 100 liters at a rate of KSh 5.00 per liter, your earnings would be 100 × 5.00 = KSh 500.00
                 </p>
               </div>
-            </div>
-            <div className="flex items-start gap-3">
-              <div className="mt-1 w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold">2</div>
-              <div>
-                <h3 className="font-medium">Rate Application</h3>
-                <p className="text-sm text-muted-foreground">
-                  The current rate per liter is applied to your total collections
-                </p>
+              
+              <div className="space-y-4">
+                <div className="flex items-start gap-3">
+                  <div className="mt-1 w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold">1</div>
+                  <div>
+                    <h3 className="font-medium">Collection Tracking</h3>
+                    <p className="text-sm text-muted-foreground">
+                      All milk collections you record are tracked in the system. Only collections marked as "Collected" and "Approved for Payment" count toward your earnings.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <div className="mt-1 w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold">2</div>
+                  <div>
+                    <h3 className="font-medium">Rate Application</h3>
+                    <p className="text-sm text-muted-foreground">
+                      The current rate per liter is applied to your total collections. This rate may change periodically based on market conditions.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <div className="mt-1 w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold">3</div>
+                  <div>
+                    <h3 className="font-medium">Payment Processing</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Payments are processed by administrators and marked as paid when complete. You'll see your payment status change from "Pending" to "Paid".
+                    </p>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-100 mt-4">
+                <h3 className="font-bold text-yellow-800 mb-2">Important Notes</h3>
+                <ul className="list-disc list-inside space-y-1 text-sm text-yellow-700">
+                  <li>Only collections approved for payment are included in your earnings calculation</li>
+                  <li>Penalties may be deducted from your gross earnings based on quality variances</li>
+                  <li>Your earnings are calculated automatically when collections are approved</li>
+                  <li>Contact an administrator if you believe there's an error in your earnings calculation</li>
+                </ul>
               </div>
             </div>
-            <div className="flex items-start gap-3">
-              <div className="mt-1 w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold">3</div>
-              <div>
-                <h3 className="font-medium">Payment Processing</h3>
-                <p className="text-sm text-muted-foreground">
-                  Payments are processed by administrators and marked as paid when complete
-                </p>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+          </CardContent>
+        </Card>
+      </div>
+    </TooltipProvider>
   );
 }

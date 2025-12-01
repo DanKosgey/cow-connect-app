@@ -1,5 +1,5 @@
--- Migration: 20251128000900_verify_collector_payment_functions.sql
--- Description: Verify and fix collector payment functions to ensure proper RPC calls
+-- Migration: 20251201001_fix_payment_generation_logic.sql
+-- Description: Fix payment generation logic to properly handle multiple collections per collector
 
 BEGIN;
 
@@ -48,7 +48,6 @@ BEGIN
     FROM collections c
     WHERE c.approved_for_payment = true
       AND c.status = 'Collected'
-      AND c.collection_fee_status = 'pending' -- Only include collections with pending fees
       AND NOT EXISTS (
           -- Check if a payment record already exists for this collector covering ALL their collections
           SELECT 1 
@@ -60,7 +59,6 @@ BEGIN
                 WHERE c2.staff_id = c.staff_id
                   AND c2.approved_for_payment = true
                   AND c2.status = 'Collected'
-                  AND c2.collection_fee_status = 'pending' -- Only check collections with pending fees
             )
             AND cp.period_end = (
                 SELECT MAX(c2.collection_date::DATE)
@@ -68,7 +66,6 @@ BEGIN
                 WHERE c2.staff_id = c.staff_id
                   AND c2.approved_for_payment = true
                   AND c2.status = 'Collected'
-                  AND c2.collection_fee_status = 'pending' -- Only check collections with pending fees
             )
       )
     GROUP BY c.staff_id
@@ -93,13 +90,11 @@ DECLARE
     v_payment_exists BOOLEAN;
 BEGIN
     -- Loop through all collectors with approved collections that don't have payment records
-    -- and have pending fees
     FOR v_collector_id IN
         SELECT DISTINCT c.staff_id
         FROM collections c
         WHERE c.approved_for_payment = true
           AND c.status = 'Collected'
-          AND c.collection_fee_status = 'pending' -- Only include collections with pending fees
           AND NOT EXISTS (
               -- Check if a payment record already exists for this collector covering ALL their collections
               SELECT 1 
@@ -111,7 +106,6 @@ BEGIN
                     WHERE c2.staff_id = c.staff_id
                       AND c2.approved_for_payment = true
                       AND c2.status = 'Collected'
-                      AND c2.collection_fee_status = 'pending' -- Only check collections with pending fees
                 )
                 AND cp.period_end = (
                     SELECT MAX(c2.collection_date::DATE)
@@ -119,7 +113,6 @@ BEGIN
                     WHERE c2.staff_id = c.staff_id
                       AND c2.approved_for_payment = true
                       AND c2.status = 'Collected'
-                      AND c2.collection_fee_status = 'pending' -- Only check collections with pending fees
                 )
           )
     LOOP
@@ -137,8 +130,7 @@ BEGIN
         FROM collections c
         WHERE c.staff_id = v_collector_id
           AND c.approved_for_payment = true
-          AND c.status = 'Collected'
-          AND c.collection_fee_status = 'pending'; -- Only include collections with pending fees
+          AND c.status = 'Collected';
         
         -- Only proceed if there are collections
         IF v_total_collections > 0 THEN

@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
+import React from 'react';
+import { useState, useEffect, useMemo, Fragment } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -17,7 +18,11 @@ import {
   ArrowUpDown,
   Download,
   AlertTriangle,
-  FileBarChart
+  FileBarChart,
+  ChevronRightIcon,
+  ChevronDownIcon,
+  ListIcon,
+  Loader2Icon
 } from 'lucide-react';
 import { formatCurrency } from '@/utils/formatters';
 import { Badge } from '@/components/ui/badge';
@@ -33,6 +38,7 @@ import { collectorEarningsService } from '@/services/collector-earnings-service'
 import { collectorRateService } from '@/services/collector-rate-service';
 import { collectorPenaltyService } from '@/services/collector-penalty-service';
 import useToastNotifications from '@/hooks/useToastNotifications';
+import FixPaymentRecordsButton from '@/components/admin/FixPaymentRecordsButton';
 
 // Add recharts imports for the dual-axis chart
 import {
@@ -66,6 +72,14 @@ interface CollectorData {
   positiveVariances?: number;
   negativeVariances?: number;
   avgVariancePercentage?: number;
+  // Add collections breakdown data
+  collectionsBreakdown?: {
+    date: string;
+    liters: number;
+    status: string;
+    approved: boolean;
+    feeStatus?: string;
+  }[];
 }
 
 interface PaymentData {
@@ -131,6 +145,11 @@ export default function CollectorsPage() {
     avgCollectionsPerCollector: 0
   });
   
+  // Calculate total gross earnings from collectors data
+  const totalGrossEarnings = useMemo(() => {
+    return collectors.reduce((sum, collector) => sum + (collector.totalEarnings || 0), 0);
+  }, [collectors]);
+
   // Add state for penalty analytics data
   const [penaltyAnalytics, setPenaltyAnalytics] = useState<PenaltyAnalyticsData | null>(null);
   const [penaltyAnalyticsLoading, setPenaltyAnalyticsLoading] = useState(false);
@@ -169,8 +188,12 @@ export default function CollectorsPage() {
         console.log('Payments data fetched:', paymentsWithPenalties.length, 'payments');
         setPayments(paymentsWithPenalties as PaymentData[]);
         
-        // Calculate stats
+        // Calculate stats using the aggregated collector data for consistency
         const totalCollectors = collectorsData.length;
+        const totalGrossEarnings = collectorsData.reduce((sum, collector) => sum + (collector.totalEarnings || 0), 0);
+        const totalPenalties = collectorsData.reduce((sum, collector) => sum + (collector.totalPenalties || 0), 0);
+        
+        // Calculate pending and paid amounts from payment records
         const totalPendingAmount = paymentsWithPenalties
           .filter((p: any) => p.status === 'pending')
           .reduce((sum: number, payment: any) => sum + payment.adjusted_earnings, 0);
@@ -179,11 +202,7 @@ export default function CollectorsPage() {
           .filter((p: any) => p.status === 'paid')
           .reduce((sum: number, payment: any) => sum + payment.adjusted_earnings, 0);
           
-        // Calculate total penalties from ALL payments (not just collectors data)
-        const totalPenalties = paymentsWithPenalties
-          .reduce((sum: number, payment: any) => sum + (payment.total_penalties || 0), 0);
-          
-        const totalCollections = collectorsData.reduce((sum: number, collector: any) => sum + collector.totalCollections, 0);
+        const totalCollections = collectorsData.reduce((sum, collector) => sum + (collector.totalCollections || 0), 0);
         const avgCollectionsPerCollector = totalCollectors > 0 ? totalCollections / totalCollectors : 0;
         
         console.log('Calculated stats:', {
@@ -352,22 +371,406 @@ export default function CollectorsPage() {
     return groups;
   }, [filteredPayments]);
 
-  // Update the renderPaymentsTab function to ensure it shows data correctly
+  // State for expanded collector rows
+  const [expandedCollectors, setExpandedCollectors] = useState<Record<string, boolean>>({});
+  
+  // Function to toggle collector expansion
+  const toggleCollectorExpansion = (collectorId: string) => {
+    setExpandedCollectors(prev => ({
+      ...prev,
+      [collectorId]: !prev[collectorId]
+    }));
+  };
+  
+  // Function to fetch collections breakdown for a collector
+  const fetchCollectionsBreakdown = async (collectorId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('collections')
+        .select('id, collection_date, liters, status, approved_for_payment, collection_fee_status')
+        .eq('staff_id', collectorId)
+        .order('collection_date', { ascending: false })
+        .limit(20); // Limit to last 20 collections for performance
+      
+      if (error) {
+        console.error('Error fetching collections breakdown:', error);
+        return [];
+      }
+      
+      return data.map(collection => ({
+        date: collection.collection_date,
+        liters: collection.liters,
+        status: collection.status,
+        approved: collection.approved_for_payment,
+        feeStatus: collection.collection_fee_status
+      }));
+    } catch (error) {
+      console.error('Error fetching collections breakdown:', error);
+      return [];
+    }
+  };
+  
+  // Function to load collections breakdown for a collector when expanded
+  const loadCollectionsBreakdown = async (collectorId: string) => {
+    // Only load if not already loaded
+    const collector = collectors.find(c => c.id === collectorId);
+    if (collector && (!collector.collectionsBreakdown || collector.collectionsBreakdown.length === 0)) {
+      const breakdown = await fetchCollectionsBreakdown(collectorId);
+      setCollectors(prev => prev.map(c => 
+        c.id === collectorId ? { ...c, collectionsBreakdown: breakdown } : c
+      ));
+    }
+  };
+  
+  // Enhanced collectors table with breakdown
+  const renderCollectorsTable = () => {
+    return (
+      <div className="rounded-md border">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[40px]"></TableHead>
+                <TableHead className="w-[120px]">Collector</TableHead>
+                <TableHead className="text-right w-[80px]">Collections</TableHead>
+                <TableHead className="text-right w-[80px]">Liters</TableHead>
+                <TableHead className="text-right w-[90px]">Rate/Liter</TableHead>
+                <TableHead className="text-right w-[100px]">Gross</TableHead>
+                <TableHead className="text-right w-[90px]">Penalties</TableHead>
+                <TableHead className="text-right w-[100px]">Pending</TableHead>
+                <TableHead className="text-right w-[100px]">Net</TableHead>
+                <TableHead className="text-right w-[100px]">Performance</TableHead>
+                <TableHead className="text-right w-[120px]">Status</TableHead>
+                <TableHead className="text-right w-[120px]">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {collectors.map((collector) => (
+                <Fragment key={collector.id}>
+                  <TableRow 
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() => {
+                      toggleCollectorExpansion(collector.id);
+                      if (!expandedCollectors[collector.id]) {
+                        loadCollectionsBreakdown(collector.id);
+                      }
+                    }}
+                  >
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleCollectorExpansion(collector.id);
+                          if (!expandedCollectors[collector.id]) {
+                            loadCollectionsBreakdown(collector.id);
+                          }
+                        }}
+                      >
+                        {expandedCollectors[collector.id] ? (
+                          <ChevronDownIcon className="h-4 w-4" />
+                        ) : (
+                          <ChevronRightIcon className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </TableCell>
+                    <TableCell className="font-medium max-w-[120px] truncate">{collector.name}</TableCell>
+                    <TableCell className="text-right">{collector.totalCollections}</TableCell>
+                    <TableCell className="text-right">{collector.totalLiters.toFixed(0)}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(collector.ratePerLiter)}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(collector.totalEarnings)}</TableCell>
+                    <TableCell className="text-right text-red-600">
+                      {formatCurrency(collector.totalPenalties)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {formatCurrency(collector.pendingPayments)}
+                    </TableCell>
+                    <TableCell className={`text-right font-bold ${collector.totalEarnings - collector.totalPenalties < 0 ? 'text-red-600' : ''}`}>
+                      {formatCurrency(collector.totalEarnings - collector.totalPenalties)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex flex-col items-end">
+                        <span>{collector.performanceScore.toFixed(0)}</span>
+                        <Badge 
+                          variant={collector.performanceScore >= 80 ? 'default' : 
+                                 collector.performanceScore >= 60 ? 'secondary' : 'destructive'}
+                          className="text-xs"
+                        >
+                          {collector.performanceScore >= 80 ? 'Excellent' : 
+                           collector.performanceScore >= 60 ? 'Good' : 'Poor'}
+                        </Badge>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {payments.filter(p => p.collector_id === collector.id && p.status === 'pending').length > 0 ? (
+                        <Badge variant="secondary" className="bg-orange-100 text-orange-800 text-xs">
+                          Pending Payments
+                        </Badge>
+                      ) : payments.filter(p => p.collector_id === collector.id).length > 0 ? (
+                        <Badge variant="default" className="bg-green-100 text-green-800 text-xs">
+                          All Paid
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary" className="text-xs">
+                          No Payments
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right py-2">
+                      {payments.filter(p => p.collector_id === collector.id && p.status === 'pending').length > 0 && (
+                        <Button 
+                          size="sm" 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleMarkAllAsPaid(collector.id, collector.name);
+                          }}
+                          className="bg-green-600 hover:bg-green-700 h-8 px-2 text-xs"
+                        >
+                          Mark as Paid
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                  {expandedCollectors[collector.id] && (
+                    <TableRow>
+                      <TableCell colSpan={11} className="p-0 bg-muted/50">
+                        <div className="p-4">
+                          <h4 className="font-medium mb-3 flex items-center gap-2">
+                            <ListIcon className="h-4 w-4" />
+                            Recent Collections Breakdown (Last 20)
+                          </h4>
+                          {collector.collectionsBreakdown && collector.collectionsBreakdown.length > 0 ? (
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead className="w-[100px]">Date</TableHead>
+                                  <TableHead className="text-right w-[80px]">Liters</TableHead>
+                                  <TableHead className="w-[100px]">Status</TableHead>
+                                  <TableHead className="w-[120px]">Payment Approval</TableHead>
+                                  <TableHead className="w-[100px]">Fee Status</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {collector.collectionsBreakdown.map((collection, index) => (
+                                  <TableRow key={index}>
+                                    <TableCell className="text-xs">
+                                      {new Date(collection.date).toLocaleDateString()}
+                                    </TableCell>
+                                    <TableCell className="text-right text-xs">
+                                      {collection.liters.toFixed(2)}
+                                    </TableCell>
+                                    <TableCell>
+                                      <Badge 
+                                        variant={collection.status === 'Collected' ? 'default' : 'secondary'}
+                                        className="text-xs"
+                                      >
+                                        {collection.status}
+                                      </Badge>
+                                    </TableCell>
+                                    <TableCell>
+                                      {collection.approved ? (
+                                        <Badge variant="default" className="text-xs">Approved</Badge>
+                                      ) : (
+                                        <Badge variant="secondary" className="text-xs">Pending</Badge>
+                                      )}
+                                    </TableCell>
+                                    <TableCell>
+                                      {(collection as any).feeStatus === 'paid' ? (
+                                        <Badge variant="default" className="bg-green-100 text-green-800 text-xs">
+                                          Paid
+                                        </Badge>
+                                      ) : (
+                                        <Badge variant="secondary" className="bg-orange-100 text-orange-800 text-xs">
+                                          Pending
+                                        </Badge>
+                                      )}
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          ) : (
+                            <div className="text-center py-4 text-muted-foreground">
+                              <Loader2Icon className="h-4 w-4 animate-spin mx-auto mb-2" />
+                              Loading collections data...
+                            </div>
+                          )}
+                          {/* Show payment history for this collector */}
+                          {payments.filter(p => p.collector_id === collector.id).length > 0 && (
+                            <div className="mt-6">
+                              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-3">
+                                <h5 className="font-medium">Payment History</h5>
+                                {payments.filter(p => p.collector_id === collector.id && p.status === 'pending').length > 0 && (
+                                  <Button 
+                                    size="sm"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleMarkAllAsPaid(collector.id, collector.name);
+                                    }}
+                                    className="bg-green-600 hover:bg-green-700 text-xs h-8"
+                                  >
+                                    Mark All Pending as Paid
+                                  </Button>
+                                )}
+                              </div>
+                              <div className="overflow-x-auto">
+                                <Table>
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead className="w-[120px]">Period</TableHead>
+                                      <TableHead className="text-right w-[80px]">Collections</TableHead>
+                                      <TableHead className="text-right w-[80px]">Liters</TableHead>
+                                      <TableHead className="text-right w-[90px]">Rate</TableHead>
+                                      <TableHead className="text-right w-[100px]">Gross</TableHead>
+                                      <TableHead className="text-right w-[90px]">Penalties</TableHead>
+                                      <TableHead className="text-right w-[100px]">Pending</TableHead>
+                                      <TableHead className="text-right w-[100px]">Net Pay</TableHead>
+                                      <TableHead className="w-[80px]">Status</TableHead>
+                                      <TableHead className="w-[100px]">Actions</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {payments.filter(p => p.collector_id === collector.id).map((payment) => (
+                                      <TableRow key={payment.id}>
+                                        <TableCell>
+                                          <div className="text-xs">
+                                            {new Date(payment.period_start).toLocaleDateString()} - {new Date(payment.period_end).toLocaleDateString()}
+                                          </div>
+                                        </TableCell>
+                                        <TableCell className="text-right text-xs">{payment.total_collections}</TableCell>
+                                        <TableCell className="text-right text-xs">{payment.total_liters?.toFixed(0)}</TableCell>
+                                        <TableCell className="text-right text-xs">{formatCurrency(payment.rate_per_liter)}</TableCell>
+                                        <TableCell className="text-right font-medium text-xs">{formatCurrency(payment.total_earnings)}</TableCell>
+                                        <TableCell className="text-right text-xs">
+                                          {payment.total_penalties > 0 ? (
+                                            <span className="font-medium text-red-600">
+                                              {formatCurrency(payment.total_penalties)}
+                                            </span>
+                                          ) : (
+                                            <span className="text-muted-foreground">{formatCurrency(0)}</span>
+                                          )}
+                                        </TableCell>
+                                        <TableCell className="text-right text-xs">
+                                          {payment.status === 'pending' ? (
+                                            <span className="font-medium text-orange-600">
+                                              {formatCurrency(payment.adjusted_earnings)}
+                                            </span>
+                                          ) : (
+                                            <span className="text-muted-foreground">{formatCurrency(0)}</span>
+                                          )}
+                                        </TableCell>
+                                        <TableCell className={`text-right font-bold text-xs ${payment.adjusted_earnings < 0 ? 'text-red-600' : ''}`}>
+                                          {formatCurrency(payment.adjusted_earnings)}
+                                        </TableCell>
+                                        <TableCell>
+                                          <Badge 
+                                            variant={payment.status === 'paid' ? 'default' : 'secondary'}
+                                            className={`text-xs ${payment.status === 'paid' ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'}`}
+                                          >
+                                            {payment.status === 'paid' ? 'Paid' : 'Pending'}
+                                          </Badge>
+                                        </TableCell>
+                                        <TableCell>
+                                          {payment.status === 'pending' ? (
+                                            <Button 
+                                              size="sm" 
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleMarkAsPaid(payment.id);
+                                              }}
+                                              className="bg-green-600 hover:bg-green-700 h-7 px-2 text-xs"
+                                            >
+                                              Mark Paid
+                                            </Button>
+                                          ) : (
+                                            <div className="text-xs text-muted-foreground">
+                                              {payment.payment_date 
+                                                ? new Date(payment.payment_date).toLocaleDateString() 
+                                                : 'N/A'}
+                                              </div>
+                                            )}
+                                        </TableCell>
+                                      </TableRow>
+                                    ))}
+                                  </TableBody>
+                                </Table>
+                              </div>
+                              <div className="mt-2 text-xs text-muted-foreground">
+                                Note: Payment periods may be daily or cover specific timeframes.
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </Fragment>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+        {/* Add Mark All Pending Payments as Paid button at the end of the table */}
+        <div className="p-4 border-t bg-gray-50">
+          <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+            <div className="text-sm text-muted-foreground">
+              {payments.filter(p => p.status === 'pending').length > 0 
+                ? `${payments.filter(p => p.status === 'pending').length} pending payments` 
+                : 'No pending payments'}
+            </div>
+            <div className="w-full sm:w-auto">
+              {payments.filter(p => p.status === 'pending').length > 0 && (
+                <Button 
+                  onClick={() => {
+                    // Confirm before marking all pending payments as paid for all collectors
+                    if (window.confirm(`Are you sure you want to mark all ${payments.filter(p => p.status === 'pending').length} pending payments as paid for ALL collectors?`)) {
+                      payments
+                        .filter(p => p.status === 'pending')
+                        .forEach(payment => handleMarkAsPaid(payment.id));
+                    }
+                  }}
+                  className="bg-green-600 hover:bg-green-700 w-full sm:w-auto"
+                  size="sm"
+                >
+                  Mark All Pending Payments as Paid (All Collectors)
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Update the payments tab rendering to include the enhanced collectors table
   const renderPaymentsTab = () => {
     return (
       <div className="space-y-6">
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        {/* Summary Cards - Made responsive */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Pending Payments</CardTitle>
               <Clock className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-orange-600">
+              <div className="text-xl font-bold text-orange-600">
                 {formatCurrency(stats.totalPendingAmount)}
               </div>
               <p className="text-xs text-muted-foreground">Awaiting payment</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Gross Earnings</CardTitle>
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-xl font-bold text-blue-600">
+                {formatCurrency(totalGrossEarnings)}
+              </div>
+              <p className="text-xs text-muted-foreground">Before penalties</p>
             </CardContent>
           </Card>
 
@@ -377,10 +780,23 @@ export default function CollectorsPage() {
               <AlertTriangle className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-red-600">
+              <div className="text-xl font-bold text-red-600">
                 {formatCurrency(stats.totalPenalties)}
               </div>
               <p className="text-xs text-muted-foreground">Deducted from earnings</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Net Earnings</CardTitle>
+              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className={`text-xl font-bold ${totalGrossEarnings - stats.totalPenalties < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                {formatCurrency(totalGrossEarnings - stats.totalPenalties)}
+              </div>
+              <p className="text-xs text-muted-foreground">After penalties</p>
             </CardContent>
           </Card>
 
@@ -390,29 +806,16 @@ export default function CollectorsPage() {
               <CheckCircle className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-600">
+              <div className="text-xl font-bold text-green-600">
                 {formatCurrency(stats.totalPaidAmount)}
               </div>
               <p className="text-xs text-muted-foreground">Completed payments</p>
             </CardContent>
           </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Collector Rate</CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-primary">
-                {formatCurrency(collectorRate)}
-              </div>
-              <p className="text-xs text-muted-foreground">Per liter</p>
-            </CardContent>
-          </Card>
         </div>
 
-        {/* Payment Filters */}
-        <div className="flex flex-col sm:flex-row gap-4 mb-4">
+        {/* Payment Filters - Made responsive */}
+        <div className="flex flex-col sm:flex-row gap-2 mb-4">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
             <Input
@@ -422,166 +825,47 @@ export default function CollectorsPage() {
               className="pl-10"
             />
           </div>
-          <Select value={paymentFilter} onValueChange={(value) => setPaymentFilter(value as any)}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Filter by status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Payments</SelectItem>
-              <SelectItem value="pending">Pending</SelectItem>
-              <SelectItem value="paid">Paid</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button onClick={exportPaymentsToCSV} className="flex items-center gap-2">
-            <Download className="h-4 w-4" />
-            Export
-          </Button>
+          <div className="flex gap-2">
+            <Select value={paymentFilter} onValueChange={(value) => setPaymentFilter(value as any)}>
+              <SelectTrigger className="w-[120px]">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="paid">Paid</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button onClick={exportPaymentsToCSV} className="flex items-center gap-1 h-10 px-3" size="sm">
+              <Download className="h-4 w-4" />
+              <span className="hidden sm:inline">Export</span>
+            </Button>
+          </div>
         </div>
 
-        {/* Grouped Payments by Collector */}
+        {/* Enhanced Collectors Table with Breakdown */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <DollarSign className="h-5 w-5" />
-              Collector Payments
+              <Users className="h-5 w-5" />
+              Collector Performance Overview
             </CardTitle>
             <CardDescription>
-              {paymentFilter === 'pending' ? 'Pending payments awaiting disbursement' : 
-               paymentFilter === 'paid' ? 'Completed payments' : 
-               'All collector payments'}
+              Detailed breakdown of collections and earnings per collector (All-time data)
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {Object.keys(groupedPayments).length > 0 ? (
-              <div className="space-y-6">
-                {Object.entries(groupedPayments).map(([collectorId, collectorPayments]) => {
-                  const collectorName = collectorPayments[0]?.collector_name || 'Unknown Collector';
-                  const pendingPayments = collectorPayments.filter(p => p.status === 'pending');
-                  const totalPendingAmount = pendingPayments.reduce((sum, p) => sum + p.adjusted_earnings, 0);
-                  const totalPenalties = pendingPayments.reduce((sum, p) => sum + p.total_penalties, 0);
-                  const totalGross = pendingPayments.reduce((sum, p) => sum + p.total_earnings, 0);
-                  
-                  return (
-                    <div key={collectorId} className="border rounded-lg">
-                      {/* Collector Header */}
-                      <div className="bg-gray-50 p-4 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                        <div>
-                          <h3 className="font-bold text-lg">{collectorName}</h3>
-                          {pendingPayments.length > 0 && (
-                            <div className="flex flex-wrap gap-4 mt-2 text-sm">
-                              <span className="text-muted-foreground">
-                                Pending: <span className="font-medium text-orange-600">{formatCurrency(totalPendingAmount)}</span>
-                              </span>
-                              <span className="text-muted-foreground">
-                                Gross: <span className="font-medium">{formatCurrency(totalGross)}</span>
-                              </span>
-                              <span className="text-muted-foreground">
-                                Penalties: <span className="font-medium text-red-600">{formatCurrency(totalPenalties)}</span>
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                        {pendingPayments.length > 0 && (
-                          <Button 
-                            onClick={() => handleMarkAllAsPaid(collectorId, collectorName)}
-                            className="bg-green-600 hover:bg-green-700"
-                          >
-                            Mark All Pending as Paid
-                          </Button>
-                        )}
-                      </div>
-                      
-                      {/* Payments Table */}
-                      <div className="p-4">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Period</TableHead>
-                              <TableHead className="text-right">Collections</TableHead>
-                              <TableHead className="text-right">Liters</TableHead>
-                              <TableHead className="text-right">Rate</TableHead>
-                              <TableHead className="text-right">Gross</TableHead>
-                              <TableHead className="text-right">Penalties</TableHead>
-                              <TableHead className="text-right">Net Pay</TableHead>
-                              <TableHead>Status</TableHead>
-                              <TableHead>Actions</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {collectorPayments.map((payment) => (
-                              <TableRow key={payment.id}>
-                                <TableCell>
-                                  <div className="text-sm">
-                                    {new Date(payment.period_start).toLocaleDateString()} - {new Date(payment.period_end).toLocaleDateString()}
-                                  </div>
-                                </TableCell>
-                                <TableCell className="text-right">{payment.total_collections}</TableCell>
-                                <TableCell className="text-right">{payment.total_liters?.toFixed(2)}</TableCell>
-                                <TableCell className="text-right">{formatCurrency(payment.rate_per_liter)}</TableCell>
-                                <TableCell className="text-right font-medium">{formatCurrency(payment.total_earnings)}</TableCell>
-                                <TableCell className="text-right">
-                                  {payment.total_penalties > 0 ? (
-                                    <span className="font-medium text-red-600">
-                                      {formatCurrency(payment.total_penalties)}
-                                    </span>
-                                  ) : (
-                                    <span className="text-muted-foreground">{formatCurrency(0)}</span>
-                                  )}
-                                </TableCell>
-                                <TableCell className="text-right font-bold">
-                                  {formatCurrency(payment.adjusted_earnings)}
-                                </TableCell>
-                                <TableCell>
-                                  <Badge 
-                                    variant={payment.status === 'paid' ? 'default' : 'secondary'}
-                                    className={payment.status === 'paid' ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'}
-                                  >
-                                    {payment.status === 'paid' ? 'Paid' : 'Pending'}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell>
-                                  {payment.status === 'pending' ? (
-                                    <Button 
-                                      size="sm" 
-                                      onClick={() => handleMarkAsPaid(payment.id)}
-                                      className="bg-green-600 hover:bg-green-700"
-                                    >
-                                      Mark Paid
-                                    </Button>
-                                  ) : (
-                                    <div className="text-sm text-muted-foreground">
-                                      {payment.payment_date 
-                                        ? new Date(payment.payment_date).toLocaleDateString() 
-                                        : 'N/A'}
-                                    </div>
-                                  )}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+            {collectors.length > 0 ? (
+              renderCollectorsTable()
             ) : (
               <div className="text-center py-12 text-muted-foreground">
-                <DollarSign className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p className="text-lg">
-                  {paymentFilter === 'pending' ? 'No pending payments' : 
-                   paymentFilter === 'paid' ? 'No paid payments' : 
-                   'No payments found'}
-                </p>
-                <p className="text-sm mt-2">
-                  {paymentFilter === 'pending' 
-                    ? 'Approved collections will appear here once processed' 
-                    : 'Payments will appear here after being marked as paid'}
-                </p>
+                <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p className="text-lg">No collectors found</p>
               </div>
             )}
           </CardContent>
         </Card>
+
       </div>
     );
   };
@@ -1249,20 +1533,20 @@ export default function CollectorsPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Header - Made responsive */}
       <div>
-        <h1 className="text-3xl font-bold">Collector Payments</h1>
-        <p className="text-muted-foreground">Manage collector payments and track disbursements</p>
+        <h1 className="text-2xl sm:text-3xl font-bold">Collector Payments</h1>
+        <p className="text-muted-foreground text-sm sm:text-base">Manage collector payments and track disbursements</p>
       </div>
 
-      {/* Navigation Tabs - Simplified */}
+      {/* Navigation Tabs - Simplified and responsive */}
       <div className="bg-white rounded-xl shadow-lg">
-        <div className="flex border-b">
+        <div className="flex overflow-x-auto">
           {(['payments', 'analytics', 'penalty-analytics'] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`px-6 py-4 font-medium capitalize transition-colors ${
+              className={`px-4 py-3 sm:px-6 sm:py-4 font-medium capitalize transition-colors whitespace-nowrap ${
                 activeTab === tab
                   ? 'border-b-2 border-indigo-600 text-indigo-600'
                   : 'text-gray-600 hover:text-gray-900'
@@ -1271,7 +1555,12 @@ export default function CollectorsPage() {
               {tab === 'payments' && <DollarSign className="w-4 h-4 inline mr-2" />}
               {tab === 'analytics' && <BarChart3 className="w-4 h-4 inline mr-2" />}
               {tab === 'penalty-analytics' && <FileBarChart className="w-4 h-4 inline mr-2" />}
-              {tab === 'penalty-analytics' ? 'Penalty Analytics' : tab}
+              <span className="hidden sm:inline">{tab === 'penalty-analytics' ? 'Penalty Analytics' : tab}</span>
+              <span className="sm:hidden">
+                {tab === 'payments' && 'Pay'}
+                {tab === 'analytics' && 'Charts'}
+                {tab === 'penalty-analytics' && 'Penalty'}
+              </span>
             </button>
           ))}
         </div>
