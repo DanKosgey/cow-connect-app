@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
 import { 
   Users, 
   DollarSign, 
@@ -136,6 +137,11 @@ export default function CollectorsPage() {
     avgCollectionsPerCollector: 0
   });
   
+  // Add pagination state
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [totalCount, setTotalCount] = useState(0);
+  
   // Calculate total gross earnings from collectors data
   const totalGrossEarnings = useMemo(() => {
     return collectors.reduce((sum, collector) => sum + (collector.totalEarnings || 0), 0);
@@ -171,7 +177,15 @@ export default function CollectorsPage() {
         console.log('Fetching collector earnings data...');
         const collectorsData = await collectorEarningsService.getCollectorsWithEarnings();
         console.log('Collectors data fetched:', collectorsData.length, 'collectors');
-        setCollectors(collectorsData);
+        
+        // For pagination, we'll slice the data on the client side for now
+        // In a production app, this should be done server-side
+        const startIndex = (page - 1) * pageSize;
+        const endIndex = startIndex + pageSize;
+        const paginatedCollectors = collectorsData.slice(startIndex, endIndex);
+        
+        setCollectors(paginatedCollectors);
+        setTotalCount(collectorsData.length);
         
         // No need to fetch payment data - using collections table directly
         
@@ -215,7 +229,7 @@ export default function CollectorsPage() {
     };
     
     fetchData();
-  }, []);
+  }, [page, pageSize]);
   
   // Fetch penalty analytics when the penalty analytics tab is selected
   useEffect(() => {

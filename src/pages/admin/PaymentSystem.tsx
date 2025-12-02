@@ -663,7 +663,7 @@ const PaymentSystem = () => {
           {/* Navigation Tabs */}
           <div className="bg-white rounded-xl shadow-lg mb-6">
             <div className="flex border-b">
-              {['overview', 'analytics', 'pending', 'paid', 'collector-payments', 'settings'].map((tab) => (
+              {['overview', 'analytics', 'pending', 'paid', 'settings'].map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
@@ -677,9 +677,8 @@ const PaymentSystem = () => {
                   {tab === 'analytics' && <PieChart className="w-4 h-4 inline mr-2" />}
                   {tab === 'pending' && <Clock className="w-4 h-4 inline mr-2" />}
                   {tab === 'paid' && <CheckCircle className="w-4 h-4 inline mr-2" />}
-                  {tab === 'collector-payments' && <Users className="w-4 h-4 inline mr-2" />}
                   {tab === 'settings' && <Settings className="w-4 h-4 inline mr-2" />}
-                  {tab === 'collector-payments' ? 'collector payments' : tab}
+                  {tab}
                 </button>
               ))}
             </div>
@@ -1242,15 +1241,7 @@ const PaymentSystem = () => {
                         Pending Collections
                       </CardTitle>
                     </div>
-                    <div className="flex gap-2">
-                      <Button 
-                        onClick={deductCollectorFees}
-                        className="bg-blue-600 hover:bg-blue-700 text-white"
-                      >
-                        <DollarSign className="w-4 h-4 mr-2" />
-                        Deduct Collector Fees (Individual)
-                      </Button>
-                    </div>
+                    
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -1435,10 +1426,7 @@ const PaymentSystem = () => {
             </div>
           )}
 
-          {/* Collector Payments Tab */}
-          {activeTab === 'collector-payments' && (
-            <CollectorPaymentsSection />
-          )}
+
 
           {/* Settings Tab */}
           {activeTab === 'settings' && (
