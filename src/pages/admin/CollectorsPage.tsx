@@ -6,6 +6,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { format } from 'date-fns';
 import { 
   Users, 
   DollarSign, 
@@ -23,9 +26,11 @@ import {
   ChevronRightIcon,
   ChevronDownIcon,
   ListIcon,
-  Loader2Icon
+  Loader2Icon,
+  Calendar as CalendarIcon
 } from 'lucide-react';
 import { formatCurrency } from '@/utils/formatters';
+import { subMonths } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import {
   Table,
@@ -120,7 +125,7 @@ interface CollectorPenaltyAnalytics {
 }
 
 export default function CollectorsPage() {
-  const { success, error } = useToastNotifications();
+  const { success, error: showError } = useToastNotifications();
   const [collectors, setCollectors] = useState<CollectorData[]>([]);
   // payments state removed - using collections table directly
   const payments: any[] = [];
@@ -154,82 +159,291 @@ export default function CollectorsPage() {
   // Filter and sort states
   const [searchTerm, setSearchTerm] = useState('');
   const [paymentFilter, setPaymentFilter] = useState<'all' | 'pending' | 'paid'>('all'); // Show all by default
+  
+  // Advanced filters
+  const [filters, setFilters] = useState({
+    minEarnings: null as number | null,
+    maxEarnings: null as number | null,
+    performanceRange: 'all' as 'all' | 'excellent' | 'good' | 'poor',
+    dateRange: { from: null as string | null, to: null as string | null }
+  });
+  
+
+  
+  // Caching strategy
+  const [cache, setCache] = useState({
+    collectors: null as any[] | null,
+    timestamp: null as number | null,
+    expiryMinutes: 5
+  });
+  
+  // Sorting state
+  const [sortConfig, setSortConfig] = useState({
+    key: 'name',
+    direction: 'asc' as 'asc' | 'desc'
+  });
+  
+  // Payment history modal state
+  const [selectedCollector, setSelectedCollector] = useState<CollectorData | null>(null);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [paymentHistory, setPaymentHistory] = useState<any[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        
-        // Get current collector rate
-        const rate = await collectorRateService.getCurrentRate();
-        setCollectorRate(rate);
-        
-        // Automatically update collection fee statuses for approved collections
-        console.log('Starting automatic collection fee status update...');
-        const statusUpdateSuccess = await collectorEarningsService.autoUpdateCollectionFeeStatuses();
-        console.log('Status update result:', statusUpdateSuccess);
-        
-        if (!statusUpdateSuccess) {
-          console.warn('Failed to automatically update collection fee statuses, continuing with existing data');
-        }
-        
-        // Get all collectors with earnings
-        console.log('Fetching collector earnings data...');
-        const collectorsData = await collectorEarningsService.getCollectorsWithEarnings();
-        console.log('Collectors data fetched:', collectorsData.length, 'collectors');
-        
-        // For pagination, we'll slice the data on the client side for now
-        // In a production app, this should be done server-side
-        const startIndex = (page - 1) * pageSize;
-        const endIndex = startIndex + pageSize;
-        const paginatedCollectors = collectorsData.slice(startIndex, endIndex);
-        
-        setCollectors(paginatedCollectors);
-        setTotalCount(collectorsData.length);
-        
-        // No need to fetch payment data - using collections table directly
-        
-        // Calculate stats using the aggregated collector data for consistency
-        const totalCollectors = collectorsData.length;
-        const totalGrossEarnings = collectorsData.reduce((sum, collector) => sum + (collector.totalEarnings || 0), 0);
-        const totalPenalties = collectorsData.reduce((sum, collector) => sum + (collector.totalPenalties || 0), 0);
-        
-        // Calculate pending and paid amounts from collections data
-        const totalPendingAmount = collectorsData.reduce((sum, collector) => sum + (collector.pendingPayments || 0), 0);
-        const totalPaidAmount = collectorsData.reduce((sum, collector) => sum + (collector.paidPayments || 0), 0);
+    const fetchDataWithRetry = async (retries = 3) => {
+      for (let i = 0; i < retries; i++) {
+        try {
+          setLoading(true);
           
-        const totalCollections = collectorsData.reduce((sum, collector) => sum + (collector.totalCollections || 0), 0);
-        const avgCollectionsPerCollector = totalCollectors > 0 ? totalCollections / totalCollectors : 0;
-        
-        console.log('Calculated stats:', {
-          totalCollectors,
-          totalPendingAmount,
-          totalPaidAmount,
-          totalPenalties,
-          avgCollectionsPerCollector
-        });
-        
-        setStats({
-          totalCollectors,
-          totalPendingAmount,
-          totalPaidAmount,
-          totalPenalties,
-          avgCollectionsPerCollector
-        });
-        
-        console.log('Data loading complete');
-      } catch (error) {
-        console.error('Error fetching collector data:', error);
-        setDataFetchError(true);
-        // Show error notification
-        error('Error', 'Failed to fetch collector data');
-      } finally {
-        setLoading(false);
+          // Check cache first
+          const now = Date.now();
+          if (cache.collectors && 
+              cache.timestamp && 
+              (now - cache.timestamp) < cache.expiryMinutes * 60 * 1000) {
+            console.log('Using cached data');
+            // Use cached data
+            const collectorsData = cache.collectors;
+            
+            // Apply filters
+            let filteredCollectors = [...collectorsData];
+            
+            // Apply search term filter
+            if (searchTerm) {
+              filteredCollectors = filteredCollectors.filter(collector => 
+                collector.name.toLowerCase().includes(searchTerm.toLowerCase())
+              );
+            }
+            
+            // Apply payment filter
+            if (paymentFilter !== 'all') {
+              filteredCollectors = filteredCollectors.filter(collector => {
+                if (paymentFilter === 'pending') {
+                  return collector.pendingPayments > 0;
+                } else {
+                  return collector.pendingPayments === 0 && collector.paidPayments > 0;
+                }
+              });
+            }
+            
+            // Apply advanced filters
+            if (filters.minEarnings !== null) {
+              filteredCollectors = filteredCollectors.filter(collector => 
+                (collector.totalEarnings - collector.totalPenalties) >= filters.minEarnings!
+              );
+            }
+            
+            if (filters.maxEarnings !== null) {
+              filteredCollectors = filteredCollectors.filter(collector => 
+                (collector.totalEarnings - collector.totalPenalties) <= filters.maxEarnings!
+              );
+            }
+            
+            if (filters.performanceRange !== 'all') {
+              filteredCollectors = filteredCollectors.filter(collector => {
+                if (filters.performanceRange === 'excellent') {
+                  return collector.performanceScore >= 80;
+                } else if (filters.performanceRange === 'good') {
+                  return collector.performanceScore >= 60 && collector.performanceScore < 80;
+                } else {
+                  return collector.performanceScore < 60;
+                }
+              });
+            }
+            
+            // Apply date range filter
+            if (filters.dateRange.from || filters.dateRange.to) {
+              // For date filtering, we would need to fetch collections with date filters
+              // This is a simplified implementation - in a full implementation, we would filter by collection dates
+              console.log('Date range filter applied:', filters.dateRange);
+            }
+            
+            // For pagination, we'll slice the data on the client side for now
+            // In a production app, this should be done server-side
+            const startIndex = (page - 1) * pageSize;
+            const endIndex = startIndex + pageSize;
+            const paginatedCollectors = filteredCollectors.slice(startIndex, endIndex);
+            
+            setCollectors(paginatedCollectors);
+            setTotalCount(filteredCollectors.length);
+            
+            // Calculate stats using the aggregated collector data for consistency
+            const totalCollectors = filteredCollectors.length;
+            const totalGrossEarnings = filteredCollectors.reduce((sum, collector) => sum + (collector.totalEarnings || 0), 0);
+            const totalPenalties = filteredCollectors.reduce((sum, collector) => sum + (collector.totalPenalties || 0), 0);
+            
+            // Calculate pending and paid amounts from collections data
+            const totalPendingAmount = filteredCollectors.reduce((sum, collector) => sum + (collector.pendingPayments || 0), 0);
+            const totalPaidAmount = filteredCollectors.reduce((sum, collector) => sum + (collector.paidPayments || 0), 0);
+              
+            const totalCollections = filteredCollectors.reduce((sum, collector) => sum + (collector.totalCollections || 0), 0);
+            const avgCollectionsPerCollector = totalCollectors > 0 ? totalCollections / totalCollectors : 0;
+            
+            console.log('Calculated stats from cache:', {
+              totalCollectors,
+              totalPendingAmount,
+              totalPaidAmount,
+              totalPenalties,
+              avgCollectionsPerCollector
+            });
+            
+            setStats({
+              totalCollectors,
+              totalPendingAmount,
+              totalPaidAmount,
+              totalPenalties,
+              avgCollectionsPerCollector
+            });
+            
+            setLoading(false);
+            return;
+          }
+          
+          // Get current collector rate
+          const rate = await collectorRateService.getCurrentRate();
+          setCollectorRate(rate);
+          
+          // Automatically update collection fee statuses for approved collections
+          console.log('Starting automatic collection fee status update...');
+          const statusUpdateSuccess = await collectorEarningsService.autoUpdateCollectionFeeStatuses();
+          console.log('Status update result:', statusUpdateSuccess);
+          
+          if (!statusUpdateSuccess) {
+            console.warn('Failed to automatically update collection fee statuses, continuing with existing data');
+          }
+          
+          // Get all collectors with earnings
+          console.log('Fetching collector earnings data...');
+          const collectorsData = await collectorEarningsService.getCollectorsWithEarnings();
+          console.log('Collectors data fetched:', collectorsData.length, 'collectors');
+          
+          // Cache the data
+          setCache({ collectors: collectorsData, timestamp: now, expiryMinutes: 5 });
+          
+          // Apply filters
+          let filteredCollectors = [...collectorsData];
+          
+          // Apply search term filter
+          if (searchTerm) {
+            filteredCollectors = filteredCollectors.filter(collector => 
+              collector.name.toLowerCase().includes(searchTerm.toLowerCase())
+            );
+          }
+          
+          // Apply payment filter
+          if (paymentFilter !== 'all') {
+            filteredCollectors = filteredCollectors.filter(collector => {
+              if (paymentFilter === 'pending') {
+                return collector.pendingPayments > 0;
+              } else {
+                return collector.pendingPayments === 0 && collector.paidPayments > 0;
+              }
+            });
+          }
+          
+          // Apply advanced filters
+          if (filters.minEarnings !== null) {
+            filteredCollectors = filteredCollectors.filter(collector => 
+              (collector.totalEarnings - collector.totalPenalties) >= filters.minEarnings!
+            );
+          }
+          
+          if (filters.maxEarnings !== null) {
+            filteredCollectors = filteredCollectors.filter(collector => 
+              (collector.totalEarnings - collector.totalPenalties) <= filters.maxEarnings!
+            );
+          }
+          
+          if (filters.performanceRange !== 'all') {
+            filteredCollectors = filteredCollectors.filter(collector => {
+              if (filters.performanceRange === 'excellent') {
+                return collector.performanceScore >= 80;
+              } else if (filters.performanceRange === 'good') {
+                return collector.performanceScore >= 60 && collector.performanceScore < 80;
+              } else {
+                return collector.performanceScore < 60;
+              }
+            });
+          }
+          
+          // Apply date range filter
+          if (filters.dateRange.from || filters.dateRange.to) {
+            // For date filtering, we would need to fetch collections with date filters
+            // This is a simplified implementation - in a full implementation, we would filter by collection dates
+            console.log('Date range filter applied:', filters.dateRange);
+          }
+          
+          // For pagination, we'll slice the data on the client side for now
+          // In a production app, this should be done server-side
+          const startIndex = (page - 1) * pageSize;
+          const endIndex = startIndex + pageSize;
+          const paginatedCollectors = filteredCollectors.slice(startIndex, endIndex);
+          
+          setCollectors(paginatedCollectors);
+          setTotalCount(filteredCollectors.length);
+          
+          // No need to fetch payment data - using collections table directly
+          
+          // Calculate stats using the aggregated collector data for consistency
+          const totalCollectors = filteredCollectors.length;
+          const totalGrossEarnings = filteredCollectors.reduce((sum, collector) => sum + (collector.totalEarnings || 0), 0);
+          const totalPenalties = filteredCollectors.reduce((sum, collector) => sum + (collector.totalPenalties || 0), 0);
+          
+          // Calculate pending and paid amounts from collections data
+          const totalPendingAmount = filteredCollectors.reduce((sum, collector) => sum + (collector.pendingPayments || 0), 0);
+          const totalPaidAmount = filteredCollectors.reduce((sum, collector) => sum + (collector.paidPayments || 0), 0);
+            
+          const totalCollections = filteredCollectors.reduce((sum, collector) => sum + (collector.totalCollections || 0), 0);
+          const avgCollectionsPerCollector = totalCollectors > 0 ? totalCollections / totalCollectors : 0;
+          
+          console.log('Calculated stats:', {
+            totalCollectors,
+            totalPendingAmount,
+            totalPaidAmount,
+            totalPenalties,
+            avgCollectionsPerCollector
+          });
+          
+          setStats({
+            totalCollectors,
+            totalPendingAmount,
+            totalPaidAmount,
+            totalPenalties,
+            avgCollectionsPerCollector
+          });
+          
+          console.log('Data loading complete');
+          return; // Success, exit retry loop
+        } catch (error) {
+          console.error(`Attempt ${i + 1} failed:`, error);
+          if (i === retries - 1) {
+            // Last attempt failed
+            console.error('Error fetching collector data after', retries, 'attempts:', error);
+            setDataFetchError(true);
+            // Use the error function from useToastNotifications hook
+            try {
+              showError('Error', `Failed to fetch collector data after ${retries} attempts`);
+            } catch (toastError) {
+              console.error('Error showing toast notification:', toastError);
+              // Fallback to alert if toast fails
+              alert(`Error: Failed to fetch collector data after ${retries} attempts`);
+            }
+          } else {
+            // Wait before retrying
+            await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+          }
+        } finally {
+          setLoading(false);
+        }
       }
     };
     
-    fetchData();
-  }, [page, pageSize]);
+    // Wrapper function to maintain existing API
+    const fetchData = async () => {
+      await fetchDataWithRetry();
+    };
+    
+    fetchDataWithRetry();
+  }, [page, pageSize, searchTerm, paymentFilter, filters]);
   
   // Fetch penalty analytics when the penalty analytics tab is selected
   useEffect(() => {
@@ -241,7 +455,7 @@ export default function CollectorsPage() {
           setPenaltyAnalytics(analyticsData);
         } catch (error) {
           console.error('Error fetching penalty analytics:', error);
-          error('Error', 'Failed to fetch penalty analytics data');
+          showError('Error', 'Failed to fetch penalty analytics data');
         } finally {
           setPenaltyAnalyticsLoading(false);
         }
@@ -250,8 +464,62 @@ export default function CollectorsPage() {
     
     fetchPenaltyAnalytics();
   }, [activeTab, penaltyAnalytics]);
+
+  // Subscribe to real-time updates
+  useEffect(() => {
+    // Subscribe to collections changes
+    const collectionsSubscription = supabase
+      .channel('collections_changes')
+      .on('postgres_changes', 
+        { 
+          event: '*', 
+          schema: 'public', 
+          table: 'collections'
+        },
+        (payload) => {
+          console.log('Collection updated:', payload);
+          // Refresh specific collector data when collections change
+          const newPayload = payload.new as { staff_id?: string };
+          if (newPayload && newPayload.staff_id) {
+            refreshCollectorData(newPayload.staff_id);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(collectionsSubscription);
+    };
+  }, []);
   
   // Memoized filtered payments - removed as we're using collections directly
+
+  // Efficient single collector refresh
+  const refreshCollectorData = async (collectorId: string) => {
+    try {
+      // Get updated data for just this collector
+      const collectorsData = await collectorEarningsService.getCollectorsWithEarnings();
+      const updatedCollector = collectorsData.find(c => c.id === collectorId);
+      
+      if (updatedCollector) {
+        setCollectors(prev => 
+          prev.map(c => c.id === collectorId ? updatedCollector : c)
+        );
+        
+        // Also update stats
+        const totalPendingAmount = collectorsData.reduce((sum, collector) => sum + (collector.pendingPayments || 0), 0);
+        const totalPaidAmount = collectorsData.reduce((sum, collector) => sum + (collector.paidPayments || 0), 0);
+        
+        setStats(prev => ({
+          ...prev,
+          totalPendingAmount,
+          totalPaidAmount
+        }));
+      }
+    } catch (refreshError) {
+      console.error('Error refreshing collector data:', refreshError);
+    }
+  };
 
   // Function to mark all pending collections for a collector as paid
   const handleMarkAsPaid = async (collectorId: string, collectorName: string) => {
@@ -275,12 +543,194 @@ export default function CollectorsPage() {
         }));
         
         success('Success', `All pending collections for ${collectorName} marked as paid`);
+        // Clear cache after operation
+        clearCache();
       } else {
         throw new Error('Failed to mark collections as paid');
       }
-    } catch (error) {
-      console.error('Error marking collections as paid:', error);
-      error('Error', 'Failed to mark collections as paid');
+    } catch (markAsPaidError) {
+      console.error('Error marking collections as paid:', markAsPaidError);
+      // Use the error function from useToastNotifications hook
+      try {
+        showError('Error', 'Failed to mark collections as paid');
+      } catch (toastError) {
+        console.error('Error showing toast notification:', toastError);
+        // Fallback to alert if toast fails
+        alert('Error: Failed to mark collections as paid');
+      }
+    }
+  };
+
+  // Function to clear cache
+  const clearCache = () => {
+    setCache({
+      collectors: null,
+      timestamp: null,
+      expiryMinutes: 5
+    });
+  };
+
+  // Function to handle sorting
+  const handleSort = (key: string) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
+
+  // Function to fetch payment history for a collector
+  const fetchPaymentHistory = async (collectorId: string) => {
+    try {
+      setHistoryLoading(true);
+      const { data, error: supabaseError } = await supabase
+        .from('collections')
+        .select(`
+          id,
+          collection_date,
+          liters,
+          total_amount,
+          collection_fee_status,
+          variance_percentage,
+          variance_liters,
+          status,
+          approved_for_payment
+        `)
+        .eq('staff_id', collectorId)
+        .order('collection_date', { ascending: false });
+        
+      if (supabaseError) {
+        throw supabaseError;
+      }
+      
+      setPaymentHistory(data || []);
+    } catch (fetchError) {
+      console.error('Error fetching payment history:', fetchError);
+      // Use the error function from useToastNotifications hook
+      try {
+        showError('Error', 'Failed to fetch payment history');
+      } catch (toastError) {
+        console.error('Error showing toast notification:', toastError);
+        // Fallback to alert if toast fails
+        alert('Error: Failed to fetch payment history');
+      }
+      setPaymentHistory([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  // Function to show payment history modal
+  const showPaymentHistory = async (collector: CollectorData) => {
+    setSelectedCollector(collector);
+    setShowHistoryModal(true);
+    await fetchPaymentHistory(collector.id);
+  };
+
+  // Memoized sorted collectors
+  const sortedCollectors = useMemo(() => {
+    const sortableCollectors = [...collectors];
+    if (sortConfig.key) {
+      sortableCollectors.sort((a, b) => {
+        // Special handling for nested properties
+        let aValue, bValue;
+        
+        switch (sortConfig.key) {
+          case 'name':
+            aValue = a.name?.toLowerCase() || '';
+            bValue = b.name?.toLowerCase() || '';
+            break;
+          case 'performanceScore':
+            aValue = a.performanceScore || 0;
+            bValue = b.performanceScore || 0;
+            break;
+          case 'totalEarnings':
+            aValue = (a.totalEarnings - a.totalPenalties) || 0;
+            bValue = (b.totalEarnings - b.totalPenalties) || 0;
+            break;
+          case 'pendingPayments':
+            aValue = a.pendingPayments || 0;
+            bValue = b.pendingPayments || 0;
+            break;
+          case 'totalCollections':
+            aValue = a.totalCollections || 0;
+            bValue = b.totalCollections || 0;
+            break;
+          case 'totalLiters':
+            aValue = a.totalLiters || 0;
+            bValue = b.totalLiters || 0;
+            break;
+          default:
+            aValue = a[sortConfig.key as keyof CollectorData];
+            bValue = b[sortConfig.key as keyof CollectorData];
+        }
+        
+        if (aValue < bValue) {
+          return sortConfig.direction === 'asc' ? -1 : 1;
+        }
+        if (aValue > bValue) {
+          return sortConfig.direction === 'asc' ? 1 : -1;
+        }
+        return 0;
+      });
+    }
+    return sortableCollectors;
+  }, [collectors, sortConfig]);
+
+  // Function to handle bulk mark as paid with progress tracking
+  const handleBulkMarkAsPaid = async () => {
+    const pendingCollectors = collectors.filter(c => c.pendingPayments > 0);
+    
+    if (pendingCollectors.length === 0) {
+      showError('Error', 'No collectors with pending payments found');
+      return;
+    }
+    
+    if (!window.confirm(`Are you sure you want to mark all pending collections as paid for ${pendingCollectors.length} collectors?`)) {
+      return;
+    }
+
+    setProcessing(true);
+    setProgress(0);
+    
+    try {
+      for (let i = 0; i < pendingCollectors.length; i++) {
+        await collectorEarningsService.markCollectionsAsPaid(
+          pendingCollectors[i].id
+        );
+        setProgress(((i + 1) / pendingCollectors.length) * 100);
+      }
+      
+      // Refresh data after all operations complete
+      const collectorsData = await collectorEarningsService.getCollectorsWithEarnings();
+      setCollectors(collectorsData);
+      
+      // Recalculate stats
+      const totalPendingAmount = collectorsData.reduce((sum, collector) => sum + (collector.pendingPayments || 0), 0);
+      const totalPaidAmount = collectorsData.reduce((sum, collector) => sum + (collector.paidPayments || 0), 0);
+      
+      setStats(prev => ({
+        ...prev,
+        totalPendingAmount,
+        totalPaidAmount
+      }));
+      
+      success('Success', `All pending collections marked as paid for ${pendingCollectors.length} collectors`);
+      // Clear cache after bulk operation
+      clearCache();
+    } catch (bulkError) {
+      console.error('Error in bulk mark as paid:', bulkError);
+      // Use the error function from useToastNotifications hook
+      try {
+        showError('Error', 'Failed to mark all collections as paid');
+      } catch (toastError) {
+        console.error('Error showing toast notification:', toastError);
+        // Fallback to alert if toast fails
+        alert('Error: Failed to mark all collections as paid');
+      }
+    } finally {
+      setProcessing(false);
+      setProgress(0);
     }
   };
 
@@ -288,6 +738,9 @@ export default function CollectorsPage() {
 
   // State for expanded collector rows
   const [expandedCollectors, setExpandedCollectors] = useState<Record<string, boolean>>({});
+  // Bulk operation state
+  const [processing, setProcessing] = useState(false);
+  const [progress, setProgress] = useState(0);
   
   // Function to toggle collector expansion
   const toggleCollectorExpansion = (collectorId: string) => {
@@ -346,21 +799,58 @@ export default function CollectorsPage() {
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[40px]"></TableHead>
-                <TableHead className="w-[120px]">Collector</TableHead>
-                <TableHead className="text-right w-[80px]">Collections</TableHead>
-                <TableHead className="text-right w-[80px]">Liters</TableHead>
+                <TableHead 
+                  className="w-[120px] cursor-pointer hover:bg-muted"
+                  onClick={() => handleSort('name')}
+                >
+                  Collector
+                  <ArrowUpDown className="ml-2 h-4 w-4 inline" />
+                </TableHead>
+                <TableHead 
+                  className="text-right w-[80px] cursor-pointer hover:bg-muted"
+                  onClick={() => handleSort('totalCollections')}
+                >
+                  Collections
+                  <ArrowUpDown className="ml-2 h-4 w-4 inline" />
+                </TableHead>
+                <TableHead 
+                  className="text-right w-[80px] cursor-pointer hover:bg-muted"
+                  onClick={() => handleSort('totalLiters')}
+                >
+                  Liters
+                  <ArrowUpDown className="ml-2 h-4 w-4 inline" />
+                </TableHead>
                 <TableHead className="text-right w-[90px]">Rate/Liter</TableHead>
-                <TableHead className="text-right w-[100px]">Gross</TableHead>
+                <TableHead 
+                  className="text-right w-[100px] cursor-pointer hover:bg-muted"
+                  onClick={() => handleSort('totalEarnings')}
+                >
+                  Gross
+                  <ArrowUpDown className="ml-2 h-4 w-4 inline" />
+                </TableHead>
                 <TableHead className="text-right w-[90px]">Penalties</TableHead>
-                <TableHead className="text-right w-[100px]">Pending</TableHead>
+                <TableHead 
+                  className="text-right w-[100px] cursor-pointer hover:bg-muted"
+                  onClick={() => handleSort('pendingPayments')}
+                >
+                  Pending
+                  <ArrowUpDown className="ml-2 h-4 w-4 inline" />
+                </TableHead>
+                <TableHead className="text-right w-[100px]">Mark as Paid</TableHead>
                 <TableHead className="text-right w-[100px]">Net</TableHead>
-                <TableHead className="text-right w-[100px]">Performance</TableHead>
+                <TableHead 
+                  className="text-right w-[100px] cursor-pointer hover:bg-muted"
+                  onClick={() => handleSort('performanceScore')}
+                >
+                  Performance
+                  <ArrowUpDown className="ml-2 h-4 w-4 inline" />
+                </TableHead>
                 <TableHead className="text-right w-[120px]">Status</TableHead>
                 <TableHead className="text-right w-[120px]">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {collectors.map((collector) => (
+              {sortedCollectors.map((collector) => (
                 <Fragment key={collector.id}>
                   <TableRow 
                     className="cursor-pointer hover:bg-muted/50"
@@ -401,6 +891,28 @@ export default function CollectorsPage() {
                     <TableCell className="text-right">
                       {formatCurrency(collector.pendingPayments)}
                     </TableCell>
+                    <TableCell className="text-right py-2">
+                      {collector.pendingPayments > 0 ? (
+                        <Button 
+                          size="sm" 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleMarkAsPaid(collector.id, collector.name);
+                          }}
+                          className="h-8 px-2 text-xs bg-green-600 hover:bg-green-700"
+                        >
+                          Mark as Paid
+                        </Button>
+                      ) : (
+                        <Button 
+                          size="sm" 
+                          disabled
+                          className="h-8 px-2 text-xs bg-gray-300 cursor-not-allowed"
+                        >
+                          Mark as Paid
+                        </Button>
+                      )}
+                    </TableCell>
                     <TableCell className={`text-right font-bold ${collector.totalEarnings - collector.totalPenalties < 0 ? 'text-red-600' : ''}`}>
                       {formatCurrency(collector.totalEarnings - collector.totalPenalties)}
                     </TableCell>
@@ -433,24 +945,23 @@ export default function CollectorsPage() {
                       )}
                     </TableCell>
                     <TableCell className="text-right py-2">
-                      <Button 
-                        size="sm" 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (collector.pendingPayments > 0) {
-                            handleMarkAsPaid(collector.id, collector.name);
-                          }
-                        }}
-                        className={`h-8 px-2 text-xs ${collector.pendingPayments > 0 ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-300 cursor-not-allowed'}`}
-                        disabled={collector.pendingPayments === 0}
-                      >
-                        Mark as Paid
-                      </Button>
+                      <div className="flex gap-1 justify-end">
+                        <Button 
+                          size="sm" 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            showPaymentHistory(collector);
+                          }}
+                          className="h-8 px-2 text-xs bg-blue-600 hover:bg-blue-700"
+                        >
+                          History
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                   {expandedCollectors[collector.id] && (
                     <TableRow>
-                      <TableCell colSpan={12} className="p-0 bg-muted/50">
+                      <TableCell colSpan={13} className="p-0 bg-muted/50">
                         <div className="p-4">
                           <h4 className="font-medium mb-3 flex items-center gap-2">
                             <ListIcon className="h-4 w-4" />
@@ -570,6 +1081,9 @@ export default function CollectorsPage() {
           </Table>
         </div>
         {/* Add Mark All Pending Payments as Paid button at the end of the table */}
+        
+        {/* Add pagination controls */}
+        {renderPagination()}
         <div className="p-4 border-t bg-gray-50">
           <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
             <div className="text-sm text-muted-foreground">
@@ -579,25 +1093,110 @@ export default function CollectorsPage() {
             </div>
             <div className="w-full sm:w-auto">
               <Button 
-                onClick={() => {
-                  // Only proceed if there are pending payments
-                  if (stats.totalPendingAmount > 0) {
-                    // Confirm before marking all pending payments as paid for all collectors
-                    if (window.confirm(`Are you sure you want to mark all pending collections as paid for ALL collectors?`)) {
-                      // Mark all pending collections as paid for all collectors
-                      collectors.forEach(collector => handleMarkAsPaid(collector.id, collector.name));
-                    }
-                  }
-                }}
+                onClick={handleBulkMarkAsPaid}
                 className={`w-full sm:w-auto ${stats.totalPendingAmount > 0 ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-300 cursor-not-allowed'}`}
                 size="sm"
-                disabled={stats.totalPendingAmount === 0}
+                disabled={stats.totalPendingAmount === 0 || processing}
               >
-                Mark All Pending Payments as Paid (All Collectors)
+                {processing ? `Processing... ${Math.round(progress)}%` : 'Mark All Pending Payments as Paid (All Collectors)'}
               </Button>
             </div>
           </div>
         </div>
+        
+        {/* Add pagination controls */}
+        {renderPagination()}
+      </div>
+    );
+  };
+
+  // Render pagination controls
+  const renderPagination = () => {
+    const totalPages = Math.ceil(totalCount / pageSize);
+    
+    if (totalPages <= 1) return null;
+    
+    const getPageNumbers = () => {
+      const pages = [];
+      const maxVisiblePages = 5;
+      
+      if (totalPages <= maxVisiblePages) {
+        for (let i = 1; i <= totalPages; i++) {
+          pages.push(i);
+        }
+      } else {
+        if (page <= 3) {
+          for (let i = 1; i <= 4; i++) {
+            pages.push(i);
+          }
+          pages.push('...');
+          pages.push(totalPages);
+        } else if (page >= totalPages - 2) {
+          pages.push(1);
+          pages.push('...');
+          for (let i = totalPages - 3; i <= totalPages; i++) {
+            pages.push(i);
+          }
+        } else {
+          pages.push(1);
+          pages.push('...');
+          for (let i = page - 1; i <= page + 1; i++) {
+            pages.push(i);
+          }
+          pages.push('...');
+          pages.push(totalPages);
+        }
+      }
+      
+      return pages;
+    };
+    
+    return (
+      <div className="flex justify-center mt-6">
+        <Pagination>
+          <PaginationContent>
+            <PaginationItem>
+              <PaginationPrevious 
+                href="#" 
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (page > 1) setPage(page - 1);
+                }}
+                className={page === 1 ? "pointer-events-none opacity-50" : ""}
+              />
+            </PaginationItem>
+            
+            {getPageNumbers().map((pageNum, index) => (
+              <PaginationItem key={index}>
+                {pageNum === '...' ? (
+                  <span className="px-3 py-1">...</span>
+                ) : (
+                  <PaginationLink
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setPage(pageNum as number);
+                    }}
+                    isActive={page === pageNum}
+                  >
+                    {pageNum}
+                  </PaginationLink>
+                )}
+              </PaginationItem>
+            ))}
+            
+            <PaginationItem>
+              <PaginationNext 
+                href="#" 
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (page < totalPages) setPage(page + 1);
+                }}
+                className={page === totalPages ? "pointer-events-none opacity-50" : ""}
+              />
+            </PaginationItem>
+          </PaginationContent>
+        </Pagination>
       </div>
     );
   };
@@ -696,9 +1295,90 @@ export default function CollectorsPage() {
                 <SelectItem value="paid">Paid</SelectItem>
               </SelectContent>
             </Select>
-            <Button onClick={exportPaymentsToCSV} className="flex items-center gap-1 h-10 px-3" size="sm">
-              <Download className="h-4 w-4" />
-              <span className="hidden sm:inline">Export</span>
+            <div className="flex gap-2">
+              <Button onClick={exportPaymentsToCSV} className="flex items-center gap-1 h-10 px-3" size="sm">
+                <Download className="h-4 w-4" />
+                <span className="hidden sm:inline">Export CSV</span>
+              </Button>
+              <Select onValueChange={(value) => exportData(value as 'csv' | 'excel' | 'pdf')}>
+                <SelectTrigger className="w-[120px] h-10">
+                  <span className="hidden sm:inline">More Formats</span>
+                  <span className="sm:hidden">Export</span>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="excel">Export Excel</SelectItem>
+                  <SelectItem value="pdf">Export PDF</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+        
+        {/* Advanced Filters */}
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+          <div>
+            <label className="text-sm font-medium mb-1 block">Min Earnings</label>
+            <Input
+              type="number"
+              placeholder="0"
+              value={filters.minEarnings || ''}
+              onChange={(e) => setFilters(prev => ({ ...prev, minEarnings: e.target.value ? Number(e.target.value) : null }))}
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium mb-1 block">Max Earnings</label>
+            <Input
+              type="number"
+              placeholder="10000"
+              value={filters.maxEarnings || ''}
+              onChange={(e) => setFilters(prev => ({ ...prev, maxEarnings: e.target.value ? Number(e.target.value) : null }))}
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium mb-1 block">Performance</label>
+            <Select value={filters.performanceRange} onValueChange={(value) => setFilters(prev => ({ ...prev, performanceRange: value as any }))}>
+              <SelectTrigger>
+                <SelectValue placeholder="Performance Range" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="excellent">Excellent (80%+)</SelectItem>
+                <SelectItem value="good">Good (60-79%)</SelectItem>
+                <SelectItem value="poor">Poor (&lt;60%)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="text-sm font-medium mb-1 block">Date Range</label>
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <Input
+                  type="date"
+                  value={filters.dateRange.from || ''}
+                  onChange={(e) => setFilters(prev => ({ ...prev, dateRange: { ...prev.dateRange, from: e.target.value || null } }))}
+                />
+              </div>
+              <div className="flex-1">
+                <Input
+                  type="date"
+                  value={filters.dateRange.to || ''}
+                  onChange={(e) => setFilters(prev => ({ ...prev, dateRange: { ...prev.dateRange, to: e.target.value || null } }))}
+                />
+              </div>
+            </div>
+          </div>
+          <div className="flex items-end">
+            <Button 
+              variant="outline" 
+              onClick={() => setFilters({
+                minEarnings: null,
+                maxEarnings: null,
+                performanceRange: 'all',
+                dateRange: { from: null, to: null }
+              })}
+              className="w-full"
+            >
+              Clear Filters
             </Button>
           </div>
         </div>
@@ -726,11 +1406,153 @@ export default function CollectorsPage() {
           </CardContent>
         </Card>
 
+        {/* Add pagination controls */}
+        {renderPagination()}
       </div>
     );
   };
 
-  // Export collector data to CSV
+  // Payment History Modal Component
+  const renderPaymentHistoryModal = () => {
+    if (!showHistoryModal || !selectedCollector) return null;
+    
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <Card className="w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5" />
+                Payment History for {selectedCollector.name}
+              </CardTitle>
+              <CardDescription>
+                Detailed collection history and payment status
+              </CardDescription>
+            </div>
+            <Button 
+              variant="ghost" 
+              size="sm"
+              onClick={() => setShowHistoryModal(false)}
+            >
+              Close
+            </Button>
+          </CardHeader>
+          <CardContent className="flex-1 overflow-auto">
+            {historyLoading ? (
+              <div className="flex items-center justify-center h-32">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm">Total Collections</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">{selectedCollector.totalCollections}</div>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm">Total Liters</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">{selectedCollector.totalLiters?.toFixed(0)}</div>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm">Gross Earnings</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold text-blue-600">{formatCurrency(selectedCollector.totalEarnings)}</div>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm">Net Earnings</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold text-green-600">{formatCurrency(selectedCollector.totalEarnings - selectedCollector.totalPenalties)}</div>
+                    </CardContent>
+                  </Card>
+                </div>
+                
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead className="text-right">Liters</TableHead>
+                      <TableHead className="text-right">Rate</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead className="text-right">Variance %</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Payment Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {paymentHistory.map((collection) => (
+                      <TableRow key={collection.id}>
+                        <TableCell>
+                          {new Date(collection.collection_date).toLocaleDateString()}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {collection.liters?.toFixed(2)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {collection.liters && collection.liters > 0 && collection.total_amount ? formatCurrency(collection.total_amount / collection.liters) : 'N/A'}
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          {formatCurrency(collection.total_amount)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {collection.variance_percentage ? `${collection.variance_percentage.toFixed(2)}%` : 'N/A'}
+                        </TableCell>
+                        <TableCell>
+                          <Badge 
+                            variant={collection.status === 'Collected' ? 'default' : 'secondary'}
+                            className="text-xs"
+                          >
+                            {collection.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge 
+                            variant={collection.collection_fee_status === 'paid' ? 'default' : 'secondary'}
+                            className={collection.collection_fee_status === 'paid' ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'}
+                          >
+                            {collection.collection_fee_status === 'paid' ? 'Paid' : 'Pending'}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                
+                {paymentHistory.length === 0 && (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>No collection history found for this collector</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+          <div className="p-4 border-t bg-gray-50 flex justify-end">
+            <Button 
+              onClick={() => setShowHistoryModal(false)}
+              variant="outline"
+            >
+              Close
+            </Button>
+          </div>
+        </Card>
+      </div>
+    );
+  };
+
+  // Export collector data to multiple formats
   const exportPaymentsToCSV = () => {
     try {
       const headers = ['Collector Name', 'Total Collections', 'Total Liters', 'Rate Per Liter', 'Gross Earnings', 'Total Penalties', 'Pending Amount', 'Paid Amount'];
@@ -763,18 +1585,145 @@ export default function CollectorsPage() {
       success('Success', 'Collector data exported successfully');
     } catch (error) {
       console.error('Error exporting collector data:', error);
-      error('Error', 'Failed to export collector data');
+      showError('Error', 'Failed to export collector data');
     }
   };
 
-  // Update the analytics tab to include the variance vs earnings chart
+  // Enhanced export with multiple formats
+  const exportData = async (format: 'csv' | 'excel' | 'pdf') => {
+    try {
+      // Fetch complete data for export (not just visible)
+      const { data: allCollectors, error: fetchError } = await supabase
+        .from('staff')
+        .select(`
+          id,
+          profiles!inner (full_name),
+          collections (
+            collection_date,
+            liters,
+            collection_fee_amount,
+            collection_fee_status,
+            variance_percentage
+          )
+        `)
+        .eq('role', 'collector');
+
+      if (fetchError) {
+        console.error('Error fetching collector data:', fetchError);
+        // Use the error function from useToastNotifications hook
+        try {
+          showError('Error', `Failed to fetch collector data for export: ${fetchError.message || 'Unknown error'}`);
+        } catch (toastError) {
+          console.error('Error showing toast notification:', toastError);
+          // Fallback to alert if toast fails
+          alert(`Error: Failed to fetch collector data for export: ${fetchError.message || 'Unknown error'}`);
+        }
+        return;
+      }
+
+      // Ensure we have data to work with
+      const collectorsData = allCollectors || [];
+
+      // Check if we have data
+      if (collectorsData.length === 0) {
+        // Use the error function from useToastNotifications hook
+        try {
+          showError('Error', 'No collector data found to export');
+        } catch (toastError) {
+          console.error('Error showing toast notification:', toastError);
+          // Fallback to alert if toast fails
+          alert('Error: No collector data found to export');
+        }
+        return;
+      }
+
+      if (format === 'excel') {
+        // Use XLSX library for Excel export
+        const XLSX = await import('xlsx');
+        
+        const worksheet = XLSX.utils.json_to_sheet(
+          collectorsData.map((c: any) => {
+            // Ensure collections is an array
+            const collections = Array.isArray(c.collections) ? c.collections : [];
+            
+            return {
+              'Collector': c.profiles?.full_name || 'Unknown Collector',
+              'Total Collections': collections.length || 0,
+              'Total Liters': collections.reduce((sum: number, col: any) => sum + (col.liters || 0), 0).toFixed(2) || '0.00',
+              'Gross Earnings': formatCurrency(collections.reduce((sum: number, col: any) => sum + (col.collection_fee_amount || 0), 0) || 0),
+              'Penalties': formatCurrency(collections.filter((col: any) => col.collection_fee_status === 'paid').reduce((sum: number, col: any) => sum + (col.collection_fee_amount || 0), 0) || 0),
+              'Net Earnings': formatCurrency((collections.reduce((sum: number, col: any) => sum + (col.collection_fee_amount || 0), 0) || 0) - (collections.filter((col: any) => col.collection_fee_status === 'paid').reduce((sum: number, col: any) => sum + (col.collection_fee_amount || 0), 0) || 0)),
+              'Performance': ((collections.length || 0) > 0 ? 100 - ((collections.filter((col: any) => col.variance_percentage && Math.abs(col.variance_percentage) > 5).length || 0) / (collections.length || 1)) * 100 : 0).toFixed(0) + '%'
+            };
+          })
+        );
+        
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Collectors');
+        XLSX.writeFile(workbook, `collectors_${new Date().toISOString().split('T')[0]}.xlsx`);
+      } else if (format === 'csv') {
+        exportPaymentsToCSV();
+        return;
+      } else if (format === 'pdf') {
+        // For PDF export, we'll create a simple CSV-like format for now
+        // In a full implementation, we would use a library like jsPDF
+        const headers = ['Collector Name', 'Total Collections', 'Total Liters', 'Gross Earnings', 'Penalties', 'Net Earnings', 'Performance'];
+        const rows = collectorsData.map((c: any) => {
+          // Ensure collections is an array
+          const collections = Array.isArray(c.collections) ? c.collections : [];
+          
+          return [
+            c.profiles?.full_name || 'Unknown Collector',
+            collections.length || 0,
+            collections.reduce((sum: number, col: any) => sum + (col.liters || 0), 0).toFixed(2) || '0.00',
+            formatCurrency(collections.reduce((sum: number, col: any) => sum + (col.collection_fee_amount || 0), 0) || 0),
+            formatCurrency(collections.filter((col: any) => col.collection_fee_status === 'paid').reduce((sum: number, col: any) => sum + (col.collection_fee_amount || 0), 0) || 0),
+            formatCurrency((collections.reduce((sum: number, col: any) => sum + (col.collection_fee_amount || 0), 0) || 0) - (collections.filter((col: any) => col.collection_fee_status === 'paid').reduce((sum: number, col: any) => sum + (col.collection_fee_amount || 0), 0) || 0)),
+            (collections.length || 0) > 0 ? 100 - ((collections.filter((col: any) => col.variance_percentage && Math.abs(col.variance_percentage) > 5).length || 0) / (collections.length || 1)) * 100 : 0 + '%'
+          ];
+        });
+        
+        const csvContent = [
+          headers.join(','),
+          ...rows.map(row => row.join(','))
+        ].join('\n');
+        
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        link.setAttribute('download', `collectors_${new Date().toISOString().split('T')[0]}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+      
+      success('Success', `Collector data exported as ${format.toUpperCase()} successfully`);
+    } catch (exportError: any) {
+      console.error('Error exporting collector data:', exportError);
+      // Use the error function from useToastNotifications hook
+      try {
+        showError('Error', `Failed to export collector data as ${format.toUpperCase()}: ${exportError.message || 'Unknown error'}`);
+      } catch (toastError) {
+        console.error('Error showing toast notification:', toastError);
+        // Fallback to alert if toast fails
+        alert(`Error: Failed to export collector data as ${format.toUpperCase()}: ${exportError.message || 'Unknown error'}`);
+      }
+    }
+  };
+
+  // Update the analytics tab to include enhanced analytics and visualizations
   const renderAnalyticsTab = () => {
-    // Prepare data for the chart
+    // Prepare data for the charts
     const chartData = collectors.map(collector => ({
       period: collector.name || 'Unknown Collector',
       variance: collector.totalPenalties, // Using penalties as a proxy for variance
       earnings: collector.totalEarnings - collector.totalPenalties,
-      collector: collector.name || 'Unknown Collector'
+      collector: collector.name || 'Unknown Collector',
+      collections: collector.totalCollections,
+      liters: collector.totalLiters,
+      performance: collector.performanceScore
     }));
 
     // Prepare data for payment status distribution chart
@@ -787,13 +1736,93 @@ export default function CollectorsPage() {
     const topCollectorsData = collectors
       .map(collector => ({
         name: collector.name || 'Unknown Collector',
-        earnings: collector.totalEarnings - collector.totalPenalties
+        earnings: collector.totalEarnings - collector.totalPenalties,
+        collections: collector.totalCollections,
+        liters: collector.totalLiters,
+        performance: collector.performanceScore
       }))
       .sort((a, b) => b.earnings - a.earnings)
       .slice(0, 10);
 
+    // Prepare data for performance score distribution
+    const performanceDistributionData = [
+      { name: 'Excellent (80%+)', value: collectors.filter(c => c.performanceScore >= 80).length },
+      { name: 'Good (60-79%)', value: collectors.filter(c => c.performanceScore >= 60 && c.performanceScore < 80).length },
+      { name: 'Poor (<60%)', value: collectors.filter(c => c.performanceScore < 60).length }
+    ];
+
+    // Calculate additional metrics
+    const avgCollectionsPerCollector = stats.totalCollectors > 0 ? 
+      Math.round((collectors.reduce((sum, c) => sum + c.totalCollections, 0) / stats.totalCollectors)) : 0;
+    
+    const avgLitersPerCollector = stats.totalCollectors > 0 ? 
+      Math.round(collectors.reduce((sum, c) => sum + c.totalLiters, 0) / stats.totalCollectors) : 0;
+    
+    const bestPerformanceScore = collectors.length > 0 ? 
+      Math.max(...collectors.map(c => c.performanceScore)) : 0;
+
     return (
       <div className="space-y-6">
+
+        {/* Enhanced KPI Metrics */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {/* Total Collectors */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Collectors</CardTitle>
+              <Users className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {stats.totalCollectors}
+              </div>
+              <p className="text-xs text-muted-foreground">Active collectors</p>
+            </CardContent>
+          </Card>
+
+          {/* Avg Collections per Collector */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Avg Collections</CardTitle>
+              <BarChart3 className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {avgCollectionsPerCollector}
+              </div>
+              <p className="text-xs text-muted-foreground">Per collector</p>
+            </CardContent>
+          </Card>
+
+          {/* Avg Liters per Collector */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Avg Liters</CardTitle>
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {avgLitersPerCollector.toLocaleString()}
+              </div>
+              <p className="text-xs text-muted-foreground">Per collector</p>
+            </CardContent>
+          </Card>
+
+          {/* Best Performance Score */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Best Performance</CardTitle>
+              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {bestPerformanceScore.toFixed(0)}%
+              </div>
+              <p className="text-xs text-muted-foreground">Top collector score</p>
+            </CardContent>
+          </Card>
+        </div>
+
         {/* Performance Charts */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Variance vs Earnings Chart - Dual Axis */}
@@ -801,10 +1830,10 @@ export default function CollectorsPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <BarChart3 className="h-5 w-5" />
-                Variance vs Earnings
+                Collector Performance Overview
               </CardTitle>
               <CardDescription>
-                Comparison of penalties (variance) and net earnings over time
+                Comparison of penalties and net earnings by collector
               </CardDescription>
             </CardHeader>
             <CardContent className="h-80">
@@ -840,11 +1869,15 @@ export default function CollectorsPage() {
                       tickFormatter={(value) => `Ksh${value.toLocaleString()}`}
                     />
                     <Tooltip 
-                      formatter={(value, name) => [
-                        `Ksh${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-                        name === 'variance' ? 'Penalties' : 'Net Earnings'
-                      ]}
-                      labelFormatter={(label) => `Period: ${label}`}
+                      formatter={(value, name) => {
+                        if (name === 'variance') {
+                          return [`Ksh${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 'Penalties'];
+                        } else if (name === 'earnings') {
+                          return [`Ksh${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 'Net Earnings'];
+                        }
+                        return [value, name];
+                      }}
+                      labelFormatter={(label) => `Collector: ${label}`}
                     />
                     <Legend />
                     <Bar 
@@ -908,7 +1941,12 @@ export default function CollectorsPage() {
                       tick={{ fontSize: 12 }}
                     />
                     <Tooltip 
-                      formatter={(value) => [`Ksh${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 'Net Earnings']}
+                      formatter={(value, name) => {
+                        if (name === 'earnings') {
+                          return [`Ksh${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 'Net Earnings'];
+                        }
+                        return [value, name];
+                      }}
                     />
                     <Legend />
                     <Bar 
@@ -927,45 +1965,48 @@ export default function CollectorsPage() {
             </CardContent>
           </Card>
 
-          {/* Payment Status Distribution Chart */}
+          {/* Performance Score Distribution */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <PieChart className="h-5 w-5" />
-                Payment Status Distribution
+                Performance Score Distribution
               </CardTitle>
               <CardDescription>
-                Distribution of payments by status
+                Distribution of collectors by performance rating
               </CardDescription>
             </CardHeader>
             <CardContent className="h-80">
-              {statusDistributionData.some(item => item.value > 0) ? (
+              {performanceDistributionData.some(item => item.value > 0) ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart
-                    data={statusDistributionData}
-                    margin={{
-                      top: 20,
-                      right: 30,
-                      left: 20,
-                      bottom: 20,
-                    }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis />
-                    <Tooltip />
+                  <RechartsPieChart>
+                    <Pie
+                      data={performanceDistributionData}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={true}
+                      outerRadius={80}
+                      fill="#8884d8"
+                      dataKey="value"
+                      label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                    >
+                      {performanceDistributionData.map((entry, index) => (
+                        <Cell 
+                          key={`cell-${index}`} 
+                          fill={
+                            entry.name.includes('Excellent') ? '#10b981' : 
+                            entry.name.includes('Good') ? '#f59e0b' : '#ef4444'
+                          } 
+                        />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(value) => [value, 'Collectors']} />
                     <Legend />
-                    <Bar 
-                      dataKey="value" 
-                      name="Count" 
-                      fill="#3b82f6" 
-                      barSize={40}
-                    />
-                  </ComposedChart>
+                  </RechartsPieChart>
                 </ResponsiveContainer>
               ) : (
                 <div className="flex items-center justify-center h-full text-muted-foreground">
-                  No data available
+                  No performance data available
                 </div>
               )}
             </CardContent>
@@ -1020,7 +2061,8 @@ export default function CollectorsPage() {
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold text-center">
-                {stats.totalCollectors > 0 ? ((stats.totalPaidAmount / (stats.totalPendingAmount + stats.totalPaidAmount)) * 100).toFixed(1) : '0.0'}%
+                {stats.totalCollectors > 0 && (stats.totalPendingAmount + stats.totalPaidAmount) > 0 ? 
+                  ((stats.totalPaidAmount / (stats.totalPendingAmount + stats.totalPaidAmount)) * 100).toFixed(1) : '0.0'}%
               </div>
               <p className="text-sm text-muted-foreground text-center mt-2">
                 Percentage of payments processed
@@ -1054,11 +2096,64 @@ export default function CollectorsPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Collector Comparison Table */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              Collector Comparison
+            </CardTitle>
+            <CardDescription>
+              Detailed performance metrics for all collectors
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Collector</TableHead>
+                    <TableHead className="text-right">Collections</TableHead>
+                    <TableHead className="text-right">Liters</TableHead>
+                    <TableHead className="text-right">Gross Earnings</TableHead>
+                    <TableHead className="text-right">Penalties</TableHead>
+                    <TableHead className="text-right">Net Earnings</TableHead>
+                    <TableHead className="text-right">Performance</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {collectors.map((collector) => (
+                    <TableRow key={collector.id}>
+                      <TableCell className="font-medium max-w-[150px] truncate">{collector.name}</TableCell>
+                      <TableCell className="text-right">{collector.totalCollections}</TableCell>
+                      <TableCell className="text-right">{collector.totalLiters?.toFixed(0)}</TableCell>
+                      <TableCell className="text-right">{formatCurrency(collector.totalEarnings)}</TableCell>
+                      <TableCell className="text-right text-red-600">{formatCurrency(collector.totalPenalties)}</TableCell>
+                      <TableCell className="text-right font-bold">
+                        {formatCurrency(collector.totalEarnings - collector.totalPenalties)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Badge 
+                          variant={collector.performanceScore >= 80 ? 'default' : 
+                                 collector.performanceScore >= 60 ? 'secondary' : 'destructive'}
+                          className="text-xs"
+                        >
+                          {collector.performanceScore.toFixed(0)}%
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   };
 
-  // Create a new function to render the penalty analytics tab
+  // Create an enhanced function to render the penalty analytics tab
   const renderPenaltyAnalyticsTab = () => {
     if (penaltyAnalyticsLoading) {
       return (
@@ -1079,10 +2174,16 @@ export default function CollectorsPage() {
 
     // Prepare data for charts
     const penaltyBreakdownData = [
-      { name: 'Positive Variance', value: penaltyAnalytics.overallPenaltyStats.avgPenaltyPerCollector > 0 ? 
-        (penaltyAnalytics.collectorPenaltyData.reduce((sum, c) => sum + c.penaltyBreakdown.positiveVariancePenalties, 0) / penaltyAnalytics.collectorPenaltyData.length) : 0 },
-      { name: 'Negative Variance', value: penaltyAnalytics.overallPenaltyStats.avgPenaltyPerCollector > 0 ? 
-        (penaltyAnalytics.collectorPenaltyData.reduce((sum, c) => sum + c.penaltyBreakdown.negativeVariancePenalties, 0) / penaltyAnalytics.collectorPenaltyData.length) : 0 }
+      { 
+        name: 'Positive Variance', 
+        value: penaltyAnalytics.overallPenaltyStats.avgPenaltyPerCollector > 0 ? 
+          (penaltyAnalytics.collectorPenaltyData.reduce((sum, c) => sum + c.penaltyBreakdown.positiveVariancePenalties, 0) / penaltyAnalytics.collectorPenaltyData.length) : 0 
+      },
+      { 
+        name: 'Negative Variance', 
+        value: penaltyAnalytics.overallPenaltyStats.avgPenaltyPerCollector > 0 ? 
+          (penaltyAnalytics.collectorPenaltyData.reduce((sum, c) => sum + c.penaltyBreakdown.negativeVariancePenalties, 0) / penaltyAnalytics.collectorPenaltyData.length) : 0 
+      }
     ];
 
     const COLORS = ['#ef4444', '#3b82f6'];
@@ -1093,13 +2194,39 @@ export default function CollectorsPage() {
       .slice(0, 5)
       .map(collector => ({
         name: collector.collectorName,
-        penalties: collector.totalPenalties
+        penalties: collector.totalPenalties,
+        positive: collector.penaltyBreakdown.positiveVariancePenalties,
+        negative: collector.penaltyBreakdown.negativeVariancePenalties
       }));
+
+    // Prepare data for penalty trend analysis
+    // Aggregate penalty trends across all collectors
+    const aggregatedPenaltyTrend = penaltyAnalytics.collectorPenaltyData
+      .flatMap(c => c.penaltyTrend)
+      .reduce((acc, curr) => {
+        const existing = acc.find(item => item.date === curr.date);
+        if (existing) {
+          existing.penalties += curr.penalties;
+        } else {
+          acc.push({ ...curr });
+        }
+        return acc;
+      }, [] as { date: string; penalties: number }[])
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    // Calculate additional metrics
+    const highPenaltyCollectors = penaltyAnalytics.collectorPenaltyData
+      .filter(c => c.totalPenalties > penaltyAnalytics.overallPenaltyStats.avgPenaltyPerCollector)
+      .length;
+
+    const lowPenaltyCollectors = penaltyAnalytics.collectorPenaltyData
+      .filter(c => c.totalPenalties < penaltyAnalytics.overallPenaltyStats.avgPenaltyPerCollector * 0.5)
+      .length;
 
     return (
       <div className="space-y-6">
-        {/* Penalty Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        {/* Enhanced Penalty Summary Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Penalties</CardTitle>
@@ -1128,35 +2255,100 @@ export default function CollectorsPage() {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Highest Penalty Collector</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium">High Penalty Collectors</CardTitle>
+              <AlertTriangle className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-lg font-bold truncate">
-                {penaltyAnalytics.overallPenaltyStats.highestPenaltyCollector || 'N/A'}
+              <div className="text-2xl font-bold text-red-600">
+                {highPenaltyCollectors}
               </div>
-              <div className="text-lg font-bold text-red-600">
-                {formatCurrency(penaltyAnalytics.overallPenaltyStats.highestPenaltyAmount)}
-              </div>
+              <p className="text-xs text-muted-foreground">Above average penalties</p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Collectors</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium">Low Penalty Collectors</CardTitle>
+              <TrendingUp className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
-                {penaltyAnalytics.collectorPenaltyData.length}
+              <div className="text-2xl font-bold text-green-600">
+                {lowPenaltyCollectors}
               </div>
-              <p className="text-xs text-muted-foreground">Active collectors</p>
+              <p className="text-xs text-muted-foreground">Below 50% of average</p>
             </CardContent>
           </Card>
         </div>
 
-        {/* Penalty Charts */}
+        {/* Enhanced Penalty Charts */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Penalty Trend Analysis */}
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <BarChart3 className="h-5 w-5" />
+                Penalty Trend Analysis
+              </CardTitle>
+              <CardDescription>
+                Total penalties over time across all collectors
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="h-80">
+              {aggregatedPenaltyTrend.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart
+                    data={aggregatedPenaltyTrend}
+                    margin={{
+                      top: 20,
+                      right: 30,
+                      left: 20,
+                      bottom: 60,
+                    }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis 
+                      dataKey="date" 
+                      angle={-45} 
+                      textAnchor="end" 
+                      height={60}
+                      tick={{ fontSize: 12 }}
+                      tickFormatter={(value) => new Date(value).toLocaleDateString()}
+                    />
+                    <YAxis 
+                      orientation="left" 
+                      stroke="#ef4444" 
+                      tickFormatter={(value) => `Ksh${value.toLocaleString()}`}
+                    />
+                    <Tooltip 
+                      formatter={(value) => [`Ksh${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 'Penalties']}
+                      labelFormatter={(label) => `Date: ${new Date(label).toLocaleDateString()}`}
+                    />
+                    <Legend />
+                    <Bar 
+                      dataKey="penalties" 
+                      name="Daily Penalties" 
+                      fill="#ef4444" 
+                      opacity={0.7}
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="penalties" 
+                      name="Trend" 
+                      stroke="#10b981" 
+                      strokeWidth={2}
+                      dot={{ r: 4 }}
+                      activeDot={{ r: 6 }}
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-full text-muted-foreground">
+                  No penalty trend data available
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           {/* Penalty Breakdown Pie Chart */}
           <Card>
             <CardHeader>
@@ -1176,14 +2368,17 @@ export default function CollectorsPage() {
                       data={penaltyBreakdownData}
                       cx="50%"
                       cy="50%"
-                      labelLine={false}
+                      labelLine={true}
                       outerRadius={80}
                       fill="#8884d8"
                       dataKey="value"
                       label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
                     >
                       {penaltyBreakdownData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        <Cell 
+                          key={`cell-${index}`} 
+                          fill={entry.name.includes('Positive') ? '#ef4444' : '#3b82f6'} 
+                        />
                       ))}
                     </Pie>
                     <Tooltip formatter={(value) => [formatCurrency(Number(value)), 'Amount']} />
@@ -1198,7 +2393,7 @@ export default function CollectorsPage() {
             </CardContent>
           </Card>
 
-          {/* Top Penalty Collectors */}
+          {/* Top Penalty Collectors with Breakdown */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -1206,7 +2401,7 @@ export default function CollectorsPage() {
                 Top Penalty Collectors
               </CardTitle>
               <CardDescription>
-                Collectors with highest penalties
+                Collectors with highest penalties (with breakdown)
               </CardDescription>
             </CardHeader>
             <CardContent className="h-80">
@@ -1218,7 +2413,7 @@ export default function CollectorsPage() {
                     margin={{
                       top: 20,
                       right: 30,
-                      left: 100,
+                      left: 120,
                       bottom: 5,
                     }}
                   >
@@ -1228,18 +2423,33 @@ export default function CollectorsPage() {
                       type="category" 
                       dataKey="name" 
                       scale="band" 
-                      width={90}
-                      tick={{ fontSize: 12 }}
+                      width={110}
+                      tick={{ fontSize: 10 }}
                     />
                     <Tooltip 
-                      formatter={(value) => [formatCurrency(Number(value)), 'Penalties']}
+                      formatter={(value, name) => {
+                        if (name === 'penalties') {
+                          return [formatCurrency(Number(value)), 'Total Penalties'];
+                        } else if (name === 'positive') {
+                          return [formatCurrency(Number(value)), 'Positive Variance'];
+                        } else if (name === 'negative') {
+                          return [formatCurrency(Number(value)), 'Negative Variance'];
+                        }
+                        return [value, name];
+                      }}
                     />
                     <Legend />
                     <Bar 
-                      dataKey="penalties" 
-                      name="Penalties" 
+                      dataKey="positive" 
+                      name="Positive Variance" 
                       fill="#ef4444" 
-                      barSize={20}
+                      stackId="a"
+                    />
+                    <Bar 
+                      dataKey="negative" 
+                      name="Negative Variance" 
+                      fill="#3b82f6" 
+                      stackId="a"
                     />
                   </ComposedChart>
                 </ResponsiveContainer>
@@ -1252,122 +2462,192 @@ export default function CollectorsPage() {
           </Card>
         </div>
 
-        {/* Collector-Specific Penalty Details */}
+        {/* Collector-Specific Penalty Details with Enhanced Insights */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <FileBarChart className="h-5 w-5" />
-              Collector Penalty Details
+              Collector Penalty Analysis
             </CardTitle>
             <CardDescription>
-              Detailed penalty information for each collector
+              Detailed penalty information and performance insights for each collector
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Collector</TableHead>
-                  <TableHead className="text-right">Total Penalties</TableHead>
-                  <TableHead className="text-right">Positive Variance Penalties</TableHead>
-                  <TableHead className="text-right">Negative Variance Penalties</TableHead>
-                  <TableHead className="text-right">Positive Variances</TableHead>
-                  <TableHead className="text-right">Negative Variances</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {penaltyAnalytics.collectorPenaltyData.map((collector) => (
-                  <TableRow key={collector.collectorId}>
-                    <TableCell className="font-medium">{collector.collectorName}</TableCell>
-                    <TableCell className="text-right font-bold text-red-600">
-                      {formatCurrency(collector.totalPenalties)}
-                    </TableCell>
-                    <TableCell className="text-right text-red-600">
-                      {formatCurrency(collector.penaltyBreakdown.positiveVariancePenalties)}
-                    </TableCell>
-                    <TableCell className="text-right text-red-600">
-                      {formatCurrency(collector.penaltyBreakdown.negativeVariancePenalties)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {collector.penaltyBreakdown.totalPositiveVariances}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {collector.penaltyBreakdown.totalNegativeVariances}
-                    </TableCell>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Collector</TableHead>
+                    <TableHead className="text-right">Total Penalties</TableHead>
+                    <TableHead className="text-right">Positive Penalties</TableHead>
+                    <TableHead className="text-right">Negative Penalties</TableHead>
+                    <TableHead className="text-right">Positive Variances</TableHead>
+                    <TableHead className="text-right">Negative Variances</TableHead>
+                    <TableHead className="text-right">Penalty Ratio</TableHead>
+                    <TableHead className="text-right">Performance Impact</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {penaltyAnalytics.collectorPenaltyData.map((collector) => {
+                    const totalVariances = collector.penaltyBreakdown.totalPositiveVariances + collector.penaltyBreakdown.totalNegativeVariances;
+                    const penaltyRatio = totalVariances > 0 ? 
+                      ((collector.totalPenalties / totalVariances) * 100).toFixed(1) : '0.0';
+                    
+                    return (
+                      <TableRow key={collector.collectorId}>
+                        <TableCell className="font-medium max-w-[150px] truncate">{collector.collectorName}</TableCell>
+                        <TableCell className="text-right font-bold text-red-600">
+                          {formatCurrency(collector.totalPenalties)}
+                        </TableCell>
+                        <TableCell className="text-right text-red-600">
+                          {formatCurrency(collector.penaltyBreakdown.positiveVariancePenalties)}
+                        </TableCell>
+                        <TableCell className="text-right text-red-600">
+                          {formatCurrency(collector.penaltyBreakdown.negativeVariancePenalties)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {collector.penaltyBreakdown.totalPositiveVariances}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {collector.penaltyBreakdown.totalNegativeVariances}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {penaltyRatio}%
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Badge 
+                            variant={collector.totalPenalties > penaltyAnalytics.overallPenaltyStats.avgPenaltyPerCollector ? 'destructive' : 
+                                   collector.totalPenalties < penaltyAnalytics.overallPenaltyStats.avgPenaltyPerCollector * 0.5 ? 'default' : 'secondary'}
+                            className="text-xs"
+                          >
+                            {collector.totalPenalties > penaltyAnalytics.overallPenaltyStats.avgPenaltyPerCollector ? 'High' : 
+                             collector.totalPenalties < penaltyAnalytics.overallPenaltyStats.avgPenaltyPerCollector * 0.5 ? 'Low' : 'Average'}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
 
-        {/* Recent Penalties */}
+        {/* Recent Penalties with Enhanced Details */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Clock className="h-5 w-5" />
-              Recent Penalties
+              Recent Penalty Records
             </CardTitle>
             <CardDescription>
-              Most recent penalty records across all collectors
+              Most recent penalty records across all collectors with detailed information
             </CardDescription>
           </CardHeader>
           <CardContent>
             {penaltyAnalytics.collectorPenaltyData.some(c => c.recentPenalties.length > 0) ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Collector</TableHead>
-                    <TableHead>Variance Type</TableHead>
-                    <TableHead className="text-right">Variance %</TableHead>
-                    <TableHead className="text-right">Penalty Amount</TableHead>
-                    <TableHead>Notes</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {penaltyAnalytics.collectorPenaltyData.flatMap(collector => 
-                    collector.recentPenalties.map((penalty, index) => (
-                      <TableRow key={`${collector.collectorId}-${index}`}>
-                        <TableCell>
-                          {penalty.collection_date ? new Date(penalty.collection_date).toLocaleDateString() : 
-                           penalty.approved_at ? new Date(penalty.approved_at).toLocaleDateString() : 'N/A'}
-                        </TableCell>
-                        <TableCell>{collector.collectorName}</TableCell>
-                        <TableCell>
-                          <Badge 
-                            variant={penalty.variance_type === 'positive' ? 'default' : 
-                                   penalty.variance_type === 'negative' ? 'destructive' : 'secondary'}
-                            className={penalty.variance_type === 'positive' ? 'bg-blue-100 text-blue-800' : 
-                                      penalty.variance_type === 'negative' ? 'bg-red-100 text-red-800' : ''}
-                          >
-                            {penalty.variance_type || 'None'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {penalty.variance_percentage ? `${penalty.variance_percentage.toFixed(2)}%` : 'N/A'}
-                        </TableCell>
-                        <TableCell className="text-right font-bold text-red-600">
-                          {formatCurrency(penalty.total_penalty_amount || penalty.penalty_amount || 0)}
-                        </TableCell>
-                        <TableCell className="max-w-xs truncate">
-                          {penalty.notes || penalty.approval_notes || 'N/A'}
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  ).sort((a, b) => {
-                    // Sort by date descending
-                    const dateA = a.props.children[0].props.children;
-                    const dateB = b.props.children[0].props.children;
-                    return new Date(dateB).getTime() - new Date(dateA).getTime();
-                  }).slice(0, 10)}
-                </TableBody>
-              </Table>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Collector</TableHead>
+                      <TableHead>Variance Type</TableHead>
+                      <TableHead className="text-right">Variance %</TableHead>
+                      <TableHead className="text-right">Variance Liters</TableHead>
+                      <TableHead className="text-right">Penalty Amount</TableHead>
+                      <TableHead>Notes</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {penaltyAnalytics.collectorPenaltyData.flatMap(collector => 
+                      collector.recentPenalties.map((penalty, index) => (
+                        <TableRow key={`${collector.collectorId}-${index}`}>
+                          <TableCell>
+                            {penalty.collection_date ? new Date(penalty.collection_date).toLocaleDateString() : 
+                             penalty.approved_at ? new Date(penalty.approved_at).toLocaleDateString() : 'N/A'}
+                          </TableCell>
+                          <TableCell className="max-w-[120px] truncate">{collector.collectorName}</TableCell>
+                          <TableCell>
+                            <Badge 
+                              variant={penalty.variance_type === 'positive' ? 'default' : 
+                                     penalty.variance_type === 'negative' ? 'destructive' : 'secondary'}
+                              className={penalty.variance_type === 'positive' ? 'bg-blue-100 text-blue-800' : 
+                                        penalty.variance_type === 'negative' ? 'bg-red-100 text-red-800' : ''}
+                            >
+                              {penalty.variance_type || 'None'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {penalty.variance_percentage ? `${penalty.variance_percentage.toFixed(2)}%` : 'N/A'}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {penalty.variance_liters ? penalty.variance_liters.toFixed(2) : 'N/A'}
+                          </TableCell>
+                          <TableCell className="text-right font-bold text-red-600">
+                            {formatCurrency(penalty.total_penalty_amount || penalty.penalty_amount || 0)}
+                          </TableCell>
+                          <TableCell className="max-w-xs truncate">
+                            {penalty.notes || penalty.approval_notes || 'N/A'}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    ).sort((a, b) => {
+                      // Sort by date descending
+                      const dateA = a.props.children[0].props.children;
+                      const dateB = b.props.children[0].props.children;
+                      return new Date(dateB).getTime() - new Date(dateA).getTime();
+                    }).slice(0, 15)}
+                  </TableBody>
+                </Table>
+              </div>
             ) : (
               <div className="text-center py-8 text-muted-foreground">
                 No recent penalties found
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        {/* Actionable Insights */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              Actionable Insights
+            </CardTitle>
+            <CardDescription>
+              Recommendations based on penalty analysis
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="p-4 bg-blue-50 rounded-lg">
+                <h3 className="font-semibold text-blue-800 mb-2">Training Opportunities</h3>
+                <p className="text-sm text-blue-700">
+                  {highPenaltyCollectors > 0 ? 
+                    `${highPenaltyCollectors} collectors have above-average penalties and may benefit from additional training.` : 
+                    "Most collectors are performing within acceptable penalty ranges."}
+                </p>
+              </div>
+              <div className="p-4 bg-green-50 rounded-lg">
+                <h3 className="font-semibold text-green-800 mb-2">Recognition</h3>
+                <p className="text-sm text-green-700">
+                  {lowPenaltyCollectors > 0 ? 
+                    `${lowPenaltyCollectors} collectors have exceptionally low penalties and deserve recognition.` : 
+                    "Several collectors are demonstrating excellent performance with minimal penalties."}
+                </p>
+              </div>
+              <div className="p-4 bg-yellow-50 rounded-lg">
+                <h3 className="font-semibold text-yellow-800 mb-2">Process Improvement</h3>
+                <p className="text-sm text-yellow-700">
+                  {penaltyBreakdownData[0].value > penaltyBreakdownData[1].value ? 
+                    "Focus on reducing positive variance penalties through better collection practices." : 
+                    "Address negative variance penalties by improving accuracy in measurements."}
+                </p>
+              </div>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -1425,6 +2705,9 @@ export default function CollectorsPage() {
 
       {/* Penalty Analytics Tab - New functionality */}
       {activeTab === 'penalty-analytics' && renderPenaltyAnalyticsTab()}
+
+      {/* Payment History Modal */}
+      {renderPaymentHistoryModal()}
 
     </div>
   );
