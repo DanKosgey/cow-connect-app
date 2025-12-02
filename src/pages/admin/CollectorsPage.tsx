@@ -591,8 +591,6 @@ export default function CollectorsPage() {
           liters,
           total_amount,
           collection_fee_status,
-          variance_percentage,
-          variance_liters,
           status,
           approved_for_payment
         `)
@@ -1486,7 +1484,6 @@ export default function CollectorsPage() {
                       <TableHead className="text-right">Liters</TableHead>
                       <TableHead className="text-right">Rate</TableHead>
                       <TableHead className="text-right">Amount</TableHead>
-                      <TableHead className="text-right">Variance %</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Payment Status</TableHead>
                     </TableRow>
@@ -1505,9 +1502,6 @@ export default function CollectorsPage() {
                         </TableCell>
                         <TableCell className="text-right font-medium">
                           {formatCurrency(collection.total_amount)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {collection.variance_percentage ? `${collection.variance_percentage.toFixed(2)}%` : 'N/A'}
                         </TableCell>
                         <TableCell>
                           <Badge 
@@ -1602,8 +1596,7 @@ export default function CollectorsPage() {
             collection_date,
             liters,
             collection_fee_amount,
-            collection_fee_status,
-            variance_percentage
+            collection_fee_status
           )
         `)
         .eq('role', 'collector');
@@ -1653,7 +1646,7 @@ export default function CollectorsPage() {
               'Gross Earnings': formatCurrency(collections.reduce((sum: number, col: any) => sum + (col.collection_fee_amount || 0), 0) || 0),
               'Penalties': formatCurrency(collections.filter((col: any) => col.collection_fee_status === 'paid').reduce((sum: number, col: any) => sum + (col.collection_fee_amount || 0), 0) || 0),
               'Net Earnings': formatCurrency((collections.reduce((sum: number, col: any) => sum + (col.collection_fee_amount || 0), 0) || 0) - (collections.filter((col: any) => col.collection_fee_status === 'paid').reduce((sum: number, col: any) => sum + (col.collection_fee_amount || 0), 0) || 0)),
-              'Performance': ((collections.length || 0) > 0 ? 100 - ((collections.filter((col: any) => col.variance_percentage && Math.abs(col.variance_percentage) > 5).length || 0) / (collections.length || 1)) * 100 : 0).toFixed(0) + '%'
+              'Performance': ((collections.length || 0) > 0 ? (collections.filter((col: any) => col.collection_fee_status === 'paid').length / collections.length) * 100 : 0).toFixed(0) + '%'
             };
           })
         );
@@ -1679,7 +1672,7 @@ export default function CollectorsPage() {
             formatCurrency(collections.reduce((sum: number, col: any) => sum + (col.collection_fee_amount || 0), 0) || 0),
             formatCurrency(collections.filter((col: any) => col.collection_fee_status === 'paid').reduce((sum: number, col: any) => sum + (col.collection_fee_amount || 0), 0) || 0),
             formatCurrency((collections.reduce((sum: number, col: any) => sum + (col.collection_fee_amount || 0), 0) || 0) - (collections.filter((col: any) => col.collection_fee_status === 'paid').reduce((sum: number, col: any) => sum + (col.collection_fee_amount || 0), 0) || 0)),
-            (collections.length || 0) > 0 ? 100 - ((collections.filter((col: any) => col.variance_percentage && Math.abs(col.variance_percentage) > 5).length || 0) / (collections.length || 1)) * 100 : 0 + '%'
+            (collections.length || 0) > 0 ? (collections.filter((col: any) => col.collection_fee_status === 'paid').length / collections.length) * 100 : 0 + '%'
           ];
         });
         
@@ -1848,25 +1841,27 @@ export default function CollectorsPage() {
                       bottom: 60,
                     }}
                   >
-                    <CartesianGrid strokeDasharray="3 3" />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                     <XAxis 
                       dataKey="period" 
                       angle={-45} 
                       textAnchor="end" 
                       height={60}
-                      tick={{ fontSize: 12 }}
+                      tick={{ fontSize: 12, fill: '#6b7280' }}
                     />
                     <YAxis 
                       yAxisId="left" 
                       orientation="left" 
                       stroke="#ef4444" 
                       tickFormatter={(value) => `Ksh${value.toLocaleString()}`}
+                      tick={{ fill: '#6b7280' }}
                     />
                     <YAxis 
                       yAxisId="right" 
                       orientation="right" 
                       stroke="#10b981" 
                       tickFormatter={(value) => `Ksh${value.toLocaleString()}`}
+                      tick={{ fill: '#6b7280' }}
                     />
                     <Tooltip 
                       formatter={(value, name) => {
@@ -1878,14 +1873,18 @@ export default function CollectorsPage() {
                         return [value, name];
                       }}
                       labelFormatter={(label) => `Collector: ${label}`}
+                      contentStyle={{ backgroundColor: '#fff', borderRadius: '0.5rem', border: '1px solid #e5e7eb' }}
                     />
-                    <Legend />
+                    <Legend 
+                      wrapperStyle={{ paddingTop: '10px' }}
+                    />
                     <Bar 
                       yAxisId="left" 
                       dataKey="variance" 
                       name="Penalties" 
                       fill="#ef4444" 
                       opacity={0.7}
+                      radius={[4, 4, 0, 0]}
                     />
                     <Line 
                       yAxisId="right" 
@@ -1893,9 +1892,10 @@ export default function CollectorsPage() {
                       dataKey="earnings" 
                       name="Net Earnings" 
                       stroke="#10b981" 
-                      strokeWidth={2}
-                      dot={{ r: 4 }}
-                      activeDot={{ r: 6 }}
+                      strokeWidth={3}
+                      dot={{ r: 5, fill: '#10b981', strokeWidth: 2, stroke: '#fff' }}
+                      activeDot={{ r: 8, fill: '#10b981', stroke: '#fff', strokeWidth: 2 }}
+                      strokeLinecap="round"
                     />
                   </ComposedChart>
                 </ResponsiveContainer>
@@ -1931,14 +1931,18 @@ export default function CollectorsPage() {
                       bottom: 5,
                     }}
                   >
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis type="number" tickFormatter={(value) => `Ksh${value.toLocaleString()}`} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis 
+                      type="number" 
+                      tickFormatter={(value) => `Ksh${value.toLocaleString()}`}
+                      tick={{ fill: '#6b7280' }}
+                    />
                     <YAxis 
                       type="category" 
                       dataKey="name" 
                       scale="band" 
                       width={90}
-                      tick={{ fontSize: 12 }}
+                      tick={{ fontSize: 12, fill: '#6b7280' }}
                     />
                     <Tooltip 
                       formatter={(value, name) => {
@@ -1947,13 +1951,17 @@ export default function CollectorsPage() {
                         }
                         return [value, name];
                       }}
+                      contentStyle={{ backgroundColor: '#fff', borderRadius: '0.5rem', border: '1px solid #e5e7eb' }}
                     />
-                    <Legend />
+                    <Legend 
+                      wrapperStyle={{ paddingTop: '10px' }}
+                    />
                     <Bar 
                       dataKey="earnings" 
                       name="Net Earnings" 
                       fill="#8b5cf6" 
                       barSize={20}
+                      radius={[0, 4, 4, 0]}
                     />
                   </ComposedChart>
                 </ResponsiveContainer>
@@ -1989,6 +1997,8 @@ export default function CollectorsPage() {
                       fill="#8884d8"
                       dataKey="value"
                       label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                      stroke="#fff"
+                      strokeWidth={2}
                     >
                       {performanceDistributionData.map((entry, index) => (
                         <Cell 
@@ -2000,8 +2010,16 @@ export default function CollectorsPage() {
                         />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(value) => [value, 'Collectors']} />
-                    <Legend />
+                    <Tooltip 
+                      formatter={(value) => [value, 'Collectors']}
+                      contentStyle={{ backgroundColor: '#fff', borderRadius: '0.5rem', border: '1px solid #e5e7eb' }}
+                    />
+                    <Legend 
+                      layout="horizontal"
+                      verticalAlign="bottom"
+                      align="center"
+                      wrapperStyle={{ paddingTop: '20px' }}
+                    />
                   </RechartsPieChart>
                 </ResponsiveContainer>
               ) : (
