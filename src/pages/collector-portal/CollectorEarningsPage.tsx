@@ -8,9 +8,11 @@ import {
   Milk, 
   Calendar,
   FileText,
-  Info
+  Info,
+  AlertTriangle
 } from 'lucide-react';
 import { collectorEarningsService } from '@/services/collector-earnings-service';
+import { collectorPenaltyService } from '@/services/collector-penalty-service';
 import { formatCurrency } from '@/utils/formatters';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -34,6 +36,9 @@ interface EarningsData {
   totalLiters: number;
   ratePerLiter: number;
   totalEarnings: number;
+  totalPenalties: number;
+  pendingPayments: number;
+  paidPayments: number;
   periodStart: string;
   periodEnd: string;
 }
@@ -65,15 +70,36 @@ export default function CollectorEarningsPage() {
         
         // Get current month earnings
         const current = await collectorEarningsService.getEarningsSummary(staffId);
-        setCurrentEarnings(current);
         
-        // Get all-time earnings
+        // Get all-time earnings with penalties
         const allTime = await collectorEarningsService.getAllTimeEarnings(staffId);
-        setAllTimeEarnings(allTime);
         
-        // Get payment history
-        const history = await collectorEarningsService.getPaymentHistory(staffId);
-        setPaymentHistory(history);
+        // Get collector data with penalties
+        const collectorsData = await collectorEarningsService.getCollectorsWithEarningsAndPenalties();
+        const collectorData = collectorsData.find(c => c.id === staffId);
+        
+        // Combine earnings data with penalty information
+        const currentEarningsData = {
+          ...current,
+          totalPenalties: collectorData?.totalPenalties || 0,
+          pendingPayments: collectorData?.pendingPayments || 0,
+          paidPayments: collectorData?.paidPayments || 0
+        };
+        
+        const allTimeEarningsData = {
+          ...allTime,
+          totalPenalties: collectorData?.totalPenalties || 0,
+          pendingPayments: collectorData?.pendingPayments || 0,
+          paidPayments: collectorData?.paidPayments || 0
+        };
+        
+        setCurrentEarnings(currentEarningsData);
+        setAllTimeEarnings(allTimeEarningsData);
+        
+        // Get payment history with penalties
+        const history = await collectorPenaltyService.getCollectorPaymentsWithPenalties();
+        const collectorPayments = history.filter(p => p.collector_id === staffId);
+        setPaymentHistory(collectorPayments);
       } catch (error) {
         console.error('Error fetching earnings data:', error);
       } finally {
@@ -102,7 +128,7 @@ export default function CollectorEarningsPage() {
         </div>
 
         {/* Earnings Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
           {/* Current Month Earnings */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -223,6 +249,37 @@ export default function CollectorEarningsPage() {
               </Tooltip>
             </CardContent>
           </Card>
+
+          {/* Total Penalties */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Penalties</CardTitle>
+              <AlertTriangle className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-red-600">
+                {allTimeEarnings ? formatCurrency(allTimeEarnings.totalPenalties) : 'KSh 0.00'}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Penalties incurred
+              </p>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1 cursor-help">
+                    <Info className="h-3 w-3" />
+                    Penalty information
+                  </p>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className="max-w-xs">
+                    Penalties are deducted from your gross earnings based on quality variances in milk collections. 
+                    Positive variances (company receives more than collected) do not incur penalties. 
+                    Negative variances (company receives less than collected) incur penalties based on variance percentage.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Payment History */}
@@ -245,7 +302,9 @@ export default function CollectorEarningsPage() {
                     <TableHead className="text-right">Collections</TableHead>
                     <TableHead className="text-right">Liters</TableHead>
                     <TableHead className="text-right">Rate</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead className="text-right">Gross</TableHead>
+                    <TableHead className="text-right">Penalties</TableHead>
+                    <TableHead className="text-right">Net</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Date</TableHead>
                   </TableRow>
@@ -259,7 +318,13 @@ export default function CollectorEarningsPage() {
                       <TableCell className="text-right">{payment.total_collections}</TableCell>
                       <TableCell className="text-right">{payment.total_liters?.toFixed(2)}</TableCell>
                       <TableCell className="text-right">{formatCurrency(payment.rate_per_liter)}</TableCell>
-                      <TableCell className="text-right font-medium">{formatCurrency(payment.total_earnings)}</TableCell>
+                      <TableCell className="text-right">{formatCurrency(payment.total_earnings)}</TableCell>
+                      <TableCell className="text-right text-red-600">
+                        {payment.total_penalties > 0 ? formatCurrency(payment.total_penalties) : '-'}
+                      </TableCell>
+                      <TableCell className={`text-right font-medium ${payment.adjusted_earnings < 0 ? 'text-red-600' : ''}`}>
+                        {formatCurrency(payment.adjusted_earnings)}
+                      </TableCell>
                       <TableCell>
                         <Badge variant={payment.status === 'paid' ? 'default' : 'secondary'}>
                           {payment.status}
@@ -296,10 +361,11 @@ export default function CollectorEarningsPage() {
               <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
                 <h3 className="font-bold text-lg text-blue-800 mb-2">Earnings Formula</h3>
                 <div className="text-lg font-mono bg-white p-3 rounded border">
-                  Total Earnings = Total Liters Collected × Rate Per Liter
+                  Net Earnings = (Total Liters Collected × Rate Per Liter) - Penalties
                 </div>
                 <p className="mt-2 text-sm text-blue-700">
-                  Example: If you collected 100 liters at a rate of KSh 5.00 per liter, your earnings would be 100 × 5.00 = KSh 500.00
+                  Example: If you collected 100 liters at a rate of KSh 5.00 per liter with KSh 50 in penalties, 
+                  your net earnings would be (100 × 5.00) - 50 = KSh 450.00
                 </p>
               </div>
               
@@ -325,6 +391,15 @@ export default function CollectorEarningsPage() {
                 <div className="flex items-start gap-3">
                   <div className="mt-1 w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold">3</div>
                   <div>
+                    <h3 className="font-medium">Penalty Calculation</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Penalties are calculated based on negative variances in milk collections. If the company receives less milk than you collected, penalties may be applied.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <div className="mt-1 w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold">4</div>
+                  <div>
                     <h3 className="font-medium">Payment Processing</h3>
                     <p className="text-sm text-muted-foreground">
                       Payments are processed by administrators and marked as paid when complete. You'll see your payment status change from "Pending" to "Paid".
@@ -337,7 +412,9 @@ export default function CollectorEarningsPage() {
                 <h3 className="font-bold text-yellow-800 mb-2">Important Notes</h3>
                 <ul className="list-disc list-inside space-y-1 text-sm text-yellow-700">
                   <li>Only collections approved for payment are included in your earnings calculation</li>
-                  <li>Penalties may be deducted from your gross earnings based on quality variances</li>
+                  <li>Penalties are automatically calculated and deducted from your gross earnings</li>
+                  <li>Positive variances (company receives more than collected) do not incur penalties</li>
+                  <li>Negative variances (company receives less than collected) incur penalties based on variance percentage</li>
                   <li>Your earnings are calculated automatically when collections are approved</li>
                   <li>Contact an administrator if you believe there's an error in your earnings calculation</li>
                 </ul>

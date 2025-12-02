@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS public.collector_payments (
   total_liters NUMERIC(10,2) DEFAULT 0,
   rate_per_liter NUMERIC(10,2) DEFAULT 0,
   total_earnings NUMERIC(10,2) DEFAULT 0,
+  total_penalties NUMERIC(10,2) DEFAULT 0,
+  adjusted_earnings NUMERIC(10,2) DEFAULT 0,
   status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'paid')),
   payment_date TIMESTAMPTZ,
   notes TEXT,

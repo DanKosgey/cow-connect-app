@@ -1,6 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { collectorRateService } from '@/services/collector-rate-service';
 import { collectorPenaltyService } from './collector-penalty-service';
+import { collectorPenaltyAccountService } from './collector-penalty-account-service';
 import { logger } from '@/utils/logger';
 import { 
   CollectorEarningsError, 
@@ -19,20 +20,7 @@ export interface CollectorEarnings {
   periodEnd: string;
 }
 
-export interface CollectorPayment {
-  id?: string;
-  collector_id: string;
-  period_start: string;
-  period_end: string;
-  total_collections: number;
-  total_liters: number;
-  rate_per_liter: number;
-  total_earnings: number;
-  status: 'pending' | 'paid';
-  payment_date?: string;
-  created_at?: string;
-  updated_at?: string;
-}
+// CollectorPayment interface removed - using collections table directly
 
 // Add new interface for detailed collector performance with penalties
 export interface CollectorPerformanceWithPenalties {
@@ -198,7 +186,7 @@ class CollectorEarningsService {
 
   /**
    * Get all-time earnings for a collector
-   * Only includes collections with collection_fee_status = 'pending'
+   * Includes all collections (both pending and paid) that are approved for payment
    */
   async getAllTimeEarnings(collectorId: string): Promise<CollectorEarnings> {
     try {
@@ -207,14 +195,14 @@ class CollectorEarningsService {
         throw new ValidationError('Collector ID is required');
       }
       
-      // Get all collections for this collector that are approved for payment and have pending fees
+      // Get all collections for this collector that are approved for payment
       const { data, error } = await supabase
         .from('collections')
         .select('id, liters, collection_date')
         .eq('staff_id', collectorId)
         .eq('status', 'Collected')
         .eq('approved_for_payment', true)
-        .eq('collection_fee_status', 'pending') // Only count collections with pending fees
+        // Include both pending and paid collections for total earnings calculation
         .order('collection_date', { ascending: true });
 
       if (error) {
@@ -286,188 +274,57 @@ class CollectorEarningsService {
     }
   }
 
-  /**
-   * Record a payment for a collector
-   */
-  async recordPayment(payment: Omit<CollectorPayment, 'id' | 'created_at' | 'updated_at'>): Promise<CollectorPayment | null> {
-    try {
-      // Validate required fields
-      if (!payment.collector_id) {
-        throw new ValidationError('Collector ID is required');
-      }
-      
-      if (!payment.period_start || !payment.period_end) {
-        throw new ValidationError('Period start and end dates are required');
-      }
-      
-      if (payment.total_collections < 0) {
-        throw new ValidationError('Total collections cannot be negative');
-      }
-      
-      if (payment.total_liters < 0) {
-        throw new ValidationError('Total liters cannot be negative');
-      }
-      
-      if (payment.rate_per_liter < 0) {
-        throw new ValidationError('Rate per liter cannot be negative');
-      }
-      
-      if (payment.total_earnings < 0) {
-        throw new ValidationError('Total earnings cannot be negative');
-      }
+  // recordPayment method removed - using collections table directly
 
-      const { data, error } = await supabase
-        .from('collector_payments')
-        .insert([payment])
-        .select()
-        .single();
+  // getPaymentHistory method removed - using collections table directly
 
-      if (error) {
-        logger.errorWithContext('CollectorEarningsService - recordPayment', error);
-        throw new DatabaseError('Failed to record payment', 'INSERT_PAYMENT', error);
-      }
-
-      return data;
-    } catch (error) {
-      logger.errorWithContext('CollectorEarningsService - recordPayment exception', error);
-      
-      // Re-throw custom errors as-is
-      if (error instanceof CollectorEarningsError) {
-        throw error;
-      }
-      
-      // Return null for unexpected errors (maintaining existing behavior)
-      return null;
-    }
-  }
+  // getPendingPayments method removed - using collections table directly
 
   /**
-   * Get payment history for a collector
+   * Mark collections as paid for a collector
+   * Updates collection_fee_status from 'pending' to 'paid' directly in collections table
    */
-  async getPaymentHistory(collectorId: string): Promise<CollectorPayment[]> {
+  async markCollectionsAsPaid(collectorId: string, periodStart?: string, periodEnd?: string): Promise<boolean> {
     try {
       // Validate input
       if (!collectorId) {
         throw new ValidationError('Collector ID is required');
       }
 
-      const { data, error } = await supabase
-        .from('collector_payments')
-        .select('*')
-        .eq('collector_id', collectorId)
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        logger.errorWithContext('CollectorEarningsService - getPaymentHistory', error);
-        throw new DatabaseError('Failed to fetch payment history', 'FETCH_PAYMENT_HISTORY', error);
-      }
-
-      return data || [];
-    } catch (error) {
-      logger.errorWithContext('CollectorEarningsService - getPaymentHistory exception', error);
-      
-      // Re-throw custom errors as-is
-      if (error instanceof CollectorEarningsError) {
-        throw error;
-      }
-      
-      // Return empty array for unexpected errors (maintaining existing behavior)
-      return [];
-    }
-  }
-
-  /**
-   * Get pending payments for all collectors
-   */
-  async getPendingPayments(): Promise<CollectorPayment[]> {
-    try {
-      const { data, error } = await supabase
-        .from('collector_payments')
-        .select('*')
-        .eq('status', 'pending')
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        logger.errorWithContext('CollectorEarningsService - getPendingPayments', error);
-        throw new DatabaseError('Failed to fetch pending payments', 'FETCH_PENDING_PAYMENTS', error);
-      }
-
-      return data || [];
-    } catch (error) {
-      logger.errorWithContext('CollectorEarningsService - getPendingPayments exception', error);
-      
-      // Re-throw custom errors as-is
-      if (error instanceof CollectorEarningsError) {
-        throw error;
-      }
-      
-      // Return empty array for unexpected errors (maintaining existing behavior)
-      return [];
-    }
-  }
-
-  /**
-   * Mark a payment as paid
-   */
-  async markPaymentAsPaid(paymentId: string): Promise<boolean> {
-    try {
-      // Validate input
-      if (!paymentId) {
-        throw new ValidationError('Payment ID is required');
-      }
-
-      // First, get the payment details to know which collections are associated with it
-      const { data: paymentData, error: fetchError } = await supabase
-        .from('collector_payments')
-        .select('collector_id, period_start, period_end')
-        .eq('id', paymentId)
-        .single();
-
-      if (fetchError) {
-        logger.errorWithContext('CollectorEarningsService - markPaymentAsPaid fetch payment', fetchError);
-        throw new DatabaseError('Failed to fetch payment details', 'FETCH_PAYMENT_DETAILS', fetchError);
-      }
-
-      // Update the payment status
-      const { error: updateError } = await supabase
-        .from('collector_payments')
-        .update({ 
-          status: 'paid',
-          payment_date: new Date().toISOString()
-        })
-        .eq('id', paymentId);
-
-      if (updateError) {
-        logger.errorWithContext('CollectorEarningsService - markPaymentAsPaid update payment', updateError);
-        throw new DatabaseError('Failed to mark payment as paid', 'UPDATE_PAYMENT_STATUS', updateError);
-      }
-
-      // Update the collection fee status for all collections in this payment period
-      // Find all collections for this collector within the payment period and mark them as paid
-      const { error: collectionsUpdateError } = await supabase
+      // Build the query to update collections
+      let query = supabase
         .from('collections')
         .update({ collection_fee_status: 'paid' })
-        .eq('staff_id', paymentData.collector_id)
-        .gte('collection_date', paymentData.period_start)
-        .lte('collection_date', paymentData.period_end)
-        .eq('approved_for_payment', true);
+        .eq('staff_id', collectorId)
+        .eq('approved_for_payment', true)
+        .eq('collection_fee_status', 'pending'); // Only update collections with pending fees
 
-      if (collectionsUpdateError) {
-        logger.errorWithContext('CollectorEarningsService - markPaymentAsPaid update collections', collectionsUpdateError);
-        // We don't throw here because the payment was successfully marked as paid
-        // but we log the error for debugging
+      // Apply date filters if provided
+      if (periodStart) {
+        query = query.gte('collection_date', periodStart);
+      }
+      
+      if (periodEnd) {
+        query = query.lte('collection_date', periodEnd);
+      }
+
+      const { error } = await query;
+
+      if (error) {
+        logger.errorWithContext('CollectorEarningsService - markCollectionsAsPaid update collections', error);
+        throw new DatabaseError('Failed to mark collections as paid', 'UPDATE_COLLECTIONS_STATUS', error);
       }
 
       return true;
     } catch (error) {
-      logger.errorWithContext('CollectorEarningsService - markPaymentAsPaid exception', error);
+      logger.errorWithContext('CollectorEarningsService - markCollectionsAsPaid exception', error);
       
       // Re-throw custom errors as-is
       if (error instanceof CollectorEarningsError) {
         throw error;
       }
       
-      // Return false for unexpected errors (maintaining existing behavior)
+      // Return false for unexpected errors
       return false;
     }
   }
@@ -640,19 +497,34 @@ class CollectorEarningsService {
             };
           }
           
-          // Get penalty information using the existing penalty service
-          const paymentsWithPenalties = await collectorPenaltyService.getCollectorPaymentsWithPenalties();
-          const collectorPayments = paymentsWithPenalties.filter(p => p.collector_id === collector.id);
+          // Calculate pending and paid amounts directly from collections
+          // Get pending collections
+          const { data: pendingCollections, error: pendingError } = await supabase
+            .from('collections')
+            .select('liters')
+            .eq('staff_id', collector.id)
+            .eq('approved_for_payment', true)
+            .eq('collection_fee_status', 'pending');
           
-          // Calculate pending payments (earnings minus penalties)
-          const pendingPayments = collectorPayments
-            .filter(p => p.status === 'pending')
-            .reduce((sum, payment) => sum + (payment.adjusted_earnings || 0), 0);
-            
-          // Calculate paid payments
-          const paidPayments = collectorPayments
-            .filter(p => p.status === 'paid')
-            .reduce((sum, payment) => sum + (payment.adjusted_earnings || 0), 0);
+          const pendingLiters = pendingError ? 0 : pendingCollections?.reduce((sum, collection) => sum + (collection.liters || 0), 0) || 0;
+          const pendingAmount = pendingLiters * earnings.ratePerLiter;
+          
+          // Get paid collections
+          const { data: paidCollections, error: paidError } = await supabase
+            .from('collections')
+            .select('liters')
+            .eq('staff_id', collector.id)
+            .eq('approved_for_payment', true)
+            .eq('collection_fee_status', 'paid');
+          
+          const paidLiters = paidError ? 0 : paidCollections?.reduce((sum, collection) => sum + (collection.liters || 0), 0) || 0;
+          const paidAmount = paidLiters * earnings.ratePerLiter;
+          
+          // Note: earnings.totalEarnings now includes ALL collections (pending + paid)
+          // pendingAmount and paidAmount represent the monetary value of pending and paid collections respectively
+          
+          // Note: earnings.totalEarnings now includes ALL collections (pending + paid)
+          // pendingAmount and paidAmount represent the monetary value of pending and paid collections respectively
 
           logger.withContext('CollectorEarningsService - getCollectorsWithEarnings').info(`Completed processing for collector ${collector.id}: Total liters: ${earnings.totalLiters}, Total earnings: ${earnings.totalEarnings}`);
           
@@ -667,8 +539,8 @@ class CollectorEarningsService {
             positiveVariances: collectorPerformance.positive_variances || 0,
             negativeVariances: collectorPerformance.negative_variances || 0,
             avgVariancePercentage: collectorPerformance.average_variance_percentage || 0,
-            pendingPayments: pendingPayments,
-            paidPayments: paidPayments,
+            pendingPayments: pendingAmount,
+            paidPayments: paidAmount,
             performanceScore: collectorPerformance.performance_score || 0,
             lastCollectionDate: collectorPerformance.last_collection_date || null,
             penaltyDetails: {
@@ -858,19 +730,31 @@ class CollectorEarningsService {
             };
           }
           
-          // Get penalty information using the existing penalty service
-          const paymentsWithPenalties = await collectorPenaltyService.getCollectorPaymentsWithPenalties();
-          const collectorPayments = paymentsWithPenalties.filter(p => p.collector_id === collector.id);
+          // Calculate pending and paid amounts directly from collections
+          // Get pending collections
+          const { data: pendingCollections, error: pendingError } = await supabase
+            .from('collections')
+            .select('liters')
+            .eq('staff_id', collector.id)
+            .eq('approved_for_payment', true)
+            .eq('collection_fee_status', 'pending');
           
-          // Calculate pending payments (earnings minus penalties)
-          const pendingPayments = collectorPayments
-            .filter(p => p.status === 'pending')
-            .reduce((sum, payment) => sum + (payment.adjusted_earnings || 0), 0);
-            
-          // Calculate paid payments
-          const paidPayments = collectorPayments
-            .filter(p => p.status === 'paid')
-            .reduce((sum, payment) => sum + (payment.adjusted_earnings || 0), 0);
+          const pendingLiters = pendingError ? 0 : pendingCollections?.reduce((sum, collection) => sum + (collection.liters || 0), 0) || 0;
+          const pendingAmount = pendingLiters * earnings.ratePerLiter;
+          
+          // Get paid collections
+          const { data: paidCollections, error: paidError } = await supabase
+            .from('collections')
+            .select('liters')
+            .eq('staff_id', collector.id)
+            .eq('approved_for_payment', true)
+            .eq('collection_fee_status', 'paid');
+          
+          const paidLiters = paidError ? 0 : paidCollections?.reduce((sum, collection) => sum + (collection.liters || 0), 0) || 0;
+          const paidAmount = paidLiters * earnings.ratePerLiter;
+          
+          // Note: earnings.totalEarnings now includes ALL collections (pending + paid)
+          // pendingAmount and paidAmount represent the monetary value of pending and paid collections respectively
 
           return {
             id: collector.id,
@@ -883,8 +767,8 @@ class CollectorEarningsService {
             positiveVariances: collectorPerformance.positive_variances || 0,
             negativeVariances: collectorPerformance.negative_variances || 0,
             avgVariancePercentage: collectorPerformance.average_variance_percentage || 0,
-            pendingPayments: pendingPayments,
-            paidPayments: paidPayments,
+            pendingPayments: pendingAmount,
+            paidPayments: paidAmount,
             performanceScore: collectorPerformance.performance_score || 0,
             lastCollectionDate: collectorPerformance.last_collection_date || null,
             penaltyDetails: {
@@ -912,274 +796,35 @@ class CollectorEarningsService {
   }
 
   /**
-   * Automatically generate payment records for approved collections
-   * This function will be called when collections are approved for payment
+   * Automatically update collection fee statuses for approved collections
+   * This function ensures collections that are approved for payment have the correct fee status
    */
-  async autoGeneratePaymentRecords(): Promise<boolean> {
+  async autoUpdateCollectionFeeStatuses(): Promise<boolean> {
     try {
-      // First try calling the manual_generate_collector_payments function (simpler signature)
-      logger.info('Attempting to call manual_generate_collector_payments RPC function');
-      const { data: manualData, error: manualError } = await supabase.rpc('manual_generate_collector_payments');
-      
-      if (!manualError) {
-        logger.info('manual_generate_collector_payments RPC call successful:', manualData);
-        return manualData === true;
-      }
-      
-      logger.warn('manual_generate_collector_payments RPC failed:', manualError);
-      
-      // If manual function fails, try the generate_collector_payments function
-      logger.info('Attempting to call generate_collector_payments RPC function');
-      const { data: rpcData, error: rpcError } = await supabase.rpc('generate_collector_payments');
-      
-      if (!rpcError && rpcData) {
-        logger.info('generate_collector_payments RPC call successful, inserting records');
-        // Insert the generated records into the collector_payments table
-        if (rpcData && rpcData.length > 0) {
-          const paymentRecords = rpcData.map((record: any) => ({
-            collector_id: record.collector_id,
-            period_start: record.period_start,
-            period_end: record.period_end,
-            total_collections: record.total_collections,
-            total_liters: record.total_liters,
-            rate_per_liter: record.rate_per_liter,
-            total_earnings: record.total_earnings,
-            status: 'pending'
-          }));
-          
-          const { error: insertError } = await supabase
-            .from('collector_payments')
-            .insert(paymentRecords);
-            
-          if (insertError) {
-            logger.errorWithContext('CollectorEarningsService - autoGeneratePaymentRecords insert', insertError);
-            // Fall back to manual generation
-            return await this.fallbackManualPaymentGeneration();
-          }
-        }
-        return true;
-      }
-      
-      logger.warn('generate_collector_payments RPC failed:', rpcError);
-      
-      // If both functions fail, fall back to manual generation
-      logger.warn('Both RPC functions failed, falling back to manual payment record generation');
-      return await this.fallbackManualPaymentGeneration();
-    } catch (error) {
-      logger.errorWithContext('CollectorEarningsService - autoGeneratePaymentRecords exception', error);
-      
-      // Re-throw custom errors as-is
-      if (error instanceof CollectorEarningsError) {
-        throw error;
-      }
-      
-      // Fallback to manual generation
-      logger.info('Falling back to manual payment generation due to error');
-      return await this.fallbackManualPaymentGeneration();
-    }
-  }
-
-  /**
-   * Fallback method to manually generate payment records when RPC function fails
-   */
-  private async fallbackManualPaymentGeneration(): Promise<boolean> {
-    try {
-      // Get all collectors with approved collections that have pending fees
-      const { data: collections, error: collectionsError } = await supabase
+      // Ensure all approved collections have a collection_fee_status set
+      // This is a safeguard to ensure data consistency
+      const { error: updateError } = await supabase
         .from('collections')
-        .select('staff_id')
+        .update({ collection_fee_status: 'pending' })
         .eq('approved_for_payment', true)
-        .eq('status', 'Collected')
-        .eq('collection_fee_status', 'pending'); // Only collections with pending fees
+        .is('collection_fee_status', null);
       
-      if (collectionsError) {
-        logger.errorWithContext('CollectorEarningsService - fallbackManualPaymentGeneration fetch collections', collectionsError);
-        throw new DatabaseError('Failed to fetch collections', 'FETCH_COLLECTIONS_FOR_PAYMENT', collectionsError);
+      if (updateError) {
+        logger.warn('Failed to update collection fee statuses:', updateError);
+        return false;
       }
       
-      // Get unique collector IDs
-      const collectorIds = [...new Set(collections.map(c => c.staff_id))];
-      
-      if (collectorIds.length === 0) {
-        return true; // No collectors with approved collections that have pending fees
-      }
-      
-      // Get current collector rate
-      const currentRate = await collectorRateService.getCurrentRate();
-      
-      // For each collector, generate payment records
-      for (const collectorId of collectorIds) {
-        // Get approved collections for this collector with pending fees
-        const { data: collectorCollections, error: collectionsError } = await supabase
-          .from('collections')
-          .select('id, collection_date, liters')
-          .eq('staff_id', collectorId)
-          .eq('approved_for_payment', true)
-          .eq('status', 'Collected')
-          .eq('collection_fee_status', 'pending'); // Only collections with pending fees
-          
-        if (collectionsError) {
-          logger.errorWithContext(`CollectorEarningsService - fallbackManualPaymentGeneration fetch collections for collector ${collectorId}`, collectionsError);
-          continue;
-        }
-        
-        if (collectorCollections && collectorCollections.length > 0) {
-          // Calculate payment data
-          const periodStart = collectorCollections
-            .map(c => new Date(c.collection_date))
-            .reduce((earliest, current) => current < earliest ? current : earliest, new Date());
-            
-          const periodEnd = collectorCollections
-            .map(c => new Date(c.collection_date))
-            .reduce((latest, current) => current > latest ? current : latest, new Date());
-          
-          const totalCollections = collectorCollections.length;
-          const totalLiters = collectorCollections.reduce((sum, collection) => sum + (collection.liters || 0), 0);
-          const totalEarnings = totalLiters * currentRate;
-          
-          // Check if payment record already exists
-          const { data: existingPayments, error: existingError } = await supabase
-            .from('collector_payments')
-            .select('id')
-            .eq('collector_id', collectorId)
-            .gte('period_start', periodStart.toISOString().split('T')[0])
-            .lte('period_end', periodEnd.toISOString().split('T')[0]);
-            
-          if (existingError) {
-            logger.errorWithContext(`CollectorEarningsService - fallbackManualPaymentGeneration check existing for collector ${collectorId}`, existingError);
-            continue;
-          }
-          
-          // Only create if no existing record
-          if (!existingPayments || existingPayments.length === 0) {
-            const { error: insertError } = await supabase
-              .from('collector_payments')
-              .insert([{
-                collector_id: collectorId,
-                period_start: periodStart.toISOString().split('T')[0],
-                period_end: periodEnd.toISOString().split('T')[0],
-                total_collections: totalCollections,
-                total_liters: totalLiters,
-                rate_per_liter: currentRate,
-                total_earnings: totalEarnings,
-                status: 'pending'
-              }]);
-              
-            if (insertError) {
-              logger.errorWithContext(`CollectorEarningsService - fallbackManualPaymentGeneration insert for collector ${collectorId}`, insertError);
-              continue;
-            }
-          }
-        }
-      }
-      
+      logger.info('Successfully updated collection fee statuses for approved collections');
       return true;
     } catch (error) {
-      logger.errorWithContext('CollectorEarningsService - fallbackManualPaymentGeneration exception', error);
-      
-      // Re-throw custom errors as-is
-      if (error instanceof CollectorEarningsError) {
-        throw error;
-      }
-      
-      // Return false for unexpected errors (maintaining existing behavior)
+      logger.errorWithContext('CollectorEarningsService - autoUpdateCollectionFeeStatuses exception', error);
       return false;
     }
   }
 
-  /**
-   * Trigger automatic payment record generation for a specific collector
-   * This can be called when a new collection is approved for a collector
-   */
-  async triggerAutoPaymentGeneration(collectorId: string): Promise<boolean> {
-    try {
-      // Validate input
-      if (!collectorId) {
-        throw new ValidationError('Collector ID is required');
-      }
-      
-      // Check if there are approved collections for this collector that don't have payment records
-      // and have pending fees
-      const { data: collections, error: collectionsError } = await supabase
-        .from('collections')
-        .select('id, collection_date, liters, staff_id')
-        .eq('staff_id', collectorId)
-        .eq('approved_for_payment', true)
-        .eq('status', 'Collected')
-        .eq('collection_fee_status', 'pending'); // Only collections with pending fees
-        
-      if (collectionsError) {
-        logger.errorWithContext('CollectorEarningsService - triggerAutoPaymentGeneration fetch collections', collectionsError);
-        throw new DatabaseError('Failed to fetch collections', 'FETCH_COLLECTIONS_FOR_TRIGGER', collectionsError);
-      }
-      
-      if (!collections || collections.length === 0) {
-        return true; // No collections to process
-      }
-      
-      // Get the current collector rate
-      const ratePerLiter = await collectorRateService.getCurrentRate();
-      
-      // Aggregate collections by date range (group all collections for the collector)
-      const periodStart = collections
-        .map(c => new Date(c.collection_date))
-        .reduce((earliest, current) => current < earliest ? current : earliest, new Date());
-        
-      const periodEnd = collections
-        .map(c => new Date(c.collection_date))
-        .reduce((latest, current) => current > latest ? current : latest, new Date());
-      
-      const totalCollections = collections.length;
-      const totalLiters = collections.reduce((sum, collection) => sum + (collection.liters || 0), 0);
-      const totalEarnings = totalLiters * ratePerLiter;
-      
-      // Check if a payment record already exists for this collector and period
-      const { data: existingPayments, error: paymentsError } = await supabase
-        .from('collector_payments')
-        .select('id')
-        .eq('collector_id', collectorId)
-        .gte('period_start', periodStart.toISOString().split('T')[0])
-        .lte('period_end', periodEnd.toISOString().split('T')[0]);
-        
-      if (paymentsError) {
-        logger.errorWithContext('CollectorEarningsService - triggerAutoPaymentGeneration check existing', paymentsError);
-        throw new DatabaseError('Failed to check existing payments', 'CHECK_EXISTING_PAYMENTS', paymentsError);
-      }
-      
-      // If no existing payment record, create one
-      if (!existingPayments || existingPayments.length === 0) {
-        const { error: insertError } = await supabase
-          .from('collector_payments')
-          .insert([{
-            collector_id: collectorId,
-            period_start: periodStart.toISOString().split('T')[0],
-            period_end: periodEnd.toISOString().split('T')[0],
-            total_collections: totalCollections,
-            total_liters: totalLiters,
-            rate_per_liter: ratePerLiter,
-            total_earnings: totalEarnings,
-            status: 'pending'
-          }]);
-          
-        if (insertError) {
-          logger.errorWithContext('CollectorEarningsService - triggerAutoPaymentGeneration insert', insertError);
-          throw new DatabaseError('Failed to insert payment record', 'INSERT_PAYMENT_RECORD', insertError);
-        }
-      }
-      
-      return true;
-    } catch (error) {
-      logger.errorWithContext('CollectorEarningsService - triggerAutoPaymentGeneration exception', error);
-      
-      // Re-throw custom errors as-is
-      if (error instanceof CollectorEarningsError) {
-        throw error;
-      }
-      
-      // Return false for unexpected errors (maintaining existing behavior)
-      return false;
-    }
-  }
+  // fallbackManualPaymentGeneration method removed - using collections table directly
+
+  // triggerAutoPaymentGeneration method removed - using collections table directly
 }
 
 // Export singleton instance

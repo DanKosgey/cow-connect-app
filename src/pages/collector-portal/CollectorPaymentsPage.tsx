@@ -11,9 +11,11 @@ import {
   BarChart3,
   PieChart,
   CheckCircle,
-  Clock
+  Clock,
+  AlertTriangle
 } from 'lucide-react';
 import { collectorEarningsService } from '@/services/collector-earnings-service';
+import { collectorPenaltyService } from '@/services/collector-penalty-service';
 import { formatCurrency } from '@/utils/formatters';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -46,6 +48,8 @@ interface PaymentData {
   total_liters: number;
   rate_per_liter: number;
   total_earnings: number;
+  total_penalties: number;
+  adjusted_earnings: number;
   status: 'pending' | 'paid';
   payment_date?: string;
   created_at?: string;
@@ -68,6 +72,7 @@ export default function CollectorPaymentsPage() {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     totalEarned: 0,
+    totalPenalties: 0,
     pendingPayments: 0,
     paidPayments: 0,
     avgEarningsPerCollection: 0
@@ -91,26 +96,29 @@ export default function CollectorPaymentsPage() {
         
         const staffId = staffData.id;
         
-        // Get payment history
-        const history = await collectorEarningsService.getPaymentHistory(staffId);
-        setPayments(history);
+        // Get payment history with penalties
+        const history = await collectorPenaltyService.getCollectorPaymentsWithPenalties();
+        const collectorPayments = history.filter(p => p.collector_id === staffId);
+        setPayments(collectorPayments as PaymentData[]);
         
         // Calculate stats
-        const paidPayments = history.filter(p => p.status === 'paid');
-        const pendingPayments = history.filter(p => p.status === 'pending');
-        const totalEarned = paidPayments.reduce((sum, payment) => sum + payment.total_earnings, 0);
-        const totalCollections = history.reduce((sum, payment) => sum + payment.total_collections, 0);
+        const paidPayments = collectorPayments.filter((p: any) => p.status === 'paid');
+        const pendingPayments = collectorPayments.filter((p: any) => p.status === 'pending');
+        const totalEarned = paidPayments.reduce((sum: any, payment: any) => sum + payment.adjusted_earnings, 0);
+        const totalPenalties = collectorPayments.reduce((sum: any, payment: any) => sum + payment.total_penalties, 0);
+        const totalCollections = collectorPayments.reduce((sum: any, payment: any) => sum + payment.total_collections, 0);
         const avgEarningsPerCollection = totalCollections > 0 ? totalEarned / totalCollections : 0;
         
         setStats({
           totalEarned,
+          totalPenalties,
           pendingPayments: pendingPayments.length,
           paidPayments: paidPayments.length,
           avgEarningsPerCollection
         });
         
         // Prepare analytics data
-        prepareAnalyticsData(history);
+        prepareAnalyticsData(collectorPayments);
       } catch (error) {
         console.error('Error fetching payment data:', error);
       } finally {
@@ -136,7 +144,7 @@ export default function CollectorPaymentsPage() {
           monthlyMap[month] = { earnings: 0, collections: 0 };
         }
         
-        monthlyMap[month].earnings += payment.total_earnings;
+        monthlyMap[month].earnings += payment.adjusted_earnings;
         monthlyMap[month].collections += payment.total_collections;
       }
     });
@@ -159,7 +167,7 @@ export default function CollectorPaymentsPage() {
       .slice(0, 10)
       .map(payment => ({
         date: new Date(payment.created_at).toLocaleDateString(),
-        earnings: payment.total_earnings
+        earnings: payment.adjusted_earnings
       }))
       .reverse();
     
@@ -187,7 +195,7 @@ export default function CollectorPaymentsPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
         {/* Total Earned */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -200,6 +208,22 @@ export default function CollectorPaymentsPage() {
             </div>
             <p className="text-xs text-muted-foreground">
               All-time earnings
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Total Penalties */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Penalties</CardTitle>
+            <AlertTriangle className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-red-600">
+              {formatCurrency(stats.totalPenalties)}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Penalties incurred
             </p>
           </CardContent>
         </Card>
@@ -376,7 +400,9 @@ export default function CollectorPaymentsPage() {
                   <TableHead className="text-right">Collections</TableHead>
                   <TableHead className="text-right">Liters</TableHead>
                   <TableHead className="text-right">Rate</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead className="text-right">Gross</TableHead>
+                  <TableHead className="text-right">Penalties</TableHead>
+                  <TableHead className="text-right">Net</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Date</TableHead>
                 </TableRow>
@@ -390,7 +416,13 @@ export default function CollectorPaymentsPage() {
                     <TableCell className="text-right">{payment.total_collections}</TableCell>
                     <TableCell className="text-right">{payment.total_liters?.toFixed(2)}</TableCell>
                     <TableCell className="text-right">{formatCurrency(payment.rate_per_liter)}</TableCell>
-                    <TableCell className="text-right font-medium">{formatCurrency(payment.total_earnings)}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(payment.total_earnings)}</TableCell>
+                    <TableCell className="text-right text-red-600">
+                      {payment.total_penalties > 0 ? formatCurrency(payment.total_penalties) : '-'}
+                    </TableCell>
+                    <TableCell className={`text-right font-medium ${payment.adjusted_earnings < 0 ? 'text-red-600' : ''}`}>
+                      {formatCurrency(payment.adjusted_earnings)}
+                    </TableCell>
                     <TableCell>
                       <Badge variant={payment.status === 'paid' ? 'default' : 'secondary'}>
                         {payment.status}
@@ -399,7 +431,7 @@ export default function CollectorPaymentsPage() {
                     <TableCell>
                       {payment.payment_date 
                         ? new Date(payment.payment_date).toLocaleDateString() 
-                        : new Date(payment.created_at).toLocaleDateString()}
+                        : 'N/A'}
                     </TableCell>
                   </TableRow>
                 ))}

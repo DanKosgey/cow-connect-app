@@ -1,6 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { logger } from '@/utils/logger';
 import { VarianceCalculationService } from '@/services/variance-calculation-service';
+import { collectorPenaltyAccountService } from './collector-penalty-account-service';
 
 export interface PenaltyConfig {
   id: string;
@@ -132,6 +133,35 @@ class CollectorPenaltyService {
   }
 
   /**
+   * Incur a penalty for a collector and record it in their penalty account
+   */
+  async incurPenaltyForCollector(
+    collectorId: string,
+    amount: number,
+    referenceType?: string,
+    referenceId?: string,
+    description?: string,
+    createdBy?: string
+  ): Promise<boolean> {
+    try {
+      // Add penalty to collector's account
+      const result = await collectorPenaltyAccountService.incurPenalty(
+        collectorId,
+        amount,
+        referenceType,
+        referenceId,
+        description,
+        createdBy
+      );
+
+      return result;
+    } catch (error) {
+      logger.errorWithContext('CollectorPenaltyService - incurPenaltyForCollector exception', error);
+      return false;
+    }
+  }
+
+  /**
    * Get collector daily summaries with penalties for a specific period
    */
   async getCollectorDailySummariesWithPenalties(
@@ -208,13 +238,23 @@ class CollectorPenaltyService {
       console.log('Checking milk_approvals table for penalties...');
       const periodStart = new Date(startDate);
       const periodEnd = new Date(endDate);
-      periodEnd.setHours(23, 59, 59, 999); // Set to end of day
+      // Set periodEnd to end of day for proper date comparison
+      periodEnd.setHours(23, 59, 59, 999);
       
       const filteredApprovals = milkApprovals.filter(approval => {
         // First check if the approval is within the date range
         if (!approval.approved_at) return false;
         const approvalDate = new Date(approval.approved_at);
-        if (approvalDate < periodStart || approvalDate > periodEnd) return false;
+        
+        // Normalize dates for comparison (compare only date parts, not time)
+        const approvalDateNormalized = new Date(approvalDate.getFullYear(), approvalDate.getMonth(), approvalDate.getDate());
+        const periodStartNormalized = new Date(periodStart.getFullYear(), periodStart.getMonth(), periodStart.getDate());
+        const periodEndNormalized = new Date(periodEnd.getFullYear(), periodEnd.getMonth(), periodEnd.getDate());
+        
+        // Check if approval date is within the payment period
+        const isWithinPeriod = approvalDateNormalized >= periodStartNormalized && approvalDateNormalized <= periodEndNormalized;
+        
+        if (!isWithinPeriod) return false;
         
         // Now check if this approval's collection belongs to this collector
         const collectionId = approval.collection_id;
@@ -309,14 +349,24 @@ class CollectorPenaltyService {
           console.log('--- Checking milk_approvals table ---');
           const periodStart = new Date(payment.period_start);
           const periodEnd = new Date(payment.period_end);
-          periodEnd.setHours(23, 59, 59, 999); // Set to end of day
+          // Set periodEnd to end of day for proper date comparison
+          periodEnd.setHours(23, 59, 59, 999);
           
           // Find approvals that belong to this collector by joining through collections
           const collectorMilkApprovals = allMilkApprovals.filter(approval => {
             // First check if the approval is within the date range
             if (!approval.approved_at) return false;
             const approvalDate = new Date(approval.approved_at);
-            if (approvalDate < periodStart || approvalDate > periodEnd) return false;
+            
+            // Normalize dates for comparison (compare only date parts, not time)
+            const approvalDateNormalized = new Date(approvalDate.getFullYear(), approvalDate.getMonth(), approvalDate.getDate());
+            const periodStartNormalized = new Date(periodStart.getFullYear(), periodStart.getMonth(), periodStart.getDate());
+            const periodEndNormalized = new Date(periodEnd.getFullYear(), periodEnd.getMonth(), periodEnd.getDate());
+            
+            // Check if approval date is within the payment period
+            const isWithinPeriod = approvalDateNormalized >= periodStartNormalized && approvalDateNormalized <= periodEndNormalized;
+            
+            if (!isWithinPeriod) return false;
             
             // Now check if this approval's collection belongs to this collector
             // Get the collection for this approval

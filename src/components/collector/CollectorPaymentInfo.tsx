@@ -15,7 +15,8 @@ import {
   DollarSign, 
   Clock, 
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  AlertTriangle
 } from 'lucide-react';
 
 interface PaymentRecord {
@@ -26,6 +27,8 @@ interface PaymentRecord {
   total_liters: number;
   rate_per_liter: number;
   total_earnings: number;
+  total_penalties: number;
+  adjusted_earnings: number;
   status: 'pending' | 'paid';
   payment_date?: string;
   created_at: string;
@@ -37,7 +40,9 @@ export const CollectorPaymentInfo = ({ staffId }: { staffId: string }) => {
   const [stats, setStats] = useState({
     totalEarned: 0,
     pendingPayments: 0,
-    paidPayments: 0
+    paidPayments: 0,
+    totalGrossEarnings: 0,
+    totalPenalties: 0
   });
 
   useEffect(() => {
@@ -61,12 +66,16 @@ export const CollectorPaymentInfo = ({ staffId }: { staffId: string }) => {
         // Calculate statistics
         const paidPayments = data?.filter(p => p.status === 'paid') || [];
         const pendingPayments = data?.filter(p => p.status === 'pending') || [];
-        const totalEarned = paidPayments.reduce((sum, payment) => sum + payment.total_earnings, 0);
+        const totalEarned = paidPayments.reduce((sum, payment) => sum + (payment.adjusted_earnings || payment.total_earnings), 0);
+        const totalGrossEarnings = data?.reduce((sum, payment) => sum + (payment.total_earnings || 0), 0) || 0;
+        const totalPenalties = data?.reduce((sum, payment) => sum + (payment.total_penalties || 0), 0) || 0;
         
         setStats({
           totalEarned,
           pendingPayments: pendingPayments.length,
-          paidPayments: paidPayments.length
+          paidPayments: paidPayments.length,
+          totalGrossEarnings,
+          totalPenalties
         });
       } catch (error) {
         console.error('Error fetching payment data:', error);
@@ -89,26 +98,39 @@ export const CollectorPaymentInfo = ({ staffId }: { staffId: string }) => {
   return (
     <div className="space-y-6">
       {/* Payment Statistics */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Earned</CardTitle>
+            <CardTitle className="text-sm font-medium">Total Gross Earnings</CardTitle>
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(stats.totalEarned)}</div>
-            <p className="text-xs text-muted-foreground">All-time earnings</p>
+            <div className="text-2xl font-bold">{formatCurrency(stats.totalGrossEarnings)}</div>
+            <p className="text-xs text-muted-foreground">Before penalties</p>
           </CardContent>
         </Card>
         
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Pending Payments</CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Total Penalties</CardTitle>
+            <AlertTriangle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.pendingPayments}</div>
-            <p className="text-xs text-muted-foreground">Awaiting processing</p>
+            <div className="text-2xl font-bold text-red-600">{formatCurrency(stats.totalPenalties)}</div>
+            <p className="text-xs text-muted-foreground">Deducted from earnings</p>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Net Earnings</CardTitle>
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className={`text-2xl font-bold ${stats.totalGrossEarnings - stats.totalPenalties < 0 ? 'text-red-600' : ''}`}>
+              {formatCurrency(stats.totalGrossEarnings - stats.totalPenalties)}
+            </div>
+            <p className="text-xs text-muted-foreground">After penalties</p>
           </CardContent>
         </Card>
         
@@ -144,7 +166,9 @@ export const CollectorPaymentInfo = ({ staffId }: { staffId: string }) => {
                   <TableHead className="text-right">Collections</TableHead>
                   <TableHead className="text-right">Liters</TableHead>
                   <TableHead className="text-right">Rate</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead className="text-right">Gross</TableHead>
+                  <TableHead className="text-right">Penalties</TableHead>
+                  <TableHead className="text-right">Net</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Date</TableHead>
                 </TableRow>
@@ -158,7 +182,11 @@ export const CollectorPaymentInfo = ({ staffId }: { staffId: string }) => {
                     <TableCell className="text-right">{payment.total_collections}</TableCell>
                     <TableCell className="text-right">{payment.total_liters?.toFixed(2)}</TableCell>
                     <TableCell className="text-right">{formatCurrency(payment.rate_per_liter)}</TableCell>
-                    <TableCell className="text-right font-medium">{formatCurrency(payment.total_earnings)}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(payment.total_earnings)}</TableCell>
+                    <TableCell className="text-right text-red-600">{formatCurrency(payment.total_penalties)}</TableCell>
+                    <TableCell className={`text-right font-medium ${payment.adjusted_earnings < 0 ? 'text-red-600' : ''}`}>
+                      {formatCurrency(payment.adjusted_earnings)}
+                    </TableCell>
                     <TableCell>
                       <Badge 
                         variant={payment.status === 'paid' ? 'default' : 'secondary'}

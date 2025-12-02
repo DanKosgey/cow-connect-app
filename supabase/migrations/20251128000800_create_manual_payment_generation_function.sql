@@ -16,6 +16,8 @@ DECLARE
     v_total_liters NUMERIC(10,2);
     v_rate_per_liter NUMERIC(10,2);
     v_total_earnings NUMERIC(10,2);
+    v_total_penalties NUMERIC(10,2);
+    v_adjusted_earnings NUMERIC(10,2);
     v_payment_exists BOOLEAN;
 BEGIN
     -- Loop through all collectors with approved collections that don't have payment records
@@ -62,6 +64,20 @@ BEGIN
             -- Calculate total earnings
             v_total_earnings := v_total_liters * v_rate_per_liter;
             
+            -- Calculate total penalties for this collector in this period
+            -- Sum penalties from milk_approvals table
+            SELECT COALESCE(SUM(ma.penalty_amount), 0)::NUMERIC(10,2)
+            INTO v_total_penalties
+            FROM milk_approvals ma
+            JOIN collections c ON ma.collection_id = c.id
+            WHERE c.staff_id = v_collector_id
+              AND c.approved_for_payment = true
+              AND c.status = 'Collected'
+              AND ma.approved_at::DATE BETWEEN v_period_start AND v_period_end;
+              
+            -- Calculate adjusted earnings (earnings minus penalties)
+            v_adjusted_earnings := GREATEST(0, v_total_earnings - v_total_penalties);
+            
             -- Insert payment record
             INSERT INTO collector_payments (
                 collector_id,
@@ -71,6 +87,8 @@ BEGIN
                 total_liters,
                 rate_per_liter,
                 total_earnings,
+                total_penalties,
+                adjusted_earnings,
                 status
             ) VALUES (
                 v_collector_id,
@@ -80,6 +98,8 @@ BEGIN
                 v_total_liters,
                 v_rate_per_liter,
                 v_total_earnings,
+                v_total_penalties,
+                v_adjusted_earnings,
                 'pending'
             )
             ON CONFLICT DO NOTHING; -- Prevent duplicates

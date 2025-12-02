@@ -72,6 +72,10 @@ interface CollectorData {
   positiveVariances?: number;
   negativeVariances?: number;
   avgVariancePercentage?: number;
+  // Add penalty account information
+  pendingPenalties?: number;
+  totalPenaltiesIncurred?: number;
+  totalPenaltiesPaid?: number;
   // Add collections breakdown data
   collectionsBreakdown?: {
     date: string;
@@ -82,22 +86,7 @@ interface CollectorData {
   }[];
 }
 
-interface PaymentData {
-  id: string;
-  collector_id: string;
-  collector_name?: string;
-  period_start: string;
-  period_end: string;
-  total_collections: number;
-  total_liters: number;
-  rate_per_liter: number;
-  total_earnings: number;
-  total_penalties: number;
-  adjusted_earnings: number;
-  status: 'pending' | 'paid';
-  payment_date?: string;
-  created_at: string;
-}
+// PaymentData interface removed - using collections table directly
 
 // Add new interfaces for penalty analytics
 interface PenaltyAnalyticsData {
@@ -132,7 +121,9 @@ interface CollectorPenaltyAnalytics {
 export default function CollectorsPage() {
   const { success, error } = useToastNotifications();
   const [collectors, setCollectors] = useState<CollectorData[]>([]);
-  const [payments, setPayments] = useState<PaymentData[]>([]);
+  // payments state removed - using collections table directly
+  const payments: any[] = [];
+  const setPayments: any = () => {};
   const [collectorRate, setCollectorRate] = useState(0);
   const [loading, setLoading] = useState(true);
   const [dataFetchError, setDataFetchError] = useState(false);
@@ -167,13 +158,13 @@ export default function CollectorsPage() {
         const rate = await collectorRateService.getCurrentRate();
         setCollectorRate(rate);
         
-        // Automatically generate payment records for approved collections
-        console.log('Starting automatic payment record generation...');
-        const paymentGenerationSuccess = await collectorEarningsService.autoGeneratePaymentRecords();
-        console.log('Payment generation result:', paymentGenerationSuccess);
+        // Automatically update collection fee statuses for approved collections
+        console.log('Starting automatic collection fee status update...');
+        const statusUpdateSuccess = await collectorEarningsService.autoUpdateCollectionFeeStatuses();
+        console.log('Status update result:', statusUpdateSuccess);
         
-        if (!paymentGenerationSuccess) {
-          console.warn('Failed to automatically generate payment records, continuing with existing data');
+        if (!statusUpdateSuccess) {
+          console.warn('Failed to automatically update collection fee statuses, continuing with existing data');
         }
         
         // Get all collectors with earnings
@@ -182,25 +173,16 @@ export default function CollectorsPage() {
         console.log('Collectors data fetched:', collectorsData.length, 'collectors');
         setCollectors(collectorsData);
         
-        // Get all payments with penalties
-        console.log('Fetching payment data with penalties...');
-        const paymentsWithPenalties = await collectorPenaltyService.getCollectorPaymentsWithPenalties();
-        console.log('Payments data fetched:', paymentsWithPenalties.length, 'payments');
-        setPayments(paymentsWithPenalties as PaymentData[]);
+        // No need to fetch payment data - using collections table directly
         
         // Calculate stats using the aggregated collector data for consistency
         const totalCollectors = collectorsData.length;
         const totalGrossEarnings = collectorsData.reduce((sum, collector) => sum + (collector.totalEarnings || 0), 0);
         const totalPenalties = collectorsData.reduce((sum, collector) => sum + (collector.totalPenalties || 0), 0);
         
-        // Calculate pending and paid amounts from payment records
-        const totalPendingAmount = paymentsWithPenalties
-          .filter((p: any) => p.status === 'pending')
-          .reduce((sum: number, payment: any) => sum + payment.adjusted_earnings, 0);
-          
-        const totalPaidAmount = paymentsWithPenalties
-          .filter((p: any) => p.status === 'paid')
-          .reduce((sum: number, payment: any) => sum + payment.adjusted_earnings, 0);
+        // Calculate pending and paid amounts from collections data
+        const totalPendingAmount = collectorsData.reduce((sum, collector) => sum + (collector.pendingPayments || 0), 0);
+        const totalPaidAmount = collectorsData.reduce((sum, collector) => sum + (collector.paidPayments || 0), 0);
           
         const totalCollections = collectorsData.reduce((sum, collector) => sum + (collector.totalCollections || 0), 0);
         const avgCollectionsPerCollector = totalCollectors > 0 ? totalCollections / totalCollectors : 0;
@@ -255,121 +237,40 @@ export default function CollectorsPage() {
     fetchPenaltyAnalytics();
   }, [activeTab, penaltyAnalytics]);
   
-  // Memoized filtered payments
-  const filteredPayments = useMemo(() => {
-    // Filter payments based on payment filter
-    let filteredPayments = payments;
-    if (paymentFilter !== 'all') {
-      filteredPayments = payments.filter(payment => payment.status === paymentFilter);
-    }
-    
-    // Further filter by search term if provided
-    if (searchTerm) {
-      filteredPayments = filteredPayments.filter(payment => 
-        payment.collector_name?.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    }
-    
-    return filteredPayments;
-  }, [payments, paymentFilter, searchTerm]);
+  // Memoized filtered payments - removed as we're using collections directly
 
-  const handleMarkAsPaid = async (paymentId: string) => {
+  // Function to mark all pending collections for a collector as paid
+  const handleMarkAsPaid = async (collectorId: string, collectorName: string) => {
     try {
-      const successResult = await collectorEarningsService.markPaymentAsPaid(paymentId);
+      // Mark all pending collections for this collector as paid
+      const successResult = await collectorEarningsService.markCollectionsAsPaid(collectorId);
       
       if (successResult) {
-        // Update the payment status in the list
-        setPayments(prev => 
-          prev.map(payment => 
-            payment.id === paymentId 
-              ? { ...payment, status: 'paid', payment_date: new Date().toISOString() } 
-              : payment
-          )
-        );
+        // Refresh the collectors data to update the UI
+        const collectorsData = await collectorEarningsService.getCollectorsWithEarnings();
+        setCollectors(collectorsData);
         
-        // Update stats
-        const payment = payments.find(p => p.id === paymentId);
-        if (payment) {
-          setStats(prev => ({
-            ...prev,
-            totalPendingAmount: prev.totalPendingAmount - payment.adjusted_earnings,
-            totalPaidAmount: prev.totalPaidAmount + payment.adjusted_earnings
-          }));
-        }
+        // Recalculate stats
+        const totalPendingAmount = collectorsData.reduce((sum, collector) => sum + (collector.pendingPayments || 0), 0);
+        const totalPaidAmount = collectorsData.reduce((sum, collector) => sum + (collector.paidPayments || 0), 0);
         
-        success('Success', 'Payment marked as paid');
-      } else {
-        throw new Error('Failed to mark payment as paid');
-      }
-    } catch (error) {
-      console.error('Error marking payment as paid:', error);
-      error('Error', 'Failed to mark payment as paid');
-    }
-  };
-  
-  // Function to mark all pending payments for a collector as paid
-  const handleMarkAllAsPaid = async (collectorId: string, collectorName: string) => {
-    try {
-      // Get all pending payments for this collector
-      const pendingPayments = payments.filter(
-        p => p.collector_id === collectorId && p.status === 'pending'
-      );
-      
-      if (pendingPayments.length === 0) {
-        error('No pending payments', 'No pending payments found for this collector');
-        return;
-      }
-      
-      // Mark each payment as paid
-      const results = await Promise.all(
-        pendingPayments.map(payment => collectorEarningsService.markPaymentAsPaid(payment.id))
-      );
-      
-      // Check if all operations were successful
-      const allSuccessful = results.every(result => result === true);
-      
-      if (allSuccessful) {
-        // Update the payments state
-        setPayments(prev => 
-          prev.map(payment => 
-            payment.collector_id === collectorId && payment.status === 'pending'
-              ? { ...payment, status: 'paid', payment_date: new Date().toISOString() }
-              : payment
-          )
-        );
-        
-        // Update stats
-        const totalAmountPaid = pendingPayments.reduce((sum, payment) => sum + payment.adjusted_earnings, 0);
         setStats(prev => ({
           ...prev,
-          totalPendingAmount: prev.totalPendingAmount - totalAmountPaid,
-          totalPaidAmount: prev.totalPaidAmount + totalAmountPaid
+          totalPendingAmount,
+          totalPaidAmount
         }));
         
-        success('Success', `All pending payments for ${collectorName} marked as paid`);
+        success('Success', `All pending collections for ${collectorName} marked as paid`);
       } else {
-        throw new Error('Some payments failed to be marked as paid');
+        throw new Error('Failed to mark collections as paid');
       }
     } catch (error) {
-      console.error('Error marking all payments as paid:', error);
-      error('Error', 'Failed to mark all payments as paid');
+      console.error('Error marking collections as paid:', error);
+      error('Error', 'Failed to mark collections as paid');
     }
   };
 
-  // Group payments by collector for easier management
-  const groupedPayments = useMemo(() => {
-    const groups: Record<string, PaymentData[]> = {};
-    
-    filteredPayments.forEach(payment => {
-      const collectorId = payment.collector_id;
-      if (!groups[collectorId]) {
-        groups[collectorId] = [];
-      }
-      groups[collectorId].push(payment);
-    });
-    
-    return groups;
-  }, [filteredPayments]);
+  // Group payments by collector - removed as we're using collections directly
 
   // State for expanded collector rows
   const [expandedCollectors, setExpandedCollectors] = useState<Record<string, boolean>>({});
@@ -503,11 +404,11 @@ export default function CollectorsPage() {
                       </div>
                     </TableCell>
                     <TableCell className="text-right">
-                      {payments.filter(p => p.collector_id === collector.id && p.status === 'pending').length > 0 ? (
+                      {collector.pendingPayments > 0 ? (
                         <Badge variant="secondary" className="bg-orange-100 text-orange-800 text-xs">
                           Pending Payments
                         </Badge>
-                      ) : payments.filter(p => p.collector_id === collector.id).length > 0 ? (
+                      ) : collector.paidPayments > 0 ? (
                         <Badge variant="default" className="bg-green-100 text-green-800 text-xs">
                           All Paid
                         </Badge>
@@ -518,23 +419,24 @@ export default function CollectorsPage() {
                       )}
                     </TableCell>
                     <TableCell className="text-right py-2">
-                      {payments.filter(p => p.collector_id === collector.id && p.status === 'pending').length > 0 && (
-                        <Button 
-                          size="sm" 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleMarkAllAsPaid(collector.id, collector.name);
-                          }}
-                          className="bg-green-600 hover:bg-green-700 h-8 px-2 text-xs"
-                        >
-                          Mark as Paid
-                        </Button>
-                      )}
+                      <Button 
+                        size="sm" 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (collector.pendingPayments > 0) {
+                            handleMarkAsPaid(collector.id, collector.name);
+                          }
+                        }}
+                        className={`h-8 px-2 text-xs ${collector.pendingPayments > 0 ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-300 cursor-not-allowed'}`}
+                        disabled={collector.pendingPayments === 0}
+                      >
+                        Mark as Paid
+                      </Button>
                     </TableCell>
                   </TableRow>
                   {expandedCollectors[collector.id] && (
                     <TableRow>
-                      <TableCell colSpan={11} className="p-0 bg-muted/50">
+                      <TableCell colSpan={12} className="p-0 bg-muted/50">
                         <div className="p-4">
                           <h4 className="font-medium mb-3 flex items-center gap-2">
                             <ListIcon className="h-4 w-4" />
@@ -596,111 +498,54 @@ export default function CollectorsPage() {
                               Loading collections data...
                             </div>
                           )}
-                          {/* Show payment history for this collector */}
-                          {payments.filter(p => p.collector_id === collector.id).length > 0 && (
-                            <div className="mt-6">
-                              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-3">
-                                <h5 className="font-medium">Payment History</h5>
-                                {payments.filter(p => p.collector_id === collector.id && p.status === 'pending').length > 0 && (
-                                  <Button 
-                                    size="sm"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleMarkAllAsPaid(collector.id, collector.name);
-                                    }}
-                                    className="bg-green-600 hover:bg-green-700 text-xs h-8"
-                                  >
-                                    Mark All Pending as Paid
-                                  </Button>
-                                )}
-                              </div>
-                              <div className="overflow-x-auto">
-                                <Table>
-                                  <TableHeader>
-                                    <TableRow>
-                                      <TableHead className="w-[120px]">Period</TableHead>
-                                      <TableHead className="text-right w-[80px]">Collections</TableHead>
-                                      <TableHead className="text-right w-[80px]">Liters</TableHead>
-                                      <TableHead className="text-right w-[90px]">Rate</TableHead>
-                                      <TableHead className="text-right w-[100px]">Gross</TableHead>
-                                      <TableHead className="text-right w-[90px]">Penalties</TableHead>
-                                      <TableHead className="text-right w-[100px]">Pending</TableHead>
-                                      <TableHead className="text-right w-[100px]">Net Pay</TableHead>
-                                      <TableHead className="w-[80px]">Status</TableHead>
-                                      <TableHead className="w-[100px]">Actions</TableHead>
-                                    </TableRow>
-                                  </TableHeader>
-                                  <TableBody>
-                                    {payments.filter(p => p.collector_id === collector.id).map((payment) => (
-                                      <TableRow key={payment.id}>
-                                        <TableCell>
-                                          <div className="text-xs">
-                                            {new Date(payment.period_start).toLocaleDateString()} - {new Date(payment.period_end).toLocaleDateString()}
-                                          </div>
-                                        </TableCell>
-                                        <TableCell className="text-right text-xs">{payment.total_collections}</TableCell>
-                                        <TableCell className="text-right text-xs">{payment.total_liters?.toFixed(0)}</TableCell>
-                                        <TableCell className="text-right text-xs">{formatCurrency(payment.rate_per_liter)}</TableCell>
-                                        <TableCell className="text-right font-medium text-xs">{formatCurrency(payment.total_earnings)}</TableCell>
-                                        <TableCell className="text-right text-xs">
-                                          {payment.total_penalties > 0 ? (
-                                            <span className="font-medium text-red-600">
-                                              {formatCurrency(payment.total_penalties)}
-                                            </span>
-                                          ) : (
-                                            <span className="text-muted-foreground">{formatCurrency(0)}</span>
-                                          )}
-                                        </TableCell>
-                                        <TableCell className="text-right text-xs">
-                                          {payment.status === 'pending' ? (
-                                            <span className="font-medium text-orange-600">
-                                              {formatCurrency(payment.adjusted_earnings)}
-                                            </span>
-                                          ) : (
-                                            <span className="text-muted-foreground">{formatCurrency(0)}</span>
-                                          )}
-                                        </TableCell>
-                                        <TableCell className={`text-right font-bold text-xs ${payment.adjusted_earnings < 0 ? 'text-red-600' : ''}`}>
-                                          {formatCurrency(payment.adjusted_earnings)}
-                                        </TableCell>
-                                        <TableCell>
-                                          <Badge 
-                                            variant={payment.status === 'paid' ? 'default' : 'secondary'}
-                                            className={`text-xs ${payment.status === 'paid' ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'}`}
-                                          >
-                                            {payment.status === 'paid' ? 'Paid' : 'Pending'}
-                                          </Badge>
-                                        </TableCell>
-                                        <TableCell>
-                                          {payment.status === 'pending' ? (
-                                            <Button 
-                                              size="sm" 
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleMarkAsPaid(payment.id);
-                                              }}
-                                              className="bg-green-600 hover:bg-green-700 h-7 px-2 text-xs"
-                                            >
-                                              Mark Paid
-                                            </Button>
-                                          ) : (
-                                            <div className="text-xs text-muted-foreground">
-                                              {payment.payment_date 
-                                                ? new Date(payment.payment_date).toLocaleDateString() 
-                                                : 'N/A'}
-                                              </div>
-                                            )}
-                                        </TableCell>
-                                      </TableRow>
-                                    ))}
-                                  </TableBody>
-                                </Table>
-                              </div>
-                              <div className="mt-2 text-xs text-muted-foreground">
-                                Note: Payment periods may be daily or cover specific timeframes.
-                              </div>
+                          {/* Show collections summary for this collector */}
+                          <div className="mt-6">
+                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-3">
+                              <h5 className="font-medium">Collections Summary</h5>
+                              <Button 
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (collector.pendingPayments > 0) {
+                                    handleMarkAsPaid(collector.id, collector.name);
+                                  }
+                                }}
+                                className={`text-xs h-8 ${collector.pendingPayments > 0 ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-300 cursor-not-allowed'}`}
+                                disabled={collector.pendingPayments === 0}
+                              >
+                                Mark All Pending as Paid
+                              </Button>
                             </div>
-                          )}
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                              <Card>
+                                <CardHeader className="pb-2">
+                                  <CardTitle className="text-sm">Total Collections</CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                  <div className="text-2xl font-bold">{collector.totalCollections}</div>
+                                  <p className="text-xs text-muted-foreground">All time collections</p>
+                                </CardContent>
+                              </Card>
+                              <Card>
+                                <CardHeader className="pb-2">
+                                  <CardTitle className="text-sm">Total Liters</CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                  <div className="text-2xl font-bold">{collector.totalLiters?.toFixed(0)}</div>
+                                  <p className="text-xs text-muted-foreground">All time liters collected</p>
+                                </CardContent>
+                              </Card>
+                              <Card>
+                                <CardHeader className="pb-2">
+                                  <CardTitle className="text-sm">Net Earnings</CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                  <div className="text-2xl font-bold text-green-600">{formatCurrency(collector.totalEarnings - collector.totalPenalties)}</div>
+                                  <p className="text-xs text-muted-foreground">After penalty deductions</p>
+                                </CardContent>
+                              </Card>
+                            </div>
+                          </div>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -714,27 +559,28 @@ export default function CollectorsPage() {
         <div className="p-4 border-t bg-gray-50">
           <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
             <div className="text-sm text-muted-foreground">
-              {payments.filter(p => p.status === 'pending').length > 0 
-                ? `${payments.filter(p => p.status === 'pending').length} pending payments` 
+              {stats.totalPendingAmount > 0 
+                ? `${collectors.filter(c => c.pendingPayments > 0).length} collectors with pending payments` 
                 : 'No pending payments'}
             </div>
             <div className="w-full sm:w-auto">
-              {payments.filter(p => p.status === 'pending').length > 0 && (
-                <Button 
-                  onClick={() => {
+              <Button 
+                onClick={() => {
+                  // Only proceed if there are pending payments
+                  if (stats.totalPendingAmount > 0) {
                     // Confirm before marking all pending payments as paid for all collectors
-                    if (window.confirm(`Are you sure you want to mark all ${payments.filter(p => p.status === 'pending').length} pending payments as paid for ALL collectors?`)) {
-                      payments
-                        .filter(p => p.status === 'pending')
-                        .forEach(payment => handleMarkAsPaid(payment.id));
+                    if (window.confirm(`Are you sure you want to mark all pending collections as paid for ALL collectors?`)) {
+                      // Mark all pending collections as paid for all collectors
+                      collectors.forEach(collector => handleMarkAsPaid(collector.id, collector.name));
                     }
-                  }}
-                  className="bg-green-600 hover:bg-green-700 w-full sm:w-auto"
-                  size="sm"
-                >
-                  Mark All Pending Payments as Paid (All Collectors)
-                </Button>
-              )}
+                  }
+                }}
+                className={`w-full sm:w-auto ${stats.totalPendingAmount > 0 ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-300 cursor-not-allowed'}`}
+                size="sm"
+                disabled={stats.totalPendingAmount === 0}
+              >
+                Mark All Pending Payments as Paid (All Collectors)
+              </Button>
             </div>
           </div>
         </div>
@@ -870,22 +716,19 @@ export default function CollectorsPage() {
     );
   };
 
-  // Export payments data to CSV
+  // Export collector data to CSV
   const exportPaymentsToCSV = () => {
     try {
-      const headers = ['Collector Name', 'Period Start', 'Period End', 'Total Collections', 'Total Liters', 'Rate Per Liter', 'Gross Earnings', 'Total Penalties', 'Net Earnings', 'Status', 'Payment Date'];
-      const rows = filteredPayments.map(payment => [
-        payment.collector_name || 'Unknown Collector',
-        payment.period_start,
-        payment.period_end,
-        payment.total_collections,
-        payment.total_liters?.toFixed(2) || '0.00',
-        formatCurrency(payment.rate_per_liter),
-        formatCurrency(payment.total_earnings),
-        formatCurrency(payment.total_penalties),
-        formatCurrency(payment.adjusted_earnings),
-        payment.status,
-        payment.payment_date || 'N/A'
+      const headers = ['Collector Name', 'Total Collections', 'Total Liters', 'Rate Per Liter', 'Gross Earnings', 'Total Penalties', 'Pending Amount', 'Paid Amount'];
+      const rows = collectors.map(collector => [
+        collector.name || 'Unknown Collector',
+        collector.totalCollections,
+        collector.totalLiters?.toFixed(2) || '0.00',
+        formatCurrency(collector.ratePerLiter),
+        formatCurrency(collector.totalEarnings),
+        formatCurrency(collector.totalPenalties),
+        formatCurrency(collector.pendingPayments),
+        formatCurrency(collector.paidPayments)
       ]);
       
       const csvContent = [
@@ -903,41 +746,35 @@ export default function CollectorsPage() {
       link.click();
       document.body.removeChild(link);
       
-      success('Success', 'Payments data exported successfully');
+      success('Success', 'Collector data exported successfully');
     } catch (error) {
-      console.error('Error exporting payments data:', error);
-      error('Error', 'Failed to export payments data');
+      console.error('Error exporting collector data:', error);
+      error('Error', 'Failed to export collector data');
     }
   };
 
   // Update the analytics tab to include the variance vs earnings chart
   const renderAnalyticsTab = () => {
     // Prepare data for the chart
-    const chartData = payments.map(payment => ({
-      period: `${new Date(payment.period_start).toLocaleDateString()} - ${new Date(payment.period_end).toLocaleDateString()}`,
-      variance: payment.total_penalties, // Using penalties as a proxy for variance
-      earnings: payment.adjusted_earnings,
-      collector: payment.collector_name || 'Unknown Collector'
+    const chartData = collectors.map(collector => ({
+      period: collector.name || 'Unknown Collector',
+      variance: collector.totalPenalties, // Using penalties as a proxy for variance
+      earnings: collector.totalEarnings - collector.totalPenalties,
+      collector: collector.name || 'Unknown Collector'
     }));
 
     // Prepare data for payment status distribution chart
     const statusDistributionData = [
-      { name: 'Pending', value: payments.filter(p => p.status === 'pending').length },
-      { name: 'Paid', value: payments.filter(p => p.status === 'paid').length }
+      { name: 'Pending', value: collectors.filter(c => c.pendingPayments > 0).length },
+      { name: 'Paid', value: collectors.filter(c => c.paidPayments > 0 && c.pendingPayments === 0).length }
     ];
 
     // Prepare data for top collectors chart
-    const collectorEarningsMap: Record<string, number> = {};
-    payments.forEach(payment => {
-      const collectorName = payment.collector_name || 'Unknown Collector';
-      if (!collectorEarningsMap[collectorName]) {
-        collectorEarningsMap[collectorName] = 0;
-      }
-      collectorEarningsMap[collectorName] += payment.adjusted_earnings;
-    });
-
-    const topCollectorsData = Object.entries(collectorEarningsMap)
-      .map(([name, earnings]) => ({ name, earnings }))
+    const topCollectorsData = collectors
+      .map(collector => ({
+        name: collector.name || 'Unknown Collector',
+        earnings: collector.totalEarnings - collector.totalPenalties
+      }))
       .sort((a, b) => b.earnings - a.earnings)
       .slice(0, 10);
 
