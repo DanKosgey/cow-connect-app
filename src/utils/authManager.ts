@@ -345,10 +345,16 @@ class AuthManager {
     try {
       logger.debug('Fetching user role for user:', userId);
       
-      // Use the secure function that bypasses RLS
-      const { data, error } = await supabase.rpc('get_user_role_secure', {
-        user_id_param: userId
-      });
+      // ✅ ADD TIMEOUT TO RPC CALL
+      const timeoutPromise = new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error('RPC timeout after 5 seconds')), 5000)
+      );
+
+      // Use the secure function that bypasses RLS with timeout
+      const { data, error } = await Promise.race([
+        supabase.rpc('get_user_role_secure', { user_id_param: userId }),
+        timeoutPromise
+      ]) as any;
 
       if (error) {
         logger.errorWithContext('Error calling secure function to get user role', error);

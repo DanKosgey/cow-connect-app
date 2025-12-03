@@ -27,87 +27,65 @@ export const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) 
     userEmail: user?.email
   });
   
-  // Set a timeout to prevent indefinite loading
-  useEffect(() => {
-    AdminDebugLogger.log('Setting up loading timeout effect', { loading });
-    if (loading) {
-      const timeout = setTimeout(() => {
-        AdminDebugLogger.log('Loading timeout reached');
-        setLoadingTimeout(true);
-      }, 15000); // Increased timeout to 15 seconds
-      
-      return () => {
-        AdminDebugLogger.log('Clearing loading timeout');
-        clearTimeout(timeout);
-      };
-    } else {
-      AdminDebugLogger.log('Loading finished, clearing timeout state');
-      setLoadingTimeout(false);
-    }
-  }, [loading]);
-
-  // Debounce loader to prevent flickering
-  useEffect(() => {
-    AdminDebugLogger.log('Setting up loader debounce effect', { loading });
-    if (loading) {
-      const timer = setTimeout(() => {
-        AdminDebugLogger.log('Debounce timer finished, showing loader');
-        setShowLoader(true);
-      }, 500); // Reduced debounce time
-      
-      return () => {
-        AdminDebugLogger.log('Clearing loader debounce timer');
-        clearTimeout(timer);
-      };
-    } else {
-      AdminDebugLogger.log('Loading finished, hiding loader immediately');
-      setShowLoader(false);
-    }
-  }, [loading]);
-
   // Check session validity when component mounts and when loading state changes
   useEffect(() => {
     const checkSession = async () => {
-      if (loading && !sessionChecked) {
-        setSessionChecked(true);
+      // ✅ CHECK ON EVERY LOAD, NOT JUST ONCE
+      if (loading) {
         AdminDebugLogger.log('Checking session validity...');
         
         try {
-          // Use auth manager to validate and refresh session
-          const isValid = await authManager.validateAndRefreshSession();
+          // Add timeout to session check
+          const timeoutPromise = new Promise<boolean>((_, reject) => 
+            setTimeout(() => reject(new Error('Session check timeout')), 5000)
+          );
+          
+          const isValid = await Promise.race([
+            authManager.validateAndRefreshSession(),
+            timeoutPromise
+          ]) as boolean;
           
           if (!isValid) {
             AdminDebugLogger.error('Session is not valid');
-            
-            // Sign out and redirect to login
-            AdminDebugLogger.log('Session invalid, signing out...');
             await authManager.signOut();
+            // Force redirect
+            window.location.href = loginRoutes[requiredRole];
           } else {
             AdminDebugLogger.log('Session is valid');
           }
         } catch (error) {
           AdminDebugLogger.error('Error during session check:', error);
-          
-          // Try a fallback validation
-          try {
-            const isFallbackValid = await authManager.isSessionValid();
-            if (!isFallbackValid) {
-              // Sign out on error
-              await authManager.signOut();
-            } else {
-              AdminDebugLogger.log('Fallback validation successful');
-            }
-          } catch (fallbackError) {
-            AdminDebugLogger.error('Error during fallback session check:', fallbackError);
-            // Sign out on error
-            await authManager.signOut();
-          }
+          // On any error or timeout, sign out
+          await authManager.signOut();
+          window.location.href = loginRoutes[requiredRole];
         }
       }
     };
     
     checkSession();
-  }, [loading, sessionChecked]);
+  }, [loading, requiredRole]); // ✅ Check on every loading change
+
+  // Set a timeout to prevent indefinite loading
+  useEffect(() => {
+    AdminDebugLogger.log('Setting up loading timeout effect', { loading });
+    if (loading) {
+      const timeout = setTimeout(async () => {
+        AdminDebugLogger.error('⚠️ HARD TIMEOUT: Loading took too long');
+        
+        // ✅ FORCE SIGN OUT AND REDIRECT
+        try {
+          await authManager.signOut();
+        } catch (e) {
+          AdminDebugLogger.error('Error during timeout signout:', e);
+        }
+        
+        // Force redirect to login
+        window.location.href = loginRoutes[requiredRole];
+      }, 10000); // 10 second hard timeout
+      
+      return () => clearTimeout(timeout);
+    }
+  }, [loading, requiredRole]);
 
   const getCachedRoleInfo = () => {
     try {

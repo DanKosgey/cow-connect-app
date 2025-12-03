@@ -125,8 +125,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return cached;
       }
 
-      // Use the auth manager to get user role
-      const role = await authManager.getUserRole(userId);
+      // ✅ ADD TIMEOUT WRAPPER
+      const timeoutPromise = new Promise<null>((_, reject) => 
+        setTimeout(() => reject(new Error('Role fetch timeout after 8 seconds')), 8000)
+      );
+
+      // Race between the actual role fetch and timeout
+      const role = await Promise.race([
+        authManager.getUserRole(userId),
+        timeoutPromise
+      ]) as UserRole | null;
       
       if (role) {
         // Cache the role
@@ -137,16 +145,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return null;
     } catch (error: any) {
       AdminDebugLogger.error('Exception getting user role:', error);
-      AdminDebugLogger.error('Exception stack:', error.stack);
       
-      // For any errors, try fallback to cache
+      // For timeout or other errors, try fallback to cache
       const cached = getCachedRole(userId);
       if (cached) {
         AdminDebugLogger.log('Using cached role as fallback:', cached);
         return cached;
       }
       
-      return null;
+      // If no cache and error, throw to trigger cleanup
+      throw error;
     }
   }, []);
 
@@ -205,29 +213,36 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       AdminDebugLogger.log('Waiting 500ms for session to establish...');
       await new Promise(resolve => setTimeout(resolve, 500));
 
-      // Verify user role with retries
-      let userRole: UserRole | null = null;
-      let attempts = 0;
-      const maxAttempts = 5; // Increased attempts for debugging
-
-      AdminDebugLogger.log(`Starting role verification with max ${maxAttempts} attempts`);
-      
-      while (attempts < maxAttempts && !userRole) {
-        attempts++;
-        AdminDebugLogger.log(`Role verification attempt ${attempts}/${maxAttempts}`);
+      // ✅ ADD TIMEOUT TO ENTIRE ROLE VERIFICATION PROCESS
+      const roleVerificationPromise = (async () => {
+        await new Promise(resolve => setTimeout(resolve, 500));
         
-        userRole = await getUserRole(data.user.id);
-        AdminDebugLogger.log(`Role verification attempt ${attempts} result:`, userRole);
+        let userRole: UserRole | null = null;
+        let attempts = 0;
+        const maxAttempts = 3; // Reduced attempts
         
-        if (!userRole && attempts < maxAttempts) {
-          // Wait before retry
-          AdminDebugLogger.log(`Waiting 1000ms before retry ${attempts + 1}/${maxAttempts}...`);
-          await new Promise(resolve => setTimeout(resolve, 1000));
+        while (attempts < maxAttempts && !userRole) {
+          attempts++;
+          AdminDebugLogger.log(`Role verification attempt ${attempts}/${maxAttempts}`);
+          
+          userRole = await getUserRole(data.user.id);
+          
+          if (!userRole && attempts < maxAttempts) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
         }
-      }
+        
+        return userRole;
+      })();
+      
+      const timeoutPromise = new Promise<null>((_, reject) => 
+        setTimeout(() => reject(new Error('Role verification timeout')), 10000)
+      );
+      
+      const userRole = await Promise.race([roleVerificationPromise, timeoutPromise]) as UserRole | null;
 
       if (!userRole) {
-        AdminDebugLogger.error(`Failed to get user role after ${maxAttempts} attempts`);
+        AdminDebugLogger.error(`Failed to get user role after timeout`);
         await supabase.auth.signOut();
         throw new Error('Unable to verify user role. Please contact support.');
       }
