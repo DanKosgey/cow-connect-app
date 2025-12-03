@@ -31,6 +31,7 @@ import { collectorRateService } from '@/services/collector-rate-service';
 import { useSessionRefresh } from '@/hooks/useSessionRefresh';
 import { useAuth } from '@/contexts/SimplifiedAuthContext';
 import { formatCurrency } from '@/utils/formatters';
+import { deductionService } from '@/services/deduction-service';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, 
   Tooltip, Legend, ResponsiveContainer, Area, AreaChart, PieChart as RechartsPieChart, 
@@ -89,6 +90,7 @@ interface FarmerPaymentSummary {
   bank_info: string;
   credit_used?: number;
   net_payment?: number;
+  total_deductions?: number;
 }
 
 interface PaymentAnalytics {
@@ -118,6 +120,9 @@ const PaymentSystem = () => {
     from: '',
     to: ''
   });
+
+  // Farmer deductions state
+  const [farmerDeductions, setFarmerDeductions] = useState<Record<string, number>>({});
 
   // Use React Query hook for data fetching
   const { data: paymentData, isLoading, isError, error, refetch } = usePaymentSystemData(timeFrame, customDateRange);
@@ -173,6 +178,25 @@ const PaymentSystem = () => {
     };
 
     fetchRates();
+  }, []);
+
+  // Fetch farmer deductions
+  useEffect(() => {
+    const fetchFarmerDeductions = async () => {
+      try {
+        const deductionsData = await deductionService.getAllFarmersWithDeductions();
+        const deductionsMap: Record<string, number> = {};
+        deductionsData.forEach((farmer: any) => {
+          deductionsMap[farmer.id] = farmer.totalDeductions || 0;
+        });
+        setFarmerDeductions(deductionsMap);
+      } catch (error) {
+        console.error('Error fetching farmer deductions:', error);
+        toast.error('Error', 'Failed to fetch farmer deductions');
+      }
+    };
+
+    fetchFarmerDeductions();
   }, []);
 
   // Initialize performance monitoring
@@ -851,6 +875,7 @@ const PaymentSystem = () => {
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Liters</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pending</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Paid</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Deductions</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Credit Used</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Net Payment</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
@@ -860,6 +885,7 @@ const PaymentSystem = () => {
                       <tbody>
                         {farmerPaymentSummaries.map((farmer) => {
                           const hasCredit = farmer.credit_used > 0;
+                          const totalDeductions = farmer.total_deductions || 0;
                           return (
                             <tr key={farmer.farmer_id} className="hover:bg-gray-50">
                               <td className="px-6 py-4 whitespace-nowrap">
@@ -878,6 +904,9 @@ const PaymentSystem = () => {
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                 {formatCurrency(farmer.paid_amount)}
                               </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600 font-medium">
+                                {formatCurrency(totalDeductions)}
+                              </td>
                               <td className="px-6 py-4 whitespace-nowrap">
                                 <span className={`text-sm font-medium ${hasCredit ? 'text-purple-600' : 'text-gray-500'}`}>
                                   {formatCurrency(farmer.credit_used)}
@@ -885,7 +914,7 @@ const PaymentSystem = () => {
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap">
                                 <span className="text-sm font-medium text-green-600">
-                                  {formatCurrency(farmer.net_payment)}
+                                  {formatCurrency(farmer.net_payment || 0)}
                                 </span>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
@@ -918,7 +947,6 @@ const PaymentSystem = () => {
                                   </Button>
                                 </div>
                               </td>
-
                             </tr>
                           );
                         })}
@@ -963,9 +991,15 @@ const PaymentSystem = () => {
                               </span>
                             </div>
                             <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Deductions:</span>
+                              <span className="text-sm font-medium text-red-600">
+                                {formatCurrency(farmer.total_deductions || 0)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
                               <span className="text-sm text-gray-600">Net Payment:</span>
                               <span className="text-sm font-medium text-blue-600">
-                                {formatCurrency(farmer.net_payment)}
+                                {formatCurrency(farmer.net_payment || 0)}
                               </span>
                             </div>
                             <div className="flex justify-between pt-2 border-t">

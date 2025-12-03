@@ -14,6 +14,7 @@ import {
 } from '@/utils/iconImports';
 import useToastNotifications from '@/hooks/useToastNotifications';
 import { PaymentService } from '@/services/payment-service';
+import { deductionService } from '@/services/deduction-service';
 import { formatCurrency } from '@/utils/formatters';
 
 interface Collection {
@@ -50,13 +51,15 @@ const FarmerPaymentDetails = () => {
     total_liters: 0,
     total_amount: 0,
     paid_amount: 0,
-    pending_amount: 0
+    pending_amount: 0,
+    total_deductions: 0
   });
 
   useEffect(() => {
     if (farmerId) {
       fetchFarmerData();
       fetchCollections();
+      fetchDeductions();
     }
   }, [farmerId]);
 
@@ -126,18 +129,32 @@ const FarmerPaymentDetails = () => {
         .reduce((sum, c) => sum + (c.total_amount || 0), 0) || 0;
       const pendingAmount = totalAmount - paidAmount;
 
-      setStats({
+      setStats(prev => ({
+        ...prev,
         total_collections: totalCollections,
         total_liters: totalLiters,
         total_amount: totalAmount,
         paid_amount: paidAmount,
         pending_amount: pendingAmount
-      });
+      }));
     } catch (error) {
       console.error('Error fetching collections:', error);
       toast.error('Error', 'Failed to fetch collections');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchDeductions = async () => {
+    try {
+      const totalDeductions = await deductionService.calculateTotalDeductionsForFarmer(farmerId!);
+      setStats(prev => ({
+        ...prev,
+        total_deductions: totalDeductions
+      }));
+    } catch (error) {
+      console.error('Error fetching deductions:', error);
+      toast.error('Error', 'Failed to fetch deduction data');
     }
   };
 
@@ -161,6 +178,7 @@ const FarmerPaymentDetails = () => {
 
       toast.success('Success', 'Collection marked as paid successfully!');
       fetchCollections(); // Refresh data
+      fetchDeductions(); // Refresh deductions
     } catch (error: any) {
       console.error('Error marking as paid:', error);
       toast.error('Error', 'Failed to mark as paid: ' + (error.message || 'Unknown error'));
@@ -187,6 +205,7 @@ const FarmerPaymentDetails = () => {
 
       toast.success('Success', `Marked ${pendingCollections.length} collections as paid successfully!`);
       fetchCollections(); // Refresh data
+      fetchDeductions(); // Refresh deductions
     } catch (error: any) {
       console.error('Error marking all as paid:', error);
       toast.error('Error', 'Failed to mark all as paid: ' + (error.message || 'Unknown error'));
@@ -256,7 +275,7 @@ const FarmerPaymentDetails = () => {
           </Card>
 
           {/* Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mb-6">
             <div className="bg-white rounded-xl shadow-lg p-4 border-l-4 border-blue-500">
               <p className="text-sm text-gray-600">Total Collections</p>
               <p className="text-2xl font-bold text-gray-900">{stats.total_collections}</p>
@@ -276,6 +295,10 @@ const FarmerPaymentDetails = () => {
             <div className="bg-white rounded-xl shadow-lg p-4 border-l-4 border-purple-500">
               <p className="text-sm text-gray-600">Total Amount</p>
               <p className="text-2xl font-bold text-gray-900">{formatCurrency(stats.total_amount)}</p>
+            </div>
+            <div className="bg-white rounded-xl shadow-lg p-4 border-l-4 border-red-500">
+              <p className="text-sm text-gray-600">Deductions</p>
+              <p className="text-2xl font-bold text-gray-900">{formatCurrency(stats.total_deductions)}</p>
             </div>
           </div>
 

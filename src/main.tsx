@@ -3,10 +3,14 @@ import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
 import "./styles/responsive.css";
+import { initRecurringDeductions } from '@/utils/init-recurring-deductions';
 
 // Minimal Toaster added during migration (passive until wired to a store)
 import Toaster from '@/components/ui/toaster'
 // import SonnerToaster from '@/components/ui/sonner' // optional, wire later
+
+// Initialize recurring deductions
+initRecurringDeductions();
 
 // Unregister service workers for debugging
 if ('serviceWorker' in navigator) {

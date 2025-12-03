@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { CACHE_KEYS } from '@/services/cache-utils';
 import { formatCurrency } from '@/utils/formatters';
+import { deductionService } from '@/services/deduction-service';
 
 interface Collection {
   id: string;
@@ -50,6 +51,7 @@ interface FarmerPaymentSummary {
   bank_info: string;
   credit_used?: number;
   net_payment?: number;
+  total_deductions?: number;
 }
 
 interface PaymentAnalytics {
@@ -330,12 +332,20 @@ const calculateFarmerSummaries = async (
       console.warn('Error fetching credit data for farmer:', farmerId, error);
     }
 
-    // Calculate net pending amount (gross pending - credit used)
-    const netPendingAmount = Math.max(0, pendingNetAmount - creditUsed);
-    
-    // Calculate net payment (same as paid amount since we're looking at what's actually paid)
+    // Calculate total deductions for the farmer
+    let totalDeductions = 0;
+    try {
+      totalDeductions = await deductionService.calculateTotalDeductionsForFarmer(farmerId);
+    } catch (error) {
+      console.warn('Error fetching deduction data for farmer:', farmerId, error);
+    }
+
+    // Calculate net pending amount (gross pending - collector fees - credit used - deductions)
+    const netPendingAmount = Math.max(0, pendingNetAmount - creditUsed - totalDeductions);
+
+    // Calculate net payment (what farmer has actually received - only paid amounts)
     const netPayment = paidAmount;
-    
+
     farmerSummaries.push({
       farmer_id: farmerId,
       farmer_name: firstCollection.farmers?.profiles?.full_name || 'Unknown Farmer',
@@ -347,10 +357,11 @@ const calculateFarmerSummaries = async (
       total_net_amount: totalNetAmount,
       paid_amount: paidAmount,
       pending_gross_amount: pendingGrossAmount,
-      pending_net_amount: netPendingAmount, // Use net pending instead of gross pending
+      pending_net_amount: netPendingAmount, // This now includes deductions
       bank_info: `${firstCollection.farmers?.bank_name || 'N/A'} - ${firstCollection.farmers?.bank_account_number || 'No account'}`,
       credit_used: creditUsed,
-      net_payment: netPayment
+      net_payment: netPayment, // What farmer has actually received
+      total_deductions: totalDeductions
     });
   }
   

@@ -2,6 +2,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { collectorRateService } from '@/services/collector-rate-service';
 import { collectorPenaltyService } from './collector-penalty-service';
 import { collectorPenaltyAccountService } from './collector-penalty-account-service';
+import { deductionService } from '@/services/deduction-service';
 import { logger } from '@/utils/logger';
 import { 
   CollectorEarningsError, 
@@ -753,6 +754,11 @@ class CollectorEarningsService {
           const paidLiters = paidError ? 0 : paidCollections?.reduce((sum, collection) => sum + (collection.liters || 0), 0) || 0;
           const paidAmount = paidLiters * earnings.ratePerLiter;
           
+          // Calculate total deductions for this collector (if any)
+          // For now, we'll use a placeholder - in a full implementation, this would calculate
+          // deductions based on the farmer collections associated with this collector
+          const totalDeductions = 0;
+          
           // Note: earnings.totalEarnings now includes ALL collections (pending + paid)
           // pendingAmount and paidAmount represent the monetary value of pending and paid collections respectively
 
@@ -822,9 +828,46 @@ class CollectorEarningsService {
     }
   }
 
-  // fallbackManualPaymentGeneration method removed - using collections table directly
+  /**
+   * Calculate total deductions for a collector based on their associated farmers
+   * This function looks at all farmers who have had collections by this collector
+   * and sums up any active deductions for those farmers
+   */
+  async calculateCollectorDeductions(collectorId: string): Promise<number> {
+    try {
+      // Get all farmers who have had collections by this collector
+      const { data: farmerIds, error: farmersError } = await supabase
+        .from('collections')
+        .select('farmer_id')
+        .eq('staff_id', collectorId)
+        .neq('status', 'Cancelled');
+      
+      if (farmersError) {
+        logger.errorWithContext('CollectorEarningsService - calculateCollectorDeductions fetch farmers', farmersError);
+        return 0;
+      }
+      
+      // Extract unique farmer IDs
+      const uniqueFarmerIds = [...new Set(farmerIds?.map(c => c.farmer_id) || [])];
+      
+      if (uniqueFarmerIds.length === 0) {
+        return 0;
+      }
+      
+      // Calculate total deductions for all these farmers
+      let totalDeductions = 0;
+      for (const farmerId of uniqueFarmerIds) {
+        const farmerDeductions = await deductionService.calculateTotalDeductionsForFarmer(farmerId);
+        totalDeductions += farmerDeductions;
+      }
+      
+      return parseFloat(totalDeductions.toFixed(2));
+    } catch (error) {
+      logger.errorWithContext('CollectorEarningsService - calculateCollectorDeductions exception', error);
+      return 0;
+    }
+  }
 
-  // triggerAutoPaymentGeneration method removed - using collections table directly
 }
 
 // Export singleton instance

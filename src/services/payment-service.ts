@@ -1,8 +1,9 @@
 import { supabase } from '@/integrations/supabase/client';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '@/utils/logger';
-import { CreditService } from './credit-service';
-import { CollectionNotificationService } from './collection-notification-service';
+import { CreditService } from '@/services/credit-service';
+import { CollectionNotificationService } from '@/services/collection-notification-service';
+import { deductionService } from '@/services/deduction-service';
 import { collectorRateService } from '@/services/collector-rate-service';
 
 interface Collection {
@@ -449,7 +450,10 @@ export class PaymentService {
       // Calculate credit deduction for this payment
       const creditInfo = await CreditService.calculateAvailableCredit(farmerId);
       const creditUsed = Math.min(creditInfo.availableCredit, totalAmount);
-      const netPayment = totalAmount - creditUsed;
+      
+      // Calculate deduction amounts for this farmer
+      const totalDeductions = await deductionService.calculateTotalDeductionsForFarmer(farmerId);
+      const netPayment = totalAmount - creditUsed - totalDeductions;
 
       const { data, error } = await supabase
         .from('farmer_payments')
@@ -458,6 +462,7 @@ export class PaymentService {
           paid_at: new Date().toISOString(),
           paid_by: staffId, // Use the staff ID instead of user ID
           credit_used: creditUsed,
+          deductions_used: totalDeductions,
           net_payment: netPayment
         })
         .eq('id', paymentId)

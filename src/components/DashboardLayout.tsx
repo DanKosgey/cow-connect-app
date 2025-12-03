@@ -99,6 +99,7 @@ const roleNavigation: Record<string, NavItem[]> = {
     { label: 'Collectors', path: '/admin/collectors', icon: <Users className="h-5 w-5" />, category: 'finance' },
     { label: 'Credit Management', path: '/admin/credit-management', icon: <CreditCard className="h-5 w-5" />, category: 'finance' },
     { label: 'Penalty Management', path: '/admin/penalty-management', icon: <AlertTriangle className="h-5 w-5" />, category: 'finance' },
+    { label: 'Services', path: '/admin/deductions', icon: <DollarSign className="h-5 w-5" />, category: 'finance' },
     { label: 'Variance Reporting', path: '/admin/variance-reporting', icon: <TrendingUp className="h-5 w-5" />, category: 'analytics' },
     { label: 'Error Reporting', path: '/admin/error-reporting', icon: <AlertTriangle className="h-5 w-5" />, category: 'system' },
     { label: 'Analytics', path: '/admin/analytics', icon: <BarChart3 className="h-5 w-5" />, category: 'analytics' },
