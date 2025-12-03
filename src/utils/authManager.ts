@@ -14,7 +14,7 @@ class AuthManager {
   private storageHandler: ((e: StorageEvent) => void) | null = null;
   private broadcastChannel: BroadcastChannel | null = null;
   private lastSessionCheck: number = 0;
-  private sessionCheckCooldown: number = 5000; // 5 seconds
+  private sessionCheckCooldown: number = 30000; // 30 seconds
 
   private constructor() {
     this.setupCrossTabSync();
@@ -303,12 +303,12 @@ class AuthManager {
       
       document.addEventListener('visibilitychange', this.visibilityHandler);
       
-      // Setup more frequent session checks
+      // Setup less frequent session checks to reduce load
       this.sessionCheckInterval = setInterval(() => {
         this.validateAndRefreshSession().catch(error => {
           logger.errorWithContext('Error during periodic session check', error);
         });
-      }, 20 * 60 * 1000); // Check every 20 minutes instead of 30
+      }, 30 * 60 * 1000); // Check every 30 minutes
       
     } catch (error) {
       logger.errorWithContext('Error setting up cross-tab sync', error);
@@ -345,16 +345,8 @@ class AuthManager {
     try {
       logger.debug('Fetching user role for user:', userId);
       
-      // ✅ ADD TIMEOUT TO RPC CALL
-      const timeoutPromise = new Promise<never>((_, reject) => 
-        setTimeout(() => reject(new Error('RPC timeout after 5 seconds')), 5000)
-      );
-
-      // Use the secure function that bypasses RLS with timeout
-      const { data, error } = await Promise.race([
-        supabase.rpc('get_user_role_secure', { user_id_param: userId }),
-        timeoutPromise
-      ]) as any;
+      // Use the secure function that bypasses RLS
+      const { data, error } = await supabase.rpc('get_user_role_secure', { user_id_param: userId });
 
       if (error) {
         logger.errorWithContext('Error calling secure function to get user role', error);

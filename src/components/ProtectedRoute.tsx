@@ -35,15 +35,8 @@ export const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) 
         AdminDebugLogger.log('Checking session validity...');
         
         try {
-          // Add timeout to session check
-          const timeoutPromise = new Promise<boolean>((_, reject) => 
-            setTimeout(() => reject(new Error('Session check timeout')), 5000)
-          );
-          
-          const isValid = await Promise.race([
-            authManager.validateAndRefreshSession(),
-            timeoutPromise
-          ]) as boolean;
+          // Remove timeout wrapper and call validation directly
+          const isValid = await authManager.validateAndRefreshSession();
           
           if (!isValid) {
             AdminDebugLogger.error('Session is not valid');
@@ -55,7 +48,7 @@ export const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) 
           }
         } catch (error) {
           AdminDebugLogger.error('Error during session check:', error);
-          // On any error or timeout, sign out
+          // On any error, sign out
           await authManager.signOut();
           window.location.href = loginRoutes[requiredRole];
         }
@@ -65,7 +58,8 @@ export const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) 
     checkSession();
   }, [loading, requiredRole]); // ✅ Check on every loading change
 
-  // Set a timeout to prevent indefinite loading
+  // Remove the hard timeout effect that was causing issues
+  /*
   useEffect(() => {
     AdminDebugLogger.log('Setting up loading timeout effect', { loading });
     if (loading) {
@@ -86,6 +80,7 @@ export const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) 
       return () => clearTimeout(timeout);
     }
   }, [loading, requiredRole]);
+  */
 
   const getCachedRoleInfo = () => {
     try {
