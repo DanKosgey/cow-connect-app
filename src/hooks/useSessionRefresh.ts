@@ -13,7 +13,7 @@ interface UseSessionRefreshOptions {
  * @param options - Configuration options for session refresh
  */
 export function useSessionRefresh(options: UseSessionRefreshOptions = {}) {
-  const { enabled = true, refreshInterval = 45 * 60 * 1000 } = options; // Revert to 45 minutes
+  const { enabled = true, refreshInterval = 60 * 60 * 1000 } = options; // Increase to 60 minutes (1 hour)
   const isMountedRef = useRef(true);
   const lastRefreshRef = useRef<number>(0);
   const refreshAttemptCountRef = useRef<number>(0);
@@ -21,15 +21,15 @@ export function useSessionRefresh(options: UseSessionRefreshOptions = {}) {
 
   const refreshSession = useCallback(async () => {
     try {
-      // Prevent too frequent refreshes (at least 15 minutes between refreshes)
+      // Prevent too frequent refreshes (at least 30 minutes between refreshes)
       const now = Date.now();
-      if (now - lastRefreshRef.current < 15 * 60 * 1000) {
+      if (now - lastRefreshRef.current < 30 * 60 * 1000) {
         logger.debug('Skipping session refresh - too soon since last refresh');
         return { success: true, session: null };
       }
 
       // Limit refresh attempts to prevent excessive requests
-      if (refreshAttemptCountRef.current >= 3) {
+      if (refreshAttemptCountRef.current >= 2) { // Reduce from 3 to 2
         logger.warn('Skipping session refresh - too many attempts');
         return { success: true, session: null };
       }
@@ -110,8 +110,8 @@ export function useSessionRefresh(options: UseSessionRefreshOptions = {}) {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible' && isMountedRef.current) {
         const now = Date.now();
-        // Refresh if it's been more than 30 minutes since last refresh
-        if (now - lastRefreshRef.current > 30 * 60 * 1000) {
+        // Refresh if it's been more than 60 minutes since last refresh
+        if (now - lastRefreshRef.current > 60 * 60 * 1000) {
           refreshSession();
         }
       }
@@ -121,8 +121,8 @@ export function useSessionRefresh(options: UseSessionRefreshOptions = {}) {
     const handleFocus = () => {
       if (isMountedRef.current) {
         const now = Date.now();
-        // Refresh if it's been more than 30 minutes since last refresh
-        if (now - lastRefreshRef.current > 30 * 60 * 1000) {
+        // Refresh if it's been more than 60 minutes since last refresh
+        if (now - lastRefreshRef.current > 60 * 60 * 1000) {
           refreshSession();
         }
       }

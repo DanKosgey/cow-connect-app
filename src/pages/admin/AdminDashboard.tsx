@@ -226,7 +226,7 @@ const AdminDashboard = () => {
     resubmissions: 0
   });
 
-  const { refreshSession } = useSessionRefresh({ refreshInterval: 30 * 60 * 1000 }); // Increase to 30 minutes
+  const { refreshSession } = useSessionRefresh({ refreshInterval: 60 * 60 * 1000 }); // 60 minutes
 
   // Clear cache when timeframe changes with debounce
   useEffect(() => {
@@ -234,10 +234,12 @@ const AdminDashboard = () => {
     const timeoutId = setTimeout(() => {
       queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.ADMIN_DASHBOARD] });
       dataCache.clear();
+      // Note: We can't call refetch here because it's not declared yet
+      // Refetching will happen automatically when the query key changes
     }, 1000); // Increase debounce to 1 second
     
     return () => clearTimeout(timeoutId);
-  }, [timeRange, queryClient]); // Keep dependencies minimal
+  }, [timeRange, queryClient]); // Remove refetch from dependencies
 
   const getDateFilter = useCallback(() => {
     const now = new Date();
@@ -548,193 +550,12 @@ const AdminDashboard = () => {
   }, []);
 
   const fetchData = useCallback(async () => {
-    if (isProcessing.current) return;
-    
-    isProcessing.current = true;
-    performanceMonitor.reset();
-    performanceMonitor.startFetch();
-    
-    // Always fetch fresh data when timeframe changes
-    setError(null);
-    
-    try {
-      refreshSession().catch(error => {
-        console.warn('Session refresh failed, continuing with data fetch', error);
-      });
-      
-      const { startDate, endDate } = getDateFilter();
-      const cacheKey = `dashboard_data_${timeRange}_${startDate}_${endDate}`;
-      
-      // Always fetch fresh data to ensure charts update properly
-      setLoading(true);
-      
-      // Fetch collections with staff and approval information
-      const { data: rawCollections, error: collectionsError } = await supabase
-        .from('collections')
-        .select(`
-          id,
-          collection_id,
-          farmer_id,
-          staff_id,
-          approved_by,
-          liters,
-          quality_grade,
-          rate_per_liter,
-          total_amount,
-          collection_date,
-          status,
-          notes,
-          farmers!inner(full_name)
-        `)
-        .eq('approved_for_company', true)  // Only fetch approved collections
-        .gte('collection_date', startDate)
-        .lte('collection_date', endDate)
-        .order('collection_date', { ascending: false })
-        .limit(200);
-      
-      // Fetch farmers data
-      const { data: farmersData, error: farmersError } = await supabase
-        .from('farmers')
-        .select(`
-          id,
-          user_id,
-          registration_number,
-          kyc_status,
-          created_at,
-          profiles:user_id (full_name, email)
-        `)
-        .order('created_at', { ascending: false })
-        .limit(100);
-      
-      // Fetch staff data
-      const { data: staffDashboardData, error: staffError } = await supabase
-        .from('staff')
-        .select(`
-          id,
-          user_id,
-          employee_id,
-          status,
-          created_at,
-          profiles:user_id (full_name, email)
-        `)
-        .order('created_at', { ascending: false })
-        .limit(50);
-
-      performanceMonitor.endFetch();
-      
-      if (collectionsError) {
-        console.error('Error fetching collections:', collectionsError);
-        // Log details for debugging
-        if (collectionsError.details) {
-          console.error('Error details:', collectionsError.details);
-        }
-      }
-      if (farmersError) {
-        console.error('Error fetching farmers:', farmersError);
-      }
-      if (staffError) {
-        console.error('Error fetching staff:', staffError);
-      }
-
-      // If we have collections data, fetch staff profiles for collector and approver
-      let enrichedCollections = rawCollections || [];
-      if (rawCollections && rawCollections.length > 0) {
-        // Extract unique staff IDs from collections (both collectors and approvers)
-        const staffIds = new Set<string>();
-        rawCollections.forEach(collection => {
-          if (collection.staff_id) staffIds.add(collection.staff_id);
-          if (collection.milk_approvals?.staff_id) staffIds.add(collection.milk_approvals.staff_id);
-        });
-        
-        // Fetch profiles for all staff members referenced in collections
-        if (staffIds.size > 0) {
-          const { data: staffProfiles, error: profilesError } = await supabase
-            .from('staff')
-            .select(`
-              id,
-              profiles:user_id (full_name)
-            `)
-            .in('id', Array.from(staffIds));
-          
-          if (!profilesError && staffProfiles) {
-            // Create a map of staff ID to profile
-            const staffProfileMap = new Map<string, any>();
-            staffProfiles.forEach(staff => {
-              staffProfileMap.set(staff.id, staff.profiles);
-            });
-            
-            // Enrich collections with staff names
-            enrichedCollections = rawCollections.map(collection => ({
-              ...collection,
-              staff: collection.staff_id ? { profiles: staffProfileMap.get(collection.staff_id) } : null,
-              approved_by: collection.milk_approvals?.staff_id ? { profiles: staffProfileMap.get(collection.milk_approvals.staff_id) } : null
-            }));
-          }
-        }
-      }
-
-      const previousData: PreviousPeriodData | null = await fetchPreviousPeriodData();
-
-      processData(
-        enrichedCollections,
-        farmersData || [],
-        staffDashboardData || []
-      );
-      
-      // Define the type for current data to match calculateMetricsWithTrends signature
-      const currentDataForMetrics = {
-        collections: enrichedCollections,
-        farmers: farmersData || [],
-        staff: staffDashboardData || [],
-        payments: enrichedCollections
-      };
-      
-      const metricsWithTrends = calculateMetricsWithTrends(
-        currentDataForMetrics,
-        previousData
-      );
-      
-      setMetrics(metricsWithTrends);
-      
-      if (enrichedCollections && farmersData && staffDashboardData) {
-        const cacheData: CachedDashboardData = {
-          collections: enrichedCollections,
-          farmers: farmersData,
-          staff: staffDashboardData,
-          collectionTrends,
-          revenueTrends,
-          qualityDistribution,
-          alerts,
-          kycStats,
-          metrics: metricsWithTrends
-        };
-        dataCache.set(cacheKey, cacheData, 5 * 60 * 1000);
-      }
-      
-      performanceMonitor.endRender();
-      performanceMonitor.logMetrics('AdminDashboard');
-      
-    } catch (err: any) {
-      console.error('Error fetching dashboard data:', err);
-      performanceMonitor.endFetch();
-      
-      if (err.message && err.message.includes('Could not embed')) {
-        console.error('Relationship embedding error');
-        const errorMessage = 'Dashboard data loading issue. Please try refreshing the page.';
-        setError(errorMessage);
-        toast.error('Data Loading Error', errorMessage);
-      } else {
-        const errorMessage = err.message || 'Failed to fetch dashboard data';
-        setError(errorMessage);
-        toast.error('Error', errorMessage);
-      }
-    } finally {
-      setLoading(false);
-      setInitialLoad(false);
-      isProcessing.current = false;
-    }
-  }, [getDateFilter, toast, processData, timeRange, fetchPreviousPeriodData, refreshSession, 
-      collectionTrends, revenueTrends, qualityDistribution, alerts, kycStats]);
+    // Since we're now using React Query as the single source of truth,
+    // we don't need to do manual fetching anymore
+    // This function is kept for backward compatibility but should not be called
+    console.warn('fetchData called but React Query should be handling data fetching');
+    return Promise.resolve();
+  }, [timeRange]); // Minimal, stable dependencies only
 
   useEffect(() => {
     fetchData();
@@ -1005,20 +826,6 @@ const AdminDashboard = () => {
     );
   };
 
-  // Optimize the data fetching effect to prevent constant refreshes
-  useEffect(() => {
-    // Add a ref to track if we're already fetching
-    if (isProcessing.current) return;
-    
-    const fetchTimer = setTimeout(() => {
-      fetchData();
-    }, 500); // Add debounce to data fetching
-    
-    return () => {
-      clearTimeout(fetchTimer);
-    };
-  }, [fetchData, timeRange]);
-
   // React Query hook for fetching dashboard data with caching
   const { data: dashboardData, isLoading: isDashboardLoading, error: dashboardError, refetch } = useQuery({
     queryKey: [CACHE_KEYS.ADMIN_DASHBOARD, timeRange],
@@ -1147,18 +954,162 @@ const AdminDashboard = () => {
 
       const previousData: PreviousPeriodData | null = await fetchPreviousPeriodData();
 
-      processData(
-        enrichedCollections,
-        farmersData || [],
-        staffDashboardData || []
-      );
+      // Process data and return it instead of updating state directly
+      performanceMonitor.startProcessing();
+      
+      const farmerMap = new Map((farmersData || []).map(farmer => [farmer.id, farmer]));
+      const staffMap = new Map((staffDashboardData || []).map(staffMember => [staffMember.id, staffMember]));
+      
+      // Use embedded staff objects first, fallback to map lookup
+      const processedCollections = (enrichedCollections || []).map(collection => {
+        const farmer = farmerMap.get(collection.farmer_id);
+        
+        // Prefer embedded staff objects (explicit aliases), else fallback to staffMap lookup
+        const embeddedCollector = collection.staff;
+        const embeddedApprover = collection.approved_by;
+        const collector = embeddedCollector ?? (collection.staff_id ? staffMap.get(collection.staff_id) : null);
+        
+        return {
+          ...collection,
+          farmerName: farmer?.profiles?.full_name || 'Unknown Farmer',
+          staffName: collector?.profiles?.full_name || 'Unknown Staff',
+          approverName: embeddedApprover?.profiles?.full_name || (collection.approved_by ? staffMap.get(collection.approved_by)?.profiles?.full_name || 'Unknown Staff' : null)
+        };
+      });
+
+      // Process trends data - SORT DATA BY DATE TO FIX REVERSE ORDER ISSUE
+      const trendsData = (processedCollections || []).reduce((acc: any, collection: any) => {
+        const date = format(new Date(collection.collection_date), 'MMM dd');
+        if (!acc[date]) {
+          acc[date] = {
+            date,
+            liters: 0,
+            collections: 0,
+            revenue: 0,
+            avgQuality: 0,
+            qualityCount: 0
+          };
+        }
+        acc[date].liters += collection.liters;
+        acc[date].collections += 1;
+        acc[date].revenue += collection.total_amount;
+        
+        const qualityValue = collection.quality_grade === 'A+' ? 4 : 
+                          collection.quality_grade === 'A' ? 3 : 
+                          collection.quality_grade === 'B' ? 2 : 1;
+        acc[date].avgQuality += qualityValue;
+        acc[date].qualityCount += 1;
+        
+        return acc;
+      }, {});
+      
+      // Convert to array and sort by date to fix the order issue
+      const trendsArray = Object.values(trendsData)
+        .map((item: any) => ({
+          ...item,
+          avgQuality: item.qualityCount > 0 ? item.avgQuality / item.qualityCount : 0
+        }))
+        .sort((a: any, b: any) => {
+          const dateA = new Date(a.date);
+          const dateB = new Date(b.date);
+          return dateA.getTime() - dateB.getTime(); // Sort chronologically
+        });
+      
+      // Process quality distribution
+      const qualityCounts = (processedCollections || []).reduce((acc: any, collection: any) => {
+        acc[collection.quality_grade] = (acc[collection.quality_grade] || 0) + 1;
+        return acc;
+      }, {});
+      
+      const qualityDistributionData = Object.entries(qualityCounts).map(([grade, count]) => ({
+        name: grade,
+        count: count as number,
+        percentage: Math.round(((count as number) / (processedCollections || []).length) * 100)
+      }));
+      
+      // Generate alerts - ENHANCED WITH COLLECTIONS AND PAYMENTS ACTIVITIES
+      const newAlerts: Alert[] = [];
+      
+      // Add low quality collections alert
+      const lowQualityCollections = (processedCollections || []).filter(c => c.quality_grade === 'C');
+      if (lowQualityCollections.length > 0) {
+        newAlerts.push({
+          type: 'quality',
+          message: `${lowQualityCollections.length} collections with low quality (Grade C) detected`,
+          severity: 'warning',
+          time: format(new Date(), 'HH:mm'),
+          icon: AlertCircle
+        });
+      }
+      
+      // Add recent collections alerts
+      const recentCollections = (processedCollections || []).slice(0, 3);
+      recentCollections.forEach(collection => {
+        newAlerts.push({
+          type: 'collection',
+          message: `New collection: ${collection.liters}L from ${collection.farmerName || 'Unknown Farmer'}`,
+          severity: 'info',
+          time: format(new Date(collection.collection_date), 'HH:mm'),
+          icon: Droplets
+        });
+      });
+      
+      // Add high value collections alerts
+      const highValueCollections = (processedCollections || [])
+        .filter(c => c.total_amount > 5000)
+        .sort((a, b) => b.total_amount - a.total_amount)
+        .slice(0, 2);
+      
+      highValueCollections.forEach(collection => {
+        newAlerts.push({
+          type: 'payment',
+          message: `High value collection: ${formatCurrency(collection.total_amount)} from ${collection.farmerName || 'Unknown Farmer'}`,
+          severity: 'success',
+          time: format(new Date(collection.collection_date), 'HH:mm'),
+          icon: DollarSign
+        });
+      });
+      
+      // Add pending payments alerts
+      const pendingPayments = (processedCollections || [])
+        .filter(c => c.status !== 'Paid')
+        .slice(0, 2);
+      
+      pendingPayments.forEach(collection => {
+        newAlerts.push({
+          type: 'pending',
+          message: `Pending payment: ${formatCurrency(collection.total_amount)} from ${collection.farmerName || 'Unknown Farmer'}`,
+          severity: 'warning',
+          time: format(new Date(collection.collection_date), 'HH:mm'),
+          icon: CreditCard
+        });
+      });
+      
+      // Sort alerts by time (newest first)
+      newAlerts.sort((a, b) => {
+        const timeA = a.time.split(':').map(Number);
+        const timeB = b.time.split(':').map(Number);
+        return timeB[0] * 60 + timeB[1] - (timeA[0] * 60 + timeA[1]);
+      });
+
+      const approvedCount = (farmersData || []).filter(f => f.kyc_status === 'approved').length;
+      const rejectedCount = (farmersData || []).filter(f => f.kyc_status === 'rejected').length;
+      
+      const kycStatsData = {
+        pending: 0, // Will be updated from pending farmers query
+        approved: approvedCount,
+        rejected: rejectedCount,
+        resubmissions: 0
+      };
+      
+      performanceMonitor.endProcessing();
       
       // Define the type for current data to match calculateMetricsWithTrends signature
       const currentDataForMetrics = {
-        collections: enrichedCollections,
+        collections: processedCollections,
         farmers: farmersData || [],
         staff: staffDashboardData || [],
-        payments: enrichedCollections
+        payments: processedCollections
       };
       
       const metricsWithTrends = calculateMetricsWithTrends(
@@ -1166,34 +1117,53 @@ const AdminDashboard = () => {
         previousData
       );
       
-      setMetrics(metricsWithTrends);
+      // Return all processed data instead of updating state directly
+      const result: CachedDashboardData = {
+        collections: processedCollections,
+        farmers: farmersData || [],
+        staff: staffDashboardData || [],
+        collectionTrends: trendsArray,
+        revenueTrends: trendsArray,
+        qualityDistribution: qualityDistributionData,
+        alerts: newAlerts,
+        kycStats: kycStatsData,
+        metrics: metricsWithTrends
+      };
       
-      if (enrichedCollections && farmersData && staffDashboardData) {
-        const cacheData: CachedDashboardData = {
-          collections: enrichedCollections,
-          farmers: farmersData,
-          staff: staffDashboardData,
-          collectionTrends,
-          revenueTrends,
-          qualityDistribution,
-          alerts,
-          kycStats,
-          metrics: metricsWithTrends
-        };
-        dataCache.set(cacheKey, cacheData, 5 * 60 * 1000);
-        return cacheData;
+      if (processedCollections && farmersData && staffDashboardData) {
+        dataCache.set(cacheKey, result, 5 * 60 * 1000);
       }
       
-      return null;
+      performanceMonitor.endRender();
+      performanceMonitor.logMetrics('AdminDashboard');
+      
+      return result;
     },
-    staleTime: 1000 * 60 * 15, // Increase to 15 minutes to reduce refresh frequency
-    gcTime: 1000 * 60 * 30, // Increase to 30 minutes
-    refetchOnWindowFocus: false, // Disable refetching on window focus
-    refetchOnReconnect: false, // Disable refetching on reconnect
-    refetchOnMount: false, // Disable refetching on mount
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
     enabled: true,
     retry: 1,
   });
+
+  // Update state ONCE when React Query data changes
+  useEffect(() => {
+    if (dashboardData) {
+      setCollections(dashboardData.collections);
+      setFarmers(dashboardData.farmers);
+      setStaff(dashboardData.staff);
+      setCollectionTrends(dashboardData.collectionTrends);
+      setRevenueTrends(dashboardData.revenueTrends);
+      setQualityDistribution(dashboardData.qualityDistribution);
+      setAlerts(dashboardData.alerts);
+      setKycStats(dashboardData.kycStats);
+      setMetrics(dashboardData.metrics);
+      setLoading(false);
+      setInitialLoad(false);
+    }
+  }, [dashboardData]);
 
   // Update loading and error states based on React Query
   useEffect(() => {
