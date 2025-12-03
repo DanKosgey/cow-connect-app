@@ -13,7 +13,7 @@ interface UseSessionRefreshOptions {
  * @param options - Configuration options for session refresh
  */
 export function useSessionRefresh(options: UseSessionRefreshOptions = {}) {
-  const { enabled = true, refreshInterval = 45 * 60 * 1000 } = options; // Refresh every 45 minutes
+  const { enabled = true, refreshInterval = 45 * 60 * 1000 } = options; // Revert to 45 minutes
   const isMountedRef = useRef(true);
   const lastRefreshRef = useRef<number>(0);
   const refreshAttemptCountRef = useRef<number>(0);

@@ -226,7 +226,7 @@ const AdminDashboard = () => {
     resubmissions: 0
   });
 
-  const { refreshSession } = useSessionRefresh({ refreshInterval: 10 * 60 * 1000 });
+  const { refreshSession } = useSessionRefresh({ refreshInterval: 30 * 60 * 1000 }); // Increase to 30 minutes
 
   // Clear cache when timeframe changes with debounce
   useEffect(() => {
@@ -234,10 +234,10 @@ const AdminDashboard = () => {
     const timeoutId = setTimeout(() => {
       queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.ADMIN_DASHBOARD] });
       dataCache.clear();
-    }, 300); // Debounce for 300ms
+    }, 1000); // Increase debounce to 1 second
     
     return () => clearTimeout(timeoutId);
-  }, [timeRange, queryClient]);
+  }, [timeRange, queryClient]); // Keep dependencies minimal
 
   const getDateFilter = useCallback(() => {
     const now = new Date();
@@ -1005,17 +1005,38 @@ const AdminDashboard = () => {
     );
   };
 
+  // Optimize the data fetching effect to prevent constant refreshes
+  useEffect(() => {
+    // Add a ref to track if we're already fetching
+    if (isProcessing.current) return;
+    
+    const fetchTimer = setTimeout(() => {
+      fetchData();
+    }, 500); // Add debounce to data fetching
+    
+    return () => {
+      clearTimeout(fetchTimer);
+    };
+  }, [fetchData, timeRange]);
+
   // React Query hook for fetching dashboard data with caching
   const { data: dashboardData, isLoading: isDashboardLoading, error: dashboardError, refetch } = useQuery({
     queryKey: [CACHE_KEYS.ADMIN_DASHBOARD, timeRange],
     queryFn: async () => {
-      // Refresh session before fetching data
+      // Refresh session before fetching data (but less frequently)
       await refreshSession().catch(error => {
         console.warn('Session refresh failed before dashboard data fetch', error);
       });
       
       const { startDate, endDate } = getDateFilter();
       const cacheKey = `dashboard_data_${timeRange}_${startDate}_${endDate}`;
+      
+      // Check cache first before fetching
+      const cachedData = dataCache.get<CachedDashboardData>(cacheKey);
+      if (cachedData && !initialLoad) {
+        console.log('Using cached dashboard data');
+        return cachedData;
+      }
       
       performanceMonitor.startFetch();
       
@@ -1165,12 +1186,12 @@ const AdminDashboard = () => {
       
       return null;
     },
-    staleTime: 1000 * 60 * 5, // 5 minutes
-    gcTime: 1000 * 60 * 15, // 15 minutes
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchOnMount: true, // Always refetch on mount
-    enabled: true, // Always enable the query
+    staleTime: 1000 * 60 * 15, // Increase to 15 minutes to reduce refresh frequency
+    gcTime: 1000 * 60 * 30, // Increase to 30 minutes
+    refetchOnWindowFocus: false, // Disable refetching on window focus
+    refetchOnReconnect: false, // Disable refetching on reconnect
+    refetchOnMount: false, // Disable refetching on mount
+    enabled: true,
     retry: 1,
   });
 
@@ -1178,12 +1199,17 @@ const AdminDashboard = () => {
   useEffect(() => {
     // Only set loading state from React Query if we're not already loading from manual fetch
     if (!isProcessing.current) {
-      setLoading(isDashboardLoading);
+      // Add debounce to loading state changes
+      const loadingTimer = setTimeout(() => {
+        setLoading(isDashboardLoading);
+      }, 300);
+      
+      return () => clearTimeout(loadingTimer);
     }
     if (dashboardError) {
       setError(dashboardError.message || 'Failed to fetch dashboard data');
     }
-  }, [isDashboardLoading, dashboardError]);
+  }, [isDashboardLoading, dashboardError]); // Keep dependencies minimal
 
   return (
     <div className="space-y-6 p-4 md:p-6">
