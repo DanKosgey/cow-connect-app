@@ -85,11 +85,14 @@ const CreditApprovalQueue = () => {
       setLoading(true);
       
       // Get all credit requests with farmer details
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from('credit_requests')
         .select(`
           *,
-          farmers(profiles(full_name, phone))
+          farmers(
+            full_name,
+            phone_number
+          )
         `)
         .order('created_at', { ascending: false });
 
@@ -104,11 +107,65 @@ const CreditApprovalQueue = () => {
       }
 
       // Enhance requests with farmer details
-      const enhancedRequests = (data || []).map(request => ({
-        ...request,
-        farmer_name: request.farmer?.profiles?.full_name || 'Unknown Farmer',
-        farmer_phone: request.farmer?.profiles?.phone || 'No phone'
-      }));
+      // If the join didn't work, fetch farmer details separately
+      let enhancedRequests = data;
+      const requestsWithMissingFarmerData = data.filter(request => 
+        !request.farmers || !request.farmers.full_name
+      );
+      
+      if (requestsWithMissingFarmerData.length > 0) {
+        console.log('Fetching farmer details separately for', requestsWithMissingFarmerData.length, 'requests');
+        
+        // Get unique farmer IDs
+        const farmerIds = [...new Set(requestsWithMissingFarmerData.map(r => r.farmer_id))];
+        
+        // Fetch farmer details
+        const { data: farmersData, error: farmersError } = await supabase
+          .from('farmers')
+          .select('id, full_name, phone_number')
+          .in('id', farmerIds);
+          
+        if (!farmersError && farmersData) {
+          const farmersMap = new Map(farmersData.map(f => [f.id, f]));
+          
+          // Enhance requests with farmer details
+          enhancedRequests = data.map(request => {
+            if (request.farmers?.full_name) {
+              // Already has farmer data from join
+              return {
+                ...request,
+                farmer_name: request.farmers.full_name,
+                farmer_phone: request.farmers.phone_number || 'No phone'
+              };
+            } else {
+              // Use separately fetched farmer data
+              const farmer = farmersMap.get(request.farmer_id);
+              return {
+                ...request,
+                farmer_name: farmer?.full_name || 'Unknown Farmer',
+                farmer_phone: farmer?.phone_number || 'No phone'
+              };
+            }
+          });
+        } else {
+          if (farmersError) {
+            console.error('Error fetching farmer details:', farmersError);
+          }
+          // Fallback to basic enhancement
+          enhancedRequests = data.map(request => ({
+            ...request,
+            farmer_name: request.farmers?.full_name || 'Unknown Farmer',
+            farmer_phone: request.farmers?.phone_number || 'No phone'
+          }));
+        }
+      } else {
+        // All requests have farmer data from join
+        enhancedRequests = data.map(request => ({
+          ...request,
+          farmer_name: request.farmers?.full_name || 'Unknown Farmer',
+          farmer_phone: request.farmers?.phone_number || 'No phone'
+        }));
+      }
 
       if (!isMountedRef.current) return;
       setRequests(enhancedRequests);

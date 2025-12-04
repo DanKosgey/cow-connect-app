@@ -204,6 +204,13 @@ export class PaymentService {
         if (creditLimitData) {
           const creditLimitRecord = creditLimitData as any;
           
+          logger.info(`PaymentService - deducting credit from farmer`, {
+            farmerId,
+            collectionId,
+            creditUsed,
+            oldBalance: creditLimitRecord.current_credit_balance
+          });
+
           // Calculate new balance
           const newBalance = Math.max(0, creditLimitRecord.current_credit_balance - creditUsed);
           const newTotalUsed = creditLimitRecord.total_credit_used + creditUsed;
@@ -222,6 +229,13 @@ export class PaymentService {
             logger.errorWithContext('PaymentService - updating credit limit for deduction', updateError);
             throw updateError;
           }
+
+          logger.info(`PaymentService - credit deduction completed`, {
+            farmerId,
+            collectionId,
+            creditUsed,
+            newBalance
+          });
 
           // Create credit transaction record for the deduction
           const { error: transactionError } = await supabase

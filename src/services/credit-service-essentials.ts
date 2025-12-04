@@ -138,9 +138,9 @@ export class CreditServiceEssentials {
       // They can request credit even if they don't have pending payments yet
       return {
         isEligible: !profile.is_frozen,
-        creditLimit: parseFloat(finalCreditLimit.toFixed(2)),
-        availableCredit: parseFloat(availableCredit.toFixed(2)),
-        pendingPayments: parseFloat(pendingPayments.toFixed(2))
+        creditLimit: parseFloat((finalCreditLimit || 0).toFixed(2)),
+        availableCredit: parseFloat((availableCredit || 0).toFixed(2)),
+        pendingPayments: parseFloat((pendingPayments || 0).toFixed(2))
       };
     } catch (error) {
       logger.errorWithContext('CreditServiceEssentials - calculateCreditEligibility', error);
@@ -283,7 +283,7 @@ export class CreditServiceEssentials {
           balance_before: 0,
           balance_after: newBalance,
           description: creditInfo.pendingPayments > 0 
-            ? `Credit granted based on pending payments of KES ${creditInfo.pendingPayments.toFixed(2)}`
+            ? `Credit granted based on pending payments of KES ${(creditInfo.pendingPayments || 0).toFixed(2)}`
             : `Credit granted based on farmer tier and profile`,
           approved_by: grantedBy,
           approval_status: 'approved'
@@ -346,7 +346,7 @@ export class CreditServiceEssentials {
           amount: newLimit - profile.max_credit_amount,
           balance_before: profile.current_credit_balance,
           balance_after: profile.current_credit_balance,
-          description: `Credit limit adjusted from KES ${profile.max_credit_amount.toFixed(2)} to KES ${newLimit.toFixed(2)}`,
+          description: `Credit limit adjusted from KES ${(profile.max_credit_amount || 0).toFixed(2)} to KES ${(newLimit || 0).toFixed(2)}`,
           approved_by: adjustedBy,
           approval_status: 'approved'
         })
@@ -435,6 +435,14 @@ export class CreditServiceEssentials {
     packagingOptionId: string | null,
     usedBy?: string
   ): Promise<{ success: boolean; transactionId?: string; errorMessage?: string }> {
+    logger.info(`CreditServiceEssentials - useCreditForPurchase initiated`, {
+      farmerId,
+      productId,
+      quantity,
+      packagingOptionId,
+      usedBy
+    });
+    
     return this.processCreditTransaction(farmerId, productId, quantity, packagingOptionId, usedBy);
   }
 
@@ -450,11 +458,18 @@ export class CreditServiceEssentials {
     creditLimit: number;
     utilizationPercentage: number;
   }> {
+    logger.info(`CreditServiceEssentials - enforceCreditLimit checking`, {
+      farmerId,
+      requestedAmount,
+      transactionType
+    });
+    
     try {
       // Get farmer's credit profile
       const creditProfile = await this.getCreditProfile(farmerId);
       
       if (!creditProfile) {
+        logger.warn(`CreditServiceEssentials - enforceCreditLimit: No credit profile found for farmer`, { farmerId });
         return {
           isAllowed: false,
           reason: 'No credit profile found for farmer',
@@ -466,6 +481,10 @@ export class CreditServiceEssentials {
 
       // Check if credit is frozen
       if (creditProfile.is_frozen) {
+        logger.warn(`CreditServiceEssentials - enforceCreditLimit: Credit account is frozen`, { 
+          farmerId, 
+          freezeReason: creditProfile.freeze_reason 
+        });
         return {
           isAllowed: false,
           reason: creditProfile.freeze_reason || 'Credit account is frozen',
@@ -477,6 +496,11 @@ export class CreditServiceEssentials {
 
       // Check if requested amount exceeds available credit
       if (requestedAmount > creditProfile.current_credit_balance) {
+        logger.warn(`CreditServiceEssentials - enforceCreditLimit: Requested amount exceeds available credit`, {
+          farmerId,
+          requestedAmount,
+          availableCredit: creditProfile.current_credit_balance
+        });
         return {
           isAllowed: false,
           reason: `Requested amount (${formatCurrency(requestedAmount)}) exceeds available credit (${formatCurrency(creditProfile.current_credit_balance)})`,
@@ -499,6 +523,11 @@ export class CreditServiceEssentials {
       const criticalThreshold = 95;
 
       if (utilizationPercentage > criticalThreshold) {
+        logger.warn(`CreditServiceEssentials - enforceCreditLimit: Critical credit utilization threshold exceeded`, {
+          farmerId,
+          utilizationPercentage,
+          criticalThreshold
+        });
         return {
           isAllowed: false,
           reason: `Transaction would result in critical credit utilization (${utilizationPercentage.toFixed(1)}%). Maximum allowed is ${criticalThreshold}%.`,
@@ -518,6 +547,11 @@ export class CreditServiceEssentials {
             : 100;
             
           if (obligationsToLimitRatio > 100) {
+            logger.warn(`CreditServiceEssentials - enforceCreditLimit: Total obligations would exceed credit limit`, {
+              farmerId,
+              totalObligations,
+              creditLimit: creditProfile.max_credit_amount
+            });
             return {
               isAllowed: false,
               reason: `Total obligations (${formatCurrency(totalObligations)}) would exceed credit limit (${formatCurrency(creditProfile.max_credit_amount)})`,
@@ -529,6 +563,13 @@ export class CreditServiceEssentials {
         }
       }
 
+      logger.info(`CreditServiceEssentials - enforceCreditLimit passed`, {
+        farmerId,
+        requestedAmount,
+        isAllowed: true,
+        utilizationPercentage
+      });
+      
       return {
         isAllowed: true,
         reason: 'Credit limit enforcement passed',
@@ -548,19 +589,34 @@ export class CreditServiceEssentials {
     productId: string,
     quantity: number,
     packagingOptionId: string | null,
-    usedBy?: string
+    usedBy?: string,
+    isExistingCreditRequest: boolean = false,
+    storedUnitPrice?: number // Optional parameter for existing credit requests
   ): Promise<{ success: boolean; transactionId?: string; errorMessage?: string; enforcementDetails?: any }> {
+    logger.info(`CreditServiceEssentials - processCreditTransaction initiated`, {
+      farmerId,
+      productId,
+      quantity,
+      packagingOptionId,
+      usedBy,
+      isExistingCreditRequest,
+      storedUnitPrice
+    });
+    
     try {
       // Validate inputs
       if (!farmerId) {
+        logger.error(`CreditServiceEssentials - processCreditTransaction: Farmer ID is required`);
         return { success: false, errorMessage: 'Farmer ID is required' };
       }
       
       if (!productId) {
+        logger.error(`CreditServiceEssentials - processCreditTransaction: Product ID is required`);
         return { success: false, errorMessage: 'Product ID is required' };
       }
       
       if (!quantity || quantity <= 0) {
+        logger.error(`CreditServiceEssentials - processCreditTransaction: Valid quantity is required`, { quantity });
         return { success: false, errorMessage: 'Valid quantity is required' };
       }
 
@@ -577,6 +633,7 @@ export class CreditServiceEssentials {
       }
 
       if (!productData) {
+        logger.error(`CreditServiceEssentials - processCreditTransaction: Product not found or no longer available`, { productId });
         return { success: false, errorMessage: 'Product not found or no longer available' };
       }
 
@@ -584,12 +641,13 @@ export class CreditServiceEssentials {
 
       // Check if product is credit eligible
       if (!product.is_credit_eligible) {
+        logger.warn(`CreditServiceEssentials - processCreditTransaction: Product is not eligible for credit purchase`, { productId });
         return { success: false, errorMessage: 'This product is not eligible for credit purchase' };
       }
 
       // Get packaging option if specified
       let packagingOption = null;
-      let unitPrice = product.cost_price; // fallback to cost_price
+      let unitPrice = product.cost_price || 0; // fallback to cost_price with default 0
       
       if (packagingOptionId) {
         // Fetch the specific packaging option
@@ -607,7 +665,47 @@ export class CreditServiceEssentials {
         
         if (packagingData) {
           packagingOption = packagingData as ProductPackaging;
-          unitPrice = packagingOption.price;
+          logger.info(`CreditServiceEssentials - packaging option found`, {
+            packagingOptionId,
+            rawPrice: packagingOption.price,
+            priceType: typeof packagingOption.price
+          });
+          
+          // Ensure proper type conversion for numeric fields
+          const convertedPrice = typeof packagingOption.price === 'string' ? parseFloat(packagingOption.price) : packagingOption.price;
+          unitPrice = convertedPrice && convertedPrice > 0 ? convertedPrice : unitPrice;
+          
+          logger.info(`CreditServiceEssentials - price conversion result`, {
+            convertedPrice,
+            finalUnitPrice: unitPrice
+          });
+        } else {
+          logger.warn(`CreditServiceEssentials - packaging option not found`, {
+            packagingOptionId,
+            productId
+          });
+          
+          // For existing credit requests, we can continue with the stored data
+          if (isExistingCreditRequest) {
+            logger.info(`CreditServiceEssentials - Continuing with stored data for existing credit request`, {
+              packagingOptionId,
+              productId
+            });
+            // Use the stored unit price if provided
+            if (storedUnitPrice && storedUnitPrice > 0) {
+              unitPrice = storedUnitPrice;
+              logger.info(`CreditServiceEssentials - Using stored unit price for existing credit request`, {
+                storedUnitPrice,
+                finalUnitPrice: unitPrice
+              });
+            }
+          } else {
+            // Return a more specific error when packaging option is not found
+            return { 
+              success: false, 
+              errorMessage: `The selected packaging option is no longer available. Please contact administrator.` 
+            };
+          }
         }
       } else {
         // If no packaging option specified, try to get the first available packaging option
@@ -621,17 +719,86 @@ export class CreditServiceEssentials {
           
         if (!packagingOptionsError && packagingOptions && packagingOptions.length > 0) {
           packagingOption = packagingOptions[0] as ProductPackaging;
-          unitPrice = packagingOption.price;
+          logger.info(`CreditServiceEssentials - default packaging option found`, {
+            productId,
+            rawPrice: packagingOption.price,
+            priceType: typeof packagingOption.price
+          });
+          
+          // Ensure proper type conversion for numeric fields
+          const convertedPrice = typeof packagingOption.price === 'string' ? parseFloat(packagingOption.price) : packagingOption.price;
+          unitPrice = convertedPrice && convertedPrice > 0 ? convertedPrice : unitPrice;
+          
+          logger.info(`CreditServiceEssentials - default price conversion result`, {
+            convertedPrice,
+            finalUnitPrice: unitPrice
+          });
+        } else {
+          logger.warn(`CreditServiceEssentials - no default packaging option found`, {
+            productId
+          });
         }
       }
 
-      // Calculate total amount
-      const totalAmount = quantity * unitPrice;
+      // Calculate total amount with proper validation
+      const validatedQuantity = typeof quantity === 'number' && !isNaN(quantity) ? quantity : 0;
+      const validatedUnitPrice = typeof unitPrice === 'number' && !isNaN(unitPrice) ? unitPrice : 0;
+      const totalAmount = validatedQuantity * validatedUnitPrice;
+
+      // Validate that we have a valid total amount
+      if (totalAmount <= 0) {
+        logger.error(`CreditServiceEssentials - processCreditTransaction: Invalid transaction amount`, {
+          quantity: validatedQuantity,
+          unitPrice: validatedUnitPrice,
+          totalAmount,
+          packagingOptionId,
+          productId
+        });
+        
+        // Provide more specific error messages
+        if (validatedQuantity <= 0) {
+          return { 
+            success: false, 
+            errorMessage: 'Invalid quantity. Quantity must be greater than zero.' 
+          };
+        }
+        
+        if (validatedUnitPrice <= 0) {
+          if (packagingOptionId && !packagingOption) {
+            return { 
+              success: false, 
+              errorMessage: `The selected packaging option is no longer available. Please contact administrator.` 
+            };
+          }
+          
+          if (packagingOption) {
+            return { 
+              success: false, 
+              errorMessage: `Invalid unit price (${validatedUnitPrice}) for selected packaging option "${packagingOption.name}". Please check the packaging option configuration.` 
+            };
+          } else {
+            return { 
+              success: false, 
+              errorMessage: `Invalid unit price (${validatedUnitPrice}). Product price must be greater than zero.` 
+            };
+          }
+        }
+        
+        return { 
+          success: false, 
+          errorMessage: 'Invalid transaction amount. Quantity and price must be greater than zero.' 
+        };
+      }
 
       // Enhanced credit limit enforcement
       const enforcementResult = await this.enforceCreditLimit(farmerId, totalAmount, 'credit_used');
       
       if (!enforcementResult.isAllowed) {
+        logger.warn(`CreditServiceEssentials - processCreditTransaction: Credit limit enforcement failed`, {
+          farmerId,
+          totalAmount,
+          reason: enforcementResult.reason
+        });
         return { 
           success: false, 
           errorMessage: enforcementResult.reason,
@@ -652,6 +819,7 @@ export class CreditServiceEssentials {
       }
 
       if (!creditProfile) {
+        logger.error(`CreditServiceEssentials - processCreditTransaction: Credit profile not found`, { farmerId });
         return { success: false, errorMessage: 'Credit profile not found' };
       }
 
@@ -659,6 +827,11 @@ export class CreditServiceEssentials {
 
       // Double-check balance before processing (race condition protection)
       if (totalAmount > profile.current_credit_balance) {
+        logger.warn(`CreditServiceEssentials - processCreditTransaction: Insufficient credit balance`, {
+          farmerId,
+          required: totalAmount,
+          available: profile.current_credit_balance
+        });
         return { 
           success: false, 
           errorMessage: `Insufficient credit balance. Available: ${formatCurrency(profile.current_credit_balance)}, Required: ${formatCurrency(totalAmount)}` 
@@ -668,6 +841,17 @@ export class CreditServiceEssentials {
       // Calculate new balance
       const newBalance = profile.current_credit_balance - totalAmount;
       const newTotalUsed = profile.total_credit_used + totalAmount;
+      // When credit is used, we should deduct from pending deductions (payments that will be collected)
+      const newPendingDeductions = Math.max(0, profile.pending_deductions - totalAmount);
+
+      logger.info(`CreditServiceEssentials - processCreditTransaction updating profile`, {
+        farmerId,
+        oldBalance: profile.current_credit_balance,
+        newBalance,
+        totalAmount,
+        oldPendingDeductions: profile.pending_deductions,
+        newPendingDeductions
+      });
 
       // Update credit profile
       const { error: updateError } = await supabase
@@ -675,7 +859,7 @@ export class CreditServiceEssentials {
         .update({
           current_credit_balance: newBalance,
           total_credit_used: newTotalUsed,
-          pending_deductions: profile.pending_deductions + totalAmount,
+          pending_deductions: newPendingDeductions,
           updated_at: new Date().toISOString()
         })
         .eq('id', profile.id);
@@ -685,26 +869,121 @@ export class CreditServiceEssentials {
         throw updateError;
       }
 
+      // Deduct the amount from farmer's pending collections/payments
+      // Get all pending collections for this farmer
+      const { data: pendingCollections, error: collectionsError } = await supabase
+        .from('collections')
+        .select('id, total_amount')
+        .eq('farmer_id', farmerId)
+        .neq('status', 'Paid');
+
+      if (collectionsError) {
+        logger.errorWithContext('CreditServiceEssentials - fetching pending collections', collectionsError);
+        // Don't throw error here as this is supplementary, but log it
+      } else if (pendingCollections && pendingCollections.length > 0) {
+        let remainingAmountToDeduct = totalAmount;
+        
+        // Process collections in order until we've deducted the full amount
+        for (const collection of pendingCollections) {
+          if (remainingAmountToDeduct <= 0) break;
+          
+          const collectionAmount = collection.total_amount || 0;
+          const amountToDeductFromCollection = Math.min(remainingAmountToDeduct, collectionAmount);
+          
+          if (amountToDeductFromCollection > 0) {
+            // Update the collection to reduce its amount
+            const newCollectionAmount = collectionAmount - amountToDeductFromCollection;
+            
+            const { error: updateCollectionError } = await supabase
+              .from('collections')
+              .update({
+                total_amount: newCollectionAmount,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', collection.id);
+              
+            if (updateCollectionError) {
+              logger.errorWithContext('CreditServiceEssentials - updating collection amount', updateCollectionError);
+              // Continue with other collections even if one fails
+            } else {
+              logger.info(`CreditServiceEssentials - deducted ${amountToDeductFromCollection} from collection ${collection.id}`, {
+                collectionId: collection.id,
+                oldAmount: collectionAmount,
+                newAmount: newCollectionAmount
+              });
+              
+              remainingAmountToDeduct -= amountToDeductFromCollection;
+            }
+          }
+        }
+        
+        if (remainingAmountToDeduct > 0) {
+          logger.warn(`CreditServiceEssentials - Could not deduct full amount from pending collections`, {
+            farmerId,
+            requestedAmount: totalAmount,
+            undeductedAmount: remainingAmountToDeduct
+          });
+        }
+      }
+
+      // Convert user ID to staff ID if the user is a staff member
+      // If the user is an admin, we'll set approved_by to NULL since admins don't have staff records
+      let staffIdForTransaction = null;
+      if (usedBy) {
+        try {
+          // Try to get the staff ID for this user
+          const { data: staffData, error: staffError } = await supabase
+            .from('staff')
+            .select('id')
+            .eq('user_id', usedBy)
+            .maybeSingle();
+          
+          if (!staffError && staffData) {
+            staffIdForTransaction = staffData.id;
+            logger.info(`CreditServiceEssentials - Found staff ID for user`, {
+              userId: usedBy,
+              staffId: staffIdForTransaction
+            });
+          } else {
+            // If no staff record found, it might be an admin user
+            // We'll leave staffIdForTransaction as null for admins
+            logger.info(`CreditServiceEssentials - No staff record found for user (might be admin)`, {
+              userId: usedBy
+            });
+          }
+        } catch (staffLookupError) {
+          logger.errorWithContext('CreditServiceEssentials - Error looking up staff record', staffLookupError);
+          // Continue with staffIdForTransaction as null
+        }
+      }
+
       // Create credit transaction record
-      const { data: transactionData, error: transactionError } = await supabase
+      const transactionData = {
+        farmer_id: farmerId,
+        transaction_type: 'credit_used',
+        amount: totalAmount,
+        balance_before: profile.current_credit_balance,
+        balance_after: newBalance,
+        product_id: productId,
+        product_name: product.name,
+        quantity: quantity,
+        unit_price: unitPrice,
+        reference_id: packagingOption?.id || null,
+        description: packagingOption 
+          ? `Credit used for ${product.name} (${quantity} × ${packagingOption.name} @ ${formatCurrency(unitPrice)} each). Utilization: ${(enforcementResult.utilizationPercentage || 0).toFixed(1)}%`
+          : `Credit used for ${product.name} (${quantity} ${product.unit} @ ${formatCurrency(unitPrice)} each). Utilization: ${(enforcementResult.utilizationPercentage || 0).toFixed(1)}%`,
+        approved_by: staffIdForTransaction, // Use the staff ID or NULL for admins
+        approval_status: 'approved'
+      };
+      
+      logger.info(`CreditServiceEssentials - processCreditTransaction creating transaction record`, {
+        farmerId,
+        transactionData
+      });
+
+      const { data: insertedTransaction, error: transactionError } = await supabase
         .from('credit_transactions')
-        .insert({
-          farmer_id: farmerId,
-          transaction_type: 'credit_used',
-          amount: totalAmount,
-          balance_before: profile.current_credit_balance,
-          balance_after: newBalance,
-          product_id: productId,
-          product_name: product.name,
-          quantity: quantity,
-          unit_price: unitPrice,
-          reference_id: packagingOption?.id || null,
-          description: packagingOption 
-            ? `Credit used for ${product.name} (${quantity} × ${packagingOption.name} @ ${formatCurrency(unitPrice)} each). Utilization: ${enforcementResult.utilizationPercentage.toFixed(1)}%`
-            : `Credit used for ${product.name} (${quantity} ${product.unit} @ ${formatCurrency(unitPrice)} each). Utilization: ${enforcementResult.utilizationPercentage.toFixed(1)}%`,
-          approved_by: usedBy,
-          approval_status: 'approved'
-        })
+        .insert(transactionData)
         .select()
         .single();
 
@@ -713,9 +992,46 @@ export class CreditServiceEssentials {
         throw transactionError;
       }
 
+      // Create agrovet purchase record
+      const purchaseData = {
+        farmer_id: farmerId,
+        item_id: productId,
+        quantity: quantity,
+        unit_price: unitPrice,
+        total_amount: totalAmount,
+        payment_method: 'credit',
+        credit_transaction_id: (insertedTransaction as CreditTransaction).id,
+        status: 'completed',
+        purchased_by: usedBy
+      };
+
+      const { data: insertedPurchase, error: purchaseError } = await supabase
+        .from('agrovet_purchases')
+        .insert(purchaseData)
+        .select()
+        .single();
+
+      if (purchaseError) {
+        logger.errorWithContext('CreditServiceEssentials - creating agrovet purchase record', purchaseError);
+        // Don't throw error here as the credit transaction was successful, but log it
+        logger.warn(`CreditServiceEssentials - Warning: Failed to create agrovet purchase record`, purchaseError);
+      } else {
+        logger.info(`CreditServiceEssentials - agrovet purchase record created successfully`, {
+          farmerId,
+          purchaseId: (insertedPurchase as any).id,
+          totalAmount
+        });
+      }
+
+      logger.info(`CreditServiceEssentials - processCreditTransaction completed successfully`, {
+        farmerId,
+        transactionId: (insertedTransaction as CreditTransaction).id,
+        totalAmount
+      });
+
       return { 
         success: true, 
-        transactionId: (transactionData as CreditTransaction).id,
+        transactionId: (insertedTransaction as CreditTransaction).id,
         enforcementDetails: enforcementResult
       };
     } catch (error) {
@@ -890,7 +1206,7 @@ export class CreditServiceEssentials {
           amount: profile.pending_deductions,
           balance_before: profile.current_credit_balance,
           balance_after: profile.max_credit_amount,
-          description: `Monthly settlement completed. KES ${profile.pending_deductions.toFixed(2)} deducted from milk payments.`,
+          description: `Monthly settlement completed. KES ${(profile.pending_deductions || 0).toFixed(2)} deducted from milk payments.`,
           approved_by: settledBy,
           approval_status: 'approved'
         })

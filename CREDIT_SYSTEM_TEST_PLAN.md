@@ -1,3 +1,90 @@
+# Comprehensive Credit System Test Plan
+
+## Overview
+This test plan identifies and addresses all issues in the end-to-end credit system flow from farmer shopping to admin approval and transaction recording.
+
+## Test Scenarios
+
+### 1. Farmer Shopping Flow
+- [ ] Farmer adds product to cart with packaging selection
+- [ ] Farmer requests credit for items in cart
+- [ ] Credit request is created with correct packaging option IDs
+- [ ] Credit request includes correct quantities and prices
+
+### 2. Credit Request Validation
+- [ ] System validates farmer has sufficient credit
+- [ ] System validates packaging options still exist
+- [ ] System validates product is still available
+- [ ] System validates quantities and prices are positive
+
+### 3. Admin Approval Process
+- [ ] Admin can view pending credit requests with farmer details
+- [ ] Admin can approve credit requests
+- [ ] System deducts approved amount from farmer's pending payments
+- [ ] System updates farmer's credit profile (credit used, available balance)
+- [ ] System creates credit transaction record
+- [ ] System creates agrovet purchase record
+- [ ] System updates credit request status to approved
+
+### 4. Data Consistency Checks
+- [ ] Farmer credit profile reflects correct credit used
+- [ ] Farmer credit profile reflects correct available balance
+- [ ] Farmer credit profile reflects correct pending deductions
+- [ ] Credit transaction record is created with correct details
+- [ ] Agrovet purchase record is created with correct details
+- [ ] Collections/pending payments are reduced by approved amount
+
+### 5. Error Handling
+- [ ] System handles missing packaging options gracefully
+- [ ] System handles insufficient credit appropriately
+- [ ] System handles database errors without data corruption
+- [ ] System provides clear error messages to users
+
+## Specific Issues to Address
+
+### Packaging Option Issues
+- [ ] Verify packaging option IDs are correctly stored in credit requests
+- [ ] Verify packaging options exist when credit requests are approved
+- [ ] Handle cases where packaging options are deleted after request creation
+
+### Credit Profile Updates
+- [ ] Ensure `current_credit_balance` is correctly reduced
+- [ ] Ensure `total_credit_used` is correctly increased
+- [ ] Ensure `pending_deductions` is correctly reduced (not increased)
+- [ ] Ensure profile updates happen atomically
+
+### Transaction Recording
+- [ ] Ensure credit transactions are recorded with correct amounts
+- [ ] Ensure agrovet purchases are recorded with correct details
+- [ ] Ensure transaction links between tables are maintained
+
+### Portal Integration
+- [ ] Farmer portal displays correct credit information
+- [ ] Admin portal displays correct request information
+- [ ] Creditor portal displays correct purchase information
+- [ ] Analytics dashboards show correct data
+
+## Test Data Setup
+1. Create test farmer with credit profile
+2. Create test products with packaging options
+3. Create test collections/pending payments for farmer
+4. Create test credit request
+
+## Expected Outcomes
+- [ ] Credit requests can be approved without errors
+- [ ] Farmer credit balances are correctly updated
+- [ ] Pending payments are correctly reduced
+- [ ] All transactions are properly recorded
+- [ ] All portals display consistent information
+
+## Rollback Plan
+If issues are found:
+1. Identify the specific component causing the issue
+2. Create targeted fix for that component
+3. Test the fix in isolation
+4. Test the complete flow with the fix
+5. Deploy fix to production
+
 # Credit System End-to-End Test Plan
 
 ## Overview

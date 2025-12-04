@@ -435,29 +435,6 @@ const EnhancedAgrovetShoppingInterface = React.memo(({
         );
       }
       
-      // Use credit for each item in cart
-      for (const item of itemsWithPricing) {
-        // Use the packaging option ID if available, otherwise null
-        const packagingOptionId = item.packagingOption?.id || null;
-        
-        const result = await CreditServiceEssentials.useCreditForPurchase(
-          farmerId,
-          item.product.id,
-          item.quantity,
-          packagingOptionId
-        );
-        
-        if (!result.success) {
-          console.error("Error using credit for purchase:", result.errorMessage);
-          toast({
-            title: "Credit Usage Error",
-            description: result.errorMessage || "Failed to use credit for purchase",
-            variant: "destructive",
-          });
-          // Continue with other items even if one fails
-        }
-      }
-      
       // Clear cart
       setCart([]);
       setIsCartOpen(false);
@@ -1091,9 +1068,8 @@ const EnhancedAgrovetShoppingInterface = React.memo(({
                     <Button 
                       className="w-full"
                       onClick={() => {
-                        // Use the first packaging option if available, otherwise add without packaging
-                        const defaultPackaging = (selectedProduct as EnhancedAgrovetProduct).packaging_options?.[0];
-                        addToCart(selectedProduct as EnhancedAgrovetProduct, defaultPackaging);
+                        // Use the packaging selection flow instead of default packaging
+                        addToCart(selectedProduct as EnhancedAgrovetProduct);
                         setIsProductModalOpen(false);
                       }}
                       disabled={selectedProduct.current_stock <= 0 || !creditInfo?.isEligible}

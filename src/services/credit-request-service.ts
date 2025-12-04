@@ -32,6 +32,16 @@ export class CreditRequestService {
     try {
       const totalAmount = quantity * unitPrice;
       
+      // Log the packaging option ID being stored
+      logger.info(`CreditRequestService - creating credit request`, {
+        farmerId,
+        productId,
+        quantity,
+        unitPrice,
+        totalAmount,
+        packagingOptionId
+      });
+      
       const { data, error } = await supabase
         .from('credit_requests')
         .insert({
@@ -106,9 +116,15 @@ export class CreditRequestService {
 
   // Approve a credit request with enhanced enforcement
   static async approveCreditRequest(requestId: string, approvedBy?: string): Promise<{ success: boolean; errorMessage?: string; enforcementDetails?: any }> {
+    logger.info(`CreditRequestService - approveCreditRequest initiated`, {
+      requestId,
+      approvedBy
+    });
+    
     try {
       // Validate input
       if (!requestId) {
+        logger.error(`CreditRequestService - approveCreditRequest: Request ID is required`);
         return { success: false, errorMessage: 'Request ID is required' };
       }
 
@@ -125,21 +141,91 @@ export class CreditRequestService {
       }
 
       if (!request) {
+        logger.error(`CreditRequestService - approveCreditRequest: Credit request not found`, { requestId });
         return { success: false, errorMessage: 'Credit request not found' };
       }
 
       // Validate required fields
       if (!request.farmer_id) {
+        logger.error(`CreditRequestService - approveCreditRequest: Farmer ID is missing from request`, { requestId });
         return { success: false, errorMessage: 'Farmer ID is missing from request' };
       }
 
       if (!request.product_id) {
+        logger.error(`CreditRequestService - approveCreditRequest: Product ID is missing from request`, { requestId });
         return { success: false, errorMessage: 'Product ID is missing from request' };
       }
 
       if (!request.quantity || request.quantity <= 0) {
+        logger.error(`CreditRequestService - approveCreditRequest: Valid quantity is required`, { 
+          requestId, 
+          quantity: request.quantity 
+        });
         return { success: false, errorMessage: 'Valid quantity is required' };
       }
+
+      if (!request.unit_price || request.unit_price <= 0) {
+        logger.error(`CreditRequestService - approveCreditRequest: Valid unit price is required`, { 
+          requestId, 
+          unitPrice: request.unit_price 
+        });
+        return { success: false, errorMessage: 'Valid unit price is required' };
+      }
+
+      if (!request.total_amount || request.total_amount <= 0) {
+        logger.error(`CreditRequestService - approveCreditRequest: Valid total amount is required`, { 
+          requestId, 
+          totalAmount: request.total_amount 
+        });
+        return { success: false, errorMessage: 'Valid total amount is required' };
+      }
+      
+      // If the request has a packaging option ID, verify it still exists
+      // But allow approval to proceed if we have all the necessary data stored
+      if (request.packaging_option_id) {
+        const { data: packagingData, error: packagingError } = await supabase
+          .from('product_packaging')
+          .select('id')
+          .eq('id', request.packaging_option_id)
+          .eq('product_id', request.product_id)
+          .maybeSingle();
+          
+        if (packagingError) {
+          logger.errorWithContext('CreditRequestService - verifying packaging option existence', packagingError);
+          // Don't fail the approval just because of a verification error
+          // We'll proceed with the stored data
+          logger.warn(`CreditRequestService - approveCreditRequest: Error verifying packaging option, proceeding with stored data`, {
+            requestId,
+            packagingOptionId: request.packaging_option_id,
+            productId: request.product_id,
+            error: packagingError.message
+          });
+        }
+        
+        if (!packagingData) {
+          logger.warn(`CreditRequestService - approveCreditRequest: Packaging option no longer exists`, {
+            requestId,
+            packagingOptionId: request.packaging_option_id,
+            productId: request.product_id
+          });
+          // Don't fail the approval just because the packaging option was deleted
+          // We'll proceed with the stored data
+          logger.info(`CreditRequestService - approveCreditRequest: Proceeding with stored data for deleted packaging option`, {
+            requestId,
+            packagingOptionId: request.packaging_option_id,
+            storedAmount: request.total_amount,
+            storedUnitPrice: request.unit_price
+          });
+        }
+      }
+
+      logger.info(`CreditRequestService - approveCreditRequest: Processing request`, {
+        requestId,
+        farmerId: request.farmer_id,
+        productId: request.product_id,
+        quantity: request.quantity,
+        totalAmount: request.total_amount
+      });
 
       // Pre-approval credit limit enforcement check
       const preApprovalCheck = await CreditServiceEssentials.enforceCreditLimit(
@@ -149,6 +235,11 @@ export class CreditRequestService {
       );
       
       if (!preApprovalCheck.isAllowed) {
+        logger.warn(`CreditRequestService - approveCreditRequest: Pre-approval check failed`, {
+          requestId,
+          farmerId: request.farmer_id,
+          reason: preApprovalCheck.reason
+        });
         return { 
           success: false, 
           errorMessage: `Pre-approval check failed: ${preApprovalCheck.reason}`,
@@ -162,23 +253,41 @@ export class CreditRequestService {
         request.product_id,
         request.quantity,
         request.packaging_option_id, // Use the packaging option ID from the credit request
-        approvedBy
+        approvedBy,
+        true, // Indicate this is an existing credit request
+        request.unit_price // Pass the stored unit price
       );
 
       if (result.success) {
+        logger.info(`CreditRequestService - approveCreditRequest: Credit transaction processed successfully`, {
+          requestId,
+          farmerId: request.farmer_id,
+          transactionId: result.transactionId
+        });
+
         // Convert user ID to staff ID if provided
+        // If the user is an admin, we'll set approved_by to NULL since admins don't have staff records
         let staffId = null;
         if (approvedBy) {
-          const { data: staffData, error: staffError } = await supabase
-            .from('staff')
-            .select('id')
-            .eq('user_id', approvedBy)
-            .maybeSingle();
-          
-          if (staffError) {
-            logger.errorWithContext('CreditRequestService - fetching staff record', staffError);
-          } else if (staffData) {
-            staffId = staffData.id;
+          try {
+            const { data: staffData, error: staffError } = await supabase
+              .from('staff')
+              .select('id')
+              .eq('user_id', approvedBy)
+              .maybeSingle();
+            
+            if (!staffError && staffData) {
+              staffId = staffData.id;
+            } else {
+              // If no staff record found, it might be an admin user
+              // We'll leave staffId as null for admins
+              logger.info(`CreditRequestService - No staff record found for user (might be admin)`, {
+                userId: approvedBy
+              });
+            }
+          } catch (staffLookupError) {
+            logger.errorWithContext('CreditRequestService - fetching staff record', staffLookupError);
+            // Continue with staffId as null
           }
         }
 
@@ -187,7 +296,7 @@ export class CreditRequestService {
           .from('credit_requests')
           .update({
             status: 'approved',
-            approved_by: staffId, // Use staff ID instead of user ID
+            approved_by: staffId, // Use staff ID or NULL for admins
             approved_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
           })
@@ -198,11 +307,21 @@ export class CreditRequestService {
           throw updateError;
         }
 
+        logger.info(`CreditRequestService - approveCreditRequest: Request approved successfully`, {
+          requestId,
+          farmerId: request.farmer_id
+        });
+
         return { 
           success: true,
           enforcementDetails: result.enforcementDetails
         };
       } else {
+        logger.warn(`CreditRequestService - approveCreditRequest: Failed to process credit transaction`, {
+          requestId,
+          farmerId: request.farmer_id,
+          errorMessage: result.errorMessage
+        });
         return { 
           success: false, 
           errorMessage: result.errorMessage || 'Failed to process credit transaction',
@@ -222,18 +341,28 @@ export class CreditRequestService {
   static async rejectCreditRequest(requestId: string, rejectionReason: string, rejectedBy?: string): Promise<boolean> {
     try {
       // Convert user ID to staff ID if provided
+      // If the user is an admin, we'll set approved_by to NULL since admins don't have staff records
       let staffId = null;
       if (rejectedBy) {
-        const { data: staffData, error: staffError } = await supabase
-          .from('staff')
-          .select('id')
-          .eq('user_id', rejectedBy)
-          .maybeSingle();
-        
-        if (staffError) {
-          logger.errorWithContext('CreditRequestService - fetching staff record for rejection', staffError);
-        } else if (staffData) {
-          staffId = staffData.id;
+        try {
+          const { data: staffData, error: staffError } = await supabase
+            .from('staff')
+            .select('id')
+            .eq('user_id', rejectedBy)
+            .maybeSingle();
+          
+          if (!staffError && staffData) {
+            staffId = staffData.id;
+          } else {
+            // If no staff record found, it might be an admin user
+            // We'll leave staffId as null for admins
+            logger.info(`CreditRequestService - No staff record found for user (might be admin)`, {
+              userId: rejectedBy
+            });
+          }
+        } catch (staffLookupError) {
+          logger.errorWithContext('CreditRequestService - fetching staff record for rejection', staffLookupError);
+          // Continue with staffId as null
         }
       }
 
@@ -242,7 +371,7 @@ export class CreditRequestService {
         .update({
           status: 'rejected',
           rejection_reason: rejectionReason,
-          approved_by: staffId, // Use staff ID instead of user ID
+          approved_by: staffId, // Use staff ID or NULL for admins
           approved_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
