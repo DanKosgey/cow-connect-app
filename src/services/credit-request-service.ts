@@ -26,7 +26,8 @@ export class CreditRequestService {
     productId: string,
     quantity: number,
     productName: string,
-    unitPrice: number
+    unitPrice: number,
+    packagingOptionId?: string | null
   ): Promise<CreditRequest> {
     try {
       const totalAmount = quantity * unitPrice;
@@ -40,6 +41,7 @@ export class CreditRequestService {
           quantity: quantity,
           unit_price: unitPrice,
           total_amount: totalAmount,
+          packaging_option_id: packagingOptionId || null,
           status: 'pending'
         })
         .select()
@@ -94,7 +96,8 @@ export class CreditRequestService {
         throw error;
       }
 
-      return data as CreditRequest[];
+      // Filter out requests with null product_id as they cannot be processed
+      return (data as CreditRequest[]).filter(request => request.product_id !== null);
     } catch (error) {
       logger.errorWithContext('CreditRequestService - getAllCreditRequests', error);
       throw error;
@@ -104,6 +107,11 @@ export class CreditRequestService {
   // Approve a credit request with enhanced enforcement
   static async approveCreditRequest(requestId: string, approvedBy?: string): Promise<{ success: boolean; errorMessage?: string; enforcementDetails?: any }> {
     try {
+      // Validate input
+      if (!requestId) {
+        return { success: false, errorMessage: 'Request ID is required' };
+      }
+
       // Get the request details
       const { data: request, error: fetchError } = await supabase
         .from('credit_requests')
@@ -118,6 +126,19 @@ export class CreditRequestService {
 
       if (!request) {
         return { success: false, errorMessage: 'Credit request not found' };
+      }
+
+      // Validate required fields
+      if (!request.farmer_id) {
+        return { success: false, errorMessage: 'Farmer ID is missing from request' };
+      }
+
+      if (!request.product_id) {
+        return { success: false, errorMessage: 'Product ID is missing from request' };
+      }
+
+      if (!request.quantity || request.quantity <= 0) {
+        return { success: false, errorMessage: 'Valid quantity is required' };
       }
 
       // Pre-approval credit limit enforcement check
@@ -135,21 +156,38 @@ export class CreditRequestService {
         };
       }
 
-      // Process the credit transaction
+      // Process the credit transaction using the packaging option ID from the request
       const result = await CreditServiceEssentials.processCreditTransaction(
         request.farmer_id,
         request.product_id,
         request.quantity,
+        request.packaging_option_id, // Use the packaging option ID from the credit request
         approvedBy
       );
 
       if (result.success) {
+        // Convert user ID to staff ID if provided
+        let staffId = null;
+        if (approvedBy) {
+          const { data: staffData, error: staffError } = await supabase
+            .from('staff')
+            .select('id')
+            .eq('user_id', approvedBy)
+            .maybeSingle();
+          
+          if (staffError) {
+            logger.errorWithContext('CreditRequestService - fetching staff record', staffError);
+          } else if (staffData) {
+            staffId = staffData.id;
+          }
+        }
+
         // Update request status to approved
         const { error: updateError } = await supabase
           .from('credit_requests')
           .update({
             status: 'approved',
-            approved_by: approvedBy,
+            approved_by: staffId, // Use staff ID instead of user ID
             approved_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
           })
@@ -183,12 +221,28 @@ export class CreditRequestService {
   // Reject a credit request
   static async rejectCreditRequest(requestId: string, rejectionReason: string, rejectedBy?: string): Promise<boolean> {
     try {
+      // Convert user ID to staff ID if provided
+      let staffId = null;
+      if (rejectedBy) {
+        const { data: staffData, error: staffError } = await supabase
+          .from('staff')
+          .select('id')
+          .eq('user_id', rejectedBy)
+          .maybeSingle();
+        
+        if (staffError) {
+          logger.errorWithContext('CreditRequestService - fetching staff record for rejection', staffError);
+        } else if (staffData) {
+          staffId = staffData.id;
+        }
+      }
+
       const { error } = await supabase
         .from('credit_requests')
         .update({
           status: 'rejected',
           rejection_reason: rejectionReason,
-          approved_by: rejectedBy,
+          approved_by: staffId, // Use staff ID instead of user ID
           approved_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })

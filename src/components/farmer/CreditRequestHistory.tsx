@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, PackageCheck, PackageX } from 'lucide-react';
-import { supabase } from '@/lib/supabaseClient';
+import { Clock, PackageCheck, PackageX, Package } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 import { Card } from '@/components/ui/card';
 import { useToast } from '@/components/ui/use-toast';
+import { AgrovetInventoryService } from '@/services/agrovet-inventory-service';
 
 interface CreditRequest {
   id: string;
@@ -10,6 +11,7 @@ interface CreditRequest {
     name: string;
     unit: string;
   };
+  packaging_id: string;
   quantity: number;
   unit_price: number;
   total_amount: number;
@@ -35,7 +37,7 @@ const CreditRequestHistory = () => {
 
       const { data, error } = await supabase
         .from('agrovet_credit_requests')
-        .select(\`
+        .select(`
           id,
           quantity,
           unit_price,
@@ -44,11 +46,12 @@ const CreditRequestHistory = () => {
           created_at,
           processed_at,
           notes,
+          packaging_id,
           products (
             name,
             unit
           )
-        \`)
+        `)
         .eq('farmer_id', user.id)
         .order('created_at', { ascending: false });
 
@@ -114,8 +117,13 @@ const CreditRequestHistory = () => {
             <div>
               <h3 className="text-lg font-semibold text-gray-800">{request.products.name}</h3>
               <p className="text-sm text-gray-600">
-                {request.quantity} {request.products.unit} @ KES {request.unit_price.toLocaleString()} each
+                {request.quantity} units @ KES {request.unit_price.toLocaleString()} each
               </p>
+              {request.packaging_id && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Packaging ID: {request.packaging_id.substring(0, 8)}...
+                </p>
+              )}
             </div>
             <div className="text-right">
               <span className={`inline-flex items-center space-x-1 px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(request.status)}`}>

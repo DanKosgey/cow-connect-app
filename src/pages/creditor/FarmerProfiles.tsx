@@ -57,10 +57,9 @@ interface FarmerProfile {
   max_credit_amount: number;
   current_credit_balance: number;
   total_credit_used: number;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
   utilization_percentage: number;
+  last_updated: string;
+  is_frozen: boolean; // Added this field
 }
 
 const FarmerProfiles = () => {
@@ -102,9 +101,9 @@ const FarmerProfiles = () => {
 
     if (filterStatus !== "all") {
       if (filterStatus === "active") {
-        filtered = filtered.filter(farmer => farmer.is_active);
+        filtered = filtered.filter(farmer => !farmer.is_frozen); // Changed to is_frozen
       } else if (filterStatus === "inactive") {
-        filtered = filtered.filter(farmer => !farmer.is_active);
+        filtered = filtered.filter(farmer => farmer.is_frozen); // Changed to is_frozen
       }
     }
 
@@ -123,9 +122,9 @@ const FarmerProfiles = () => {
     // Apply advanced filters
     if (advancedFilters.status && advancedFilters.status !== "all") {
       if (advancedFilters.status === "active") {
-        filtered = filtered.filter(farmer => farmer.is_active);
+        filtered = filtered.filter(farmer => !farmer.is_frozen); // Changed to is_frozen
       } else if (advancedFilters.status === "inactive") {
-        filtered = filtered.filter(farmer => !farmer.is_active);
+        filtered = filtered.filter(farmer => farmer.is_frozen); // Changed to is_frozen
       }
     }
 
@@ -182,75 +181,68 @@ const FarmerProfiles = () => {
     try {
       setLoading(true);
       
-      // Get all farmers with their credit limits
-      const { data: farmersData, error: farmersError } = await supabase
-        .from('farmers')
+      // Get all credit profiles with farmer information
+      const { data: creditProfiles, error: profilesError } = await supabase
+        .from('farmer_credit_profiles')
         .select(`
           id,
-          profiles:user_id (full_name, phone)
-        `);
+          farmer_id,
+          credit_limit_percentage,
+          max_credit_amount,
+          current_credit_balance,
+          total_credit_used,
+          is_frozen,
+          updated_at,
+          farmers!farmer_credit_profiles_farmer_id_fkey (
+            id,
+            full_name,
+            phone_number
+          )
+        `)
+        .eq('is_frozen', false);
 
-      if (farmersError) throw farmersError;
+      if (profilesError) throw profilesError;
 
-      // Handle case when no farmers exist
-      if (!farmersData || farmersData.length === 0) {
+      // Handle case when no credit profiles exist
+      if (!creditProfiles || creditProfiles.length === 0) {
         setFarmers([]);
         setFilteredFarmers([]);
         return;
       }
 
-      // For each farmer, get credit limit information
+      // Process credit profiles with farmer information
       const farmerProfileData: FarmerProfile[] = [];
-      for (const farmer of farmersData || []) {
+      for (const profile of creditProfiles || []) {
         try {
-          // Get credit limit
-          const { data: creditLimit, error: limitError } = await supabase
-            .from('farmer_credit_limits')
-            .select('*')
-            .eq('farmer_id', farmer.id)
-            .maybeSingle();
+          // Calculate utilization percentage
+          const utilization = profile.max_credit_amount > 0 
+            ? ((profile.max_credit_amount - profile.current_credit_balance) / profile.max_credit_amount) * 100 
+            : 0;
 
-          if (limitError) {
-            console.warn(`Error fetching credit limit for farmer ${farmer.id}:`, limitError);
-            continue;
-          }
-
-          if (creditLimit) {
-            // Calculate utilization percentage
-            const utilization = creditLimit.max_credit_amount > 0 
-              ? ((creditLimit.max_credit_amount - creditLimit.current_credit_balance) / creditLimit.max_credit_amount) * 100 
-              : 0;
-
-            farmerProfileData.push({
-              id: creditLimit.id,
-              farmer_id: farmer.id,
-              farmer_name: farmer.profiles?.full_name || 'Unknown Farmer',
-              farmer_phone: farmer.profiles?.phone || 'No phone',
-              credit_limit_percentage: creditLimit.credit_limit_percentage,
-              max_credit_amount: creditLimit.max_credit_amount,
-              current_credit_balance: creditLimit.current_credit_balance,
-              total_credit_used: creditLimit.total_credit_used,
-              is_active: creditLimit.is_active,
-              created_at: creditLimit.created_at,
-              updated_at: creditLimit.updated_at,
-              utilization_percentage: parseFloat(utilization.toFixed(2))
-            });
-          }
+          farmerProfileData.push({
+            id: profile.id,
+            farmer_id: profile.farmer_id,
+            farmer_name: profile.farmers?.full_name || 'Unknown Farmer',
+            farmer_phone: profile.farmers?.phone_number || 'No phone',
+            credit_limit_percentage: profile.credit_limit_percentage,
+            max_credit_amount: profile.max_credit_amount,
+            current_credit_balance: profile.current_credit_balance,
+            total_credit_used: profile.total_credit_used,
+            utilization_percentage: Number(utilization.toFixed(1)),
+            last_updated: profile.updated_at,
+            is_frozen: profile.is_frozen
+          });
         } catch (err) {
-          console.warn(`Error processing farmer ${farmer.id}:`, err);
+          console.warn(`Error processing credit profile ${profile.id}:`, err);
         }
       }
 
       setFarmers(farmerProfileData);
       setFilteredFarmers(farmerProfileData);
-    } catch (err) {
-      console.error("Error fetching farmer profiles:", err);
-      setError("Failed to load farmer profiles");
-      toast({
-        title: "Error",
-        description: "Failed to load farmer profiles",
-        variant: "destructive"
-      });
+      setError(null);
+    } catch (err: any) {
+      console.error('Error fetching farmer profiles:', err);
+      setError(err.message || 'Failed to load farmer profiles');
     } finally {
       setLoading(false);
     }
@@ -533,8 +525,8 @@ const FarmerProfiles = () => {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${farmer.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                            {farmer.is_active ? 'Active' : 'Inactive'}
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${!farmer.is_frozen ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                            {!farmer.is_frozen ? 'Active' : 'Inactive'}
                           </span>
                         </TableCell>
                         <TableCell>

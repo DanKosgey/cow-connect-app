@@ -188,12 +188,12 @@ export class PaymentService {
 
       // If credit was used, deduct it from the farmer's credit balance
       if (creditUsed > 0) {
-        // Get current credit limit record
+        // Get current credit limit record (using the correct table name)
         const { data: creditLimitData, error: creditLimitError } = await supabase
-          .from('farmer_credit_limits')
+          .from('farmer_credit_profiles') // Using farmer_credit_profiles as farmer_credit_limits has been deleted
           .select('*')
           .eq('farmer_id', farmerId)
-          .eq('is_active', true)
+          .eq('is_frozen', false) // Using is_frozen = false instead of is_active = true
           .maybeSingle();
 
         if (creditLimitError) {
@@ -208,9 +208,9 @@ export class PaymentService {
           const newBalance = Math.max(0, creditLimitRecord.current_credit_balance - creditUsed);
           const newTotalUsed = creditLimitRecord.total_credit_used + creditUsed;
 
-          // Update credit limit
+          // Update credit limit (using the correct table name)
           const { error: updateError } = await supabase
-            .from('farmer_credit_limits')
+            .from('farmer_credit_profiles') // Using farmer_credit_profiles as farmer_credit_limits has been deleted
             .update({
               current_credit_balance: newBalance,
               total_credit_used: newTotalUsed,
@@ -763,6 +763,65 @@ export class PaymentService {
     } catch (error) {
       logger.errorWithContext('PaymentService - getFarmerPaymentStatement', error);
       return { success: false, error };
+    }
+  }
+
+  // Get credit limit for a farmer
+  static async getCreditLimitForFarmer(farmerId: string): Promise<any | null> {
+    try {
+      const { data, error } = await supabase
+        .from('farmer_credit_profiles') // Using farmer_credit_profiles as farmer_credit_limits has been deleted
+        .select('*')
+        .eq('farmer_id', farmerId)
+        .eq('is_frozen', false) // Using is_frozen = false instead of is_active = true
+        .maybeSingle();
+
+      if (error) {
+        logger.errorWithContext('PaymentService - fetching credit limit for farmer', error);
+        return null;
+      }
+
+      return data;
+    } catch (error) {
+      logger.errorWithContext('PaymentService - getCreditLimitForFarmer', error);
+      return null;
+    }
+  }
+
+  // Update credit limit after payment
+  static async updateCreditLimitAfterPayment(farmerId: string, creditUsed: number): Promise<boolean> {
+    try {
+      // Get current credit limit record
+      const creditLimitRecord = await this.getCreditLimitForFarmer(farmerId);
+      
+      if (!creditLimitRecord) {
+        logger.warn('No credit limit found for farmer', { farmerId });
+        return false;
+      }
+
+      // Calculate new balance
+      const newBalance = Math.max(0, creditLimitRecord.current_credit_balance - creditUsed);
+      const newTotalUsed = creditLimitRecord.total_credit_used + creditUsed;
+
+      // Update credit limit
+      const { error: updateError } = await supabase
+        .from('farmer_credit_profiles') // Using farmer_credit_profiles as farmer_credit_limits has been deleted
+        .update({
+          current_credit_balance: newBalance,
+          total_credit_used: newTotalUsed,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', creditLimitRecord.id);
+
+      if (updateError) {
+        logger.errorWithContext('PaymentService - updating credit limit after payment', updateError);
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      logger.errorWithContext('PaymentService - updateCreditLimitAfterPayment', error);
+      return false;
     }
   }
 

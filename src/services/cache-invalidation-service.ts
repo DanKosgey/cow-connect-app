@@ -128,7 +128,7 @@ class CacheInvalidationService {
       'notifications': () => this.invalidateNotifications(),
       'system_settings': () => this.invalidateSettings(),
       'agrovet_inventory': () => this.invalidateInventory(),
-      'farmer_credit_limits': () => this.invalidateCreditData(),
+      'farmer_credit_profiles': () => this.invalidateCreditData(), // Using farmer_credit_profiles as farmer_credit_limits has been deleted
       'farmer_credit_transactions': () => this.invalidateCreditData(),
       'kyc_documents': () => this.invalidateKycData(),
     };

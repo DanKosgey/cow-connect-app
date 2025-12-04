@@ -1,28 +1,367 @@
-import React from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { AlertCircle } from 'lucide-react';
+import { useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { CreditService } from "@/services/credit-service";
+import { 
+  CreditCard, 
+  Users, 
+  Search, 
+  Filter, 
+  Download, 
+  Eye, 
+  Edit, 
+  Plus,
+  AlertCircle,
+  CheckCircle,
+  Clock
+} from "lucide-react";
+import { formatCurrency } from "@/utils/formatters";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useToast } from "@/components/ui/use-toast";
+import RefreshButton from '@/components/ui/RefreshButton';
+import { useCreditManagementData } from '@/hooks/useCreditManagementData';
+import CreditRequestManagement from '@/components/creditor/CreditRequestManagement';
+
+interface FarmerCreditSummary {
+  farmer_id: string;
+  farmer_name: string;
+  farmer_phone: string;
+  credit_limit: number;
+  available_credit: number;
+  credit_used: number;
+  pending_payments: number;
+  credit_percentage: number;
+}
+
+interface CreditLimit {
+  id: string;
+  farmer_id: string;
+  credit_limit_percentage: number;
+  max_credit_amount: number;
+  current_credit_balance: number;
+  total_credit_used: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  farmers: {
+    profiles: {
+      full_name: string;
+      phone: string;
+    };
+  };
+}
 
 const CreditManagement = () => {
-  const navigate = useNavigate();
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterStatus, setFilterStatus] = useState("all");
+  const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'farmers' | 'requests'>('farmers');
+  const { toast } = useToast();
+
+  const { data: creditData, isLoading, isError, error: queryError, refetch } = useCreditManagementData(searchTerm, filterStatus);
+  
+  const farmers = creditData?.farmers || [];
+  const creditLimits = creditData?.creditLimits || [];
+  const filteredFarmers = farmers;
+  const loading = isLoading;
+
+  const handleAdjustCreditLimit = async (farmerId: string, farmerName: string) => {
+    try {
+      // In a real implementation, this would open a modal to adjust credit limits
+      toast({
+        title: "Feature Coming Soon",
+        description: `Adjusting credit limit for ${farmerName}. This feature will be available in the next update.`,
+      });
+    } catch (error) {
+      console.error("Error adjusting credit limit:", error);
+      toast({
+        title: "Error",
+        description: "Failed to adjust credit limit",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleGrantCredit = async (farmerId: string, farmerName: string) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      await CreditService.grantCreditToFarmer(farmerId, user?.id);
+      
+      toast({
+        title: "Success",
+        description: `Credit granted to ${farmerName}`,
+      });
+      
+      // Refresh data
+      window.location.reload();
+    } catch (error: any) {
+      console.error("Error granting credit:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to grant credit",
+        variant: "destructive",
+      });
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading credit management data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6 max-w-md">
+          <div className="flex items-center gap-3 mb-4">
+            <AlertCircle className="w-6 h-6 text-red-600" />
+            <h3 className="text-lg font-semibold text-red-900">Error</h3>
+          </div>
+          <p className="text-red-700">{error}</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="container mx-auto p-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <AlertCircle className="h-5 w-5" />
-            Credit Management
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="text-center py-12">
-            <p className="text-muted-foreground">
-              This page is currently under maintenance. Please check back later.
-            </p>
+    <div className="min-h-screen bg-gray-50 p-4 md:p-8">
+      <div className="max-w-7xl mx-auto">
+        <div className="mb-8 flex flex-col md:flex-row md:items-center md:justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Credit Management</h1>
+            <p className="text-gray-600 mt-2">Manage farmer credit limits and monitor credit usage</p>
           </div>
-        </CardContent>
-      </Card>
+          <div className="mt-4 md:mt-0">
+            <RefreshButton 
+              isRefreshing={loading} 
+              onRefresh={refetch} 
+              className="bg-white border-gray-300 hover:bg-gray-50 rounded-lg shadow-sm"
+            />
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex border-b border-gray-200 mb-6">
+          <button
+            className={`px-4 py-2 font-medium text-sm ${activeTab === 'farmers' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+            onClick={() => setActiveTab('farmers')}
+          >
+            Farmer Credit Profiles
+          </button>
+          <button
+            className={`px-4 py-2 font-medium text-sm ${activeTab === 'requests' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+            onClick={() => setActiveTab('requests')}
+          >
+            Credit Requests
+          </button>
+        </div>
+
+        {activeTab === 'farmers' ? (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+              <Card className="border-l-4 border-l-blue-500">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-gray-500">Total Farmers</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-2xl font-bold text-gray-900">{farmers.length}</p>
+                </CardContent>
+              </Card>
+
+              <Card className="border-l-4 border-l-green-500">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-gray-500">Active Credit Lines</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-2xl font-bold text-gray-900">
+                    {creditLimits.filter(cl => cl.current_credit_balance > 0).length}
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="border-l-4 border-l-amber-500">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-gray-500">Total Credit Used</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-2xl font-bold text-gray-900">
+                    {formatCurrency(
+                      creditLimits.reduce((sum, cl) => sum + (cl.total_credit_used || 0), 0)
+                    )}
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="border-l-4 border-l-purple-500">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-gray-500">Available Credit</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-2xl font-bold text-gray-900">
+                    {formatCurrency(
+                      creditLimits.reduce((sum, cl) => sum + (cl.current_credit_balance || 0), 0)
+                    )}
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Controls */}
+            <div className="flex flex-col md:flex-row gap-4 mb-6">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <Input
+                  placeholder="Search farmers by name or phone..."
+                  className="pl-10"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
+              
+              <Select value={filterStatus} onValueChange={setFilterStatus}>
+                <SelectTrigger className="w-full md:w-48">
+                  <SelectValue placeholder="Filter by status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Farmers</SelectItem>
+                  <SelectItem value="high_credit">High Credit (&gt;50,000)</SelectItem>
+                  <SelectItem value="low_credit">Low Credit (&lt;10,000)</SelectItem>
+                  <SelectItem value="no_credit">No Credit Available</SelectItem>
+                </SelectContent>
+              </Select>
+              
+              <Button variant="outline">
+                <Download className="w-4 h-4 mr-2" />
+                Export Report
+              </Button>
+            </div>
+
+            {/* Farmers Table */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="w-5 h-5" />
+                  Farmers Credit Status
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Farmer</TableHead>
+                        <TableHead>Phone</TableHead>
+                        <TableHead>Pending Payments</TableHead>
+                        <TableHead>Credit Limit</TableHead>
+                        <TableHead>Available Credit</TableHead>
+                        <TableHead>Credit Used</TableHead>
+                        <TableHead>Credit %</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredFarmers.map((farmer) => {
+                        const hasCredit = farmer.available_credit > 0;
+                        const creditUtilization = farmer.credit_limit > 0 
+                          ? (farmer.credit_used / farmer.credit_limit) * 100 
+                          : 0;
+                        
+                        return (
+                          <TableRow key={farmer.farmer_id} className="hover:bg-gray-50">
+                            <TableCell className="font-medium">{farmer.farmer_name}</TableCell>
+                            <TableCell>{farmer.farmer_phone}</TableCell>
+                            <TableCell>{formatCurrency(farmer.pending_payments)}</TableCell>
+                            <TableCell>{formatCurrency(farmer.credit_limit)}</TableCell>
+                            <TableCell className={farmer.available_credit > 0 ? "text-green-600 font-semibold" : ""}>
+                              {formatCurrency(farmer.available_credit)}
+                            </TableCell>
+                            <TableCell>{formatCurrency(farmer.credit_used)}</TableCell>
+                            <TableCell>{farmer.credit_percentage}%</TableCell>
+                            <TableCell>
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                hasCredit 
+                                  ? creditUtilization > 80 
+                                    ? "bg-red-100 text-red-800" 
+                                    : "bg-green-100 text-green-800"
+                                  : "bg-gray-100 text-gray-800"
+                              }`}>
+                                {hasCredit ? (
+                                  <>
+                                    <CheckCircle className="w-3 h-3 mr-1" />
+                                    Active
+                                  </>
+                                ) : (
+                                  <>
+                                    <Clock className="w-3 h-3 mr-1" />
+                                    No Credit
+                                  </>
+                                )}
+                              </span>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleAdjustCreditLimit(farmer.farmer_id, farmer.farmer_name)}
+                                >
+                                  <Edit className="w-4 h-4" />
+                                </Button>
+                                {!hasCredit && farmer.pending_payments > 0 && (
+                                  <Button
+                                    size="sm"
+                                    onClick={() => handleGrantCredit(farmer.farmer_id, farmer.farmer_name)}
+                                  >
+                                    <CreditCard className="w-4 h-4 mr-1" />
+                                    Grant Credit
+                                  </Button>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+                
+                {filteredFarmers.length === 0 && (
+                  <div className="text-center py-8 text-gray-500">
+                    <Users className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                    <p>No farmers found matching your criteria</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </>
+        ) : (
+          /* Credit Requests Tab */
+          <CreditRequestManagement />
+        )}
+      </div>
     </div>
   );
 };

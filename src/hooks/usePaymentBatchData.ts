@@ -245,12 +245,12 @@ export const usePaymentBatchData = () => {
 
             // If credit was used, deduct it from the farmer's credit balance and record transaction
             if (creditUsed > 0) {
-              // Get current credit limit record
+              // Get current credit limit record (using the correct table name)
               const { data: creditLimitData, error: creditLimitError } = await supabase
-                .from('farmer_credit_limits')
+                .from('farmer_credit_profiles') // Using farmer_credit_profiles as farmer_credit_limits has been deleted
                 .select('*')
                 .eq('farmer_id', farmerId)
-                .eq('is_active', true)
+                .eq('is_frozen', false) // Using is_frozen = false instead of is_active = true
                 .maybeSingle();
 
               if (creditLimitError) {
@@ -262,9 +262,9 @@ export const usePaymentBatchData = () => {
                 const newBalance = Math.max(0, creditLimitRecord.current_credit_balance - creditUsed);
                 const newTotalUsed = creditLimitRecord.total_credit_used + creditUsed;
 
-                // Update credit limit
+                // Update credit limit (using the correct table name)
                 const { error: updateError } = await supabase
-                  .from('farmer_credit_limits')
+                  .from('farmer_credit_profiles') // Using farmer_credit_profiles as farmer_credit_limits has been deleted
                   .update({
                     current_credit_balance: newBalance,
                     total_credit_used: newTotalUsed,
@@ -278,11 +278,12 @@ export const usePaymentBatchData = () => {
 
                 // Create credit transaction record for the deduction
                 const { error: transactionError } = await supabase
-                  .from('farmer_credit_transactions')
+                  .from('credit_transactions')
                   .insert({
                     farmer_id: farmerId,
                     transaction_type: 'credit_repaid',
                     amount: creditUsed,
+                    balance_before: creditLimitRecord.current_credit_balance,
                     balance_after: newBalance,
                     reference_type: 'batch_payment_deduction',
                     reference_id: collection.id,

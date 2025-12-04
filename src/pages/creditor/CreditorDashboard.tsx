@@ -15,6 +15,7 @@ import {
 import RefreshButton from '@/components/ui/RefreshButton';
 import { CreditService } from '@/services/credit-service';
 import { useToast } from '@/components/ui/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
 const CreditorDashboard = () => {
@@ -27,9 +28,14 @@ const CreditorDashboard = () => {
     activeFarmers: 0,
     creditRepaymentRate: 0
   });
+  const [utilizationTrends, setUtilizationTrends] = useState<{ month: string; utilization: number }[]>([]);
+  const [repaymentBreakdown, setRepaymentBreakdown] = useState<
+    { label: string; value: number; color: string }[]
+  >([]);
 
   useEffect(() => {
     fetchDashboardStats();
+    fetchDashboardCharts();
   }, []);
 
   const fetchDashboardStats = async () => {
@@ -58,27 +64,80 @@ const CreditorDashboard = () => {
     }).format(amount);
   };
 
-  // Sample data for credit utilization trends
-  const creditUtilizationData = [
-    { month: 'Jan', utilization: 65 },
-    { month: 'Feb', utilization: 72 },
-    { month: 'Mar', utilization: 68 },
-    { month: 'Apr', utilization: 75 },
-    { month: 'May', utilization: 80 },
-    { month: 'Jun', utilization: 78 },
-  ];
+  const fetchDashboardCharts = async () => {
+    try {
+      // Look back 6 months for portfolio-level trends
+      const from = new Date();
+      from.setMonth(from.getMonth() - 5);
+      from.setDate(1);
+      from.setHours(0, 0, 0, 0);
 
-  // Sample data for repayment patterns
-  const repaymentData = [
-    { status: 'On Time', count: 75, color: '#10B981' },
-    { status: 'Late', count: 15, color: '#F59E0B' },
-    { status: 'Default', count: 10, color: '#EF4444' },
-  ];
+      const { data, error } = await supabase
+        .from('farmer_credit_transactions')
+        .select('transaction_type, amount, created_at')
+        .gte('created_at', from.toISOString());
+
+      if (error) {
+        throw error;
+      }
+
+      const byMonth: Record<string, { used: number; repaid: number }> = {};
+
+      (data || []).forEach((tx: any) => {
+        const d = new Date(tx.created_at);
+        const key = d.toLocaleString('en-KE', { month: 'short', year: '2-digit' });
+
+        if (!byMonth[key]) {
+          byMonth[key] = { used: 0, repaid: 0 };
+        }
+
+        const amount = tx.amount || 0;
+        if (tx.transaction_type === 'credit_used') {
+          byMonth[key].used += amount;
+        } else if (tx.transaction_type === 'credit_repaid') {
+          byMonth[key].repaid += amount;
+        }
+      });
+
+      const trendSeries = Object.entries(byMonth).map(([month, v]) => {
+        const denom = v.used + v.repaid;
+        const utilization = denom > 0 ? (v.used / denom) * 100 : 0;
+        return { month, utilization: Number(utilization.toFixed(1)) };
+      });
+
+      setUtilizationTrends(trendSeries);
+
+      let totalUsed = 0;
+      let totalRepaid = 0;
+
+      (data || []).forEach((tx: any) => {
+        const amount = tx.amount || 0;
+        if (tx.transaction_type === 'credit_used') totalUsed += amount;
+        if (tx.transaction_type === 'credit_repaid') totalRepaid += amount;
+      });
+
+      const outstanding = Math.max(totalUsed - totalRepaid, 0);
+
+      setRepaymentBreakdown([
+        { label: 'Repaid', value: totalRepaid, color: '#10B981' },
+        { label: 'Outstanding', value: outstanding, color: '#F97316' }
+      ]);
+    } catch (error) {
+      console.error('Error fetching dashboard charts:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load dashboard charts',
+        variant: 'destructive'
+      });
+      setUtilizationTrends([]);
+      setRepaymentBreakdown([]);
+    }
+  };
 
   const features = [
     {
       title: "Credit Management",
-      description: "Manage farmer credit applications and approvals",
+      description: `Manage farmer credit applications and approvals • Pending: ${dashboardStats.pendingApplications}`,
       icon: <CreditCard className="h-8 w-8" />,
       path: "/creditor/credit-management",
       color: "bg-blue-500"
@@ -234,7 +293,7 @@ const CreditorDashboard = () => {
             <div className="h-80">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
-                  data={creditUtilizationData}
+                  data={utilizationTrends}
                   margin={{
                     top: 5,
                     right: 30,
@@ -267,17 +326,17 @@ const CreditorDashboard = () => {
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
-                    data={repaymentData}
+                    data={repaymentBreakdown}
                     cx="50%"
                     cy="50%"
                     labelLine={true}
                     outerRadius={80}
                     fill="#8884d8"
-                    dataKey="count"
-                    nameKey="status"
+                    dataKey="value"
+                    nameKey="label"
                     label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
                   >
-                    {repaymentData.map((entry, index) => (
+                    {repaymentBreakdown.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>

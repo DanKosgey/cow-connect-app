@@ -13,108 +13,84 @@ interface FarmerCreditSummary {
   credit_percentage: number;
 }
 
-interface CreditLimit {
+interface CreditProfile {
   id: string;
   farmer_id: string;
   credit_limit_percentage: number;
   max_credit_amount: number;
   current_credit_balance: number;
   total_credit_used: number;
-  is_active: boolean;
+  is_frozen: boolean;
   created_at: string;
   updated_at: string;
-  farmers: {
-    profiles: {
-      full_name: string;
-      phone: string;
-    };
-  };
 }
 
 interface CreditManagementData {
   farmers: FarmerCreditSummary[];
-  creditLimits: CreditLimit[];
+  creditLimits: CreditProfile[];
 }
 
 export const useCreditManagementData = (searchTerm: string, filterStatus: string) => {
   return useQuery<CreditManagementData>({
     queryKey: [CACHE_KEYS.ADMIN_CREDIT, searchTerm, filterStatus],
     queryFn: async () => {
-      // Get all farmers with their profiles
-      const { data: farmersData, error: farmersError } = await supabase
-        .from('farmers')
+      // Get all credit profiles with farmer information
+      const { data: creditProfiles, error: profilesError } = await supabase
+        .from('farmer_credit_profiles')
         .select(`
           id,
-          profiles:user_id (full_name, phone)
-        `);
-
-      if (farmersError) {
-        throw farmersError;
-      }
-
-      // Get all credit limits
-      const { data: creditLimitsData, error: creditLimitsError } = await supabase
-        .from('farmer_credit_limits')
-        .select(`
-          *,
-          farmers!inner(
-            profiles:user_id (full_name, phone)
+          farmer_id,
+          credit_limit_percentage,
+          max_credit_amount,
+          current_credit_balance,
+          total_credit_used,
+          is_frozen,
+          updated_at,
+          farmers!farmer_credit_profiles_farmer_id_fkey (
+            id,
+            full_name,
+            phone_number
           )
         `)
-        .eq('is_active', true);
+        .eq('is_frozen', false);
 
-      if (creditLimitsError) {
-        throw creditLimitsError;
+      if (profilesError) {
+        throw profilesError;
       }
 
-      const creditLimits = creditLimitsData as CreditLimit[];
+      const creditLimits = (creditProfiles || []) as CreditProfile[];
 
-      // For each farmer, calculate credit information
+      // For each credit profile, calculate credit information
       const farmerSummaries: FarmerCreditSummary[] = [];
       
-      for (const farmer of farmersData || []) {
+      for (const profile of creditProfiles || []) {
         try {
           // Get pending payments from approved collections only
           const { data: pendingCollections, error: collectionsError } = await supabase
             .from('collections')
             .select('total_amount')
-            .eq('farmer_id', farmer.id)
+            .eq('farmer_id', profile.farmer_id)
             .eq('approved_for_company', true) // Only consider approved collections
             .neq('status', 'Paid');
 
           if (collectionsError) {
-            console.warn(`Error fetching collections for farmer ${farmer.id}:`, collectionsError);
+            console.warn(`Error fetching collections for farmer ${profile.farmer_id}:`, collectionsError);
             continue;
           }
 
           const pendingPayments = pendingCollections?.reduce((sum, collection) => 
             sum + (collection.total_amount || 0), 0) || 0;
 
-          // Get credit limit for this farmer
-          const creditLimit = creditLimitsData?.find((cl: any) => cl.farmer_id === farmer.id);
-          
-          let creditLimitAmount = 0;
-          let availableCredit = 0;
-          let creditUsed = 0;
-          let creditPercentage = 0;
-
-          if (creditLimit) {
-            creditLimitAmount = creditLimit.max_credit_amount;
-            availableCredit = creditLimit.current_credit_balance;
-            creditUsed = creditLimit.total_credit_used;
-            creditPercentage = creditLimit.credit_limit_percentage;
-          } else {
-            // Calculate default credit limit (70% of pending payments, max 100,000)
-            creditLimitAmount = Math.min(pendingPayments * 0.7, 100000);
-            availableCredit = 0;
-            creditUsed = 0;
-            creditPercentage = 70;
-          }
+          // Calculate credit information
+          const creditLimitAmount = profile.max_credit_amount;
+          const availableCredit = profile.current_credit_balance;
+          const creditUsed = profile.total_credit_used;
+          const creditPercentage = profile.credit_limit_percentage;
 
           farmerSummaries.push({
-            farmer_id: farmer.id,
-            farmer_name: farmer.profiles?.full_name || 'Unknown Farmer',
-            farmer_phone: farmer.profiles?.phone || 'No phone',
+            farmer_id: profile.farmer_id,
+            farmer_name: profile.farmers?.full_name || 'Unknown Farmer',
+            farmer_phone: profile.farmers?.phone_number || 'No phone',
             credit_limit: creditLimitAmount,
             available_credit: availableCredit,
             credit_used: creditUsed,
@@ -122,7 +98,7 @@ export const useCreditManagementData = (searchTerm: string, filterStatus: string
             credit_percentage: creditPercentage
           });
         } catch (err) {
-          console.warn(`Error processing farmer ${farmer.id}:`, err);
+          console.warn(`Error processing credit profile ${profile.id}:`, err);
         }
       }
 

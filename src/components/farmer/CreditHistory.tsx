@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import EnhancedAgrovetShoppingInterface from "./EnhancedAgrovetShoppingInterface";
 import { supabase } from "@/integrations/supabase/client";
 import { 
   History, 
@@ -129,7 +130,11 @@ const CreditHistory = ({ farmerId }: { farmerId: string }) => {
           ) : (
             <div className="text-center py-8 text-gray-500">
               <History className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-              <p>No credit transactions found</p>
+              <p className="mb-4">No credit transactions found</p>
+              <p className="text-sm mb-6">Start shopping to build your credit history</p>
+              <div className="max-w-md mx-auto">
+                <EnhancedAgrovetShoppingInterface farmerId={farmerId} availableCredit={0} />
+              </div>
             </div>
           )}
         </div>

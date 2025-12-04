@@ -1,25 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import { Package, AlertCircle } from 'lucide-react';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useCreditService } from '@/hooks/useCreditService';
+import { AgrovetInventoryService } from '@/services/agrovet-inventory-service';
 
 interface Product {
   id: string;
   name: string;
   unit: string;
-  unit_price: number;
   stock_quantity: number;
+  packaging_options: any[];
 }
 
 const AgrovetCreditRequest = () => {
   const [loading, setLoading] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [selectedPackaging, setSelectedPackaging] = useState<any>(null);
   const [quantity, setQuantity] = useState('');
   const [notes, setNotes] = useState('');
   const [creditInfo, setCreditInfo] = useState<any>(null);
@@ -33,14 +35,28 @@ const AgrovetCreditRequest = () => {
 
   const loadProducts = async () => {
     try {
-      const { data, error } = await supabase
-        .from('agrovet_products')
-        .select('*')
-        .gt('stock_quantity', 0)
-        .order('name');
+      // Get credit-eligible products with their packaging options
+      const productsWithPackaging = await AgrovetInventoryService.getCreditEligibleProducts();
+      
+      // Enrich products with packaging options
+      const enrichedProducts = await Promise.all(
+        productsWithPackaging.map(async (product) => {
+          try {
+            const packagingOptions = await AgrovetInventoryService.getProductPackaging(product.id);
+            return {
+              ...product,
+              packaging_options: packagingOptions?.filter(p => p.is_credit_eligible) || []
+            };
+          } catch (error) {
+            return {
+              ...product,
+              packaging_options: []
+            };
+          }
+        })
+      );
 
-      if (error) throw error;
-      setProducts(data || []);
+      setProducts(enrichedProducts);
     } catch (error) {
       console.error('Error loading products:', error);
       toast({
@@ -66,12 +82,21 @@ const AgrovetCreditRequest = () => {
   const handleProductChange = (productId: string) => {
     const product = products.find(p => p.id === productId);
     setSelectedProduct(product || null);
+    setSelectedPackaging(null);
+    setQuantity('');
+  };
+
+  const handlePackagingChange = (packagingId: string) => {
+    if (!selectedProduct) return;
+    
+    const packaging = selectedProduct.packaging_options.find(p => p.id === packagingId);
+    setSelectedPackaging(packaging || null);
     setQuantity('');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedProduct || !quantity) return;
+    if (!selectedProduct || !selectedPackaging || !quantity) return;
 
     try {
       setLoading(true);
@@ -80,7 +105,7 @@ const AgrovetCreditRequest = () => {
         throw new Error('You are not eligible for credit at this time');
       }
 
-      const totalAmount = selectedProduct.unit_price * Number(quantity);
+      const totalAmount = selectedPackaging.price * Number(quantity);
       if (totalAmount > creditInfo.availableCredit) {
         throw new Error('Request amount exceeds your available credit');
       }
@@ -93,8 +118,9 @@ const AgrovetCreditRequest = () => {
         .insert({
           farmer_id: user.id,
           product_id: selectedProduct.id,
+          packaging_id: selectedPackaging.id,
           quantity: Number(quantity),
-          unit_price: selectedProduct.unit_price,
+          unit_price: selectedPackaging.price,
           total_amount: totalAmount,
           notes: notes.trim() || null
         });
@@ -108,6 +134,7 @@ const AgrovetCreditRequest = () => {
 
       // Reset form
       setSelectedProduct(null);
+      setSelectedPackaging(null);
       setQuantity('');
       setNotes('');
     } catch (error) {
@@ -130,7 +157,7 @@ const AgrovetCreditRequest = () => {
         </div>
         <div>
           <h2 className="text-2xl font-bold text-gray-800">Request Agrovet Products</h2>
-          <p className="text-gray-600">Request farm supplies on credit</p>
+          <p className="text-gray-600">Request farm supplies on credit with packaging options</p>
         </div>
       </div>
 
@@ -185,11 +212,32 @@ const AgrovetCreditRequest = () => {
             <option value="">Select a product</option>
             {products.map((product) => (
               <option key={product.id} value={product.id}>
-                {product.name} - KES {product.unit_price.toLocaleString()} per {product.unit}
+                {product.name}
               </option>
             ))}
           </select>
         </div>
+
+        {selectedProduct && selectedProduct.packaging_options.length > 0 && (
+          <div>
+            <Label htmlFor="packaging">Packaging Option</Label>
+            <select
+              id="packaging"
+              className="w-full p-2 border border-gray-300 rounded-md mt-1"
+              value={selectedPackaging?.id || ''}
+              onChange={(e) => handlePackagingChange(e.target.value)}
+              required
+              disabled={loading || !creditInfo?.isEligible}
+            >
+              <option value="">Select a packaging option</option>
+              {selectedProduct.packaging_options.map((packaging) => (
+                <option key={packaging.id} value={packaging.id}>
+                  {packaging.name} - KES {packaging.price.toLocaleString()} ({packaging.weight} {packaging.unit})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div>
           <Label htmlFor="quantity">Quantity</Label>
@@ -197,20 +245,22 @@ const AgrovetCreditRequest = () => {
             id="quantity"
             type="number"
             min="1"
-            max={selectedProduct?.stock_quantity || 0}
             value={quantity}
             onChange={(e) => setQuantity(e.target.value)}
-            placeholder={`Available: ${selectedProduct?.stock_quantity || 0} ${selectedProduct?.unit || 'units'}`}
+            placeholder="Enter quantity"
             required
-            disabled={loading || !selectedProduct || !creditInfo?.isEligible}
+            disabled={loading || !selectedPackaging || !creditInfo?.isEligible}
           />
         </div>
 
-        {selectedProduct && quantity && (
+        {selectedPackaging && quantity && (
           <div className="p-4 bg-gray-50 rounded-lg">
             <p className="text-sm text-gray-600">Total Amount</p>
             <p className="text-2xl font-bold text-green-600">
-              KES {(selectedProduct.unit_price * Number(quantity)).toLocaleString()}
+              KES {(selectedPackaging.price * Number(quantity)).toLocaleString()}
+            </p>
+            <p className="text-sm text-gray-500 mt-1">
+              {selectedPackaging.name} ({selectedPackaging.weight} {selectedPackaging.unit} each)
             </p>
           </div>
         )}
@@ -231,7 +281,7 @@ const AgrovetCreditRequest = () => {
         <Button
           type="submit"
           className="w-full"
-          disabled={loading || !selectedProduct || !quantity || !creditInfo?.isEligible}
+          disabled={loading || !selectedProduct || !selectedPackaging || !quantity || !creditInfo?.isEligible}
         >
           {loading ? 'Submitting...' : 'Submit Credit Request'}
         </Button>

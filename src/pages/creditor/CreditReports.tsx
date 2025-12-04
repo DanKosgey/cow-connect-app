@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   BarChart,
   Bar,
@@ -17,6 +17,7 @@ import {
   Area
 } from 'recharts';
 import { supabase } from '@/integrations/supabase/client';
+import { ComprehensiveCreditAnalyticsService } from '@/services/comprehensive-credit-analytics-service';
 import {
   TrendingUp,
   Users,
@@ -148,178 +149,281 @@ const CreditReports = () => {
   };
 
   const fetchCreditAnalytics = async (): Promise<CreditAnalytics> => {
-    const { data: creditLimits, error: limitsError } = await supabase
-      .from('farmer_credit_limits')
-      .select('current_credit_balance, max_credit_amount');
-
-    if (limitsError) throw limitsError;
-
-    const totalCreditOutstanding = creditLimits?.reduce((sum, limit) =>
-      sum + (limit.max_credit_amount - limit.current_credit_balance), 0) || 0;
-
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - parseInt(timeRange));
-
-    const { data: creditTransactions, error: transactionsError } = await supabase
-      .from('farmer_credit_transactions')
-      .select('amount, transaction_type, created_at')
-      .eq('transaction_type', 'credit_granted')
-      .gte('created_at', startDate.toISOString());
-
-    if (transactionsError) throw transactionsError;
-
-    const totalCreditIssuedThisMonth = creditTransactions?.reduce((sum, transaction) =>
-      sum + transaction.amount, 0) || 0;
-
-    const { count: activeUsers, error: usersError } = await supabase
-      .from('farmer_credit_limits')
-      .select('*', { count: 'exact', head: true })
-      .gt('current_credit_balance', 0);
-
-    if (usersError) throw usersError;
-
-    let totalUtilization = 0;
-    let validLimits = 0;
-
-    creditLimits?.forEach(limit => {
-      if (limit.max_credit_amount > 0) {
-        const utilization = ((limit.max_credit_amount - limit.current_credit_balance) / limit.max_credit_amount) * 100;
-        totalUtilization += utilization;
-        validLimits++;
-      }
-    });
-
-    const averageCreditUtilizationRate = validLimits > 0 ? totalUtilization / validLimits : 0;
-
-    const { count: pendingApprovals, error: approvalsError } = await supabase
-      .from('credit_requests')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', 'pending');
-
-    if (approvalsError) throw approvalsError;
-
-    const { data: repaymentTransactions, error: repaymentError } = await supabase
-      .from('farmer_credit_transactions')
-      .select('amount, transaction_type');
-
-    if (repaymentError) throw repaymentError;
-
-    const totalRepaid = repaymentTransactions
-      ?.filter(t => t.transaction_type === 'credit_repaid')
-      .reduce((sum, transaction) => sum + (transaction.amount || 0), 0) || 0;
-
-    const totalUsed = repaymentTransactions
-      ?.filter(t => t.transaction_type === 'credit_used')
-      .reduce((sum, transaction) => sum + (transaction.amount || 0), 0) || 0;
-
-    const defaultRate = totalUsed > 0 ? parseFloat(((totalRepaid / totalUsed) * 100).toFixed(2)) : 0;
+    const report =
+      await ComprehensiveCreditAnalyticsService.getCreditAnalyticsReport();
 
     return {
-      totalCreditOutstanding: parseFloat(totalCreditOutstanding.toFixed(2)),
-      totalCreditIssuedThisMonth: parseFloat(totalCreditIssuedThisMonth.toFixed(2)),
-      activeCreditUsers: activeUsers || 0,
-      averageCreditUtilizationRate: parseFloat(averageCreditUtilizationRate.toFixed(2)),
-      outstandingDefaultAmount: parseFloat((totalUsed - totalRepaid).toFixed(2)),
-      defaultRate,
-      creditSettlementPending: 0,
-      farmersAtRiskCount: 0,
-      farmersApproachingSettlement: 0,
-      pendingCreditApprovals: pendingApprovals || 0,
-      failedTransactionsThisMonth: 0
+      totalCreditOutstanding: report.totalCreditOutstanding,
+      totalCreditIssuedThisMonth: report.totalCreditIssuedThisMonth,
+      activeCreditUsers: report.activeCreditUsers,
+      averageCreditUtilizationRate: parseFloat(
+        report.averageCreditUtilizationRate.toFixed(2)
+      ),
+      outstandingDefaultAmount: report.outstandingDefaultAmount,
+      defaultRate: report.defaultRate,
+      creditSettlementPending: report.creditSettlementPending,
+      farmersAtRiskCount: report.farmersAtRiskCount,
+      farmersApproachingSettlement: report.farmersApproachingSettlement,
+      pendingCreditApprovals: report.pendingCreditApprovals,
+      failedTransactionsThisMonth: report.failedTransactionsThisMonth,
     };
   };
 
   const fetchRiskDistribution = async (): Promise<RiskDistribution[]> => {
-    const distribution: RiskDistribution[] = [
-      { risk_level: 'Low Risk', count: 45 },
-      { risk_level: 'Medium Risk', count: 30 },
-      { risk_level: 'High Risk', count: 15 }
+    const { data, error } = await supabase
+      .from('farmer_credit_profiles') // Using farmer_credit_profiles as farmer_credit_limits has been deleted
+      .select('max_credit_amount, current_credit_balance');
+
+    if (error) throw error;
+
+    let low = 0;
+    let medium = 0;
+    let high = 0;
+
+    (data || []).forEach((row: any) => {
+      const max = row.max_credit_amount || 0;
+      const balance = row.current_credit_balance || 0;
+      if (!max) return;
+
+      const utilization = ((max - balance) / max) * 100;
+
+      if (utilization < 60) low += 1;
+      else if (utilization < 80) medium += 1;
+      else high += 1;
+    });
+
+    return [
+      { risk_level: 'Low Risk', count: low },
+      { risk_level: 'Medium Risk', count: medium },
+      { risk_level: 'High Risk', count: high },
     ];
-    return distribution;
   };
 
   const fetchUtilizationTrends = async (): Promise<CreditUtilizationTrend[]> => {
-    const trends: CreditUtilizationTrend[] = [];
     const days = parseInt(timeRange);
+    const from = new Date();
+    from.setDate(from.getDate() - days);
+    from.setHours(0, 0, 0, 0);
 
-    for (let i = days - 1; i >= 0; i -= Math.floor(days / 10)) {
-      const date = new Date();
-      date.setDate(date.getDate() - i);
-      const dateString = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const { data, error } = await supabase
+      .from('credit_transactions')
+      .select('transaction_type, amount, created_at')
+      .gte('created_at', from.toISOString());
 
-      trends.push({
-        date: dateString,
-        utilization_rate: Math.random() * 30 + 50,
-        default_rate: Math.random() * 10 + 5
+    if (error) throw error;
+
+    const byDate: Record<string, { used: number; repaid: number }> = {};
+
+    (data || []).forEach((tx: any) => {
+      const key = new Date(tx.created_at).toLocaleDateString('en-KE', {
+        month: 'short',
+        day: 'numeric',
       });
+
+      if (!byDate[key]) {
+        byDate[key] = { used: 0, repaid: 0 };
+      }
+
+      const amount = tx.amount || 0;
+      if (tx.transaction_type === 'credit_used') byDate[key].used += amount;
+      if (tx.transaction_type === 'credit_repaid') byDate[key].repaid += amount;
+    });
+
+    return Object.entries(byDate).map(([date, v]) => {
+      const denom = v.used + v.repaid;
+      const utilization =
+        denom > 0 ? Number(((v.used / denom) * 100).toFixed(1)) : 0;
+
+      return {
+        date,
+        utilization_rate: utilization,
+        default_rate: 0,
+      };
+    });
+  };
+
+  // Fetch farmer credit summaries
+  const fetchFarmerCreditSummaries = useCallback(async () => {
+    try {
+      // Get all active credit limits (using the correct table name)
+      const { data: limitsData, error: limitsError } = await supabase
+        .from('farmer_credit_profiles') // Using farmer_credit_profiles as farmer_credit_limits has been deleted
+        .select(`
+          farmer_id,
+          max_credit_amount,
+          total_credit_used,
+          current_credit_balance
+        `)
+        .eq('is_frozen', false); // Using is_frozen = false instead of is_active = true
+
+      if (limitsError) throw limitsError;
+
+      // Extract unique farmer IDs
+      const farmerIds = [...new Set(limitsData?.map((row: any) => row.farmer_id) || [])];
+
+      // Get farmer names
+      let farmerMap = new Map<string, string>();
+
+      if (farmerIds.length > 0) {
+        const { data: farmersData, error: farmersError } = await supabase
+          .from('farmers')
+          .select(`
+            id,
+            profiles:user_id (full_name)
+          `)
+          .in('id', farmerIds as string[]);
+
+        if (farmersError) throw farmersError;
+
+        farmerMap = new Map(
+          (farmersData || []).map((farmer: any) => [
+            farmer.id,
+            farmer.profiles?.full_name || 'Unknown Farmer',
+          ])
+        );
+      }
+
+      const rows: FarmerCreditSummary[] = (limitsData || []).map((row: any) => {
+        const max = row.max_credit_amount || 0;
+        const used = row.total_credit_used || 0;
+        const utilization = max > 0 ? (used / max) * 100 : 0;
+
+        let risk: string = 'Low Risk';
+        if (utilization > 90) risk = 'High Risk';
+        else if (utilization > 70) risk = 'Medium Risk';
+
+        return {
+          farmer_id: row.farmer_id,
+          farmer_name: farmerMap.get(row.farmer_id) || 'Unknown Farmer',
+          total_credit_limit: max,
+          current_utilization: used,
+          utilization_percentage: Number(utilization.toFixed(1)),
+          risk_level: risk,
+        };
+      });
+
+      return rows
+        .sort((a, b) => b.utilization_percentage - a.utilization_percentage)
+        .slice(0, 10);
+    } catch (error) {
+      console.error('Error fetching farmer credit summaries:', error);
+      throw error;
     }
-
-    return trends;
-  };
-
-  const fetchFarmerCreditSummaries = async (): Promise<FarmerCreditSummary[]> => {
-    const summaries: FarmerCreditSummary[] = [
-      { farmer_id: '1', farmer_name: 'John Doe', total_credit_limit: 100000, current_utilization: 75000, utilization_percentage: 75, risk_level: 'Medium Risk' },
-      { farmer_id: '2', farmer_name: 'Jane Smith', total_credit_limit: 150000, current_utilization: 45000, utilization_percentage: 30, risk_level: 'Low Risk' },
-      { farmer_id: '3', farmer_name: 'Peter Ochieng', total_credit_limit: 80000, current_utilization: 72000, utilization_percentage: 90, risk_level: 'High Risk' },
-      { farmer_id: '4', farmer_name: 'Mary Wanjiku', total_credit_limit: 120000, current_utilization: 60000, utilization_percentage: 50, risk_level: 'Low Risk' },
-      { farmer_id: '5', farmer_name: 'James Kamau', total_credit_limit: 90000, current_utilization: 81000, utilization_percentage: 90, risk_level: 'High Risk' },
-    ];
-    return summaries;
-  };
+  }, []);
 
   const fetchProductCategoryCredits = async (): Promise<ProductCategoryCredit[]> => {
-    const categories: ProductCategoryCredit[] = [
-      { category: 'Seeds', total_credit_used: 150000, transaction_count: 45 },
-      { category: 'Fertilizers', total_credit_used: 200000, transaction_count: 60 },
-      { category: 'Equipment', total_credit_used: 300000, transaction_count: 25 },
-      { category: 'Pesticides', total_credit_used: 100000, transaction_count: 35 },
-      { category: 'Other', total_credit_used: 75000, transaction_count: 20 }
-    ];
-    return categories;
+    const { data, error } = await supabase
+      .from('agrovet_purchases')
+      .select(`
+        total_amount,
+        payment_method,
+        agrovet_inventory(category)
+      `)
+      .eq('payment_method', 'credit');
+
+    if (error) throw error;
+
+    const byCategory: Record<string, { total: number; count: number }> = {};
+
+    (data || []).forEach((row: any) => {
+      const category = row.agrovet_inventory?.category || 'Other';
+      if (!byCategory[category]) {
+        byCategory[category] = { total: 0, count: 0 };
+      }
+
+      byCategory[category].total += row.total_amount || 0;
+      byCategory[category].count += 1;
+    });
+
+    return Object.entries(byCategory).map(([category, v]) => ({
+      category,
+      total_credit_used: v.total,
+      transaction_count: v.count,
+    }));
   };
 
   const fetchDefaultTrends = async (): Promise<DefaultTrend[]> => {
-    const trends: DefaultTrend[] = [];
     const months = 6;
+    const now = new Date();
+    const from = new Date(now);
+    from.setMonth(from.getMonth() - (months - 1));
+    from.setDate(1);
 
-    for (let i = months - 1; i >= 0; i--) {
-      const date = new Date();
-      date.setMonth(date.getMonth() - i);
-      const monthString = date.toLocaleString('default', { month: 'short' });
+    const { data, error } = await supabase
+      .from('credit_transactions')
+      .select('transaction_type, amount, created_at')
+      .gte('created_at', from.toISOString());
 
-      trends.push({
-        date: monthString,
-        defaults_count: Math.floor(Math.random() * 20) + 5,
-        recovery_amount: Math.floor(Math.random() * 50000) + 20000
-      });
-    }
+    if (error) throw error;
 
-    return trends;
+    const byMonth: Record<string, { defaults: number; recovered: number }> = {};
+
+    (data || []).forEach((tx: any) => {
+      const d = new Date(tx.created_at);
+      const key = d.toLocaleString('en-KE', { month: 'short' });
+
+      if (!byMonth[key]) {
+        byMonth[key] = { defaults: 0, recovered: 0 };
+      }
+
+      const amount = tx.amount || 0;
+      if (tx.transaction_type === 'settlement')
+        byMonth[key].recovered += amount;
+      // If you later add a dedicated default type, increment defaults here
+    });
+
+    return Object.entries(byMonth).map(([date, v]) => ({
+      date,
+      defaults_count: v.defaults,
+      recovery_amount: v.recovered,
+    }));
   };
 
   const fetchRecoveryAnalysis = async (): Promise<RecoveryAnalysis[]> => {
-    const analysis: RecoveryAnalysis[] = [];
     const months = 6;
+    const now = new Date();
+    const from = new Date(now);
+    from.setMonth(from.getMonth() - (months - 1));
+    from.setDate(1);
 
-    for (let i = months - 1; i >= 0; i--) {
-      const date = new Date();
-      date.setMonth(date.getMonth() - i);
-      const monthString = date.toLocaleString('default', { month: 'short', year: 'numeric' });
+    const { data, error } = await supabase
+      .from('credit_transactions')
+      .select('transaction_type, amount, created_at')
+      .gte('created_at', from.toISOString());
 
-      const totalDefaults = Math.floor(Math.random() * 100) + 50;
-      const recoveredAmount = Math.floor(Math.random() * (totalDefaults * 1000)) + (totalDefaults * 500);
-      const recoveryRate = parseFloat(((recoveredAmount / (totalDefaults * 1000)) * 100).toFixed(2));
+    if (error) throw error;
 
-      analysis.push({
-        month: monthString,
-        recovery_rate: recoveryRate,
-        total_defaults: totalDefaults,
-        recovered_amount: recoveredAmount
+    const byMonth: Record<string, { defaults: number; recovered: number }> = {};
+
+    (data || []).forEach((tx: any) => {
+      const d = new Date(tx.created_at);
+      const key = d.toLocaleString('en-KE', {
+        month: 'short',
+        year: 'numeric',
       });
-    }
 
-    return analysis;
+      if (!byMonth[key]) {
+        byMonth[key] = { defaults: 0, recovered: 0 };
+      }
+
+      const amount = tx.amount || 0;
+      if (tx.transaction_type === 'settlement')
+        byMonth[key].recovered += amount;
+      if (tx.transaction_type === 'credit_used') byMonth[key].defaults += amount;
+    });
+
+    return Object.entries(byMonth).map(([month, v]) => {
+      const denom = v.defaults + v.recovered;
+      const rate =
+        denom > 0 ? Number(((v.recovered / denom) * 100).toFixed(1)) : 0;
+
+      return {
+        month,
+        recovery_rate: rate,
+        total_defaults: v.defaults,
+        recovered_amount: v.recovered,
+      };
+    });
   };
 
   const exportToCSV = async () => {

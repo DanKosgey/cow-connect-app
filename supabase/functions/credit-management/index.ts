@@ -111,26 +111,26 @@ serve(async (req) => {
 
 async function handleCalculateCredit(request: CreditRequest) {
   try {
-    // Get farmer's credit limit configuration
+    // Get farmer's credit limit configuration (using the correct table name)
     const { data: creditLimitData, error: creditLimitError } = await supabase
-      .from('farmer_credit_limits')
+      .from('farmer_credit_profiles') // Changed from 'farmer_credit_limits' to 'farmer_credit_profiles'
       .select('*')
       .eq('farmer_id', request.farmerId)
-      .eq('is_active', true)
+      .eq('is_frozen', false) // Changed from 'is_active: true' to 'is_frozen: false'
       .maybeSingle();
 
     // If no credit limit exists, create a default one
     let creditLimitRecord = creditLimitData;
     if (!creditLimitRecord) {
       const { data: newCreditLimit, error: createError } = await supabase
-        .from('farmer_credit_limits')
+        .from('farmer_credit_profiles') // Changed from 'farmer_credit_limits' to 'farmer_credit_profiles'
         .insert({
           farmer_id: request.farmerId,
           credit_limit_percentage: 70.00,
           max_credit_amount: 100000.00,
           current_credit_balance: 0.00,
           total_credit_used: 0.00,
-          is_active: true
+          is_frozen: false // Changed from 'is_active: true' to 'is_frozen: false'
         })
         .select()
         .single();
@@ -241,12 +241,12 @@ async function handleGrantCredit(request: CreditRequest) {
 
     const creditInfo = calculateResult.data;
 
-    // Get current credit limit record
+    // Get current credit limit record (using the correct table name)
     const { data: creditLimitData, error: creditLimitError } = await supabase
-      .from('farmer_credit_limits')
+      .from('farmer_credit_profiles') // Changed from 'farmer_credit_limits' to 'farmer_credit_profiles'
       .select('*')
       .eq('farmer_id', request.farmerId)
-      .eq('is_active', true)
+      .eq('is_frozen', false) // Changed from 'is_active: true' to 'is_frozen: false'
       .maybeSingle();
 
     if (creditLimitError) {
@@ -292,10 +292,10 @@ async function handleGrantCredit(request: CreditRequest) {
       );
     }
 
-    // Update credit limit with new balance
+    // Update credit limit with new balance (using the correct table name)
     const newBalance = creditInfo.creditLimit;
     const { error: updateError } = await supabase
-      .from('farmer_credit_limits')
+      .from('farmer_credit_profiles') // Changed from 'farmer_credit_limits' to 'farmer_credit_profiles'
       .update({
         current_credit_balance: newBalance,
         updated_at: new Date().toISOString()
@@ -385,10 +385,10 @@ async function handleAdjustCredit(request: CreditRequest) {
 
     // Get current credit limit record
     const { data: creditLimitData, error: creditLimitError } = await supabase
-      .from('farmer_credit_limits')
+      .from('farmer_credit_profiles') // Using farmer_credit_profiles as farmer_credit_limits has been deleted
       .select('*')
       .eq('farmer_id', request.farmerId)
-      .eq('is_active', true)
+      .eq('is_frozen', false) // Using is_frozen = false instead of is_active = true
       .maybeSingle();
 
     if (creditLimitError) {
@@ -410,14 +410,14 @@ async function handleAdjustCredit(request: CreditRequest) {
     if (!creditLimitRecord) {
       // Create new credit limit if none exists
       const { data: newCreditLimit, error: createError } = await supabase
-        .from('farmer_credit_limits')
+        .from('farmer_credit_profiles') // Using farmer_credit_profiles as farmer_credit_limits has been deleted
         .insert({
           farmer_id: request.farmerId,
           credit_limit_percentage: 70.00,
           max_credit_amount: 100000.00,
           current_credit_balance: 0.00,
           total_credit_used: 0.00,
-          is_active: true
+          is_frozen: false // Using is_frozen = false instead of is_active = true
         })
         .select()
         .single();
@@ -441,7 +441,7 @@ async function handleAdjustCredit(request: CreditRequest) {
 
     // Update credit limit
     const { data: updatedData, error: updateError } = await supabase
-      .from('farmer_credit_limits')
+      .from('farmer_credit_profiles') // Using farmer_credit_profiles as farmer_credit_limits has been deleted
       .update({
         credit_limit_percentage: request.percentage,
         max_credit_amount: request.maxAmount,

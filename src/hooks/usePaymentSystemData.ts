@@ -316,13 +316,13 @@ const calculateFarmerSummaries = async (
       return sum + collectionCredit;
     }, 0);
     
-    // Fetch credit data for the farmer
+    // Fetch credit data for the farmer (using the correct table name)
     try {
       const { data: creditData, error: creditError } = await supabase
-        .from('farmer_credit_limits')
+        .from('farmer_credit_profiles') // Using farmer_credit_profiles as farmer_credit_limits has been deleted
         .select('current_credit_balance, total_credit_used')
         .eq('farmer_id', farmerId)
-        .eq('is_active', true)
+        .eq('is_frozen', false) // Using is_frozen = false instead of is_active = true
         .maybeSingle();
       
       if (!creditError && creditData) {

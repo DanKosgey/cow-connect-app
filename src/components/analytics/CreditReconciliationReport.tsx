@@ -59,11 +59,11 @@ const CreditReconciliationReport = () => {
 
       if (farmersError) throw farmersError;
 
-      // Get credit limits for all farmers
+      // Get credit limits for all farmers (using the correct table name)
       const { data: creditLimits, error: creditError } = await supabase
-        .from('farmer_credit_limits')
+        .from('farmer_credit_profiles') // Using farmer_credit_profiles as farmer_credit_limits has been deleted
         .select('*')
-        .eq('is_active', true);
+        .eq('is_frozen', false); // Using is_frozen = false instead of is_active = true
 
       if (creditError) throw creditError;
 
@@ -92,7 +92,7 @@ const CreditReconciliationReport = () => {
 
       // Get latest credit transactions
       const { data: creditTransactions, error: transactionsError } = await supabase
-        .from('farmer_credit_transactions')
+        .from('credit_transactions')
         .select('farmer_id, created_at, transaction_type, amount')
         .order('created_at', { ascending: false });
 

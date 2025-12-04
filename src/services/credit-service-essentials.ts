@@ -1,6 +1,12 @@
 import { supabase } from '@/integrations/supabase/client';
 import { logger } from '@/utils/logger';
 import { formatCurrency } from '@/utils/formatters';
+import { ProductPackaging } from '@/services/agrovet-inventory-service';
+
+// Improved request deduplication with timeout
+let fetchAgrovetInventoryPromise: Promise<AgrovetInventory[]> | null = null;
+let fetchAgrovetInventoryTimestamp: number | null = null;
+const FETCH_CACHE_TIMEOUT = 30000; // 30 seconds cache timeout
 
 export interface FarmerCreditProfile {
   id: string;
@@ -52,6 +58,7 @@ export interface AgrovetInventory {
   is_credit_eligible: boolean;
   created_at: string;
   updated_at: string;
+  product_packaging?: ProductPackaging[];
 }
 
 export class CreditServiceEssentials {
@@ -78,7 +85,18 @@ export class CreditServiceEssentials {
       // If no credit profile exists, create a default one
       let profile: FarmerCreditProfile | null = creditProfile as FarmerCreditProfile | null;
       if (!profile) {
-        profile = await this.createDefaultCreditProfile(farmerId);
+        try {
+          profile = await this.createDefaultCreditProfile(farmerId);
+        } catch (creationError) {
+          console.warn("Failed to create default credit profile:", creationError);
+          // Return default values if profile creation fails
+          return {
+            isEligible: false,
+            creditLimit: 0,
+            availableCredit: 0,
+            pendingPayments: 0
+          };
+        }
       }
 
       // Check if credit is frozen
@@ -126,7 +144,13 @@ export class CreditServiceEssentials {
       };
     } catch (error) {
       logger.errorWithContext('CreditServiceEssentials - calculateCreditEligibility', error);
-      throw error;
+      // Return safe defaults in case of error
+      return {
+        isEligible: false,
+        creditLimit: 0,
+        availableCredit: 0,
+        pendingPayments: 0
+      };
     }
   }
 
@@ -408,9 +432,10 @@ export class CreditServiceEssentials {
     farmerId: string,
     productId: string,
     quantity: number,
+    packagingOptionId: string | null,
     usedBy?: string
   ): Promise<{ success: boolean; transactionId?: string; errorMessage?: string }> {
-    return this.processCreditTransaction(farmerId, productId, quantity, usedBy);
+    return this.processCreditTransaction(farmerId, productId, quantity, packagingOptionId, usedBy);
   }
 
   // Enhanced credit limit enforcement with multiple validation layers
@@ -522,9 +547,23 @@ export class CreditServiceEssentials {
     farmerId: string,
     productId: string,
     quantity: number,
+    packagingOptionId: string | null,
     usedBy?: string
   ): Promise<{ success: boolean; transactionId?: string; errorMessage?: string; enforcementDetails?: any }> {
     try {
+      // Validate inputs
+      if (!farmerId) {
+        return { success: false, errorMessage: 'Farmer ID is required' };
+      }
+      
+      if (!productId) {
+        return { success: false, errorMessage: 'Product ID is required' };
+      }
+      
+      if (!quantity || quantity <= 0) {
+        return { success: false, errorMessage: 'Valid quantity is required' };
+      }
+
       // Get product details
       const { data: productData, error: productError } = await supabase
         .from('agrovet_inventory')
@@ -538,7 +577,7 @@ export class CreditServiceEssentials {
       }
 
       if (!productData) {
-        return { success: false, errorMessage: 'Product not found' };
+        return { success: false, errorMessage: 'Product not found or no longer available' };
       }
 
       const product = productData as AgrovetInventory;
@@ -548,8 +587,46 @@ export class CreditServiceEssentials {
         return { success: false, errorMessage: 'This product is not eligible for credit purchase' };
       }
 
+      // Get packaging option if specified
+      let packagingOption = null;
+      let unitPrice = product.cost_price; // fallback to cost_price
+      
+      if (packagingOptionId) {
+        // Fetch the specific packaging option
+        const { data: packagingData, error: packagingError } = await supabase
+          .from('product_packaging')
+          .select('*')
+          .eq('id', packagingOptionId)
+          .eq('product_id', productId)
+          .maybeSingle();
+          
+        if (packagingError) {
+          logger.errorWithContext('CreditServiceEssentials - fetching packaging option', packagingError);
+          throw packagingError;
+        }
+        
+        if (packagingData) {
+          packagingOption = packagingData as ProductPackaging;
+          unitPrice = packagingOption.price;
+        }
+      } else {
+        // If no packaging option specified, try to get the first available packaging option
+        const { data: packagingOptions, error: packagingOptionsError } = await supabase
+          .from('product_packaging')
+          .select('*')
+          .eq('product_id', productId)
+          .eq('is_credit_eligible', true)
+          .order('price', { ascending: true })
+          .limit(1);
+          
+        if (!packagingOptionsError && packagingOptions && packagingOptions.length > 0) {
+          packagingOption = packagingOptions[0] as ProductPackaging;
+          unitPrice = packagingOption.price;
+        }
+      }
+
       // Calculate total amount
-      const totalAmount = quantity * product.selling_price;
+      const totalAmount = quantity * unitPrice;
 
       // Enhanced credit limit enforcement
       const enforcementResult = await this.enforceCreditLimit(farmerId, totalAmount, 'credit_used');
@@ -620,8 +697,11 @@ export class CreditServiceEssentials {
           product_id: productId,
           product_name: product.name,
           quantity: quantity,
-          unit_price: product.selling_price,
-          description: `Credit used for ${product.name} (${quantity} ${product.unit}). Utilization: ${enforcementResult.utilizationPercentage.toFixed(1)}%`,
+          unit_price: unitPrice,
+          reference_id: packagingOption?.id || null,
+          description: packagingOption 
+            ? `Credit used for ${product.name} (${quantity} × ${packagingOption.name} @ ${formatCurrency(unitPrice)} each). Utilization: ${enforcementResult.utilizationPercentage.toFixed(1)}%`
+            : `Credit used for ${product.name} (${quantity} ${product.unit} @ ${formatCurrency(unitPrice)} each). Utilization: ${enforcementResult.utilizationPercentage.toFixed(1)}%`,
           approved_by: usedBy,
           approval_status: 'approved'
         })
@@ -687,25 +767,81 @@ export class CreditServiceEssentials {
     }
   }
 
-  // Get agrovet inventory items
+  // Get agrovet inventory items with improved deduplication and timeout
   static async getAgrovetInventory(): Promise<AgrovetInventory[]> {
-    try {
-      const { data, error } = await supabase
-        .from('agrovet_inventory')
-        .select('*')
-        .eq('is_credit_eligible', true)
-        .order('name', { ascending: true });
-
-      if (error) {
-        logger.errorWithContext('CreditServiceEssentials - fetching agrovet inventory', error);
-        throw error;
+    const now = Date.now();
+    
+    // Check if we have a recent cached result (within timeout)
+    if (fetchAgrovetInventoryPromise && fetchAgrovetInventoryTimestamp) {
+      const age = now - fetchAgrovetInventoryTimestamp;
+      if (age < FETCH_CACHE_TIMEOUT) {
+        console.log(`CreditServiceEssentials: Using cached fetch promise (age: ${age}ms)`);
+        return fetchAgrovetInventoryPromise;
+      } else {
+        console.log(`CreditServiceEssentials: Cache expired (age: ${age}ms), fetching fresh data`);
+        // Clear expired cache
+        fetchAgrovetInventoryPromise = null;
+        fetchAgrovetInventoryTimestamp = null;
       }
-
-      return data as AgrovetInventory[];
-    } catch (error) {
-      logger.errorWithContext('CreditServiceEssentials - getAgrovetInventory', error);
-      throw error;
     }
+
+    // Return existing promise if fetch is already in progress
+    if (fetchAgrovetInventoryPromise) {
+      console.log('CreditServiceEssentials: Using existing fetch promise');
+      return fetchAgrovetInventoryPromise;
+    }
+
+    console.log('CreditServiceEssentials: Fetching agrovet inventory');
+    const startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    fetchAgrovetInventoryTimestamp = now; // Set timestamp when we start the fetch
+    
+    fetchAgrovetInventoryPromise = (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('agrovet_inventory')
+          .select(`
+            *,
+            product_packaging(*)
+          `)
+          .eq('is_credit_eligible', true)
+          .order('name', { ascending: true });
+
+        if (error) {
+          console.error('CreditServiceEssentials: Error fetching agrovet inventory:', error);
+          logger.errorWithContext('CreditServiceEssentials - fetching agrovet inventory', error);
+          // Clear the promise on error so we can retry
+          fetchAgrovetInventoryPromise = null;
+          // Return empty array instead of throwing to prevent hanging
+          return [];
+        }
+
+        // Ensure proper type conversion for numeric fields in both inventory items and packaging options
+        const convertedData = data?.map(item => ({
+          ...item,
+          cost_price: typeof item.cost_price === 'string' ? parseFloat(item.cost_price) : item.cost_price,
+          current_stock: typeof item.current_stock === 'string' ? parseFloat(item.current_stock) : item.current_stock,
+          reorder_level: typeof item.reorder_level === 'string' ? parseFloat(item.reorder_level) : item.reorder_level,
+          product_packaging: item.product_packaging?.map(packaging => ({
+            ...packaging,
+            price: typeof packaging.price === 'string' ? parseFloat(packaging.price) : packaging.price,
+            weight: typeof packaging.weight === 'string' ? parseFloat(packaging.weight) : packaging.weight
+          })) || []
+        })) || [];
+
+        const endTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
+        console.log(`CreditServiceEssentials: Successfully fetched agrovet inventory in ${(endTime - startTime).toFixed(2)}ms, count:`, convertedData?.length || 0);
+        return convertedData as AgrovetInventory[];
+      } catch (error) {
+        console.error('CreditServiceEssentials: Exception in getAgrovetInventory:', error);
+        logger.errorWithContext('CreditServiceEssentials - getAgrovetInventory', error);
+        // Clear the promise on error so we can retry
+        fetchAgrovetInventoryPromise = null;
+        // Return empty array instead of throwing to prevent hanging
+        return [];
+      }
+    })();
+
+    return fetchAgrovetInventoryPromise;
   }
 
   // Perform monthly settlement
@@ -770,5 +906,11 @@ export class CreditServiceEssentials {
       logger.errorWithContext('CreditServiceEssentials - performMonthlySettlement', error);
       throw error;
     }
+  }
+
+  // Clear agrovet inventory cache
+  static clearAgrovetInventoryCache(): void {
+    fetchAgrovetInventoryPromise = null;
+    fetchAgrovetInventoryTimestamp = null;
   }
 }

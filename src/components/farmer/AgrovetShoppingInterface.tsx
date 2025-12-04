@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { CreditServiceEssentials } from "@/services/credit-service-essentials";
 import { CreditRequestService } from "@/services/credit-request-service";
@@ -29,6 +29,7 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import RefreshButton from "@/components/ui/RefreshButton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AgrovetInventoryService } from "@/services/agrovet-inventory-service";
 
 interface AgrovetProduct {
   id: string;
@@ -38,6 +39,15 @@ interface AgrovetProduct {
   unit: string;
   selling_price: number;
   current_stock: number;
+  is_credit_eligible: boolean;
+}
+
+interface ProductPricing {
+  id: string;
+  product_id: string;
+  min_quantity: number;
+  max_quantity: number | null;
+  price_per_unit: number;
   is_credit_eligible: boolean;
 }
 
@@ -56,7 +66,7 @@ interface CreditRequest {
   rejection_reason?: string;
 }
 
-const AgrovetShoppingInterface = ({ farmerId, availableCredit }: { farmerId: string; availableCredit: number }) => {
+const AgrovetShoppingInterface = React.memo(({ farmerId, availableCredit }: { farmerId: string; availableCredit: number }) => {
   const [loading, setLoading] = useState(true);
   const [products, setProducts] = useState<AgrovetProduct[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<AgrovetProduct[]>([]);
@@ -71,38 +81,97 @@ const AgrovetShoppingInterface = ({ farmerId, availableCredit }: { farmerId: str
     availableCredit: number;
     pendingPayments: number;
   } | null>(null);
+  const [productPricing, setProductPricing] = useState<Record<string, ProductPricing[]>>({});
   const { toast } = useToast();
+  
+  // Ref to prevent multiple fetches
+  const hasFetchedRef = useRef(false);
+  const renderCountRef = useRef(0);
 
+  // Diagnostic logging
+  useEffect(() => {
+    renderCountRef.current += 1;
+    console.log('🔄 AgrovetShoppingInterface render count:', renderCountRef.current);
+    
+    if (renderCountRef.current > 10) {
+      console.error('⚠️ WARNING: Too many renders detected!');
+      console.trace();
+    }
+    
+    return () => {
+      renderCountRef.current = 0;
+    };
+  });
+
+  // Memoize the fetch function with stable dependencies
   const fetchData = useCallback(async () => {
+    // Prevent concurrent fetches
+    if (!farmerId || hasFetchedRef.current) {
+      console.log('AgrovetShoppingInterface: Skipping fetch, already fetched or no farmerId');
+      return;
+    }
+    
+    hasFetchedRef.current = true;
+    
+    // Performance monitoring
+    const startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    console.log('AgrovetShoppingInterface: Starting data fetch');
+    
     try {
       setLoading(true);
       
       // Get agrovet inventory
       const inventory = await CreditServiceEssentials.getAgrovetInventory();
+      const fetchTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      console.log(`AgrovetShoppingInterface: Fetched inventory in ${(fetchTime - startTime).toFixed(2)}ms, count:`, inventory?.length || 0);
       
       // Handle case when no products exist
       if (!inventory || inventory.length === 0) {
-        console.info("No agrovet inventory found - showing empty state");
+        console.info("No credit-eligible agrovet inventory found - showing empty state");
+        // Batch all state updates
         setProducts([]);
         setFilteredProducts([]);
         setCategories([]);
+        setProductPricing({});
+        setCreditInfo(null);
+        setCreditRequests([]);
         return;
       }
       
-      setProducts(inventory);
-      setFilteredProducts(inventory);
-      
       // Get unique categories
       const uniqueCategories = Array.from(new Set(inventory.map(item => item.category)));
-      setCategories(uniqueCategories);
+      
+      // Fetch pricing information for all products
+      const pricingStartTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      const pricingData: Record<string, ProductPricing[]> = {};
+      for (const product of inventory) {
+        try {
+          const pricing = await AgrovetInventoryService.getProductPricing(product.id);
+          pricingData[product.id] = pricing;
+        } catch (error) {
+          console.warn(`Failed to fetch pricing for product ${product.id}:`, error);
+          pricingData[product.id] = [];
+        }
+      }
+      const pricingEndTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      console.log(`AgrovetShoppingInterface: Fetched pricing data in ${(pricingEndTime - pricingStartTime).toFixed(2)}ms`);
       
       // Get existing credit requests
       const requests = await CreditRequestService.getFarmerCreditRequests(farmerId);
-      setCreditRequests(requests);
       
       // Get credit information
       const creditData = await CreditServiceEssentials.calculateCreditEligibility(farmerId);
+      
+      // Batch all state updates to prevent cascading re-renders
+      setProducts(inventory);
+      setFilteredProducts(inventory);
+      setCategories(uniqueCategories);
+      setProductPricing(pricingData);
+      setCreditRequests(requests);
       setCreditInfo(creditData);
+      
+      const endTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      console.log(`AgrovetShoppingInterface: Completed data fetch in ${(endTime - startTime).toFixed(2)}ms`);
     } catch (err) {
       console.error("Error fetching agrovet data:", err);
       toast({
@@ -113,22 +182,49 @@ const AgrovetShoppingInterface = ({ farmerId, availableCredit }: { farmerId: str
     } finally {
       setLoading(false);
     }
-  }, [farmerId, toast]);
+  }, [farmerId, toast]); // Stable dependencies
 
+  // Fetch only once on mount and when farmerId changes
   useEffect(() => {
-    if (farmerId) {
+    console.log('AgrovetShoppingInterface: useEffect triggered', { farmerId, hasFetched: hasFetchedRef.current });
+    if (farmerId && !hasFetchedRef.current) {
       fetchData();
     }
   }, [farmerId, fetchData]);
+
+  // Reset fetch flag when farmerId changes
+  useEffect(() => {
+    hasFetchedRef.current = false;
+  }, [farmerId]);
+
+  // Custom debounce hook
+  const useDebounce = (value: string, delay: number) => {
+    const [debouncedValue, setDebouncedValue] = useState(value);
+
+    useEffect(() => {
+      const handler = setTimeout(() => {
+        setDebouncedValue(value);
+      }, delay);
+
+      return () => {
+        clearTimeout(handler);
+      };
+    }, [value, delay]);
+
+    return debouncedValue;
+  };
+
+  const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
   useEffect(() => {
     let filtered = products;
     
     // Apply search filter
-    if (searchTerm) {
+    if (debouncedSearchTerm) {
+      const searchValue = debouncedSearchTerm.toLowerCase();
       filtered = filtered.filter(product => 
-        product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        product.description.toLowerCase().includes(searchTerm.toLowerCase())
+        product.name.toLowerCase().includes(searchValue) ||
+        product.description.toLowerCase().includes(searchValue)
       );
     }
     
@@ -141,7 +237,7 @@ const AgrovetShoppingInterface = ({ farmerId, availableCredit }: { farmerId: str
     filtered = filtered.filter(product => product.is_credit_eligible);
     
     setFilteredProducts(filtered);
-  }, [searchTerm, selectedCategory, products]);
+  }, [debouncedSearchTerm, selectedCategory, products]);
 
   const addToCart = (product: AgrovetProduct) => {
     // Check if product is already in cart
@@ -190,8 +286,19 @@ const AgrovetShoppingInterface = ({ farmerId, availableCredit }: { farmerId: str
 
   const requestCredit = async () => {
     try {
-      const totalAmount = getTotalCartAmount();
-      
+      // Calculate total amount using bulk pricing
+      let totalAmount = 0;
+      const itemsWithPricing = cart.map(item => {
+        const applicablePrice = getApplicablePrice(item.product.id, item.quantity) || item.product.selling_price;
+        const itemTotal = applicablePrice * item.quantity;
+        totalAmount += itemTotal;
+        return {
+          ...item,
+          unitPrice: applicablePrice,
+          total: itemTotal
+        };
+      });
+
       // Validate credit eligibility
       if (!creditInfo?.isEligible) {
         toast({
@@ -212,14 +319,14 @@ const AgrovetShoppingInterface = ({ farmerId, availableCredit }: { farmerId: str
         return;
       }
       
-      // Create credit requests for each item in cart
-      for (const item of cart) {
+      // Create credit requests for each item in cart with correct pricing
+      for (const item of itemsWithPricing) {
         await CreditRequestService.createCreditRequest(
           farmerId,
           item.product.id,
           item.quantity,
           item.product.name,
-          item.product.selling_price
+          item.unitPrice
         );
       }
       
@@ -247,55 +354,14 @@ const AgrovetShoppingInterface = ({ farmerId, availableCredit }: { farmerId: str
     }
   };
 
-  const handleApproveRequest = async (requestId: string) => {
-    try {
-      // Get the request details
-      const request = requests.find(r => r.id === requestId);
-      if (!request) return;
-
-      // Approve the credit request
-      const result = await CreditRequestService.approveCreditRequest(
-        requestId,
-        (await supabase.auth.getUser()).data.user?.id
-      );
-
-      if (result.success) {
-        toast({
-          title: "Request Approved",
-          description: `Credit request for ${request.farmer_name} has been approved`,
-        });
-      } else {
-        toast({
-          title: "Approval Failed",
-          description: result.errorMessage || "Failed to approve credit request",
-          variant: "destructive",
-        });
-        
-        // If there are enforcement details, log them for debugging
-        if (result.enforcementDetails) {
-          console.log("Enforcement details:", result.enforcementDetails);
-        }
-      }
-
-      // Update local state
-      setRequests(requests.map(req => 
-        req.id === requestId 
-          ? { ...req, status: 'approved', approved_at: new Date().toISOString() } 
-          : req
-      ));
-
-      // Refresh credit info
-      const updatedCreditInfo = await CreditServiceEssentials.calculateCreditEligibility(farmerId);
-      setCreditInfo(updatedCreditInfo);
-    } catch (error) {
-      console.error("Error approving credit request:", error);
-      toast({
-        title: "Error",
-        description: "Failed to approve credit request",
-        variant: "destructive",
-      });
-    }
-  };
+  const refreshData = useCallback(async () => {
+    // Reset fetch flag to allow refreshing
+    hasFetchedRef.current = false;
+    // Also reset the service cache to force fresh data
+    CreditServiceEssentials.clearAgrovetInventoryCache();
+    console.log('AgrovetShoppingInterface: Refreshing data');
+    await fetchData();
+  }, [fetchData]);
 
   const cancelRequest = async (requestId: string) => {
     try {
@@ -353,6 +419,47 @@ const AgrovetShoppingInterface = ({ farmerId, availableCredit }: { farmerId: str
 
   const cartTotal = getTotalCartAmount();
   const canRequestCredit = creditInfo?.isEligible && creditInfo.availableCredit >= cartTotal && cart.length > 0;
+
+  // Helper function to get applicable price based on quantity
+  const getApplicablePrice = (productId: string, quantity: number): number => {
+    const pricingTiers = productPricing[productId] || [];
+    
+    // Sort tiers by min_quantity to ensure proper matching
+    const sortedTiers = [...pricingTiers].sort((a, b) => (a.min_quantity || 0) - (b.min_quantity || 0));
+    
+    // Find the applicable tier
+    for (let i = sortedTiers.length - 1; i >= 0; i--) {
+      const tier = sortedTiers[i];
+      if (quantity >= (tier.min_quantity || 0)) {
+        if (!tier.max_quantity || quantity <= tier.max_quantity) {
+          return tier.price_per_unit || 0;
+        }
+      }
+    }
+    
+    // If no tier matches, return 0
+    return 0;
+  };
+
+  // Helper function to format pricing tiers for display
+  const formatPricingTiers = (productId: string, unit: string): string => {
+    const pricingTiers = productPricing[productId] || [];
+    
+    if (pricingTiers.length === 0) {
+      return "";
+    }
+    
+    // Sort tiers by min_quantity
+    const sortedTiers = [...pricingTiers].sort((a, b) => (a.min_quantity || 0) - (b.min_quantity || 0));
+    
+    return sortedTiers.map(tier => {
+      if (tier.max_quantity) {
+        return `${tier.min_quantity}-${tier.max_quantity} ${unit}: ${formatCurrency(tier.price_per_unit || 0)}`;
+      } else {
+        return `${tier.min_quantity}+ ${unit}: ${formatCurrency(tier.price_per_unit || 0)}`;
+      }
+    }).join(", ");
+  };
 
   return (
     <div className="space-y-6">
@@ -419,7 +526,7 @@ const AgrovetShoppingInterface = ({ farmerId, availableCredit }: { farmerId: str
             
             <RefreshButton 
               isRefreshing={loading} 
-              onRefresh={fetchData} 
+              onRefresh={refreshData} 
               className="bg-white border-gray-300 hover:bg-gray-50 rounded-md shadow-sm"
             />
           </div>
@@ -447,9 +554,15 @@ const AgrovetShoppingInterface = ({ farmerId, availableCredit }: { farmerId: str
                             <h3 className="font-semibold text-gray-900">{product.name}</h3>
                             <p className="text-sm text-gray-500 mt-1">{product.category}</p>
                             <p className="text-sm text-gray-600 mt-2">{product.description}</p>
+                            {productPricing[product.id] && productPricing[product.id].length > 1 && (
+                              <div className="mt-2 text-xs text-blue-600">
+                                <p>Bulk pricing available:</p>
+                                <p>{formatPricingTiers(product.id, product.unit)}</p>
+                              </div>
+                            )}
                           </div>
                           <span className="text-lg font-bold text-green-600">
-                            {formatCurrency(product.selling_price)}
+                            {formatCurrency(getApplicablePrice(product.id, 1) || product.selling_price)}
                           </span>
                         </div>
                         
@@ -460,7 +573,7 @@ const AgrovetShoppingInterface = ({ farmerId, availableCredit }: { farmerId: str
                           <Button 
                             size="sm" 
                             onClick={() => addToCart(product)}
-                            disabled={product.current_stock <= 0 || !creditInfo?.isEligible}
+                            // Removed stock validation - farmers can place orders regardless of stock levels
                           >
                             <ShoppingCart className="w-4 h-4 mr-1" />
                             Add
@@ -472,8 +585,9 @@ const AgrovetShoppingInterface = ({ farmerId, availableCredit }: { farmerId: str
                 ) : (
                   <div className="col-span-2 text-center py-8 text-gray-500">
                     <Package className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                    <p>No products available for credit purchase</p>
-                    <p className="text-sm mt-1">Check back later or contact admin</p>
+                    <p className="font-semibold text-gray-900">No Credit-Eligible Products Available</p>
+                    <p className="text-sm mt-1">There are currently no products available for credit purchase.</p>
+                    <p className="text-xs mt-2 text-gray-400">Please contact the agrovet administrator to add credit-eligible products.</p>
                   </div>
                 )}
               </div>
@@ -499,7 +613,14 @@ const AgrovetShoppingInterface = ({ farmerId, availableCredit }: { farmerId: str
                       <div className="flex justify-between">
                         <div>
                           <h4 className="font-medium text-gray-900">{item.product.name}</h4>
-                          <p className="text-sm text-gray-500">{formatCurrency(item.product.selling_price)} each</p>
+                          <p className="text-sm text-gray-500">
+                            {formatCurrency(getApplicablePrice(item.product.id, item.quantity) || item.product.selling_price)} each
+                            {item.quantity > 1 && (
+                              <span className="ml-1 text-blue-600">
+                                (Bulk pricing applied)
+                              </span>
+                            )}
+                          </p>
                         </div>
                         <Button 
                           variant="ghost" 
@@ -530,7 +651,7 @@ const AgrovetShoppingInterface = ({ farmerId, availableCredit }: { farmerId: str
                           </Button>
                         </div>
                         <span className="font-medium">
-                          {formatCurrency(item.product.selling_price * item.quantity)}
+                          {formatCurrency((getApplicablePrice(item.product.id, item.quantity) || item.product.selling_price) * item.quantity)}
                         </span>
                       </div>
                     </div>
@@ -666,6 +787,6 @@ const AgrovetShoppingInterface = ({ farmerId, availableCredit }: { farmerId: str
       </div>
     </div>
   );
-};
+});
 
 export default AgrovetShoppingInterface;

@@ -31,7 +31,7 @@ export interface CreditReconciliationData {
 }
 
 export class CreditReconciliationService {
-  // Generate credit reconciliation report data
+  // Generate reconciliation report
   static async generateReconciliationReport(): Promise<CreditReconciliationData> {
     try {
       // Get all farmers with their profile information
@@ -47,11 +47,11 @@ export class CreditReconciliationService {
 
       if (farmersError) throw farmersError;
 
-      // Get credit limits for all farmers
+      // Get credit limits for all farmers (using the correct table name)
       const { data: creditLimits, error: creditError } = await supabase
-        .from('farmer_credit_limits')
+        .from('farmer_credit_profiles') // Using farmer_credit_profiles as farmer_credit_limits has been deleted
         .select('*')
-        .eq('is_active', true);
+        .eq('is_frozen', false); // Using is_frozen = false instead of is_active = true
 
       if (creditError) throw creditError;
 
@@ -182,11 +182,11 @@ export class CreditReconciliationService {
 
       if (farmersError) throw farmersError;
 
-      // Get credit limits for all farmers
+      // Get credit limits for all farmers (using the correct table name)
       const { data: creditLimits, error: creditError } = await supabase
-        .from('farmer_credit_limits')
+        .from('farmer_credit_profiles') // Using farmer_credit_profiles as farmer_credit_limits has been deleted
         .select('*')
-        .eq('is_active', true);
+        .eq('is_frozen', false); // Using is_frozen = false instead of is_active = true
 
       if (creditError) throw creditError;
 
@@ -248,11 +248,11 @@ export class CreditReconciliationService {
         const totalCreditUsedInPayments = farmerPayments.reduce((sum, p) => sum + (p.credit_used || 0), 0);
         const totalNetPayment = farmerPayments.reduce((sum, p) => sum + (p.net_payment || 0), 0);
         
-        // Get last payment date within range
+        // Get last payment date
         const lastPayment = farmerPayments[0];
         const lastPaymentDate = lastPayment?.created_at ? new Date(lastPayment.created_at).toISOString().split('T')[0] : 'N/A';
         
-        // Get last credit transaction within range
+        // Get last credit transaction within date range
         const lastCreditTransaction = creditTransactions?.find(t => t.farmer_id === farmerId);
         const lastCreditTransactionDate = lastCreditTransaction?.created_at ? 
           new Date(lastCreditTransaction.created_at).toISOString().split('T')[0] : 'N/A';
@@ -305,3 +305,5 @@ export class CreditReconciliationService {
     }
   }
 }
+
+export default CreditReconciliationService;

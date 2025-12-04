@@ -53,7 +53,7 @@ export const useGlobalSearch = () => {
 
       // Search transactions
       const { data: transactions, error: transactionsError } = await supabase
-        .from('farmer_credit_transactions')
+        .from('credit_transactions')
         .select('id, transaction_type, amount, description')
         .or(`transaction_type.ilike.%${query}%,description.ilike.%${query}%`)
         .limit(5);

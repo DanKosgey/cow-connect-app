@@ -178,28 +178,60 @@ const PaymentTracking = () => {
   const fetchAnalytics = async () => {
     try {
       setLoading(true);
-      const analyticsData = await CreditService.getAnalytics(timeRange);
-      setAnalytics(analyticsData);
+
+      const days = parseInt(timeRange);
+      const from = new Date();
+      from.setDate(from.getDate() - days);
+      from.setHours(0, 0, 0, 0);
+
+      const { data, error } = await supabase
+        .from('farmer_credit_transactions')
+        .select('transaction_type, amount, created_at')
+        .gte('created_at', from.toISOString())
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+
+      const byDate: Record<string, PaymentAnalytics> = {};
+
+      (data || []).forEach((tx: any) => {
+        const key = new Date(tx.created_at).toISOString().split('T')[0];
+
+        if (!byDate[key]) {
+          byDate[key] = {
+            date: key,
+            credit_granted: 0,
+            credit_used: 0,
+            credit_repaid: 0,
+            net_change: 0,
+          };
+        }
+
+        const entry = byDate[key];
+        const amount = tx.amount || 0;
+
+        if (tx.transaction_type === 'credit_granted') {
+          entry.credit_granted += amount;
+          entry.net_change += amount;
+        } else if (tx.transaction_type === 'credit_used') {
+          entry.credit_used += amount;
+          entry.net_change -= amount;
+        } else if (tx.transaction_type === 'credit_repaid') {
+          entry.credit_repaid += amount;
+          entry.net_change += amount;
+        }
+      });
+
+      setAnalytics(Object.values(byDate));
     } catch (err) {
       console.error("Error fetching analytics data:", err);
-      // Fallback to mock data if real data fails
-      const mockAnalytics: PaymentAnalytics[] = [];
-      const days = parseInt(timeRange);
-      for (let i = days; i >= 0; i--) {
-        const date = new Date();
-        date.setDate(date.getDate() - i);
-        const dateString = date.toISOString().split('T')[0];
-        
-        mockAnalytics.push({
-          date: dateString,
-          credit_granted: Math.floor(Math.random() * 50000),
-          credit_used: Math.floor(Math.random() * 30000),
-          credit_repaid: Math.floor(Math.random() * 20000),
-          net_change: Math.floor(Math.random() * 40000) - 20000
-        });
-      }
-      
-      setAnalytics(mockAnalytics);
+      setAnalytics([]);
+      setError("Failed to load analytics data");
+      toast({
+        title: "Error",
+        description: "Failed to load analytics data",
+        variant: "destructive"
+      });
     } finally {
       setLoading(false);
     }
@@ -224,36 +256,45 @@ const PaymentTracking = () => {
 
   const fetchPaymentSchedules = async () => {
     try {
-      // For demo purposes, we'll fetch schedules for the first farmer
-      // In a real implementation, you would fetch schedules for all farmers
-      // or implement a more sophisticated filtering system
-      const schedulesData: {[key: string]: PaymentSchedule[]} = {};
-      
-      // This is a placeholder - in a real implementation, you would iterate
-      // through farmers and fetch their individual schedules
-      setPaymentSchedules(schedulesData);
+      const farmerIds = Array.from(new Set(payments.map((p) => p.farmer_id)));
+      if (!farmerIds.length) {
+        setPaymentSchedules({});
+        return;
+      }
+
+      const schedulesByFarmer: { [key: string]: PaymentSchedule[] } = {};
+
+      const results = await Promise.all(
+        farmerIds.map(async (farmerId) => {
+          try {
+            const schedules = await CreditService.getPaymentSchedules(farmerId);
+            const normalized: PaymentSchedule[] = (schedules || []).map((s: any) => ({
+              date: s.due_date || s.date || s.created_at,
+              amount: s.amount || 0,
+              status: (s.status || 'pending') as 'pending' | 'paid' | 'overdue',
+            }));
+            return { farmerId, schedules: normalized };
+          } catch (innerErr) {
+            console.warn("Error fetching payment schedule for farmer", farmerId, innerErr);
+            return { farmerId, schedules: [] as PaymentSchedule[] };
+          }
+        })
+      );
+
+      results.forEach(({ farmerId, schedules }) => {
+        if (schedules.length) {
+          schedulesByFarmer[farmerId] = schedules;
+        }
+      });
+
+      setPaymentSchedules(schedulesByFarmer);
     } catch (err) {
       console.error("Error fetching payment schedules:", err);
-      // Fallback to mock data if real data fails
-      const mockSchedules: {[key: string]: PaymentSchedule[]} = {
-        "1": [
-          { date: "2023-06-15", amount: 5000, status: "paid" },
-          { date: "2023-07-15", amount: 5000, status: "paid" },
-          { date: "2023-08-15", amount: 5000, status: "overdue" }
-        ],
-        "2": [
-          { date: "2023-06-20", amount: 3000, status: "paid" },
-          { date: "2023-07-20", amount: 3000, status: "pending" },
-          { date: "2023-08-20", amount: 2500, status: "pending" }
-        ],
-        "3": [
-          { date: "2023-05-30", amount: 8000, status: "paid" },
-          { date: "2023-06-30", amount: 7000, status: "overdue" },
-          { date: "2023-07-30", amount: 7000, status: "pending" }
-        ]
-      };
-      
-      setPaymentSchedules(mockSchedules);
+      toast({
+        title: "Error",
+        description: "Failed to load payment schedules",
+        variant: "destructive"
+      });
     }
   };
 

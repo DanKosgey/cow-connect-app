@@ -240,6 +240,21 @@ const CreditManagementEssentials = () => {
 
       if (updateError) throw updateError;
 
+      // Get current user ID and convert to staff ID
+      const currentUser = await supabase.auth.getUser();
+      let staffId = null;
+      if (currentUser.data.user?.id) {
+        const { data: staffData } = await supabase
+          .from('staff')
+          .select('id')
+          .eq('user_id', currentUser.data.user.id)
+          .maybeSingle();
+        
+        if (staffData) {
+          staffId = staffData.id;
+        }
+      }
+
       // Create transaction record for adjustment
       const { error: transactionError } = await supabase
         .from('credit_transactions')
@@ -250,7 +265,7 @@ const CreditManagementEssentials = () => {
           balance_before: creditProfile.current_credit_balance,
           balance_after: creditProfile.current_credit_balance,
           description: `Credit limit adjusted from ${formatCurrency(currentLimit)} to ${formatCurrency(newCreditLimit)}`,
-          approved_by: (await supabase.auth.getUser()).data.user?.id,
+          approved_by: staffId, // Use staff ID instead of user ID
           approval_status: 'approved'
         })
         .select();
@@ -296,6 +311,21 @@ const CreditManagementEssentials = () => {
 
       if (updateError) throw updateError;
 
+      // Get current user ID and convert to staff ID
+      const currentUser = await supabase.auth.getUser();
+      let staffId = null;
+      if (currentUser.data.user?.id) {
+        const { data: staffData } = await supabase
+          .from('staff')
+          .select('id')
+          .eq('user_id', currentUser.data.user.id)
+          .maybeSingle();
+        
+        if (staffData) {
+          staffId = staffData.id;
+        }
+      }
+
       // Create transaction record
       const { error: transactionError } = await supabase
         .from('credit_transactions')
@@ -306,7 +336,7 @@ const CreditManagementEssentials = () => {
           balance_before: creditProfile.current_credit_balance,
           balance_after: creditProfile.current_credit_balance,
           description: freeze ? 'Credit line frozen by admin' : 'Credit line unfrozen by admin',
-          approved_by: (await supabase.auth.getUser()).data.user?.id,
+          approved_by: staffId, // Use staff ID instead of user ID
           approval_status: 'approved'
         })
         .select();
@@ -348,12 +378,27 @@ const CreditManagementEssentials = () => {
         return;
       }
 
+      // Get current user ID and convert to staff ID
+      const currentUser = await supabase.auth.getUser();
+      let staffId = null;
+      if (currentUser.data.user?.id) {
+        const { data: staffData } = await supabase
+          .from('staff')
+          .select('id')
+          .eq('user_id', currentUser.data.user.id)
+          .maybeSingle();
+        
+        if (staffData) {
+          staffId = staffData.id;
+        }
+      }
+
       const { error } = await supabase
         .from('credit_requests')
         .update({
           status: 'rejected',
           rejection_reason: rejectionReason,
-          approved_by: (await supabase.auth.getUser()).data.user?.id,
+          approved_by: staffId, // Use staff ID instead of user ID
           approved_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })

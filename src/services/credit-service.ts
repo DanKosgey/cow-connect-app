@@ -180,7 +180,7 @@ export class CreditService {
     }
   }
 
-  // Get dashboard statistics
+  // Get dashboard statistics for credit management
   static async getDashboardStats(): Promise<{
     pendingApplications: number;
     totalCreditIssued: number;
@@ -189,12 +189,13 @@ export class CreditService {
   }> {
     try {
       // Get pending credit applications
-      const { count: pendingApplications, error: pendingError } = await supabase
-        .from('agrovet_credit_requests')
-        .select('*', { count: 'exact', head: true })
+      const { data: pendingData, error: pendingError } = await supabase
+        .from('credit_requests')
+        .select('id', { count: 'exact', head: true })
         .eq('status', 'pending');
 
       if (pendingError) throw pendingError;
+      const pendingApplications = pendingData?.length || 0;
 
       // Get total credit issued
       const { data: totalCreditData, error: totalCreditError } = await supabase
@@ -206,11 +207,11 @@ export class CreditService {
 
       const totalCreditIssued = totalCreditData?.reduce((sum, request) => sum + (request.total_amount || 0), 0) || 0;
 
-      // Get active farmers with credit
+      // Get active farmers with credit (using the correct table name)
       const { count: activeFarmers, error: farmersError } = await supabase
-        .from('farmer_credit_limits')
+        .from('farmer_credit_profiles') // Using farmer_credit_profiles as farmer_credit_limits has been deleted
         .select('*', { count: 'exact', head: true })
-        .eq('is_active', true);
+        .eq('is_frozen', false); // Using is_frozen = false instead of is_active = true
 
       if (farmersError) throw farmersError;
 
@@ -239,12 +240,12 @@ export class CreditService {
     currentBalance: number;
   }> {
     try {
-      // Get farmer's credit limit configuration
+      // Get farmer's credit limit configuration (using the correct table name)
       const { data: creditLimitData, error: creditLimitError } = await supabase
-        .from('farmer_credit_limits')
+        .from('farmer_credit_profiles') // Using farmer_credit_profiles as farmer_credit_limits has been deleted
         .select('*')
         .eq('farmer_id', farmerId)
-        .eq('is_active', true)
+        .eq('is_frozen', false) // Using is_frozen = false instead of is_active = true
         .maybeSingle();
 
       if (creditLimitError) {
@@ -297,18 +298,18 @@ export class CreditService {
     }
   }
 
-  // Create default credit limit for a farmer
+  // Create default credit limit for a farmer (using the correct table name)
   static async createDefaultCreditLimit(farmerId: string): Promise<FarmerCreditLimit> {
     try {
       const { data, error } = await supabase
-        .from('farmer_credit_limits')
+        .from('farmer_credit_profiles') // Using farmer_credit_profiles as farmer_credit_limits has been deleted
         .insert({
           farmer_id: farmerId,
           credit_limit_percentage: 70.00,
           max_credit_amount: 100000.00,
           current_credit_balance: 0.00,
           total_credit_used: 0.00,
-          is_active: true
+          is_frozen: false // Using is_frozen = false instead of is_active = true
         })
         .select()
         .single();
@@ -346,12 +347,12 @@ export class CreditService {
         throw new Error('Purchase amount must be greater than zero');
       }
 
-      // Get current credit limit record
+      // Get current credit limit record (using the correct table name)
       const { data: creditLimitData, error: creditLimitError } = await supabase
-        .from('farmer_credit_limits')
+        .from('farmer_credit_profiles') // Using farmer_credit_profiles as farmer_credit_limits has been deleted
         .select('*')
         .eq('farmer_id', farmerId)
-        .eq('is_active', true)
+        .eq('is_frozen', false) // Using is_frozen = false instead of is_active = true
         .maybeSingle();
 
       if (creditLimitError) {
@@ -374,9 +375,9 @@ export class CreditService {
       const newBalance = creditLimitRecord.current_credit_balance - amount;
       const newTotalUsed = creditLimitRecord.total_credit_used + amount;
 
-      // Update credit limit
+      // Update credit limit (using the correct table name)
       const { error: updateError } = await supabase
-        .from('farmer_credit_limits')
+        .from('farmer_credit_profiles') // Using farmer_credit_profiles as farmer_credit_limits has been deleted
         .update({
           current_credit_balance: newBalance,
           total_credit_used: newTotalUsed,
@@ -391,67 +392,24 @@ export class CreditService {
 
       // Create credit transaction record
       const { data: transactionData, error: transactionError } = await supabase
-        .from('farmer_credit_transactions')
+        .from('credit_transactions')
         .insert({
           farmer_id: farmerId,
           transaction_type: 'credit_used',
           amount: amount,
+          balance_before: creditLimitRecord.current_credit_balance,
           balance_after: newBalance,
           reference_type: 'agrovet_purchase',
           reference_id: purchaseId,
-          description: `Credit used for agrovet purchase of KES ${amount.toFixed(2)}`,
+          description: `Credit used for agrovet purchase`,
           created_by: usedBy
         })
         .select()
         .single();
 
       if (transactionError) {
-        logger.errorWithContext('CreditService - creating credit transaction for purchase', transactionError);
+        logger.errorWithContext('CreditService - creating credit transaction', transactionError);
         throw transactionError;
-      }
-
-      // Send notification to farmer about credit usage
-      try {
-        // Get item name for notification
-        const { data: purchaseData, error: purchaseError } = await supabase
-          .from('agrovet_purchases')
-          .select('agrovet_inventory(name)')
-          .eq('id', purchaseId)
-          .maybeSingle();
-
-        if (!purchaseError && purchaseData) {
-          const itemName = (purchaseData as any).agrovet_inventory?.name || 'agrovet item';
-          await CreditNotificationService.sendCreditUsedNotification(
-            farmerId,
-            amount,
-            itemName,
-            newBalance
-          );
-        }
-      } catch (notificationError) {
-        logger.warn('Warning: Failed to send credit used notification', notificationError);
-      }
-
-      // Check if credit is getting low and send warning
-      try {
-        const creditLimit = creditLimitRecord.max_credit_amount;
-        const utilization = creditLimit > 0 ? ((creditLimit - newBalance) / creditLimit) * 100 : 0;
-
-        if (utilization > 80 && utilization <= 90) {
-          await CreditNotificationService.sendLowCreditWarning(
-            farmerId,
-            newBalance,
-            creditLimit
-          );
-        } else if (utilization > 90) {
-          await CreditNotificationService.sendOverLimitWarning(
-            farmerId,
-            creditLimitRecord.total_credit_used + amount,
-            creditLimit
-          );
-        }
-      } catch (warningError) {
-        logger.warn('Warning: Failed to send credit utilization warning', warningError);
       }
 
       return transactionData as FarmerCreditTransaction;
@@ -461,169 +419,155 @@ export class CreditService {
     }
   }
 
-  // Adjust credit limit for a farmer
-  static async adjustCreditLimit(
-    farmerId: string,
-    creditLimitPercentage: number,
-    maxCreditAmount: number
-  ): Promise<void> {
+  // Grant credit to a farmer (using the correct table name)
+  static async grantCreditToFarmer(farmerId: string, grantedBy?: string): Promise<void> {
     try {
-      // Input validation
-      if (!farmerId) {
-        throw new Error('Farmer ID is required');
+      // Get farmer's pending payments
+      const { data: pendingCollections, error: collectionsError } = await supabase
+        .from('collections')
+        .select('total_amount')
+        .eq('farmer_id', farmerId)
+        .neq('status', 'Paid');
+
+      if (collectionsError) {
+        logger.errorWithContext('CreditService - fetching pending collections for grant', collectionsError);
+        throw collectionsError;
       }
 
-      if (creditLimitPercentage < 0 || creditLimitPercentage > 100) {
-        throw new Error('Credit limit percentage must be between 0 and 100');
-      }
+      const pendingPayments = pendingCollections?.reduce((sum, collection) =>
+        sum + (collection.total_amount || 0), 0) || 0;
 
-      if (maxCreditAmount < 0) {
-        throw new Error('Maximum credit amount cannot be negative');
-      }
+      // Calculate credit amount (70% of pending payments, max 100,000)
+      const creditAmount = Math.min(pendingPayments * 0.7, 100000);
 
-      // Check if farmer already has a credit limit record
-      const { data: existingLimit, error: fetchError } = await supabase
-        .from('farmer_credit_limits')
-        .select('id, current_credit_balance')
+      // Check if farmer already has a credit profile
+      const { data: existingProfile, error: profileError } = await supabase
+        .from('farmer_credit_profiles') // Using farmer_credit_profiles as farmer_credit_limits has been deleted
+        .select('*')
         .eq('farmer_id', farmerId)
         .maybeSingle();
 
-      if (fetchError) {
-        logger.errorWithContext('CreditService - fetching existing credit limit', fetchError);
-        throw fetchError;
+      if (profileError) {
+        logger.errorWithContext('CreditService - checking existing credit profile', profileError);
+        throw profileError;
       }
 
-      if (existingLimit) {
-        // Update existing credit limit
+      if (existingProfile) {
+        // Update existing profile
         const { error: updateError } = await supabase
-          .from('farmer_credit_limits')
+          .from('farmer_credit_profiles') // Using farmer_credit_profiles as farmer_credit_limits has been deleted
           .update({
-            credit_limit_percentage: creditLimitPercentage,
-            max_credit_amount: maxCreditAmount,
+            current_credit_balance: creditAmount,
+            total_credit_used: 0,
             updated_at: new Date().toISOString()
           })
-          .eq('id', existingLimit.id);
+          .eq('id', existingProfile.id);
 
         if (updateError) {
-          logger.errorWithContext('CreditService - updating credit limit', updateError);
+          logger.errorWithContext('CreditService - updating existing credit profile', updateError);
           throw updateError;
         }
       } else {
-        // Create new credit limit record
+        // Create new profile
         const { error: insertError } = await supabase
-          .from('farmer_credit_limits')
+          .from('farmer_credit_profiles') // Using farmer_credit_profiles as farmer_credit_limits has been deleted
           .insert({
             farmer_id: farmerId,
-            credit_limit_percentage: creditLimitPercentage,
-            max_credit_amount: maxCreditAmount,
-            current_credit_balance: maxCreditAmount, // Start with full available credit
+            credit_limit_percentage: 70.00,
+            max_credit_amount: 100000.00,
+            current_credit_balance: creditAmount,
             total_credit_used: 0,
-            is_active: true,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
+            is_frozen: false // Using is_frozen = false instead of is_active = true
           });
 
         if (insertError) {
-          logger.errorWithContext('CreditService - creating credit limit', insertError);
+          logger.errorWithContext('CreditService - creating new credit profile', insertError);
           throw insertError;
         }
       }
 
-      // Log the credit limit adjustment
-      const { error: logError } = await supabase
-        .from('farmer_credit_transactions')
+      // Create credit transaction record
+      const { error: transactionError } = await supabase
+        .from('credit_transactions')
         .insert({
           farmer_id: farmerId,
-          transaction_type: 'credit_adjusted',
-          amount: maxCreditAmount,
-          balance_after: existingLimit?.current_credit_balance || maxCreditAmount,
-          description: `Credit limit adjusted to ${formatCurrency(maxCreditAmount)}`,
-          created_at: new Date().toISOString()
+          transaction_type: 'credit_granted',
+          amount: creditAmount,
+          balance_before: existingProfile?.current_credit_balance || 0,
+          balance_after: creditAmount,
+          reference_type: 'credit_grant',
+          description: `Credit granted by admin`,
+          created_by: grantedBy
         });
 
-      if (logError) {
-        logger.warn('Warning: Failed to log credit limit adjustment', logError);
+      if (transactionError) {
+        logger.errorWithContext('CreditService - creating credit grant transaction', transactionError);
+        throw transactionError;
       }
     } catch (error) {
-      logger.errorWithContext('CreditService - adjustCreditLimit', error);
+      logger.errorWithContext('CreditService - grantCreditToFarmer', error);
       throw error;
     }
   }
 
-  // Grant credit to a farmer (initialize credit profile)
-  static async grantCreditToFarmer(farmerId: string): Promise<void> {
+  // Adjust credit limit for a farmer (using the correct table name)
+  static async adjustCreditLimit(
+    farmerId: string,
+    newPercentage: number,
+    newMaxAmount: number
+  ): Promise<void> {
     try {
-      // Input validation
-      if (!farmerId) {
-        throw new Error('Farmer ID is required');
-      }
-
-      // Check if farmer already has a credit limit record
-      const { data: existingLimit, error: fetchError } = await supabase
-        .from('farmer_credit_limits')
-        .select('id')
+      // Get existing credit profile
+      const { data: existingProfile, error: profileError } = await supabase
+        .from('farmer_credit_profiles') // Using farmer_credit_profiles as farmer_credit_limits has been deleted
+        .select('*')
         .eq('farmer_id', farmerId)
         .maybeSingle();
 
-      if (fetchError) {
-        logger.errorWithContext('CreditService - checking existing credit limit', fetchError);
-        throw fetchError;
+      if (profileError) {
+        logger.errorWithContext('CreditService - fetching credit profile for adjustment', profileError);
+        throw profileError;
       }
 
-      if (existingLimit) {
-        throw new Error('Farmer already has a credit profile');
+      if (!existingProfile) {
+        throw new Error('Credit profile not found for farmer');
       }
 
-      // Create initial credit limit record with default values
-      const defaultCreditLimit = 50000; // Default credit limit of KES 50,000
-      const defaultCreditPercentage = 70; // Default 70% credit limit
-
-      const { error: insertError } = await supabase
-        .from('farmer_credit_limits')
-        .insert({
-          farmer_id: farmerId,
-          credit_limit_percentage: defaultCreditPercentage,
-          max_credit_amount: defaultCreditLimit,
-          current_credit_balance: defaultCreditLimit, // Start with full available credit
-          total_credit_used: 0,
-          is_active: true,
-          created_at: new Date().toISOString(),
+      // Update credit profile with new max amount and percentage
+      const { error: updateError } = await supabase
+        .from('farmer_credit_profiles') // Using farmer_credit_profiles as farmer_credit_limits has been deleted
+        .update({
+          credit_limit_percentage: newPercentage,
+          max_credit_amount: newMaxAmount,
           updated_at: new Date().toISOString()
-        });
+        })
+        .eq('id', existingProfile.id);
 
-      if (insertError) {
-        logger.errorWithContext('CreditService - granting credit to farmer', insertError);
-        throw insertError;
+      if (updateError) {
+        logger.errorWithContext('CreditService - updating credit profile', updateError);
+        throw updateError;
       }
 
-      // Log the credit grant
-      const { error: logError } = await supabase
-        .from('farmer_credit_transactions')
+      // Create credit transaction record
+      const { error: transactionError } = await supabase
+        .from('credit_transactions')
         .insert({
           farmer_id: farmerId,
-          transaction_type: 'credit_granted',
-          amount: defaultCreditLimit,
-          balance_after: defaultCreditLimit,
-          description: `Initial credit grant of ${formatCurrency(defaultCreditLimit)}`,
-          created_at: new Date().toISOString()
+          transaction_type: 'credit_adjusted',
+          amount: newMaxAmount,
+          balance_before: existingProfile.current_credit_balance,
+          balance_after: existingProfile.current_credit_balance,
+          reference_type: 'credit_adjustment',
+          description: `Credit limit adjusted to ${newPercentage}% of pending payments, max amount: ${newMaxAmount}`,
+          created_by: null
         });
 
-      if (logError) {
-        logger.warn('Warning: Failed to log credit grant', logError);
-      }
-
-      // Send notification to farmer
-      try {
-        await CreditNotificationService.sendCreditGrantedNotification(
-          farmerId,
-          defaultCreditLimit,
-          0 // pending payments
-        );
-      } catch (notificationError) {
-        logger.warn('Warning: Failed to send credit granted notification', notificationError);
+      if (transactionError) {
+        logger.errorWithContext('CreditService - creating credit adjustment transaction', transactionError);
+        throw transactionError;
       }
     } catch (error) {
-      logger.errorWithContext('CreditService - grantCreditToFarmer', error);
+      logger.errorWithContext('CreditService - adjustCreditLimit', error);
       throw error;
     }
   }
@@ -632,7 +576,7 @@ export class CreditService {
   static async getCreditHistory(farmerId: string): Promise<FarmerCreditTransaction[]> {
     try {
       const { data, error } = await supabase
-        .from('farmer_credit_transactions')
+        .from('credit_transactions')
         .select('*')
         .eq('farmer_id', farmerId)
         .order('created_at', { ascending: false });
@@ -653,10 +597,10 @@ export class CreditService {
   static async getCreditStatus(farmerId: string): Promise<FarmerCreditLimit | null> {
     try {
       const { data, error } = await supabase
-        .from('farmer_credit_limits')
+        .from('farmer_credit_profiles')
         .select('*')
         .eq('farmer_id', farmerId)
-        .eq('is_active', true)
+        .eq('is_frozen', false)
         .maybeSingle();
 
       if (error) {
@@ -897,10 +841,10 @@ export class CreditService {
 
       // Get current credit limit record
       const { data: creditLimitData, error: creditLimitError } = await supabase
-        .from('farmer_credit_limits')
+        .from('farmer_credit_profiles')
         .select('*')
         .eq('farmer_id', farmerId)
-        .eq('is_active', true)
+        .eq('is_frozen', false)
         .maybeSingle();
 
       if (creditLimitError) {
@@ -923,7 +867,7 @@ export class CreditService {
 
       // Update credit limit
       const { error: updateError } = await supabase
-        .from('farmer_credit_limits')
+        .from('farmer_credit_profiles')
         .update({
           current_credit_balance: finalBalance,
           total_credit_used: newTotalUsed,
@@ -1034,6 +978,48 @@ export class CreditService {
       return data || [];
     } catch (error) {
       logger.errorWithContext('CreditService - getPaymentSchedules', error);
+      throw error;
+    }
+  }
+
+  // Get credit limits for a specific farmer
+  static async getCreditLimitsForFarmer(farmerId: string): Promise<FarmerCreditLimit | null> {
+    try {
+      const { data, error } = await supabase
+        .from('farmer_credit_profiles') // Using farmer_credit_profiles as farmer_credit_limits has been deleted
+        .select('*')
+        .eq('farmer_id', farmerId)
+        .eq('is_frozen', false) // Using is_frozen = false instead of is_active = true
+        .maybeSingle();
+
+      if (error) {
+        logger.errorWithContext('CreditService - fetching credit limits for farmer', error);
+        throw error;
+      }
+
+      return data as FarmerCreditLimit | null;
+    } catch (error) {
+      logger.errorWithContext('CreditService - getCreditLimitsForFarmer', error);
+      throw error;
+    }
+  }
+
+  // Get all credit limits
+  static async getAllCreditLimits(): Promise<FarmerCreditLimit[]> {
+    try {
+      const { data, error } = await supabase
+        .from('farmer_credit_profiles') // Using farmer_credit_profiles as farmer_credit_limits has been deleted
+        .select('*')
+        .eq('is_frozen', false); // Using is_frozen = false instead of is_active = true
+
+      if (error) {
+        logger.errorWithContext('CreditService - fetching all credit limits', error);
+        throw error;
+      }
+
+      return data as FarmerCreditLimit[];
+    } catch (error) {
+      logger.errorWithContext('CreditService - getAllCreditLimits', error);
       throw error;
     }
   }

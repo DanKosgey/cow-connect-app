@@ -250,7 +250,8 @@ const ShopPage = () => {
                             <Button
                                 className="w-full"
                                 onClick={() => addToCart(product)}
-                                disabled={product.current_stock <= 0 || (!product.is_credit_eligible && availableCredit > 0)} // Logic check: if paying with credit, item must be eligible
+                                // Removed stock validation - farmers can place orders regardless of stock levels
+                                disabled={!product.is_credit_eligible && availableCredit > 0} // Logic check: if paying with credit, item must be eligible
                             >
                                 <Plus className="h-4 w-4 mr-2" />
                                 Add to Cart

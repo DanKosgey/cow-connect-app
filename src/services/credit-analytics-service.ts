@@ -48,11 +48,11 @@ export class CreditAnalyticsService {
   // Get overall credit analytics
   static async getCreditAnalytics(): Promise<CreditAnalytics> {
     try {
-      // Get all credit limits
+      // Get all credit limits (using the correct table name)
       const { data: creditLimits, error: limitsError } = await supabase
-        .from('farmer_credit_limits')
+        .from('farmer_credit_profiles') // Using farmer_credit_profiles as farmer_credit_limits has been deleted
         .select('*')
-        .eq('is_active', true);
+        .eq('is_frozen', false); // Using is_frozen = false instead of is_active = true
 
       if (limitsError) {
         logger.errorWithContext('CreditAnalyticsService - fetching credit limits', limitsError);
@@ -140,21 +140,21 @@ export class CreditAnalyticsService {
         date.setDate(date.getDate() - i);
         const dateString = date.toISOString().split('T')[0];
         
-        // Get credit limits active on this date
+        // Get credit limits active on this date (using the correct table name)
         const { data: creditLimits, error: limitsError } = await supabase
-          .from('farmer_credit_limits')
+          .from('farmer_credit_profiles') // Using farmer_credit_profiles as farmer_credit_limits has been deleted
           .select('*')
           .lte('created_at', dateString)
-          .eq('is_active', true);
+          .eq('is_frozen', false); // Using is_frozen = false instead of is_active = true
 
         if (limitsError) {
           logger.warn(`Warning: Error fetching credit limits for ${dateString}`, limitsError);
           continue;
         }
 
-        // Get new credit lines created on this date
+        // Get new credit lines created on this date (using the correct table name)
         const { data: newCreditLines, error: newLinesError } = await supabase
-          .from('farmer_credit_limits')
+          .from('farmer_credit_profiles') // Using farmer_credit_profiles as farmer_credit_limits has been deleted
           .select('id')
           .gte('created_at', `${dateString}T00:00:00`)
           .lte('created_at', `${dateString}T23:59:59`);
@@ -222,11 +222,11 @@ export class CreditAnalyticsService {
         throw farmersError;
       }
 
-      // Get all credit limits
+      // Get all credit limits (using the correct table name)
       const { data: creditLimits, error: limitsError } = await supabase
-        .from('farmer_credit_limits')
+        .from('farmer_credit_profiles') // Using farmer_credit_profiles as farmer_credit_limits has been deleted
         .select('*')
-        .eq('is_active', true);
+        .eq('is_frozen', false); // Using is_frozen = false instead of is_active = true
 
       if (limitsError) {
         logger.errorWithContext('CreditAnalyticsService - fetching credit limits', limitsError);

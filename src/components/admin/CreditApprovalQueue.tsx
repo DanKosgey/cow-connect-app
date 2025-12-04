@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { 
   CheckCircle, 
@@ -41,7 +41,7 @@ import { CreditRequestService } from "@/services/credit-request-service";
 interface CreditRequest {
   id: string;
   farmer_id: string;
-  product_id: string;
+  product_id: string | null;
   product_name: string;
   quantity: number;
   unit_price: number;
@@ -64,9 +64,24 @@ const CreditApprovalQueue = () => {
   const [rejectionDialog, setRejectionDialog] = useState<{open: boolean, requestId: string, farmerName: string}>({open: false, requestId: '', farmerName: ''});
   const [rejectionReason, setRejectionReason] = useState("");
   const { toast } = useToast();
+  
+  // Refs for guards
+  const isFetchingRef = useRef(false);
+  const isMountedRef = useRef(true);
 
+  // Stable fetch function with empty dependencies
   const fetchData = useCallback(async () => {
+    // Prevent concurrent fetches
+    if (isFetchingRef.current) {
+      console.log('CreditApprovalQueue: Fetch skipped, already fetching');
+      return;
+    }
+    
+    console.log('CreditApprovalQueue: Starting data fetch');
+    const startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    
     try {
+      isFetchingRef.current = true;
       setLoading(true);
       
       // Get all credit requests with farmer details
@@ -82,6 +97,7 @@ const CreditApprovalQueue = () => {
 
       // Handle case when no requests exist
       if (!data || data.length === 0) {
+        if (!isMountedRef.current) return;
         setRequests([]);
         setFilteredRequests([]);
         return;
@@ -94,9 +110,14 @@ const CreditApprovalQueue = () => {
         farmer_phone: request.farmer?.profiles?.phone || 'No phone'
       }));
 
+      if (!isMountedRef.current) return;
       setRequests(enhancedRequests);
       setFilteredRequests(enhancedRequests);
+      
+      const endTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      console.log(`CreditApprovalQueue: Completed data fetch in ${(endTime - startTime).toFixed(2)}ms, count:`, enhancedRequests.length);
     } catch (err) {
+      if (!isMountedRef.current) return;
       console.error("Error fetching credit requests:", err);
       toast({
         title: "Error",
@@ -104,11 +125,22 @@ const CreditApprovalQueue = () => {
         variant: "destructive",
       });
     } finally {
-      setLoading(false);
+      isFetchingRef.current = false;
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
-  }, [toast]);
+  }, []); // Empty dependencies for stable reference
 
+  // Manual refresh function
+  const refreshData = useCallback(() => {
+    console.log('CreditApprovalQueue: Manual refresh triggered');
+    fetchData();
+  }, [fetchData]);
+
+  // Single effect that runs once on mount
   useEffect(() => {
+    console.log('CreditApprovalQueue: Component mounted, fetching data');
     fetchData();
     
     // Set up real-time subscription for credit requests
@@ -123,7 +155,10 @@ const CreditApprovalQueue = () => {
         },
         (payload) => {
           console.log('New credit request:', payload.new);
-          fetchData();
+          // Only fetch if component is still mounted and not already fetching
+          if (isMountedRef.current && !isFetchingRef.current) {
+            fetchData();
+          }
         }
       )
       .on(
@@ -135,25 +170,51 @@ const CreditApprovalQueue = () => {
         },
         (payload) => {
           console.log('Credit request updated:', payload.new);
-          fetchData();
+          // Only fetch if component is still mounted and not already fetching
+          if (isMountedRef.current && !isFetchingRef.current) {
+            fetchData();
+          }
         }
       )
       .subscribe();
 
+    // Cleanup function
     return () => {
+      console.log('CreditApprovalQueue: Component unmounting');
+      isMountedRef.current = false;
       supabase.removeChannel(channel);
     };
-  }, [fetchData]);
+  }, []); // Empty dependencies - runs only once
+
+  // Custom debounce hook
+  const useDebounce = (value: string, delay: number) => {
+    const [debouncedValue, setDebouncedValue] = useState(value);
+
+    useEffect(() => {
+      const handler = setTimeout(() => {
+        setDebouncedValue(value);
+      }, delay);
+
+      return () => {
+        clearTimeout(handler);
+      };
+    }, [value, delay]);
+
+    return debouncedValue;
+  };
+
+  const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
   useEffect(() => {
     let filtered = requests;
     
     // Apply search filter
-    if (searchTerm) {
+    if (debouncedSearchTerm) {
+      const searchValue = debouncedSearchTerm.toLowerCase();
       filtered = filtered.filter(request => 
-        request.farmer_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        request.farmer_phone?.includes(searchTerm) ||
-        request.product_name.toLowerCase().includes(searchTerm.toLowerCase())
+        request.farmer_name?.toLowerCase().includes(searchValue) ||
+        request.farmer_phone?.includes(searchValue) ||
+        request.product_name.toLowerCase().includes(searchValue)
       );
     }
     
@@ -163,13 +224,23 @@ const CreditApprovalQueue = () => {
     }
     
     setFilteredRequests(filtered);
-  }, [searchTerm, filterStatus, requests]);
+  }, [debouncedSearchTerm, filterStatus, requests]);
 
-  const handleApproveRequest = async (requestId: string) => {
+  const handleApproveRequest = useCallback(async (requestId: string) => {
     try {
       // Get the request details
       const request = requests.find(r => r.id === requestId);
       if (!request) return;
+
+      // Check if product_id is null and handle appropriately
+      if (!request.product_id) {
+        toast({
+          title: "Cannot Approve",
+          description: "This request cannot be approved because the product is no longer available.",
+          variant: "destructive",
+        });
+        return;
+      }
 
       // Approve the credit request
       await CreditRequestService.approveCreditRequest(
@@ -181,7 +252,13 @@ const CreditApprovalQueue = () => {
         title: "Request Approved",
         description: `Credit request for ${request.farmer_name} has been approved`,
       });
+      
+      // Refresh data after approval
+      if (isMountedRef.current && !isFetchingRef.current) {
+        fetchData();
+      }
     } catch (error) {
+      if (!isMountedRef.current) return;
       console.error("Error approving credit request:", error);
       toast({
         title: "Error",
@@ -189,9 +266,9 @@ const CreditApprovalQueue = () => {
         variant: "destructive",
       });
     }
-  };
+  }, [requests, fetchData]);
 
-  const handleRejectRequest = async () => {
+  const handleRejectRequest = useCallback(async () => {
     try {
       if (!rejectionReason.trim()) {
         toast({
@@ -218,7 +295,13 @@ const CreditApprovalQueue = () => {
       
       setRejectionDialog({open: false, requestId: '', farmerName: ''});
       setRejectionReason("");
+      
+      // Refresh data after rejection
+      if (isMountedRef.current && !isFetchingRef.current) {
+        fetchData();
+      }
     } catch (error) {
+      if (!isMountedRef.current) return;
       console.error("Error rejecting credit request:", error);
       toast({
         title: "Error",
@@ -226,7 +309,8 @@ const CreditApprovalQueue = () => {
         variant: "destructive",
       });
     }
-  };
+  }, [rejectionReason, requests, rejectionDialog, fetchData]);
+
 
   if (loading) {
     return (
@@ -274,7 +358,7 @@ const CreditApprovalQueue = () => {
           </SelectContent>
         </Select>
         
-        <Button variant="outline" onClick={fetchData}>
+        <Button variant="outline" onClick={refreshData}>
           <RefreshCw className="w-4 h-4 mr-2" />
           Refresh
         </Button>
@@ -310,7 +394,14 @@ const CreditApprovalQueue = () => {
                           <Package className="w-5 h-5 text-green-600" />
                         </div>
                         <div>
-                          <h4 className="font-medium text-gray-900">{request.product_name}</h4>
+                          <h4 className="font-medium text-gray-900">
+                            {request.product_name}
+                            {!request.product_id && (
+                              <span className="ml-2 text-xs bg-red-100 text-red-800 px-2 py-1 rounded">
+                                Product Unavailable
+                              </span>
+                            )}
+                          </h4>
                           <p className="text-sm text-gray-500">
                             {request.quantity} × {formatCurrency(request.unit_price)} = {formatCurrency(request.total_amount)}
                           </p>
@@ -338,6 +429,8 @@ const CreditApprovalQueue = () => {
                             variant="outline" 
                             className="text-green-600 border-green-600 hover:bg-green-50"
                             onClick={() => handleApproveRequest(request.id)}
+                            disabled={!request.product_id}
+                            title={!request.product_id ? "Cannot approve - product no longer available" : ""}
                           >
                             <CheckCircle className="w-4 h-4 mr-1" />
                             Approve

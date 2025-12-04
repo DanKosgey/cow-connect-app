@@ -336,3 +336,122 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 🔗 **RESOURCES**
 
 [🌐 Website](https://dairyfarmers.org) • [📖 Documentation](https://docs.dairyfarmers.org) • [🐛 Report Bug](https://github.com/yourusername/dairy-farmers-of-trans-nzoia/issues) • [💡 Request Feature](https://github.com/yourusername/dairy-farmers-of-trans-nzoia/issues)
+
+## Overview
+
+Cow Connect is a comprehensive dairy management application that helps manage various aspects of dairy farming operations, including farmer management, milk collection, creditor product management, and staff performance tracking.
+
+## Recent Updates
+
+### Product Packaging System (December 2025)
+
+We've replaced the old tiered pricing system with a new packaging-based pricing system. This change allows for more flexible and intuitive product management where users can define discrete packaging options (like "100kg bag", "20kg bag", "5kg packet") each with its own price.
+
+Key improvements:
+- Simplified product management UI
+- More intuitive pricing model
+- Better customer experience when selecting products
+- Enhanced validation and error handling
+
+For detailed information about the new system, see:
+- [Product Packaging System Documentation](docs/PRODUCT_PACKAGING_SYSTEM.md)
+- [Frontend Component Updates](docs/FRONTEND_COMPONENT_UPDATES.md)
+
+## Features
+
+### Farmer Management
+- Farmer registration and profile management
+- Location tracking and farm details
+- Payment history and credit management
+
+### Milk Collection
+- Daily milk collection tracking
+- Quality assessment and grading
+- Collection point management
+- Approval workflows for collections
+
+### Creditor Portal
+- Product catalog management with new packaging system
+- Inventory tracking and management
+- Credit eligibility management
+- Sales reporting and analytics
+
+### Staff Management
+- Staff dashboard with performance metrics
+- Role-based access control
+- Collection validation and approval
+- Performance tracking and reporting
+
+## Technical Architecture
+
+### Frontend
+- React with TypeScript
+- TailwindCSS for styling
+- Supabase for backend services
+- React Router for navigation
+- Lucide React for icons
+
+### Backend
+- Supabase (PostgreSQL, Authentication, Storage)
+- Row Level Security (RLS) for data protection
+- Real-time subscriptions for live updates
+
+### Database Schema
+The application uses a normalized database schema with the following key tables:
+- `farmers`: Farmer information and profiles
+- `milk_collections`: Milk collection records
+- `agrovet_inventory`: Product information
+- `product_packaging`: New packaging options for products
+- `staff`: Staff member information and roles
+- `users`: Application users and authentication
+
+## Getting Started
+
+### Prerequisites
+- Node.js (version 16 or higher)
+- npm or yarn
+- Supabase account
+
+### Installation
+1. Clone the repository
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+3. Set up environment variables:
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_ANON_KEY`
+4. Run the development server:
+   ```bash
+   npm run dev
+   ```
+
+### Database Setup
+1. Run the database migration scripts in the `database/migrations` directory
+2. Set up Row Level Security policies as defined in the security documentation
+
+## Documentation
+
+Additional documentation can be found in the `docs` directory:
+- [Product Packaging System](docs/PRODUCT_PACKAGING_SYSTEM.md)
+- [Frontend Component Updates](docs/FRONTEND_COMPONENT_UPDATES.md)
+- [Migration Scripts](scripts/README.md)
+- Role-based access control policies
+- Database schema documentation
+- API endpoint documentation
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Write tests if applicable
+5. Submit a pull request
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Support
+
+For support, please contact the development team or open an issue on GitHub.
