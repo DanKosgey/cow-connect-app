@@ -30,7 +30,7 @@ import { PageHeader } from "@/components/PageHeader";
 import RefreshButton from "@/components/ui/RefreshButton";
 import { useCommunityForumData } from "@/hooks/useCommunityForumData";
 
-const GEMINI_API_KEY = "AIzaSyAbRPjA1V7byZ5db23NOxWtY1UX7qp5h8M";
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "AIzaSyAbRPjA1V7byZ5db23NOxWtY1UX7qp5h8M";
 
 // Notification Component
 const NotificationCenter = ({ notifications, onClose, onClear }) => {
@@ -119,7 +119,7 @@ Be concise, practical, and farmer-friendly in your language.
 Use bullet points and clear formatting for better readability.`;
 
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${GEMINI_API_KEY}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
         {
           method: 'POST',
           headers: {

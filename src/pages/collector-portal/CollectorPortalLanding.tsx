@@ -139,10 +139,6 @@ export default function CollectorPortalLanding() {
               </div>
               <div className="flex items-start gap-2">
                 <div className="w-2 h-2 rounded-full bg-primary mt-2 flex-shrink-0"></div>
-                <span>Check milk quality parameters for accurate grading</span>
-              </div>
-              <div className="flex items-start gap-2">
-                <div className="w-2 h-2 rounded-full bg-primary mt-2 flex-shrink-0"></div>
                 <span>Submit collections before end of day for timely payments</span>
               </div>
             </div>

@@ -652,6 +652,53 @@ export interface Database {
           created_at?: string;
         };
       };
+      collector_api_keys: {
+        Row: {
+          id: string;
+          staff_id: string;
+          api_key_1: string | null;
+          api_key_2: string | null;
+          api_key_3: string | null;
+          api_key_4: string | null;
+          api_key_5: string | null;
+          api_key_6: string | null;
+          api_key_7: string | null;
+          api_key_8: string | null;
+          current_key_index: number | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          staff_id: string;
+          api_key_1?: string | null;
+          api_key_2?: string | null;
+          api_key_3?: string | null;
+          api_key_4?: string | null;
+          api_key_5?: string | null;
+          api_key_6?: string | null;
+          api_key_7?: string | null;
+          api_key_8?: string | null;
+          current_key_index?: number | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          staff_id?: string;
+          api_key_1?: string | null;
+          api_key_2?: string | null;
+          api_key_3?: string | null;
+          api_key_4?: string | null;
+          api_key_5?: string | null;
+          api_key_6?: string | null;
+          api_key_7?: string | null;
+          api_key_8?: string | null;
+          current_key_index?: number | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
     };
     Views: {
       admin_collection_stats: {

@@ -23,8 +23,6 @@ const CollectionHistory = lazy(() => import("../components/collector/CollectionH
 const DetailedAnalytics = lazy(() => import("../components/collector/DetailedAnalyticsDashboard"));
 const FarmerDirectory = lazy(() => import("../components/collector/EnhancedFarmerDirectory"));
 const PerformanceDashboard = lazy(() => import("../components/collector/EnhancedPerformanceDashboard"));
-const CollectorPerformanceTracking = lazy(() => import("../components/collector/CollectorPerformanceTracking"));
-const QualityControlManagement = lazy(() => import("../components/collector/QualityControlManagement"));
 const InventoryManagement = lazy(() => import("../components/collector/InventoryManagement"));
 const ComprehensiveReporting = lazy(() => import("../components/collector/ComprehensiveReporting"));
 
@@ -37,6 +35,7 @@ const PerformanceInsights = lazy(() => import("../components/collector/Performan
 const CollectorPortalLanding = lazy(() => import("../pages/collector-portal/CollectorPortalLanding"));
 const CollectorEarningsPage = lazy(() => import("../pages/collector-portal/CollectorEarningsPage"));
 const CollectorPaymentsPage = lazy(() => import("../pages/collector-portal/CollectorPaymentsPage"));
+const CollectorPerformanceTracking = lazy(() => import("../components/collector/CollectorPerformanceTracking"));
 
 export default function CollectorOnlyRoutes() {
   const location = useLocation();
@@ -69,7 +68,6 @@ export default function CollectorOnlyRoutes() {
                 <Route path="performance" element={<PerformanceDashboard />} />
                 <Route path="analytics" element={<DetailedAnalytics />} />
                 <Route path="performance-tracking" element={<CollectorPerformanceTracking />} />
-                <Route path="quality-control" element={<QualityControlManagement />} />
                 <Route path="inventory" element={<InventoryManagement />} />
                 <Route path="reports" element={<ComprehensiveReporting />} />
                 <Route path="notifications" element={<CollectorNotifications />} />

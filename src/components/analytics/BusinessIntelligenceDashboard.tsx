@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
   DollarSign, 
@@ -46,7 +46,7 @@ const BusinessIntelligenceDashboard = ({ timeRange = 'week' }: { timeRange?: str
   const [error, setError] = useState<string | null>(null);
 
   // Memoize the fetch function to prevent unnecessary re-renders
-  const fetchMetrics = useMemo(() => async () => {
+  const fetchMetrics = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -64,7 +64,7 @@ const BusinessIntelligenceDashboard = ({ timeRange = 'week' }: { timeRange?: str
     fetchMetrics();
   }, [fetchMetrics]);
 
-  const getIconComponent = (iconName: string) => {
+  const getIconComponent = useCallback((iconName: string) => {
     switch (iconName) {
       case 'DollarSign': return DollarSign;
       case 'TrendingUp': return TrendingUp;
@@ -72,7 +72,7 @@ const BusinessIntelligenceDashboard = ({ timeRange = 'week' }: { timeRange?: str
       case 'Award': return Award;
       default: return TrendingUp;
     }
-  };
+  }, []);
 
   // Memoize the error component
   const ErrorComponent = useMemo(() => (
@@ -86,8 +86,8 @@ const BusinessIntelligenceDashboard = ({ timeRange = 'week' }: { timeRange?: str
   // Memoize the loading skeleton
   const LoadingSkeleton = useMemo(() => loading ? <BusinessIntelligenceSkeleton /> : null, [loading]);
 
-  // Memoize the business intelligence card component
-  const BusinessIntelligenceCard = useMemo(() => React.memo(({ metric }: { metric: BusinessIntelligenceMetric }) => {
+  // Create the business intelligence card component
+  const BusinessIntelligenceCard = useCallback(({ metric }: { metric: BusinessIntelligenceMetric }) => {
     const IconComponent = getIconComponent(metric.icon);
     return (
       <Card className="hover:shadow-lg transition-shadow">
@@ -113,7 +113,7 @@ const BusinessIntelligenceDashboard = ({ timeRange = 'week' }: { timeRange?: str
         </CardContent>
       </Card>
     );
-  }), [getIconComponent]);
+  }, [getIconComponent]);
 
   if (loading) {
     return <BusinessIntelligenceSkeleton />;

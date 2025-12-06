@@ -158,16 +158,50 @@ const StatCard = ({
 
 // Transaction item component
 const TransactionItem = ({ transaction }: { transaction: CreditTransaction }) => {
+  // Defensive check for transaction
+  if (!transaction) {
+    return (
+      <div className="flex items-center justify-between p-3 border border-gray-100 rounded-lg">
+        <div className="text-gray-500">Invalid transaction data</div>
+      </div>
+    );
+  }
+
   const isCredit = transaction.transaction_type === 'credit_granted';
   const isUsed = transaction.transaction_type === 'credit_used';
   
   const iconConfig = {
     credit_granted: { Icon: CheckCircle, bgColor: 'bg-green-100', iconColor: 'text-green-600' },
     credit_used: { Icon: ShoppingCart, bgColor: 'bg-red-100', iconColor: 'text-red-600' },
-    credit_repaid: { Icon: Clock, bgColor: 'bg-blue-100', iconColor: 'text-blue-600' }
+    credit_repaid: { Icon: Clock, bgColor: 'bg-blue-100', iconColor: 'text-blue-600' },
+    credit_adjusted: { Icon: RefreshCw, bgColor: 'bg-yellow-100', iconColor: 'text-yellow-600' },
+    settlement: { Icon: TrendingUp, bgColor: 'bg-purple-100', iconColor: 'text-purple-600' }
   };
 
-  const config = iconConfig[transaction.transaction_type];
+  // Fallback for unknown transaction types
+  const config = iconConfig[transaction.transaction_type] || { 
+    Icon: Info, 
+    bgColor: 'bg-gray-100', 
+    iconColor: 'text-gray-600' 
+  };
+
+  // Get display description
+  const displayDescription = transaction.description || 
+    (transaction.transaction_type ? transaction.transaction_type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : 'Unknown Transaction');
+
+  // Format date safely
+  let formattedDate = 'Unknown Date';
+  try {
+    if (transaction.created_at) {
+      formattedDate = new Date(transaction.created_at).toLocaleDateString('en-US', { 
+        month: 'short', 
+        day: 'numeric', 
+        year: 'numeric' 
+      });
+    }
+  } catch (e) {
+    console.warn('Error formatting date:', e);
+  }
 
   return (
     <div className="flex items-center justify-between p-3 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors">
@@ -177,23 +211,25 @@ const TransactionItem = ({ transaction }: { transaction: CreditTransaction }) =>
         </div>
         <div>
           <p className="font-medium text-gray-900">
-            {transaction.description || transaction.transaction_type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+            {displayDescription}
           </p>
           <p className="text-sm text-gray-500">
-            {new Date(transaction.created_at).toLocaleDateString('en-US', { 
-              month: 'short', 
-              day: 'numeric', 
-              year: 'numeric' 
-            })}
+            {formattedDate}
           </p>
         </div>
       </div>
       <div className="text-right">
         <p className={`font-semibold ${isCredit ? 'text-green-600' : 'text-red-600'}`}>
-          {isCredit ? '+' : '-'}{formatCurrency(transaction.amount)}
+          {transaction.amount !== undefined ? (
+            <>
+              {isCredit ? '+' : '-'}{formatCurrency(transaction.amount)}
+            </>
+          ) : (
+            'N/A'
+          )}
         </p>
         <p className="text-sm text-gray-500">
-          Bal: {formatCurrency(transaction.balance_after)}
+          Bal: {transaction.balance_after !== undefined ? formatCurrency(transaction.balance_after) : 'N/A'}
         </p>
       </div>
     </div>

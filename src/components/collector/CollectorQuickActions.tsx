@@ -5,7 +5,6 @@ import {
   Users, 
   Wallet, 
   Route, 
-  Beaker, 
   Package,
   FileText,
   BarChart3,
@@ -50,13 +49,6 @@ const CollectorQuickActions = () => {
       icon: <Route className="h-6 w-6" />,
       color: "bg-teal-500",
       action: () => navigate('/collector/routes')
-    },
-    {
-      title: "Quality Control",
-      description: "Check milk quality parameters",
-      icon: <Beaker className="h-6 w-6" />,
-      color: "bg-yellow-500",
-      action: () => navigate('/collector/quality-control')
     },
     {
       title: "Inventory",

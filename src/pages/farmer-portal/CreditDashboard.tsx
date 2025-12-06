@@ -19,7 +19,9 @@ import {
   Home,
   PieChart,
   Settings,
-  Tag
+  Tag,
+  Trash2,
+  RefreshCw
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
@@ -68,6 +70,32 @@ const useLocalStorage = (key, initialValue) => {
 
   return [storedValue, setValue];
 };
+
+// Interfaces
+interface CreditRequest {
+  id: string;
+  farmer_id: string;
+  product_id: string;
+  product_name: string;
+  quantity: number;
+  unit_price: number;
+  total_amount: number;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  packaging_option_id?: string;
+  // Related data
+  agrovet_inventory?: {
+    name: string;
+    category: string;
+    unit: string;
+  };
+  product_packaging?: {
+    name: string;
+    weight: number;
+    unit: string;
+  };
+}
 
 // Database Service Functions
 const databaseService = {
@@ -151,6 +179,43 @@ const databaseService = {
       .eq('farmer_id', farmerId)
       .order('created_at', { ascending: false })
       .limit(limit);
+
+    if (error) throw error;
+    return data;
+  },
+
+  // Get farmer's credit requests
+  async getFarmerCreditRequests(farmerId: string) {
+    const { data, error } = await supabase
+      .from('credit_requests')
+      .select(`
+        *,
+        agrovet_inventory (
+          name,
+          category,
+          unit
+        ),
+        product_packaging (
+          name,
+          weight,
+          unit
+        )
+      `)
+      .eq('farmer_id', farmerId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data as CreditRequest[];
+  },
+
+  // Delete a pending credit request
+  async deleteCreditRequest(requestId: string, farmerId: string) {
+    const { data, error } = await supabase
+      .from('credit_requests')
+      .delete()
+      .eq('id', requestId)
+      .eq('farmer_id', farmerId)
+      .eq('status', 'pending');
 
     if (error) throw error;
     return data;
@@ -295,7 +360,7 @@ const StatCard = ({ icon: Icon, title, value, subtitle, trend, className = "" })
       <div className="p-2 bg-blue-100 rounded-lg">
         <Icon className="w-5 h-5 text-blue-600" />
       </div>
-      {trend && (
+      {trend !== undefined && (
         <span className={`text-sm font-medium ${trend > 0 ? 'text-green-600' : 'text-red-600'}`}>
           {trend > 0 ? '+' : ''}{trend}%
         </span>
@@ -307,140 +372,83 @@ const StatCard = ({ icon: Icon, title, value, subtitle, trend, className = "" })
   </div>
 );
 
-// Enhanced Product Card with Packaging Options
-const ProductCard = ({ product, onAddToCart, disabled }) => (
-  <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-all duration-300 group">
-    <div className="p-5 text-center bg-gradient-to-br from-gray-50 to-gray-100">
-      <div className="text-5xl mb-3 transform group-hover:scale-110 transition-transform duration-200">
-        {product.image_url ? (
-          <img 
-            src={product.image_url} 
-            alt={product.name} 
-            className="w-16 h-16 mx-auto object-contain"
-            onError={(e) => {
-              const target = e.target as HTMLImageElement;
-              target.src = "https://placehold.co/64x64?text=Product";
-            }}
-          />
-        ) : (
-          '📦'
-        )}
-      </div>
-      <span className="inline-block px-3 py-1 bg-white rounded-full text-xs font-medium text-gray-600 border border-gray-200">
-        {product.category}
-      </span>
-    </div>
-    <div className="p-5">
-      <h3 className="font-bold text-gray-900 mb-2 line-clamp-1">{product.name}</h3>
-      <p className="text-sm text-gray-500 mb-4 line-clamp-2">{product.description}</p>
-      
-      {product.packaging_options && product.packaging_options.length > 0 ? (
-        <div className="space-y-3">
-          {product.packaging_options.map((packaging) => (
-            <div 
-              key={packaging.id} 
-              className="border border-gray-200 rounded-lg p-3 hover:border-blue-300 transition-colors"
-            >
-              <div className="flex justify-between items-start mb-2">
-                <div>
-                  <div className="font-semibold text-gray-900">{packaging.name}</div>
-                  <div className="text-xs text-gray-500">
-                    {packaging.weight} {packaging.unit}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="font-bold text-blue-600">{formatCurrency(packaging.price)}</div>
-                  {packaging.is_credit_eligible ? (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 mt-1">
-                      Credit
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 mt-1">
-                      Cash Only
-                    </span>
-                  )}
-                </div>
-              </div>
-              <button
-                onClick={() => onAddToCart(product, packaging)}
-                disabled={disabled || !packaging.is_credit_eligible}
-                className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm font-medium mt-2"
-              >
-                <ShoppingCart className="w-4 h-4" />
-                Add to Cart
-              </button>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="text-center py-4 text-gray-500">
-          <Package className="w-8 h-8 mx-auto mb-2" />
-          <p className="text-sm">No packaging options available</p>
-        </div>
-      )}
-    </div>
-  </div>
-);
+// Credit Request Item Component
+const CreditRequestItem = ({ request, onDelete }: { request: CreditRequest; onDelete: (id: string) => void }) => {
+  const [isDeleting, setIsDeleting] = useState(false);
 
-// Enhanced Cart Item with Packaging
-const CartItem = ({ item, onUpdateQuantity, onRemove }) => (
-  <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-    <div className="flex gap-4">
-      <div className="w-16 h-16 bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg flex items-center justify-center text-3xl">
-        {item.product.image_url ? (
-          <img 
-            src={item.product.image_url} 
-            alt={item.product.name} 
-            className="w-12 h-12 object-contain"
-            onError={(e) => {
-              const target = e.target as HTMLImageElement;
-              target.src = "https://placehold.co/48x48?text=Product";
-            }}
-          />
-        ) : (
-          '📦'
+  const handleDelete = async () => {
+    if (!window.confirm('Are you sure you want to delete this credit request?')) {
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      await onDelete(request.id);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+      <div className="flex justify-between items-start mb-3">
+        <div>
+          <h3 className="font-bold text-gray-900">
+            {request.agrovet_inventory?.name || request.product_name}
+            {request.product_packaging && (
+              <span className="ml-2 text-sm font-normal text-gray-600">
+                ({request.product_packaging.name})
+              </span>
+            )}
+          </h3>
+          <p className="text-sm text-gray-500 mt-1">
+            Requested on {new Date(request.created_at).toLocaleDateString()}
+          </p>
+        </div>
+        {request.status === 'pending' && (
+          <button
+            onClick={handleDelete}
+            disabled={isDeleting}
+            className="text-red-500 hover:text-red-700 transition-colors p-1 rounded disabled:opacity-50"
+          >
+            {isDeleting ? (
+              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-red-500"></div>
+            ) : (
+              <Trash2 className="w-5 h-5" />
+            )}
+          </button>
         )}
       </div>
-      <div className="flex-1">
-        <div className="flex justify-between items-start mb-2">
-          <div>
-            <h3 className="font-bold text-gray-900">{item.product.name}</h3>
-            <p className="text-sm text-gray-500">{item.packaging.name}</p>
-            <p className="text-xs text-gray-400">{item.packaging.weight} {item.packaging.unit}</p>
+      
+      <div className="flex justify-between items-center">
+        <div className="flex items-center gap-4">
+          <div className="text-sm">
+            <span className="text-gray-500">Quantity: </span>
+            <span className="font-medium">{request.quantity} {request.agrovet_inventory?.unit}</span>
           </div>
-          <button
-            onClick={() => onRemove(item.product.id, item.packaging.id)}
-            className="text-red-500 hover:text-red-700 transition-colors p-1 rounded"
-          >
-            ×
-          </button>
+          <div className="text-sm">
+            <span className="text-gray-500">Price: </span>
+            <span className="font-medium">{formatCurrency(request.unit_price)}</span>
+          </div>
         </div>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3 bg-gray-100 rounded-lg p-1">
-            <button
-              onClick={() => onUpdateQuantity(item.product.id, item.packaging.id, -1)}
-              className="w-8 h-8 flex items-center justify-center hover:bg-white rounded transition-colors disabled:opacity-50"
-              disabled={item.quantity <= 1}
-            >
-              <Minus className="w-4 h-4" />
-            </button>
-            <span className="font-semibold w-8 text-center">{item.quantity}</span>
-            <button
-              onClick={() => onUpdateQuantity(item.product.id, item.packaging.id, 1)}
-              className="w-8 h-8 flex items-center justify-center hover:bg-white rounded transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
-          </div>
-          <div className="text-right">
-            <div className="text-sm text-gray-500">{formatCurrency(item.packaging.price)} each</div>
-            <div className="font-bold text-gray-900">{formatCurrency(item.packaging.price * item.quantity)}</div>
-          </div>
+        <div className="text-right">
+          <div className="text-sm text-gray-500">Total</div>
+          <div className="font-bold text-gray-900">{formatCurrency(request.total_amount)}</div>
         </div>
       </div>
+      
+      <div className="mt-3">
+        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+          request.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+          request.status === 'approved' ? 'bg-green-100 text-green-800' :
+          'bg-red-100 text-red-800'
+        }`}>
+          {request.status.charAt(0).toUpperCase() + request.status.slice(1)}
+        </span>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 // Main Component
 const EnhancedCreditSystem = () => {
@@ -450,6 +458,7 @@ const EnhancedCreditSystem = () => {
   const [cart, setCart] = useLocalStorage('farmerCreditCart', []);
   const [purchases, setPurchases] = useState([]);
   const [creditHistory, setCreditHistory] = useState([]);
+  const [creditRequests, setCreditRequests] = useState<CreditRequest[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [checkoutSuccess, setCheckoutSuccess] = useState(false);
@@ -503,23 +512,58 @@ const EnhancedCreditSystem = () => {
         farmerData,
         inventoryData,
         transactionsData,
-        purchasesData
+        purchasesData,
+        requestsData
       ] = await Promise.all([
         databaseService.getFarmerCreditProfile(farmerId),
         databaseService.getAgrovetInventoryWithPackaging(),
         databaseService.getCreditTransactions(farmerId),
-        databaseService.getFarmerPurchases(farmerId)
+        databaseService.getFarmerPurchases(farmerId),
+        databaseService.getFarmerCreditRequests(farmerId)
       ]);
 
       setFarmer(farmerData);
       setInventory(inventoryData);
       setCreditHistory(transactionsData);
       setPurchases(purchasesData);
+      setCreditRequests(requestsData);
     } catch (err) {
       console.error('Error loading data:', err);
       setError('Failed to load data. Please try again.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Add function to delete credit request
+  const deleteCreditRequest = async (requestId: string) => {
+    try {
+      const farmerId = await getFarmerId();
+      if (!farmerId) return;
+
+      await databaseService.deleteCreditRequest(requestId, farmerId);
+      
+      // Refresh the requests list
+      await loadCreditRequests();
+      
+      // Also refresh other data that might be affected
+      await loadInitialData();
+    } catch (err) {
+      console.error('Error deleting credit request:', err);
+      alert('Failed to delete credit request. Please try again.');
+    }
+  };
+
+  // Add function to load credit requests
+  const loadCreditRequests = async () => {
+    try {
+      const farmerId = await getFarmerId();
+      if (!farmerId) return;
+
+      const requestsData = await databaseService.getFarmerCreditRequests(farmerId);
+      setCreditRequests(requestsData);
+    } catch (err) {
+      console.error('Error loading credit requests:', err);
     }
   };
 
@@ -657,6 +701,8 @@ const EnhancedCreditSystem = () => {
   const DashboardView = () => {
     if (!farmerUI) return <LoadingSpinner />;
 
+    const pendingRequests = creditRequests.filter(req => req.status === 'pending');
+
     return (
       <div className="space-y-6">
         {/* Header */}
@@ -680,6 +726,7 @@ const EnhancedCreditSystem = () => {
             title="Available Credit"
             value={formatCurrency(farmerUI.availableCredit)}
             subtitle={`of ${formatCurrency(farmerUI.creditLimit)}`}
+            trend={0}
           />
 
           <StatCard
@@ -687,6 +734,7 @@ const EnhancedCreditSystem = () => {
             title="Credit Used"
             value={formatCurrency(farmerUI.creditUsed)}
             subtitle="Total credit utilized"
+            trend={0}
           />
 
           <StatCard
@@ -694,6 +742,7 @@ const EnhancedCreditSystem = () => {
             title="Pending Payments"
             value={formatCurrency(farmerUI.pendingPayments)}
             subtitle="From milk collections"
+            trend={0}
           />
 
           <StatCard
@@ -701,8 +750,35 @@ const EnhancedCreditSystem = () => {
             title="Utilization Rate"
             value={`${((farmerUI.creditUsed / farmerUI.creditLimit) * 100).toFixed(1)}%`}
             subtitle="Current usage"
+            trend={0}
           />
         </div>
+
+        {/* Pending Credit Requests Alert */}
+        {pendingRequests.length > 0 && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Clock className="w-5 h-5 text-yellow-600" />
+                <div>
+                  <div className="font-semibold text-yellow-900">
+                    You have {pendingRequests.length} pending credit request{pendingRequests.length > 1 ? 's' : ''}
+                  </div>
+                  <div className="text-sm text-yellow-700">
+                    These requests are awaiting approval from the admin team.
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setCurrentView('requests')}
+                className="text-yellow-700 hover:text-yellow-900 font-medium text-sm flex items-center gap-1"
+              >
+                View Requests
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Quick Actions */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -815,15 +891,13 @@ const EnhancedCreditSystem = () => {
   const ShopView = () => (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <button onClick={() => setCurrentView('dashboard')} className="p-2 hover:bg-gray-100 rounded-lg">
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900">Shop with Credit</h2>
-            <p className="text-gray-500">Browse and add items to your cart</p>
-          </div>
+      <div className="flex items-center gap-4">
+        <button onClick={() => setCurrentView('dashboard')} className="p-2 hover:bg-gray-100 rounded-lg">
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Shop with Credit</h2>
+          <p className="text-gray-500">Browse and add items to your cart</p>
         </div>
         <button
           onClick={() => setCurrentView('checkout')}
@@ -1121,14 +1195,14 @@ const EnhancedCreditSystem = () => {
             <h3 className="font-semibold text-gray-900 mb-6">Spending by Category</h3>
             <div className="space-y-4">
               {Object.entries(spendingByCategory).map(([category, amount], index) => {
-                const percentage = totalSpent > 0 ? (amount / totalSpent) * 100 : 0;
+                const percentage = totalSpent > 0 ? (Number(amount) / Number(totalSpent)) * 100 : 0;
                 const colors = ['bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-amber-500'];
 
                 return (
                   <div key={category}>
                     <div className="flex justify-between mb-2">
                       <span className="text-sm font-medium text-gray-700">{category}</span>
-                      <span className="text-sm text-gray-600">{formatCurrency(amount)}</span>
+                      <span className="text-sm text-gray-600">{formatCurrency(Number(amount))}</span>
                     </div>
                     <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
                       <div
@@ -1309,6 +1383,63 @@ const EnhancedCreditSystem = () => {
     );
   };
 
+  // Requests View
+  const RequestsView = () => (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center gap-4">
+        <button onClick={() => setCurrentView('dashboard')} className="p-2 hover:bg-gray-100 rounded-lg">
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">My Credit Requests</h2>
+          <p className="text-gray-500">View and manage your credit requests</p>
+        </div>
+      </div>
+
+      {creditRequests.length === 0 ? (
+        <div className="bg-white rounded-lg p-12 text-center shadow-sm border border-gray-100">
+          <CreditCard className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+          <h3 className="text-xl font-semibold text-gray-900 mb-2">No credit requests</h3>
+          <p className="text-gray-500 mb-6">You haven't submitted any credit requests yet.</p>
+          <button
+            onClick={() => setCurrentView('shop')}
+            className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700"
+          >
+            Shop with Credit
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <h3 className="text-lg font-semibold text-gray-900">
+              Showing {creditRequests.length} request{creditRequests.length > 1 ? 's' : ''}
+            </h3>
+            <div className="flex gap-2">
+              <button
+                onClick={loadCreditRequests}
+                className="text-sm text-gray-600 hover:text-gray-900 flex items-center gap-1"
+              >
+                <RefreshCw className="w-4 h-4" />
+                Refresh
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {creditRequests.map(request => (
+              <CreditRequestItem 
+                key={request.id} 
+                request={request} 
+                onDelete={deleteCreditRequest} 
+              />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   // Main Render
   if (loading && !farmer) {
     return (
@@ -1343,9 +1474,145 @@ const EnhancedCreditSystem = () => {
         {currentView === 'shop' && <ShopView />}
         {currentView === 'checkout' && <CheckoutView />}
         {currentView === 'analytics' && <AnalyticsView />}
+        {currentView === 'requests' && <RequestsView />}
       </div>
     </div>
   );
 };
+
+// Enhanced Product Card with Packaging Options
+const ProductCard = ({ product, onAddToCart, disabled }) => (
+  <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-all duration-300 group">
+    <div className="p-5 text-center bg-gradient-to-br from-gray-50 to-gray-100">
+      <div className="text-5xl mb-3 transform group-hover:scale-110 transition-transform duration-200">
+        {product.image_url ? (
+          <img 
+            src={product.image_url} 
+            alt={product.name} 
+            className="w-16 h-16 mx-auto object-contain"
+            onError={(e) => {
+              const target = e.target as HTMLImageElement;
+              target.src = "https://placehold.co/64x64?text=Product";
+            }}
+          />
+        ) : (
+          '📦'
+        )}
+      </div>
+      <span className="inline-block px-3 py-1 bg-white rounded-full text-xs font-medium text-gray-600 border border-gray-200">
+        {product.category}
+      </span>
+    </div>
+    <div className="p-5">
+      <h3 className="font-bold text-gray-900 mb-2 line-clamp-1">{product.name}</h3>
+      <p className="text-sm text-gray-500 mb-4 line-clamp-2">{product.description}</p>
+      
+      {product.packaging_options && product.packaging_options.length > 0 ? (
+        <div className="space-y-3">
+          {product.packaging_options.map((packaging) => (
+            <div 
+              key={packaging.id} 
+              className="border border-gray-200 rounded-lg p-3 hover:border-blue-300 transition-colors"
+            >
+              <div className="flex justify-between items-start mb-2">
+                <div>
+                  <div className="font-semibold text-gray-900">{packaging.name}</div>
+                  <div className="text-xs text-gray-500">
+                    {packaging.weight} {packaging.unit}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="font-bold text-blue-600">{formatCurrency(packaging.price)}</div>
+                  {packaging.is_credit_eligible ? (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 mt-1">
+                      Credit
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 mt-1">
+                      Cash Only
+                    </span>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={() => onAddToCart(product, packaging)}
+                disabled={disabled || !packaging.is_credit_eligible}
+                className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm font-medium mt-2"
+              >
+                <ShoppingCart className="w-4 h-4" />
+                Add to Cart
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-4 text-gray-500">
+          <Package className="w-8 h-8 mx-auto mb-2" />
+          <p className="text-sm">No packaging options available</p>
+        </div>
+      )}
+    </div>
+  </div>
+);
+
+// Enhanced Cart Item with Packaging
+const CartItem = ({ item, onUpdateQuantity, onRemove }) => (
+  <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+    <div className="flex gap-4">
+      <div className="w-16 h-16 bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg flex items-center justify-center text-3xl">
+        {item.product.image_url ? (
+          <img 
+            src={item.product.image_url} 
+            alt={item.product.name} 
+            className="w-12 h-12 object-contain"
+            onError={(e) => {
+              const target = e.target as HTMLImageElement;
+              target.src = "https://placehold.co/48x48?text=Product";
+            }}
+          />
+        ) : (
+          '📦'
+        )}
+      </div>
+      <div className="flex-1">
+        <div className="flex justify-between items-start mb-2">
+          <div>
+            <h3 className="font-bold text-gray-900">{item.product.name}</h3>
+            <p className="text-sm text-gray-500">{item.packaging.name}</p>
+            <p className="text-xs text-gray-400">{item.packaging.weight} {item.packaging.unit}</p>
+          </div>
+          <button
+            onClick={() => onRemove(item.product.id, item.packaging.id)}
+            className="text-red-500 hover:text-red-700 transition-colors p-1 rounded"
+          >
+            ×
+          </button>
+        </div>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3 bg-gray-100 rounded-lg p-1">
+            <button
+              onClick={() => onUpdateQuantity(item.product.id, item.packaging.id, -1)}
+              className="w-8 h-8 flex items-center justify-center hover:bg-white rounded transition-colors disabled:opacity-50"
+              disabled={item.quantity <= 1}
+            >
+              <Minus className="w-4 h-4" />
+            </button>
+            <span className="font-semibold w-8 text-center">{item.quantity}</span>
+            <button
+              onClick={() => onUpdateQuantity(item.product.id, item.packaging.id, 1)}
+              className="w-8 h-8 flex items-center justify-center hover:bg-white rounded transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="text-right">
+            <div className="text-sm text-gray-500">{formatCurrency(item.packaging.price)} each</div>
+            <div className="font-bold text-gray-900">{formatCurrency(item.packaging.price * item.quantity)}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+);
 
 export default EnhancedCreditSystem;

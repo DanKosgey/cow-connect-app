@@ -432,4 +432,54 @@ export class CreditRequestService {
       throw error;
     }
   }
+
+  // Delete a pending credit request
+  static async deletePendingCreditRequest(requestId: string, farmerId: string): Promise<{ success: boolean; errorMessage?: string }> {
+    try {
+      // First, verify that the request exists and belongs to the farmer
+      const { data: request, error: fetchError } = await supabase
+        .from('credit_requests')
+        .select('id, farmer_id, status')
+        .eq('id', requestId)
+        .eq('farmer_id', farmerId)
+        .eq('status', 'pending')
+        .maybeSingle();
+
+      if (fetchError) {
+        logger.errorWithContext('CreditRequestService - fetching request for deletion', fetchError);
+        return { success: false, errorMessage: 'Failed to verify request' };
+      }
+
+      if (!request) {
+        logger.warn(`CreditRequestService - deletePendingCreditRequest: Request not found or not eligible for deletion`, {
+          requestId,
+          farmerId
+        });
+        return { success: false, errorMessage: 'Request not found or cannot be deleted' };
+      }
+
+      // Delete the credit request
+      const { error: deleteError } = await supabase
+        .from('credit_requests')
+        .delete()
+        .eq('id', requestId);
+
+      if (deleteError) {
+        logger.errorWithContext('CreditRequestService - deleting credit request', deleteError);
+        return { success: false, errorMessage: 'Failed to delete request' };
+      }
+
+      logger.info(`CreditRequestService - deletePendingCreditRequest: Request deleted successfully`, {
+        requestId,
+        farmerId
+      });
+
+      return { success: true };
+    } catch (error) {
+      logger.errorWithContext('CreditRequestService - deletePendingCreditRequest', error);
+      return { success: false, errorMessage: (error as Error).message };
+    }
+  }
 }
+
+export default CreditRequestService;

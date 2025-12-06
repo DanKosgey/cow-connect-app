@@ -56,6 +56,8 @@ const VarianceInsightsDashboard = lazy(() => import('@/pages/admin/VarianceInsig
 const CollectorsPage = lazy(() => import('@/pages/admin/CollectorsPage'));
 const CollectionsDebugPage = lazy(() => import('@/pages/admin/CollectionsDebugPage'));
 const ServicesPage = lazy(() => import('@/pages/admin/ServicesPage'));
+const AdminAIInstructionsPage = lazy(() => import('@/pages/admin/ai/AdminAIInstructionsPage'));
+const AdminAIMonitoringDashboard = lazy(() => import('@/pages/admin/ai/AdminAIMonitoringDashboard'));
 
 export const adminRoutes = [
   { path: '/admin/login', element: <AdminLogin /> },
@@ -93,6 +95,8 @@ export const adminRoutes = [
   { path: '/admin/collectors', element: <CollectorsPage /> },
   { path: '/admin/collections-debug', element: <CollectionsDebugPage /> },
   { path: '/admin/deductions', element: <ServicesPage /> },
+  { path: '/admin/ai-instructions', element: <AdminAIInstructionsPage /> },
+  { path: '/admin/ai-monitoring', element: <AdminAIMonitoringDashboard /> },
   { path: '/admin', element: <Navigate to="/admin/dashboard" replace /> },
 ];
 
@@ -189,6 +193,8 @@ export default function AdminRoutes() {
                 <Route path="collectors" element={<CollectorsPage />} />
                 <Route path="collections-debug" element={<CollectionsDebugPage />} />
                 <Route path="deductions" element={<ServicesPage />} />
+                <Route path="ai-instructions" element={<AdminAIInstructionsPage />} />
+                <Route path="ai-monitoring" element={<AdminAIMonitoringDashboard />} />
                 <Route index element={<Navigate to="dashboard" replace />} />
                 <Route path="*" element={<Navigate to="/admin" replace />} />
               </Routes>

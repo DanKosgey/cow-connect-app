@@ -268,7 +268,7 @@ const CollectionsAnalyticsDashboard = () => {
       .slice(0, 10);
 
     return { dailyTrends, qualityDistribution, topFarmers, staffPerformance };
-  }, [filteredCollections]);
+  }, [filteredCollections]); // Only depend on filteredCollections
 
   // Stabilize chart data to prevent blinking
   const { data: stableDailyTrends } = useChartStabilizer(analytics.dailyTrends, 100);

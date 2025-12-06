@@ -15,8 +15,7 @@ BEGIN
             OLD.liters IS DISTINCT FROM NEW.liters OR
             OLD.farmer_id IS DISTINCT FROM NEW.farmer_id OR
             OLD.staff_id IS DISTINCT FROM NEW.staff_id OR
-            OLD.collection_date IS DISTINCT FROM NEW.collection_date OR
-            OLD.quality_grade IS DISTINCT FROM NEW.quality_grade
+            OLD.collection_date IS DISTINCT FROM NEW.collection_date
         ) THEN
             -- Allow modifications only if they are done by authorized system processes
             -- Check if this is an approval update (which is allowed)

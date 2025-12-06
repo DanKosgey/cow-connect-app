@@ -139,7 +139,7 @@ const PaymentSystem = () => {
     total_credit_used: 0,
     total_net_payment: 0
   };
-  
+
   const [filteredCollections, setFilteredCollections] = useState<Collection[]>([]);
 
   // Rate configuration state
@@ -153,6 +153,34 @@ const PaymentSystem = () => {
     ratePerLiter: 0,
     effectiveFrom: new Date().toISOString().split('T')[0]
   });
+
+  // Calculate credit analytics based on the correct model
+  const creditAnalytics = {
+    totalCreditUsed: farmerPaymentSummaries.reduce((sum, farmer) => 
+      sum + (farmer.credit_used || 0), 0
+    ),
+    creditImpact: farmerPaymentSummaries.length > 0 && 
+                  farmerPaymentSummaries.reduce((sum, farmer) => sum + farmer.total_gross_amount, 0) > 0 ? 
+      (farmerPaymentSummaries.reduce((sum, farmer) => 
+        sum + (farmer.credit_used || 0), 0) / 
+       farmerPaymentSummaries.reduce((sum, farmer) => 
+        sum + farmer.total_gross_amount, 0)) * 100 : 0,
+    creditDistribution: farmerPaymentSummaries
+      .filter(farmer => (farmer.credit_used || 0) > 0)
+      .map(farmer => ({
+        name: farmer.farmer_name,
+        totalAmount: farmer.total_gross_amount,
+        creditUsed: farmer.credit_used || 0,
+        netPayment: farmer.net_payment || 0,
+        creditPercentage: farmer.total_gross_amount > 0 ? 
+          ((farmer.credit_used || 0) / farmer.total_gross_amount) * 100 : 0,
+        status: 'Active'
+      }))
+      .sort((a, b) => b.creditUsed - a.creditUsed),
+    totalPendingDeductions: farmerPaymentSummaries.reduce((sum, farmer) => 
+      sum + (farmer.credit_used || 0), 0
+    )
+  };
 
   // Fetch current milk rate and collector rate on component mount
   useEffect(() => {
@@ -1052,214 +1080,134 @@ const PaymentSystem = () => {
             </div>
           )}
 
-          {/* Analytics Tab */}
+          {/* Credit Analytics Section */}
           {activeTab === 'analytics' && (
             <div className="space-y-6">
-              {/* Credit Analytics Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <CreditCard className="w-5 h-5 text-purple-600" />
-                      Credit Utilization
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart
-                          data={farmerPaymentSummaries
-                            .filter(f => f.credit_used > 0)
-                            .slice(0, 10)
-                            .map(f => ({
-                              name: f.farmer_name.split(' ')[0],
-                              credit: f.credit_used,
-                              total: f.total_gross_amount
-                            }))}
-
-                        >
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="name" />
-                          <YAxis />
-                          <Tooltip formatter={(value) => formatCurrency(Number(value))} />
-                          <Legend />
-                          <Bar dataKey="credit" name="Credit Used" fill="#8b5cf6" />
-                          <Bar dataKey="total" name="Total Amount" fill="#3b82f6" />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <PieChart className="w-5 h-5 text-blue-600" />
-                      Payment Distribution
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
+              {/* Credit Utilization Overview */}
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <h3 className="text-xl font-bold text-gray-900 mb-6">Credit Utilization</h3>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {/* Credit Distribution Pie Chart */}
+                  <div className="md:col-span-2">
+                    <h4 className="font-semibold text-gray-800 mb-4">Credit Distribution</h4>
                     <div className="h-64">
                       <ResponsiveContainer width="100%" height="100%">
                         <RechartsPieChart>
                           <Pie
-                            data={[
-                              { name: 'Paid', value: analytics.total_paid },
-                              { name: 'Pending', value: analytics.total_pending },
-                              { name: 'Credit Used', value: analytics.total_credit_used }
-                            ]}
+                            data={creditAnalytics.creditDistribution.slice(0, 5)}
                             cx="50%"
                             cy="50%"
                             labelLine={false}
                             outerRadius={80}
                             fill="#8884d8"
-                            dataKey="value"
+                            dataKey="creditUsed"
                             nameKey="name"
                             label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
                           >
-                            <Cell key="cell-0" fill="#10b981" />
-                            <Cell key="cell-1" fill="#f59e0b" />
-                            <Cell key="cell-2" fill="#8b5cf6" />
+                            {creditAnalytics.creditDistribution.slice(0, 5).map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                            ))}
                           </Pie>
                           <Tooltip formatter={(value) => formatCurrency(Number(value))} />
+                          <Legend />
                         </RechartsPieChart>
                       </ResponsiveContainer>
                     </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <TrendingUp className="w-5 h-5 text-green-600" />
-                      Credit Impact
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      <div>
-                        <div className="flex justify-between mb-1">
-                          <span className="text-sm text-gray-600">Gross Payments</span>
-                          <span className="text-sm font-medium">{formatCurrency(analytics.total_paid + analytics.total_pending)}</span>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div 
-                            className="bg-blue-600 h-2 rounded-full" 
-                            style={{ width: '100%' }}
-                          ></div>
-                        </div>
-                      </div>
-                      <div>
-                        <div className="flex justify-between mb-1">
-                          <span className="text-sm text-gray-600">Credit Deductions</span>
-                          <span className="text-sm font-medium text-purple-600">
-                            {formatCurrency(analytics.total_credit_used)}
-                          </span>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div 
-                            className="bg-purple-600 h-2 rounded-full" 
-                            style={{ 
-                              width: `${(analytics.total_credit_used / (analytics.total_paid + analytics.total_pending)) * 100 || 0}%` 
-                            }}
-                          ></div>
-                        </div>
-                      </div>
-                      <div>
-                        <div className="flex justify-between mb-1">
-                          <span className="text-sm text-gray-600">Net Payments</span>
-                          <span className="text-sm font-medium text-green-600">
-                            {formatCurrency(analytics.total_net_payment)}
-                          </span>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div 
-                            className="bg-green-600 h-2 rounded-full" 
-                            style={{ 
-                              width: `${(analytics.total_net_payment / (analytics.total_paid + analytics.total_pending)) * 100 || 0}%` 
-                            }}
-                          ></div>
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Detailed Credit Analytics */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <BarChart3 className="w-5 h-5 text-indigo-600" />
-                    Credit Analytics by Farmer
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Farmer</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Amount</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Credit Used</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Net Payment</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Credit %</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {farmerPaymentSummaries
-                          .filter(f => f.credit_used > 0)
-                          .map((farmer) => {
-                            const creditPercentage = farmer.total_gross_amount > 0 
-                              ? (farmer.credit_used / farmer.total_gross_amount) * 100 
-                              : 0;
-                            return (
-                              <tr key={farmer.farmer_id} className="hover:bg-gray-50">
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  <div className="text-sm font-medium text-gray-900">{farmer.farmer_name}</div>
-                                  <div className="text-sm text-gray-500">{farmer.farmer_phone}</div>
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                  {formatCurrency(farmer.total_gross_amount)}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-purple-600 font-medium">
-                                  {formatCurrency(farmer.credit_used)}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium">
-                                  {formatCurrency(farmer.net_payment)}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                                    creditPercentage > 50 
-                                      ? 'bg-red-100 text-red-800' 
-                                      : creditPercentage > 25 
-                                        ? 'bg-yellow-100 text-yellow-800' 
-                                        : 'bg-green-100 text-green-800'
-                                  }`}>
-                                    {creditPercentage.toFixed(1)}%
-                                  </span>
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                    Active
-                                  </span>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                      </tbody>
-                    </table>
                   </div>
                   
-                  {farmerPaymentSummaries.filter(f => f.credit_used > 0).length === 0 && (
-                    <div className="text-center py-8 text-gray-500">
-                      <CreditCard className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                      <p>No credit usage data available</p>
+                  {/* Credit Metrics */}
+                  <div className="space-y-4">
+                    <div className="bg-purple-50 p-4 rounded-lg">
+                      <p className="text-sm text-purple-700">Total Credit Used</p>
+                      <p className="text-2xl font-bold text-purple-900">{formatCurrency(creditAnalytics.totalCreditUsed)}</p>
+                      <p className="text-xs text-purple-600">Pending deductions from payments</p>
                     </div>
-                  )}
-                </CardContent>
-              </Card>
+                    
+                    <div className="bg-indigo-50 p-4 rounded-lg">
+                      <p className="text-sm text-indigo-700">Credit Impact</p>
+                      <p className="text-2xl font-bold text-indigo-900">{creditAnalytics.creditImpact.toFixed(1)}%</p>
+                      <p className="text-xs text-indigo-600">Of total payments</p>
+                    </div>
+                    
+                    <div className="bg-blue-50 p-4 rounded-lg">
+                      <p className="text-sm text-blue-700">Active Credit Users</p>
+                      <p className="text-2xl font-bold text-blue-900">{creditAnalytics.creditDistribution.length}</p>
+                      <p className="text-xs text-blue-600">Farmers using credit</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Credit Impact Analysis */}
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <h3 className="text-xl font-bold text-gray-900 mb-6">Credit Impact Analysis</h3>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                  <div className="bg-green-50 p-4 rounded-lg">
+                    <p className="text-sm text-green-700">Gross Payments</p>
+                    <p className="text-xl font-bold text-green-900">{formatCurrency(analytics.total_pending + analytics.total_paid)}</p>
+                  </div>
+                  
+                  <div className="bg-purple-50 p-4 rounded-lg">
+                    <p className="text-sm text-purple-700">Credit Deductions</p>
+                    <p className="text-xl font-bold text-purple-900">{formatCurrency(analytics.total_credit_used)}</p>
+                    <p className="text-xs text-purple-600">Pending deductions from payments</p>
+                  </div>
+                  
+                  <div className="bg-indigo-50 p-4 rounded-lg">
+                    <p className="text-sm text-indigo-700">Net Payments</p>
+                    <p className="text-xl font-bold text-indigo-900">{formatCurrency(analytics.total_net_payment)}</p>
+                  </div>
+                </div>
+                
+                {/* Credit Analytics by Farmer */}
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Farmer</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Amount</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Credit Used</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Net Payment</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Credit %</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {creditAnalytics.creditDistribution.map((farmer, index) => (
+                        <tr key={index}>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{farmer.name}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{formatCurrency(farmer.totalAmount)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{formatCurrency(farmer.creditUsed)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{formatCurrency(farmer.netPayment)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                              farmer.creditPercentage > 20 ? 'bg-red-100 text-red-800' : 
+                              farmer.creditPercentage > 10 ? 'bg-yellow-100 text-yellow-800' : 
+                              'bg-green-100 text-green-800'
+                            }`}>
+                              {farmer.creditPercentage.toFixed(1)}%
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                              {farmer.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                      {creditAnalytics.creditDistribution.length === 0 && (
+                        <tr>
+                          <td colSpan={6} className="px-6 py-4 text-center text-sm text-gray-500">
+                            No credit usage data available
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           )}
 

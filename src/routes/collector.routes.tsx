@@ -26,7 +26,6 @@ const FarmerDirectory = lazy(() => import("../components/collector/EnhancedFarme
 const PerformanceDashboard = lazy(() => import("../components/collector/EnhancedPerformanceDashboard"));
 const CollectorPortalLanding = lazy(() => import("../pages/collector-portal/CollectorPortalLanding"));
 const CollectorPerformanceTracking = lazy(() => import("../components/collector/CollectorPerformanceTracking"));
-const QualityControlManagement = lazy(() => import("../components/collector/QualityControlManagement"));
 const InventoryManagement = lazy(() => import("../components/collector/InventoryManagement"));
 const ComprehensiveReporting = lazy(() => import("../components/collector/ComprehensiveReporting"));
 const MilkApprovalPage = lazy(() => import("../pages/staff-portal/MilkApprovalPage"));
@@ -39,7 +38,6 @@ const CollectorEarningsPage = lazy(() => import("../pages/collector-portal/Colle
 const CollectorNotifications = lazy(() => import("../components/collector/CollectorNotifications"));
 const CollectorQuickActions = lazy(() => import("../components/collector/CollectorQuickActions"));
 const FarmerVisitsTracker = lazy(() => import("../components/collector/FarmerVisitsTracker"));
-const QualityReports = lazy(() => import("../components/collector/QualityReports"));
 const PerformanceInsights = lazy(() => import("../components/collector/PerformanceInsights"));
 
 export default function CollectorRoutes() {
@@ -73,13 +71,11 @@ export default function CollectorRoutes() {
                 <Route path="performance" element={<PerformanceDashboard />} />
                 <Route path="analytics" element={<DetailedAnalytics />} />
                 <Route path="performance-tracking" element={<CollectorPerformanceTracking />} />
-                <Route path="quality-control" element={<QualityControlManagement />} />
                 <Route path="inventory" element={<InventoryManagement />} />
                 <Route path="reports" element={<ComprehensiveReporting />} />
                 <Route path="notifications" element={<CollectorNotifications />} />
                 <Route path="quick-actions" element={<CollectorQuickActions />} />
                 <Route path="farmer-visits" element={<FarmerVisitsTracker />} />
-                <Route path="quality-reports" element={<QualityReports />} />
                 <Route path="performance-insights" element={<PerformanceInsights />} />
                 <Route path="milk-approval" element={<MilkApprovalPage />} />
                 <Route path="variance-reports" element={<VarianceReportPage />} />

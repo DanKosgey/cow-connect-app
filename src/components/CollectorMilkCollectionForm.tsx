@@ -13,7 +13,6 @@ interface MilkCollection {
   id?: string;
   farmer_id: string;
   liters: number;
-  quality_grade?: 'A+' | 'A' | 'B' | 'C';
   collection_time: string;
 }
 
@@ -128,7 +127,6 @@ const CollectorMilkCollectionForm: React.FC = () => {
             farmer_id: collection.farmer_id,
             staff_id: staffId, // Use the converted staff ID
             liters: collection.liters,
-            quality_grade: collection.quality_grade || 'B', // Default to 'B' if not specified
             collection_date: new Date(collection.collection_time).toISOString(),
             status: 'Collected'
           });
@@ -158,7 +156,7 @@ const CollectorMilkCollectionForm: React.FC = () => {
       <form onSubmit={handleSubmit}>
         {collections.map((collection, index) => (
           <div key={index} className="border rounded-lg p-4 mb-4 bg-white shadow">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Farmer *
@@ -191,23 +189,6 @@ const CollectorMilkCollectionForm: React.FC = () => {
                   className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                   required
                 />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Quality Grade
-                </label>
-                <select
-                  value={collection.quality_grade || ''}
-                  onChange={(e) => updateCollection(index, 'quality_grade', e.target.value as any)}
-                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                >
-                  <option value="">Select grade</option>
-                  <option value="A+">A+</option>
-                  <option value="A">A</option>
-                  <option value="B">B</option>
-                  <option value="C">C</option>
-                </select>
               </div>
               
               <div>

@@ -16,14 +16,25 @@ import {
   MapPin,
   Milk,
   TrendingUp,
-  AlertCircle
+  AlertCircle,
+  Filter,
+  Clock
 } from 'lucide-react';
 import useToastNotifications from '@/hooks/useToastNotifications';
 import { supabase } from '@/integrations/supabase/client';
 import { LoadingSkeleton } from '@/components/LoadingSkeleton';
 import { format } from 'date-fns';
-import { useApprovedFarmersData, useAllFarmers } from '@/hooks/useFarmersData'; // Updated import
+import { useApprovedFarmersData, useAllFarmers } from '@/hooks/useFarmersData';
 import { useFarmerCollectionHistory } from '@/hooks/useStaffData';
+
+interface FarmerStats {
+  total_collections?: number;
+  total_liters?: number;
+  avg_quality_score?: number;
+  current_month_earnings?: number;
+  current_month_liters?: number;
+  last_collection_date?: string;
+}
 
 interface Farmer {
   id: string;
@@ -35,33 +46,106 @@ interface Farmer {
   farm_location?: string;
   address?: string;
   created_at?: string;
-  stats?: {
-    total_collections?: number;
-    total_liters?: number;
-    avg_quality_score?: number;
-    current_month_earnings?: number;
-    current_month_liters?: number;
-    last_collection_date?: string;
+  stats?: FarmerStats;
+}
+
+interface Collection {
+  id: string;
+  collection_id: string;
+  liters: number;
+  total_amount: number;
+  collection_date: string;
+  status: string;
+  farmers?: {
+    full_name: string;
   };
 }
 
 export default function EnhancedFarmerDirectory() {
   const { show, error: showError } = useToastNotifications();
-  // Updated to use the new hook
   const { data: farmersData, isLoading: farmersLoading } = useApprovedFarmersData();
-  const farmers = farmersData || [];
+  const farmers: Farmer[] = farmersData || [];
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFarmer, setSelectedFarmer] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<'name' | 'collections' | 'volume'>('name');
+  const [filterBy, setFilterBy] = useState<'all' | 'high-volume' | 'recent'>('all');
   const { collections: collectionHistory, loading: collectionHistoryLoading } = useFarmerCollectionHistory(selectedFarmer);
+  const [recentCollections, setRecentCollections] = useState<Collection[]>([]);
 
   useEffect(() => {
-    // Data is now loaded through the useApprovedFarmersData hook
+    fetchRecentCollections();
   }, []);
 
-  const loadCollectionHistory = async (farmerId: string) => {
-    // This is now handled by the useFarmerCollectionHistory hook
-    // The collection history will automatically update when selectedFarmer changes
-    console.log('Collection history will be loaded by the hook for farmer:', farmerId);
+  const fetchRecentCollections = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('collections')
+        .select(`
+          id,
+          collection_id,
+          liters,
+          total_amount,
+          collection_date,
+          status,
+          farmer_id,
+          farmers!inner (full_name)
+        `)
+        .order('collection_date', { ascending: false })
+        .limit(5);
+
+      if (error) {
+        console.error('Error fetching recent collections:', error);
+        // Try a simpler query without the join
+        const { data: simpleData, error: simpleError } = await supabase
+          .from('collections')
+          .select(`
+            id,
+            collection_id,
+            liters,
+            total_amount,
+            collection_date,
+            status,
+            farmer_id
+          `)
+          .order('collection_date', { ascending: false })
+          .limit(5);
+        
+        if (simpleError) throw simpleError;
+        
+        // Fetch farmer names separately
+        const farmerIds = simpleData?.map(c => c.farmer_id).filter(Boolean) || [];
+        if (farmerIds.length > 0) {
+          const { data: farmersData, error: farmersError } = await supabase
+            .from('farmers')
+            .select('id, full_name')
+            .in('id', farmerIds);
+          
+          if (!farmersError && farmersData) {
+            const farmersMap = farmersData.reduce((acc, farmer) => {
+              acc[farmer.id] = farmer.full_name;
+              return acc;
+            }, {} as Record<string, string>);
+            
+            const collectionsWithData = simpleData?.map(collection => ({
+              ...collection,
+              farmers: { full_name: farmersMap[collection.farmer_id] || 'Unknown Farmer' }
+            })) || [];
+            
+            setRecentCollections(collectionsWithData);
+          } else {
+            setRecentCollections(simpleData || []);
+          }
+        } else {
+          setRecentCollections(simpleData || []);
+        }
+      } else {
+        setRecentCollections(data || []);
+      }
+    } catch (error: any) {
+      console.error('Error fetching recent collections:', error);
+      showError('Error', 'Failed to load recent collections');
+      setRecentCollections([]); // Set empty array on error
+    }
   };
 
   const handleContact = (type: 'call' | 'sms', phoneNumber: string) => {
@@ -78,22 +162,45 @@ export default function EnhancedFarmerDirectory() {
     }
   };
 
-  const getQualityGradeColor = (grade: string) => {
-    switch (grade) {
-      case 'A+': return 'bg-green-100 text-green-800';
-      case 'A': return 'bg-blue-100 text-blue-800';
-      case 'B': return 'bg-yellow-100 text-yellow-800';
-      case 'C': return 'bg-red-100 text-red-800';
-      default: return 'bg-gray-100 text-gray-800';
+  const sortAndFilterFarmers = () => {
+    let result: Farmer[] = [...farmers];
+    
+    // Apply search filter
+    if (searchTerm) {
+      result = result.filter(farmer =>
+        farmer.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        farmer.registration_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (farmer.national_id && farmer.national_id.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        farmer.phone_number.includes(searchTerm)
+      );
     }
+    
+    // Apply additional filters
+    if (filterBy === 'high-volume') {
+      result = result.filter(farmer => (farmer.stats?.total_liters || 0) > 1000);
+    } else if (filterBy === 'recent') {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      result = result.filter(farmer => {
+        if (!farmer.stats?.last_collection_date) return false;
+        const lastCollection = new Date(farmer.stats.last_collection_date);
+        return lastCollection >= thirtyDaysAgo;
+      });
+    }
+    
+    // Apply sorting
+    if (sortBy === 'name') {
+      result.sort((a, b) => a.full_name.localeCompare(b.full_name));
+    } else if (sortBy === 'collections') {
+      result.sort((a, b) => (b.stats?.total_collections || 0) - (a.stats?.total_collections || 0));
+    } else if (sortBy === 'volume') {
+      result.sort((a, b) => (b.stats?.total_liters || 0) - (a.stats?.total_liters || 0));
+    }
+    
+    return result;
   };
 
-  const filteredFarmers = farmers.filter(farmer =>
-    farmer.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    farmer.registration_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (farmer.national_id && farmer.national_id.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    farmer.phone_number.includes(searchTerm)
-  );
+  const filteredAndSortedFarmers = sortAndFilterFarmers();
 
   if (farmersLoading) {
     return <LoadingSkeleton type="list" />;
@@ -106,26 +213,96 @@ export default function EnhancedFarmerDirectory() {
         <h1 className="text-2xl font-bold">Farmer Directory</h1>
         <div className="flex items-center gap-2">
           <div className="text-sm text-muted-foreground">
-            {filteredFarmers.length} farmers
+            {filteredAndSortedFarmers.length} farmers
           </div>
         </div>
       </div>
 
-      {/* Search Bar */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-        <Input
-          placeholder="Search by name, ID, phone..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="pl-10 w-full"
-        />
+      {/* Search and Filters */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+          <Input
+            placeholder="Search by name, ID, phone..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-10 w-full"
+          />
+        </div>
+        
+        <div className="flex gap-2">
+          <Button 
+            variant={filterBy === 'all' ? 'default' : 'outline'} 
+            size="sm"
+            onClick={() => setFilterBy('all')}
+          >
+            All Farmers
+          </Button>
+          <Button 
+            variant={filterBy === 'high-volume' ? 'default' : 'outline'} 
+            size="sm"
+            onClick={() => setFilterBy('high-volume')}
+          >
+            High Volume
+          </Button>
+        </div>
+        
+        <div className="flex gap-2">
+          <Button 
+            variant={sortBy === 'name' ? 'default' : 'outline'} 
+            size="sm"
+            onClick={() => setSortBy('name')}
+          >
+            Sort by Name
+          </Button>
+          <Button 
+            variant={sortBy === 'volume' ? 'default' : 'outline'} 
+            size="sm"
+            onClick={() => setSortBy('volume')}
+          >
+            Sort by Volume
+          </Button>
+        </div>
       </div>
+
+      {/* Recent Collections Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Clock className="h-5 w-5" />
+            Recent Collections
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {recentCollections.length > 0 ? (
+            <div className="space-y-3">
+              {recentCollections.map((collection) => (
+                <div key={collection.id} className="flex items-center justify-between p-3 bg-muted rounded">
+                  <div>
+                    <p className="font-medium">
+                      {(collection as any).farmers?.full_name || 'Unknown Farmer'} - {collection.collection_id}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {format(new Date(collection.collection_date), 'MMM dd, yyyy HH:mm')}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-medium">{collection.liters}L</p>
+                    <p className="text-sm text-muted-foreground">KSh {collection.total_amount.toFixed(0)}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-muted-foreground text-center py-4">No recent collections found</p>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Farmer List */}
       <ScrollArea className="h-[calc(100vh-12rem)]">
         <div className="space-y-3">
-          {filteredFarmers.map((farmer) => (
+          {filteredAndSortedFarmers.map((farmer) => (
             <Card
               key={farmer.id}
               className={`transition-colors cursor-pointer ${
@@ -133,9 +310,6 @@ export default function EnhancedFarmerDirectory() {
               }`}
               onClick={() => {
                 setSelectedFarmer(selectedFarmer === farmer.id ? null : farmer.id);
-                if (farmer.id !== selectedFarmer) {
-                  loadCollectionHistory(farmer.id);
-                }
               }}
             >
               <CardContent className="p-4">
@@ -176,8 +350,8 @@ export default function EnhancedFarmerDirectory() {
                         <div className="text-xs text-muted-foreground">Total</div>
                       </div>
                       <div className="text-center p-2 bg-muted rounded">
-                        <div className="text-lg font-bold">{(farmer.stats?.avg_quality_score || 0).toFixed(1)}</div>
-                        <div className="text-xs text-muted-foreground">Avg Quality</div>
+                        <div className="text-lg font-bold">KSh {(farmer.stats?.current_month_earnings || 0).toFixed(0)}</div>
+                        <div className="text-xs text-muted-foreground">This Month</div>
                       </div>
                     </div>
 
@@ -210,10 +384,6 @@ export default function EnhancedFarmerDirectory() {
 
                   {/* Status Badges */}
                   <div className="flex flex-col items-end gap-1">
-                    <Badge variant="outline">
-                      <DollarSign className="w-3 h-3 mr-1" />
-                      KSh {(farmer.stats?.current_month_earnings || 0).toFixed(0)}
-                    </Badge>
                     <Badge variant="outline">
                       <Milk className="w-3 h-3 mr-1" />
                       {(farmer.stats?.current_month_liters || 0).toFixed(0)}L
@@ -259,13 +429,9 @@ export default function EnhancedFarmerDirectory() {
                             <CardContent className="p-4">
                               <div className="flex items-center gap-2 mb-2">
                                 <Milk className="h-5 w-5 text-primary" />
-                                <h4 className="font-medium">Quality Metrics</h4>
+                                <h4 className="font-medium">Financial Metrics</h4>
                               </div>
                               <div className="space-y-2">
-                                <div className="flex justify-between">
-                                  <span className="text-muted-foreground">Avg Quality Score</span>
-                                  <span className="font-medium">{(farmer.stats?.avg_quality_score || 0).toFixed(1)}/10</span>
-                                </div>
                                 <div className="flex justify-between">
                                   <span className="text-muted-foreground">This Month Earnings</span>
                                   <span className="font-medium">KSh {(farmer.stats?.current_month_earnings || 0).toFixed(0)}</span>
@@ -274,7 +440,7 @@ export default function EnhancedFarmerDirectory() {
                                   <span className="text-muted-foreground">Last Collection</span>
                                   <span className="font-medium">
                                     {farmer.stats?.last_collection_date
-                                      ? format(new Date(farmer.stats.last_collection_date), 'MMM dd')
+                                      ? format(new Date(farmer.stats.last_collection_date), 'MMM dd, yyyy HH:mm')
                                       : 'None'}
                                   </span>
                                 </div>
@@ -304,9 +470,6 @@ export default function EnhancedFarmerDirectory() {
                                   </p>
                                 </div>
                                 <div className="text-right">
-                                  <Badge className={getQualityGradeColor(collection.quality_grade)}>
-                                    {collection.quality_grade}
-                                  </Badge>
                                   <div className="text-sm font-medium mt-1">
                                     KSh {collection.total_amount.toFixed(0)}
                                   </div>
@@ -395,7 +558,7 @@ export default function EnhancedFarmerDirectory() {
             </Card>
           ))}
           
-          {filteredFarmers.length === 0 && (
+          {filteredAndSortedFarmers.length === 0 && (
             <div className="text-center py-8 text-muted-foreground">
               <AlertCircle className="h-12 w-12 mx-auto mb-2 text-muted-foreground" />
               <p>No farmers found matching your search criteria</p>

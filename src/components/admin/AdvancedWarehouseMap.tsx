@@ -41,7 +41,6 @@ interface CollectionPoint {
   collection_id: string;
   farmer_id: string;
   liters: number;
-  quality_grade: string;
   total_amount: number;
   collection_date: string;
   gps_latitude: number;
@@ -306,7 +305,6 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
           collection_id,
           farmer_id,
           liters,
-          quality_grade,
           total_amount,
           collection_date,
           gps_latitude,
@@ -327,7 +325,6 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
         collection_id: c.collection_id,
         farmer_id: c.farmer_id,
         liters: c.liters,
-        quality_grade: c.quality_grade,
         total_amount: c.total_amount,
         collection_date: c.collection_date,
         gps_latitude: c.gps_latitude,
@@ -408,13 +405,16 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
       // Add collection point markers with more detail
       filteredCollections.forEach(collection => {
         if (collection.gps_latitude && collection.gps_longitude) {
-          // Determine marker color based on quality grade
+          // Determine marker color based on liters (since quality_grade is removed)
           let markerColor = '#3b82f6'; // Blue for default
-          switch (collection.quality_grade) {
-            case 'A+': markerColor = '#10b981'; break; // Green
-            case 'A': markerColor = '#3b82f6'; break;  // Blue
-            case 'B': markerColor = '#f59e0b'; break;  // Yellow
-            case 'C': markerColor = '#ef4444'; break;  // Red
+          if (collection.liters >= 1000) {
+            markerColor = '#10b981'; // Green for large collections
+          } else if (collection.liters >= 500) {
+            markerColor = '#3b82f6'; // Blue for medium collections
+          } else if (collection.liters >= 100) {
+            markerColor = '#f59e0b'; // Yellow for small collections
+          } else {
+            markerColor = '#ef4444'; // Red for very small collections
           }
           
           const marker = window.L.marker([collection.gps_latitude, collection.gps_longitude], {
@@ -445,17 +445,6 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
                 <div class="flex justify-between">
                   <span class="font-medium">Liters:</span>
                   <span class="font-bold text-blue-600">${collection.liters}L</span>
-                </div>
-                <div class="flex justify-between">
-                  <span class="font-medium">Quality:</span>
-                  <span class="px-2 py-1 rounded text-xs font-medium ${
-                    collection.quality_grade === 'A+' ? 'bg-green-100 text-green-800' :
-                    collection.quality_grade === 'A' ? 'bg-blue-100 text-blue-800' :
-                    collection.quality_grade === 'B' ? 'bg-yellow-100 text-yellow-800' :
-                    'bg-red-100 text-red-800'
-                  }">
-                    ${collection.quality_grade}
-                  </span>
                 </div>
                 <div class="flex justify-between">
                   <span class="font-medium">Amount:</span>
@@ -503,13 +492,16 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
         // Add collection point markers directly to layersRef
         filteredCollections.forEach(collection => {
           if (collection.gps_latitude && collection.gps_longitude) {
-            // Determine marker color based on quality grade
+            // Determine marker color based on liters (since quality_grade is removed)
             let markerColor = '#3b82f6'; // Blue for default
-            switch (collection.quality_grade) {
-              case 'A+': markerColor = '#10b981'; break; // Green
-              case 'A': markerColor = '#3b82f6'; break;  // Blue
-              case 'B': markerColor = '#f59e0b'; break;  // Yellow
-              case 'C': markerColor = '#ef4444'; break;  // Red
+            if (collection.liters >= 1000) {
+              markerColor = '#10b981'; // Green for large collections
+            } else if (collection.liters >= 500) {
+              markerColor = '#3b82f6'; // Blue for medium collections
+            } else if (collection.liters >= 100) {
+              markerColor = '#f59e0b'; // Yellow for small collections
+            } else {
+              markerColor = '#ef4444'; // Red for very small collections
             }
             
             const marker = window.L.marker([collection.gps_latitude, collection.gps_longitude], {
@@ -530,16 +522,6 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
                 <div class="mt-2 space-y-1">
                   <p><strong>Collection ID:</strong> ${collection.collection_id}</p>
                   <p><strong>Liters:</strong> ${collection.liters}L</p>
-                  <p><strong>Quality:</strong> 
-                    <span class="px-2 py-1 rounded text-xs font-medium ${
-                      collection.quality_grade === 'A+' ? 'bg-green-100 text-green-800' :
-                      collection.quality_grade === 'A' ? 'bg-blue-100 text-blue-800' :
-                      collection.quality_grade === 'B' ? 'bg-yellow-100 text-yellow-800' :
-                      'bg-red-100 text-red-800'
-                    }">
-                      ${collection.quality_grade}
-                    </span>
-                  </p>
                   <p><strong>Amount:</strong> KES ${Math.round(collection.total_amount)}</p>
                   <p><strong>Date:</strong> ${new Date(collection.collection_date).toLocaleDateString()}</p>
                 </div>
@@ -573,11 +555,6 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
         collection.collection_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
         collection.farmers?.registration_number.toLowerCase().includes(searchTerm.toLowerCase())
       );
-    }
-    
-    // Apply quality filter
-    if (qualityFilter !== 'all') {
-      filtered = filtered.filter(collection => collection.quality_grade === qualityFilter);
     }
     
     setFilteredCollections(filtered);
@@ -677,7 +654,7 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 mb-4">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
             {/* Search */}
             <div className="space-y-2">
               <Label htmlFor="search">Search Collections</Label>
@@ -693,51 +670,7 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
               </div>
             </div>
             
-            {/* Quality Filter */}
-            <div className="space-y-2">
-              <Label>Quality Filter</Label>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  variant={qualityFilter === 'all' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => handleQualityFilter('all')}
-                >
-                  All
-                </Button>
-                <Button
-                  variant={qualityFilter === 'A+' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => handleQualityFilter('A+')}
-                  className="bg-green-100 text-green-800 hover:bg-green-200"
-                >
-                  A+
-                </Button>
-                <Button
-                  variant={qualityFilter === 'A' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => handleQualityFilter('A')}
-                  className="bg-blue-100 text-blue-800 hover:bg-blue-200"
-                >
-                  A
-                </Button>
-                <Button
-                  variant={qualityFilter === 'B' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => handleQualityFilter('B')}
-                  className="bg-yellow-100 text-yellow-800 hover:bg-yellow-200"
-                >
-                  B
-                </Button>
-                <Button
-                  variant={qualityFilter === 'C' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => handleQualityFilter('C')}
-                  className="bg-red-100 text-red-800 hover:bg-red-200"
-                >
-                  C
-                </Button>
-              </div>
-            </div>
+            {/* Quality Filter - removed since quality_grade is no longer available */}
             
             {/* Date Range */}
             <div className="space-y-2">
@@ -925,7 +858,6 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
                     <th className="text-left py-3 px-4 font-medium">Collection ID</th>
                     <th className="text-left py-3 px-4 font-medium">Farmer</th>
                     <th className="text-left py-3 px-4 font-medium">Liters</th>
-                    <th className="text-left py-3 px-4 font-medium">Quality</th>
                     <th className="text-left py-3 px-4 font-medium">Amount</th>
                     <th className="text-left py-3 px-4 font-medium">Date</th>
                     <th className="text-left py-3 px-4 font-medium">Location</th>
@@ -942,16 +874,6 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
                         </div>
                       </td>
                       <td className="py-3 px-4">{formatNumber(collection.liters)}L</td>
-                      <td className="py-3 px-4">
-                        <Badge className={
-                          collection.quality_grade === 'A+' ? 'bg-green-100 text-green-800' :
-                          collection.quality_grade === 'A' ? 'bg-blue-100 text-blue-800' :
-                          collection.quality_grade === 'B' ? 'bg-yellow-100 text-yellow-800' :
-                          'bg-red-100 text-red-800'
-                        }>
-                          {collection.quality_grade}
-                        </Badge>
-                      </td>
                       <td className="py-3 px-4">{formatCurrency(collection.total_amount)}</td>
                       <td className="py-3 px-4">
                         {new Date(collection.collection_date).toLocaleDateString()}

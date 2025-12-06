@@ -12,14 +12,12 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Search, Filter, Calendar, Download, User, Milk, CheckCircle, XCircle, Clock } from 'lucide-react';
 import { LoadingSkeleton } from '@/components/LoadingSkeleton';
-import { FarmerDataDiagnostics } from './FarmerDataDiagnostics';
 
 interface Collection {
   id: string;
   collection_id: string;
   farmer_id: string;
   liters: number;
-  quality_grade: string;
   rate_per_liter: number;
   total_amount: number;
   collection_date: string;
@@ -48,7 +46,6 @@ export default function CollectionHistoryPage() {
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFarmer, setSelectedFarmer] = useState('');
-  const [selectedQuality, setSelectedQuality] = useState('');
   const [dateRange, setDateRange] = useState('all');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -66,7 +63,7 @@ export default function CollectionHistoryPage() {
 
   useEffect(() => {
     applyFilters();
-  }, [collections, searchTerm, selectedFarmer, selectedQuality, dateRange, startDate, endDate]);
+  }, [collections, searchTerm, selectedFarmer, dateRange, startDate, endDate]);
 
   const fetchData = async () => {
     if (!staffInfo?.id) return;
@@ -129,7 +126,6 @@ export default function CollectionHistoryPage() {
           collection_id,
           farmer_id,
           liters,
-          quality_grade,
           rate_per_liter,
           total_amount,
           collection_date,
@@ -197,11 +193,6 @@ export default function CollectionHistoryPage() {
       filtered = filtered.filter(collection => collection.farmer_id === selectedFarmer);
     }
     
-    // Apply quality filter
-    if (selectedQuality && selectedQuality !== 'all') {
-      filtered = filtered.filter(collection => collection.quality_grade === selectedQuality);
-    }
-    
     // Apply date range filter
     if (dateRange !== 'all') {
       const now = new Date();
@@ -246,13 +237,12 @@ export default function CollectionHistoryPage() {
   const exportToCSV = () => {
     try {
       // Create CSV content
-      const headers = ['Collection ID', 'Farmer Name', 'Date', 'Liters', 'Quality Grade', 'Rate per Liter', 'Total Amount', 'Status'];
+      const headers = ['Collection ID', 'Farmer Name', 'Date', 'Liters', 'Rate per Liter', 'Total Amount', 'Status'];
       const rows = filteredCollections.map(collection => [
         collection.collection_id,
         collection.farmers?.full_name || 'Unknown Farmer',
         format(new Date(collection.collection_date), 'yyyy-MM-dd HH:mm'),
         collection.liters,
-        collection.quality_grade,
         collection.rate_per_liter,
         collection.total_amount,
         collection.status
@@ -356,19 +346,6 @@ export default function CollectionHistoryPage() {
               </SelectContent>
             </Select>
             
-            <Select value={selectedQuality} onValueChange={setSelectedQuality}>
-              <SelectTrigger>
-                <SelectValue placeholder="Quality grade" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Grades</SelectItem>
-                <SelectItem value="A+">A+</SelectItem>
-                <SelectItem value="A">A</SelectItem>
-                <SelectItem value="B">B</SelectItem>
-                <SelectItem value="C">C</SelectItem>
-              </SelectContent>
-            </Select>
-            
             <div className="flex gap-2">
               <Select value={dateRange} onValueChange={setDateRange}>
                 <SelectTrigger>
@@ -440,7 +417,6 @@ export default function CollectionHistoryPage() {
                       <th className="text-left py-3 px-4">Farmer</th>
                       <th className="text-left py-3 px-4">Date</th>
                       <th className="text-left py-3 px-4">Liters</th>
-                      <th className="text-left py-3 px-4">Quality</th>
                       <th className="text-left py-3 px-4">Amount</th>
                       <th className="text-left py-3 px-4">Status</th>
                     </tr>
@@ -459,11 +435,6 @@ export default function CollectionHistoryPage() {
                           {format(new Date(collection.collection_date), 'MMM dd, yyyy HH:mm')}
                         </td>
                         <td className="py-3 px-4">{collection.liters}L</td>
-                        <td className="py-3 px-4">
-                          <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium">
-                            {collection.quality_grade}
-                          </span>
-                        </td>
                         <td className="py-3 px-4">KSh {collection.total_amount.toFixed(2)}</td>
                         <td className="py-3 px-4">
                           <div className="flex items-center gap-2">

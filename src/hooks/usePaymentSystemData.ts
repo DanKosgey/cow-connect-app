@@ -316,17 +316,18 @@ const calculateFarmerSummaries = async (
       return sum + collectionCredit;
     }, 0);
     
-    // Fetch credit data for the farmer (using the correct table name)
+    // Fetch credit data for the farmer
     try {
       const { data: creditData, error: creditError } = await supabase
-        .from('farmer_credit_profiles') // Using farmer_credit_profiles as farmer_credit_limits has been deleted
-        .select('current_credit_balance, total_credit_used')
+        .from('farmer_credit_profiles')
+        .select('current_credit_balance, total_credit_used, pending_deductions')
         .eq('farmer_id', farmerId)
-        .eq('is_frozen', false) // Using is_frozen = false instead of is_active = true
+        .eq('is_frozen', false)
         .maybeSingle();
       
       if (!creditError && creditData) {
-        creditUsed = creditData.total_credit_used || 0;
+        // Use the pending deductions as the credit used indicator
+        creditUsed = creditData.pending_deductions || 0;
       }
     } catch (error) {
       console.warn('Error fetching credit data for farmer:', farmerId, error);

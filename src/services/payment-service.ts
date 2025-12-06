@@ -186,68 +186,68 @@ export class PaymentService {
         logger.warn('Warning: Failed to send payment notification', notificationError);
       }
 
-      // If credit was used, deduct it from the farmer's credit balance
+      // If credit was used, update the farmer's credit profile
       if (creditUsed > 0) {
-        // Get current credit limit record (using the correct table name)
-        const { data: creditLimitData, error: creditLimitError } = await supabase
-          .from('farmer_credit_profiles') // Using farmer_credit_profiles as farmer_credit_limits has been deleted
+        // Get current credit profile record
+        const { data: creditProfileData, error: creditProfileError } = await supabase
+          .from('farmer_credit_profiles')
           .select('*')
           .eq('farmer_id', farmerId)
-          .eq('is_frozen', false) // Using is_frozen = false instead of is_active = true
+          .eq('is_frozen', false)
           .maybeSingle();
 
-        if (creditLimitError) {
-          logger.errorWithContext('PaymentService - fetching credit limit for deduction', creditLimitError);
-          throw creditLimitError;
+        if (creditProfileError) {
+          logger.errorWithContext('PaymentService - fetching credit profile for deduction', creditProfileError);
+          throw creditProfileError;
         }
 
-        if (creditLimitData) {
-          const creditLimitRecord = creditLimitData as any;
+        if (creditProfileData) {
+          const creditProfileRecord = creditProfileData as any;
           
-          logger.info(`PaymentService - deducting credit from farmer`, {
+          logger.info(`PaymentService - updating credit profile for farmer`, {
             farmerId,
             collectionId,
             creditUsed,
-            oldBalance: creditLimitRecord.current_credit_balance
+            oldBalance: creditProfileRecord.current_credit_balance,
+            oldPendingDeductions: creditProfileRecord.pending_deductions
           });
 
-          // Calculate new balance
-          const newBalance = Math.max(0, creditLimitRecord.current_credit_balance - creditUsed);
-          const newTotalUsed = creditLimitRecord.total_credit_used + creditUsed;
+          // When a payment is made, we reduce the pending deductions
+          // This is how credit is "repaid" - by reducing the pending deductions
+          const newPendingDeductions = Math.max(0, creditProfileRecord.pending_deductions - creditUsed);
 
-          // Update credit limit (using the correct table name)
+          // Update credit profile
           const { error: updateError } = await supabase
-            .from('farmer_credit_profiles') // Using farmer_credit_profiles as farmer_credit_limits has been deleted
+            .from('farmer_credit_profiles')
             .update({
-              current_credit_balance: newBalance,
-              total_credit_used: newTotalUsed,
+              pending_deductions: newPendingDeductions,
               updated_at: new Date().toISOString()
             })
-            .eq('id', creditLimitRecord.id);
+            .eq('id', creditProfileRecord.id);
 
           if (updateError) {
-            logger.errorWithContext('PaymentService - updating credit limit for deduction', updateError);
+            logger.errorWithContext('PaymentService - updating credit profile for deduction', updateError);
             throw updateError;
           }
 
-          logger.info(`PaymentService - credit deduction completed`, {
+          logger.info(`PaymentService - credit profile updated`, {
             farmerId,
             collectionId,
             creditUsed,
-            newBalance
+            newPendingDeductions
           });
 
           // Create credit transaction record for the deduction
           const { error: transactionError } = await supabase
-            .from('farmer_credit_transactions')
+            .from('credit_transactions') // Use the consolidated credit_transactions table
             .insert([{
               farmer_id: farmerId,
-              transaction_type: 'credit_repaid',
+              transaction_type: 'credit_repaid', // This represents reduction in pending deductions
               amount: creditUsed,
-              balance_after: newBalance,
-              reference_type: 'payment_deduction',
+              balance_before: creditProfileRecord.pending_deductions,
+              balance_after: newPendingDeductions,
               reference_id: collectionId,
-              description: `Credit used to offset payment of KES ${collection.total_amount.toFixed(2)}`
+              description: `Credit deduction from payment of KES ${collection.total_amount.toFixed(2)}`
             }]);
 
           if (transactionError) {
@@ -488,55 +488,53 @@ export class PaymentService {
         throw error;
       }
 
-      // If credit was used, deduct it from the farmer's credit balance
+      // If credit was used, update the farmer's credit profile
       if (creditUsed > 0) {
-        // Get current credit limit record
-        const { data: creditLimitData, error: creditLimitError } = await supabase
-          .from('farmer_credit_limits')
+        // Get current credit profile record
+        const { data: creditProfileData, error: creditProfileError } = await supabase
+          .from('farmer_credit_profiles')
           .select('*')
           .eq('farmer_id', farmerId)
-          .eq('is_active', true)
+          .eq('is_frozen', false)
           .maybeSingle();
 
-        if (creditLimitError) {
-          logger.errorWithContext('PaymentService - fetching credit limit for deduction', creditLimitError);
-          throw creditLimitError;
+        if (creditProfileError) {
+          logger.errorWithContext('PaymentService - fetching credit profile for deduction', creditProfileError);
+          throw creditProfileError;
         }
 
-        if (creditLimitData) {
-          const creditLimitRecord = creditLimitData as any;
-          
-          // Calculate new balance
-          const newBalance = Math.max(0, creditLimitRecord.current_credit_balance - creditUsed);
-          const newTotalUsed = creditLimitRecord.total_credit_used + creditUsed;
+        if (creditProfileData) {
+          const creditProfileRecord = creditProfileData as any;
+          // When a payment is made, we reduce the pending deductions
+          // This is how credit is "repaid" - by reducing the pending deductions
+          const newPendingDeductions = Math.max(0, creditProfileRecord.pending_deductions - creditUsed);
 
-          // Update credit limit
+          // Update credit profile
           const { error: updateError } = await supabase
-            .from('farmer_credit_limits')
+            .from('farmer_credit_profiles')
             .update({
-              current_credit_balance: newBalance,
-              total_credit_used: newTotalUsed,
+              pending_deductions: newPendingDeductions,
               updated_at: new Date().toISOString()
             })
-            .eq('id', creditLimitRecord.id);
+            .eq('id', creditProfileRecord.id);
 
           if (updateError) {
-            logger.errorWithContext('PaymentService - updating credit limit for deduction', updateError);
+            logger.errorWithContext('PaymentService - updating credit profile for deduction', updateError);
             throw updateError;
           }
 
           // Create credit transaction record for the deduction
           const { error: transactionError } = await supabase
-            .from('farmer_credit_transactions')
-            .insert({
+            .from('credit_transactions') // Use the consolidated credit_transactions table
+            .insert([{
               farmer_id: farmerId,
-              transaction_type: 'credit_repaid',
+              transaction_type: 'credit_repaid', // This represents reduction in pending deductions
               amount: creditUsed,
-              balance_after: newBalance,
-              reference_type: 'payment_deduction',
-              reference_id: paymentId,
-              description: `Credit used to offset bulk payment of KES ${totalAmount.toFixed(2)}`
-            });
+              balance_before: creditProfileRecord.pending_deductions,
+              balance_after: newPendingDeductions,
+              reference_id: paymentId, // Use the payment ID as reference
+              description: `Credit deduction from bulk payment of KES ${totalAmount.toFixed(2)}`
+            }]);
 
           if (transactionError) {
             logger.warn('Warning: Failed to create credit deduction transaction', transactionError);

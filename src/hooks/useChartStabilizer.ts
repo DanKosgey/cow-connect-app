@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 
 interface ChartDataPoint {
   [key: string]: any;
@@ -13,11 +13,26 @@ export const useChartStabilizer = <T extends ChartDataPoint>(
   const prevDataRef = useRef<T[]>([]);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastUpdateTimeRef = useRef<number>(0);
+  const mountedRef = useRef(true);
+
+  // Using useCallback to prevent recreation of functions
+  const updateData = useCallback((newData: T[]) => {
+    if (!mountedRef.current) return;
+    
+    setStabilizedData(newData);
+    setIsStable(true);
+    prevDataRef.current = newData;
+    lastUpdateTimeRef.current = Date.now();
+  }, []);
 
   useEffect(() => {
+    // Set mounted ref to true
+    mountedRef.current = true;
+    
     // Clear any existing timeout
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
     }
 
     // Check if data has actually changed by comparing stringified versions
@@ -27,9 +42,7 @@ export const useChartStabilizer = <T extends ChartDataPoint>(
     
     // For immediate render on first load or empty data
     if (prevDataRef.current.length === 0 || data.length === 0) {
-      setStabilizedData(data);
-      setIsStable(true);
-      prevDataRef.current = data;
+      updateData(data);
       return;
     }
 
@@ -40,9 +53,7 @@ export const useChartStabilizer = <T extends ChartDataPoint>(
 
     // For small datasets, stabilize immediately
     if (data.length < 5) {
-      setStabilizedData(data);
-      setIsStable(true);
-      prevDataRef.current = data;
+      updateData(data);
       return;
     }
 
@@ -52,30 +63,30 @@ export const useChartStabilizer = <T extends ChartDataPoint>(
     
     if (timeSinceLastUpdate < delay && hasChanged) {
       // Set loading state while we wait for stabilization
-      setIsStable(false);
+      if (mountedRef.current) {
+        setIsStable(false);
+      }
       
       // Set timeout to stabilize data
       timeoutRef.current = setTimeout(() => {
-        setStabilizedData(data);
-        setIsStable(true);
-        prevDataRef.current = data;
-        lastUpdateTimeRef.current = Date.now();
+        if (mountedRef.current) {
+          updateData(data);
+        }
       }, delay - timeSinceLastUpdate);
     } else if (hasChanged) {
       // Update immediately if enough time has passed
-      setStabilizedData(data);
-      setIsStable(true);
-      prevDataRef.current = data;
-      lastUpdateTimeRef.current = now;
+      updateData(data);
     }
 
-    // Cleanup timeout on unmount or when data changes
+    // Cleanup timeout on unmount
     return () => {
+      mountedRef.current = false;
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
       }
     };
-  }, [data, delay]);
+  }, [data, delay, isStable, updateData]);
 
   return {
     data: stabilizedData,

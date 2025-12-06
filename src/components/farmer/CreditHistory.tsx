@@ -6,7 +6,9 @@ import {
   CheckCircle, 
   ShoppingCart, 
   Clock,
-  TrendingUp
+  TrendingUp,
+  RefreshCw,
+  Info
 } from "lucide-react";
 import { formatCurrency } from "@/utils/formatters";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -86,17 +88,23 @@ const CreditHistory = ({ farmerId }: { farmerId: string }) => {
                     <div className={`p-2 rounded-full ${
                       transaction.transaction_type === 'credit_granted' ? 'bg-green-100' :
                       transaction.transaction_type === 'credit_used' ? 'bg-red-100' :
-                      transaction.transaction_type === 'settlement' ? 'bg-blue-100' :
+                      transaction.transaction_type === 'credit_repaid' ? 'bg-blue-100' :
+                      transaction.transaction_type === 'settlement' ? 'bg-purple-100' :
+                      transaction.transaction_type === 'credit_adjusted' ? 'bg-yellow-100' :
                       'bg-gray-100'
                     }`}>
                       {transaction.transaction_type === 'credit_granted' ? (
                         <CheckCircle className="w-4 h-4 text-green-600" />
                       ) : transaction.transaction_type === 'credit_used' ? (
                         <ShoppingCart className="w-4 h-4 text-red-600" />
+                      ) : transaction.transaction_type === 'credit_repaid' ? (
+                        <Clock className="w-4 h-4 text-blue-600" />
                       ) : transaction.transaction_type === 'settlement' ? (
-                        <TrendingUp className="w-4 h-4 text-blue-600" />
+                        <TrendingUp className="w-4 h-4 text-purple-600" />
+                      ) : transaction.transaction_type === 'credit_adjusted' ? (
+                        <RefreshCw className="w-4 h-4 text-yellow-600" />
                       ) : (
-                        <Clock className="w-4 h-4 text-gray-600" />
+                        <Info className="w-4 h-4 text-gray-600" />
                       )}
                     </div>
                     <div>

@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { trendService } from '@/services/trend-service';
+import { useMemo } from 'react';
 
 // Define interfaces for our data structures
 interface Collection {
@@ -146,8 +147,15 @@ export const useCollectionAnalyticsData = () => {
 
   // Get filtered collections data
   const useFilteredCollections = (filters: { searchTerm: string; status: string; dateRange: string }) => {
+    // Memoize the filters object to prevent unnecessary re-renders
+    const memoizedFilters = useMemo(() => filters, [
+      filters.searchTerm,
+      filters.status,
+      filters.dateRange
+    ]);
+    
     return useQuery<Collection[]>({
-      queryKey: [COLLECTION_ANALYTICS_CACHE_KEYS.FILTERED_COLLECTIONS, filters],
+      queryKey: [COLLECTION_ANALYTICS_CACHE_KEYS.FILTERED_COLLECTIONS, memoizedFilters],
       queryFn: async () => {
         let query = supabase
           .from('collections')
@@ -165,13 +173,13 @@ export const useCollectionAnalyticsData = () => {
             )
           `)
           .eq('approved_for_company', true) // Only fetch approved collections
-          .gte('collection_date', filters.dateRange)
+          .gte('collection_date', memoizedFilters.dateRange)
           .order('collection_date', { ascending: false })
           .limit(1000);
 
         // Apply status filter
-        if (filters.status !== 'all') {
-          query = query.eq('status', filters.status);
+        if (memoizedFilters.status !== 'all') {
+          query = query.eq('status', memoizedFilters.status);
         }
 
         const { data, error } = await query;
@@ -180,8 +188,8 @@ export const useCollectionAnalyticsData = () => {
 
         // Apply search filter on client side (as in the original component)
         let filtered = data || [];
-        if (filters.searchTerm) {
-          const term = filters.searchTerm.toLowerCase();
+        if (memoizedFilters.searchTerm) {
+          const term = memoizedFilters.searchTerm.toLowerCase();
           filtered = filtered.filter(c => 
             c.farmers?.profiles?.full_name?.toLowerCase().includes(term) ||
             c.collection_id?.toLowerCase().includes(term) ||

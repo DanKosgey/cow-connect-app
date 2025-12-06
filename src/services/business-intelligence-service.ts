@@ -70,7 +70,7 @@ export class BusinessIntelligenceService {
         endDate = now;
     }
     
-    console.log('Current period filter:', { startDate: startDate.toISOString(), endDate: endDate.toISOString(), timeRange });
+    // console.log('Current period filter:', { startDate: startDate.toISOString(), endDate: endDate.toISOString(), timeRange });
     
     return {
       startDate: startDate.toISOString(),
@@ -125,7 +125,7 @@ export class BusinessIntelligenceService {
         startDate = subWeeks(endDate, 1);
     }
     
-    console.log('Previous period filter:', { startDate: startDate.toISOString(), endDate: endDate.toISOString(), timeRange });
+    // console.log('Previous period filter:', { startDate: startDate.toISOString(), endDate: endDate.toISOString(), timeRange });
     
     return {
       startDate: startDate.toISOString(),
@@ -142,11 +142,11 @@ export class BusinessIntelligenceService {
       const cacheKey = `${startDate}-${endDate}`;
       const cached = periodDataCache.get(cacheKey);
       if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-        console.log('Returning cached period data for:', { startDate, endDate });
+        // console.log('Returning cached period data for:', { startDate, endDate });
         return cached.data;
       }
 
-      console.log('Fetching period data for:', { startDate, endDate });
+      // console.log('Fetching period data for:', { startDate, endDate });
 
       // Fetch collections for the period with reduced data
       const { data: collections, error: collectionsError } = await supabase
@@ -165,11 +165,11 @@ export class BusinessIntelligenceService {
         throw collectionsError;
       }
 
-      console.log('Fetched collections for period:', collections?.length || 0, 'Data:', collections);
+      // console.log('Fetched collections for period:', collections?.length || 0, 'Data:', collections);
 
       // Fetch the current admin rate to ensure consistency
       const adminRate = await milkRateService.getCurrentRate();
-      console.log('Admin rate for period data:', adminRate);
+      // console.log('Admin rate for period data:', adminRate);
 
       // Fetch active farmers count for the period
       const { count: activeFarmers, error: farmersError } = await supabase
@@ -183,7 +183,7 @@ export class BusinessIntelligenceService {
         throw farmersError;
       }
 
-      console.log('Active farmers count for period:', activeFarmers);
+      // console.log('Active farmers count for period:', activeFarmers);
 
       // Calculate metrics with optimized loops
       let totalCollections = 0;
@@ -244,7 +244,7 @@ export class BusinessIntelligenceService {
         farmerRetentionRate
       };
 
-      console.log('Calculated period data:', result);
+      // console.log('Calculated period data:', result);
 
       // Cache the result
       periodDataCache.set(cacheKey, { data: result, timestamp: Date.now() });
@@ -298,17 +298,17 @@ export class BusinessIntelligenceService {
     const cacheKey = `metrics-${timeRange}`;
     const cached = metricsCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-      console.log('Returning cached business intelligence metrics');
+      // console.log('Returning cached business intelligence metrics');
       return cached.data;
     }
 
     try {
-      console.log('Calculating business intelligence metrics for time range:', timeRange);
+      // console.log('Calculating business intelligence metrics for time range:', timeRange);
       // Get date ranges
       const currentPeriod = this.getCurrentPeriodFilter(timeRange);
       const previousPeriod = this.getPreviousPeriodFilter(timeRange);
 
-      console.log('Period filters:', { currentPeriod, previousPeriod });
+      // console.log('Period filters:', { currentPeriod, previousPeriod });
 
       // Fetch data for both periods in parallel with reduced limits
       const [currentData, previousData] = await Promise.all([
@@ -316,14 +316,14 @@ export class BusinessIntelligenceService {
         this.fetchPeriodData(previousPeriod.startDate, previousPeriod.endDate)
       ]);
 
-      console.log('Fetched period data:', { currentData, previousData });
+      // console.log('Fetched period data:', { currentData, previousData });
 
       // Fetch the current admin rate
       const currentCostPerLiter = await milkRateService.getCurrentRate();
       const marketPriceChange = 0; // No change data for admin rate
       const marketPriceChangeType = 'neutral'; // No change type for admin rate
 
-      console.log('Current cost per liter:', currentCostPerLiter);
+      // console.log('Current cost per liter:', currentCostPerLiter);
 
       // Calculate business intelligence metrics with optimized calculations
       // 1. Cost per Liter (now using admin rate instead of market price)
@@ -373,17 +373,17 @@ export class BusinessIntelligenceService {
       
       const profitMarginTrend = this.calculateTrendPercentage(currentProfitMargin, previousProfitMargin);
 
-      console.log('Calculated metrics:', {
-        currentRevenuePerFarmer,
-        currentCollectionEfficiency,
-        currentData: {
-          avgQuality: currentData.avgQuality,
-          activeFarmers: currentData.activeFarmers,
-          totalCollections: currentData.totalCollections,
-          totalRevenue: currentData.totalRevenue,
-          totalLiters: currentData.totalLiters
-        }
-      });
+      // console.log('Calculated metrics:', {
+      //   currentRevenuePerFarmer,
+      //   currentCollectionEfficiency,
+      //   currentData: {
+      //     avgQuality: currentData.avgQuality,
+      //     activeFarmers: currentData.activeFarmers,
+      //     totalCollections: currentData.totalCollections,
+      //     totalRevenue: currentData.totalRevenue,
+      //     totalLiters: currentData.totalLiters
+      //   }
+      // });
 
       // Create metrics array
       const metrics: BusinessIntelligenceMetric[] = [
@@ -443,7 +443,7 @@ export class BusinessIntelligenceService {
         }
       ];
 
-      console.log('Calculated business intelligence metrics:', metrics);
+      // console.log('Calculated business intelligence metrics:', metrics);
 
       // Cache the result
       metricsCache.set(cacheKey, { data: metrics, timestamp: Date.now() });
