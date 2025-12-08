@@ -30,7 +30,7 @@ import { milkRateService } from '@/services/milk-rate-service';
 import { collectorRateService } from '@/services/collector-rate-service';
 import { useSessionRefresh } from '@/hooks/useSessionRefresh';
 import { useAuth } from '@/contexts/SimplifiedAuthContext';
-import { formatCurrency } from '@/utils/formatters';
+import { formatCurrency, formatNumberWithoutCurrency } from '@/utils/formatters';
 import { deductionService } from '@/services/deduction-service';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, 
@@ -111,6 +111,7 @@ const PaymentSystem = () => {
   const toast = useToastNotifications();
   const { user, userRole } = useAuth();
   const [activeTab, setActiveTab] = useState('overview');
+  const [activeAnalyticsTab, setActiveAnalyticsTab] = useState('credit'); // Add this line
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [viewMode, setViewMode] = useState('list'); // 'list' or 'grid'
@@ -645,69 +646,69 @@ const PaymentSystem = () => {
             </div>
           </div>
 
-          {/* Analytics Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
-            <div className="bg-white rounded-xl shadow-lg p-6 border-l-4 border-yellow-500">
-              <div className="flex items-center justify-between">
+          {/* Analytics Cards - Responsive Version */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+            <div className="bg-white rounded-xl shadow-lg p-4 md:p-6 border-l-4 border-yellow-500 min-h-[120px]">
+              <div className="flex flex-col h-full justify-between">
                 <div>
-                  <p className="text-sm text-gray-600 mb-1">Pending Payments</p>
-                  <p className="text-2xl font-bold text-gray-900">{formatCurrency(analytics.total_pending)}</p>
-                  <p className="text-xs text-gray-500">Awaiting payment processing</p>
+                  <p className="text-xs md:text-sm text-gray-600 mb-2">Pending Payments</p>
+                  <p className="text-lg md:text-xl lg:text-2xl font-bold text-gray-900 break-words">{formatNumberWithoutCurrency(analytics.total_pending)}</p>
+                  <p className="text-xs text-gray-500 mt-2">Awaiting payment processing</p>
                 </div>
-                <div className="bg-yellow-100 p-3 rounded-lg">
-                  <Clock className="w-6 h-6 text-yellow-600" />
+                <div className="bg-yellow-100 p-2 md:p-3 rounded-lg w-fit mt-3">
+                  <Clock className="w-5 h-5 md:w-6 md:h-6 text-yellow-600" />
                 </div>
               </div>
             </div>
 
-            <div className="bg-white rounded-xl shadow-lg p-6 border-l-4 border-green-500">
-              <div className="flex items-center justify-between">
+            <div className="bg-white rounded-xl shadow-lg p-4 md:p-6 border-l-4 border-green-500 min-h-[120px]">
+              <div className="flex flex-col h-full justify-between">
                 <div>
-                  <p className="text-sm text-gray-600 mb-1">Total Paid</p>
-                  <p className="text-2xl font-bold text-gray-900">{formatCurrency(analytics.total_paid)}</p>
-                  <p className="text-xs text-gray-500">Successfully processed</p>
+                  <p className="text-xs md:text-sm text-gray-600 mb-2">Total Paid</p>
+                  <p className="text-lg md:text-xl lg:text-2xl font-bold text-gray-900 break-words">{formatNumberWithoutCurrency(analytics.total_paid)}</p>
+                  <p className="text-xs text-gray-500 mt-2">Successfully processed</p>
                 </div>
-                <div className="bg-green-100 p-3 rounded-lg">
-                  <CheckCircle className="w-6 h-6 text-green-600" />
+                <div className="bg-green-100 p-2 md:p-3 rounded-lg w-fit mt-3">
+                  <CheckCircle className="w-5 h-5 md:w-6 md:h-6 text-green-600" />
                 </div>
               </div>
             </div>
 
-            <div className="bg-white rounded-xl shadow-lg p-6 border-l-4 border-blue-500">
-              <div className="flex items-center justify-between">
+            <div className="bg-white rounded-xl shadow-lg p-4 md:p-6 border-l-4 border-blue-500 min-h-[120px]">
+              <div className="flex flex-col h-full justify-between">
                 <div>
-                  <p className="text-sm text-gray-600 mb-1">Active Farmers</p>
-                  <p className="text-2xl font-bold text-gray-900">{analytics.total_farmers}</p>
-                  <p className="text-xs text-gray-500">With payment records</p>
+                  <p className="text-xs md:text-sm text-gray-600 mb-2">Active Farmers</p>
+                  <p className="text-lg md:text-xl lg:text-2xl font-bold text-gray-900">{analytics.total_farmers}</p>
+                  <p className="text-xs text-gray-500 mt-2">With payment records</p>
                 </div>
-                <div className="bg-blue-100 p-3 rounded-lg">
-                  <Users className="w-6 h-6 text-blue-600" />
+                <div className="bg-blue-100 p-2 md:p-3 rounded-lg w-fit mt-3">
+                  <Users className="w-5 h-5 md:w-6 md:h-6 text-blue-600" />
                 </div>
               </div>
             </div>
 
-            <div className="bg-white rounded-xl shadow-lg p-6 border-l-4 border-purple-500">
-              <div className="flex items-center justify-between">
+            <div className="bg-white rounded-xl shadow-lg p-4 md:p-6 border-l-4 border-purple-500 min-h-[120px]">
+              <div className="flex flex-col h-full justify-between">
                 <div>
-                  <p className="text-sm text-gray-600 mb-1">Credit Used</p>
-                  <p className="text-2xl font-bold text-gray-900">{formatCurrency(analytics.total_credit_used)}</p>
-                  <p className="text-xs text-gray-500">From pending payments</p>
+                  <p className="text-xs md:text-sm text-gray-600 mb-2">Credit Used</p>
+                  <p className="text-lg md:text-xl lg:text-2xl font-bold text-gray-900 break-words">{formatNumberWithoutCurrency(analytics.total_credit_used)}</p>
+                  <p className="text-xs text-gray-500 mt-2">From pending payments</p>
                 </div>
-                <div className="bg-purple-100 p-3 rounded-lg">
-                  <CreditCard className="w-6 h-6 text-purple-600" />
+                <div className="bg-purple-100 p-2 md:p-3 rounded-lg w-fit mt-3">
+                  <CreditCard className="w-5 h-5 md:w-6 md:h-6 text-purple-600" />
                 </div>
               </div>
             </div>
 
-            <div className="bg-white rounded-xl shadow-lg p-6 border-l-4 border-indigo-500">
-              <div className="flex items-center justify-between">
+            <div className="bg-white rounded-xl shadow-lg p-4 md:p-6 border-l-4 border-indigo-500 min-h-[120px]">
+              <div className="flex flex-col h-full justify-between">
                 <div>
-                  <p className="text-sm text-gray-600 mb-1">Net Payment</p>
-                  <p className="text-2xl font-bold text-gray-900">{formatCurrency(analytics.total_net_payment)}</p>
-                  <p className="text-xs text-gray-500">After credit deductions</p>
+                  <p className="text-xs md:text-sm text-gray-600 mb-2">Net Payment</p>
+                  <p className="text-lg md:text-xl lg:text-2xl font-bold text-gray-900 break-words">{formatNumberWithoutCurrency(analytics.total_net_payment)}</p>
+                  <p className="text-xs text-gray-500 mt-2">After credit deductions</p>
                 </div>
-                <div className="bg-indigo-100 p-3 rounded-lg">
-                  <DollarSign className="w-6 h-6 text-indigo-600" />
+                <div className="bg-indigo-100 p-2 md:p-3 rounded-lg w-fit mt-3">
+                  <DollarSign className="w-5 h-5 md:w-6 md:h-6 text-indigo-600" />
                 </div>
               </div>
             </div>
@@ -821,171 +822,7 @@ const PaymentSystem = () => {
                 </div>
               </div>
 
-              {/* Collections and Payments Trend Chart */}
-              <div className="bg-white rounded-xl shadow-lg p-6">
-                <CardHeader className="p-0 mb-4">
-                  <CardTitle className="flex items-center gap-2 text-xl">
-                    <BarChart3 className="w-5 h-5 text-primary" />
-                    Collections and Payments Trend
-                  </CardTitle>
-                  <p className="text-sm text-gray-500 mt-1">Daily overview of collections and payment amounts</p>
-                </CardHeader>
-                <CardContent className="p-0">
-                  <div className="h-96">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <ComposedChart
-                        data={analytics.daily_trend.map(item => ({
-                          date: item.date,
-                          paid: item.paidAmount,
-                          pending: item.pendingAmount,
-                          credit: item.creditUsed
-                        }))}
-                        margin={{ top: 20, right: 30, left: 20, bottom: 30 }}
-                      >
-                        <defs>
-                          <linearGradient id="paidGradient" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                            <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                          </linearGradient>
-                          <linearGradient id="pendingGradient" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.3}/>
-                            <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
-                          </linearGradient>
-                          <linearGradient id="creditGradient" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/>
-                            <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
-                          </linearGradient>
-                        </defs>
-                        
-                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
-                        
-                        <XAxis 
-                          dataKey="date" 
-                          tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                          stroke="#666"
-                          fontSize={12}
-                        >
-                          <Label value="Days" offset={-10} position="insideBottom" />
-                        </XAxis>
-                        
-                        <YAxis 
-                          tickFormatter={(value) => `KSh${(value / 1000).toFixed(0)}k`} 
-                          stroke="#666"
-                          fontSize={12}
-                          tickMargin={10}
-                        >
-                          <Label value="Amount (KES)" angle={-90} position="insideLeft" offset={10} />
-                        </YAxis>
-                        
-                        <Tooltip 
-                          formatter={(value, name) => {
-                            const formattedValue = formatCurrency(Number(value));
-                            switch(name) {
-                              case 'paid': return [formattedValue, 'Paid Amounts'];
-                              case 'pending': return [formattedValue, 'Pending Amounts'];
-                              case 'credit': return [formattedValue, 'Credit Used'];
-                              default: return [formattedValue, name];
-                            }
-                          }}
-                          labelFormatter={(label) => `Date: ${new Date(label).toLocaleDateString()}`}
-                          contentStyle={{ 
-                            backgroundColor: 'white', 
-                            border: '1px solid #e5e7eb', 
-                            borderRadius: '0.5rem',
-                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
-                          }}
-                          itemStyle={{ color: '#333' }}
-                          labelStyle={{ fontWeight: 'bold', color: '#333' }}
-                        />
-                        
-                        <Legend 
-                          verticalAlign="top" 
-                          height={40}
-                          wrapperStyle={{ paddingBottom: '10px' }}
-                        />
-                        
-                        <ReferenceLine y={0} stroke="#000" strokeWidth={0.5} />
-                        
-                        {/* Area charts for better visualization */}
-                        <Area 
-                          type="monotone" 
-                          dataKey="paid" 
-                          fill="url(#paidGradient)" 
-                          stroke="none"
-                          name="Paid Amounts"
-                        />
-                        <Area 
-                          type="monotone" 
-                          dataKey="pending" 
-                          fill="url(#pendingGradient)" 
-                          stroke="none"
-                          name="Pending Amounts"
-                        />
-                        <Area 
-                          type="monotone" 
-                          dataKey="credit" 
-                          fill="url(#creditGradient)" 
-                          stroke="none"
-                          name="Credit Used"
-                        />
-                        
-                        {/* Line charts for clear trends */}
-                        <Line 
-                          type="monotone" 
-                          dataKey="paid" 
-                          stroke="#10b981" 
-                          strokeWidth={2} 
-                          dot={{ r: 4, strokeWidth: 2, fill: '#fff', stroke: '#10b981' }} 
-                          activeDot={{ r: 6, strokeWidth: 2, fill: '#fff', stroke: '#10b981' }} 
-                          name="Paid Amounts" 
-                          animationDuration={500}
-                        />
-                        <Line 
-                          type="monotone" 
-                          dataKey="pending" 
-                          stroke="#f59e0b" 
-                          strokeWidth={2} 
-                          dot={{ r: 4, strokeWidth: 2, fill: '#fff', stroke: '#f59e0b' }} 
-                          activeDot={{ r: 6, strokeWidth: 2, fill: '#fff', stroke: '#f59e0b' }} 
-                          name="Pending Amounts" 
-                          animationDuration={500}
-                        />
-                        <Line 
-                          type="monotone" 
-                          dataKey="credit" 
-                          stroke="#8b5cf6" 
-                          strokeWidth={2} 
-                          dot={{ r: 4, strokeWidth: 2, fill: '#fff', stroke: '#8b5cf6' }} 
-                          activeDot={{ r: 6, strokeWidth: 2, fill: '#fff', stroke: '#8b5cf6' }} 
-                          name="Credit Used" 
-                          animationDuration={500}
-                        />
-                      </ComposedChart>
-                    </ResponsiveContainer>
-                  </div>
-                  
-                  {/* Enhanced insights section */}
-                  <div className="mt-6 p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border border-blue-100">
-                    <div className="flex items-start gap-3">
-                      <div className="p-2 bg-blue-100 rounded-lg">
-                        <BarChart3 className="w-4 h-4 text-blue-600" />
-                      </div>
-                      <div>
-                        <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                          <span className="inline-flex items-center px-2 py-1 rounded-full bg-green-100 text-green-800">
-                            <div className="w-2 h-2 rounded-full bg-green-500 mr-1"></div>
-                            Solid line = Actual values
-                          </span>
-                          <span className="inline-flex items-center px-2 py-1 rounded-full bg-blue-100 text-blue-800">
-                            <div className="w-2 h-2 rounded-full bg-blue-500 mr-1"></div>
-                            Shaded area = Trend visualization
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </div>
+
 
               {/* New Payment Overview Chart */}
               <PaymentOverviewChart 
@@ -1426,124 +1263,449 @@ const PaymentSystem = () => {
           {/* Credit Analytics Section */}
           {activeTab === 'analytics' && (
             <div className="space-y-6">
-              {/* Credit Utilization Overview */}
+              {/* Mini tab navigation */}
               <div className="bg-white rounded-xl shadow-lg p-6">
-                <h3 className="text-xl font-bold text-gray-900 mb-6">Credit Utilization</h3>
-                
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {/* Credit Distribution Pie Chart */}
-                  <div className="md:col-span-2">
-                    <h4 className="font-semibold text-gray-800 mb-4">Credit Distribution</h4>
-                    <div className="h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <RechartsPieChart>
-                          <Pie
-                            data={creditAnalytics.creditDistribution.slice(0, 5)}
-                            cx="50%"
-                            cy="50%"
-                            labelLine={false}
-                            outerRadius={80}
-                            fill="#8884d8"
-                            dataKey="creditUsed"
-                            nameKey="name"
-                            label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                          >
-                            {creditAnalytics.creditDistribution.slice(0, 5).map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                <div className="flex border-b border-gray-200 mb-6">
+                  <button
+                    className={`px-4 py-2 font-medium text-sm rounded-t-lg ${
+                      activeAnalyticsTab === 'credit' 
+                        ? 'border-b-2 border-indigo-600 text-indigo-600' 
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                    onClick={() => setActiveAnalyticsTab('credit')}
+                  >
+                    Credit Analytics
+                  </button>
+                  <button
+                    className={`px-4 py-2 font-medium text-sm rounded-t-lg ${
+                      activeAnalyticsTab === 'farmers-payments' 
+                        ? 'border-b-2 border-indigo-600 text-indigo-600' 
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                    onClick={() => setActiveAnalyticsTab('farmers-payments')}
+                  >
+                    Farmers Payments
+                  </button>
+                </div>
+
+                {/* Credit Analytics Content */}
+                {activeAnalyticsTab === 'credit' && (
+                  <div className="space-y-6">
+                    {/* Credit Utilization Overview */}
+                    <div className="bg-white rounded-xl shadow-lg p-6">
+                      <h3 className="text-xl font-bold text-gray-900 mb-6">Credit Utilization</h3>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {/* Credit Distribution Pie Chart */}
+                        <div className="md:col-span-2">
+                          <h4 className="font-semibold text-gray-800 mb-4">Credit Distribution</h4>
+                          <div className="h-64">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <RechartsPieChart>
+                                <Pie
+                                  data={creditAnalytics.creditDistribution.slice(0, 5)}
+                                  cx="50%"
+                                  cy="50%"
+                                  labelLine={false}
+                                  outerRadius={80}
+                                  fill="#8884d8"
+                                  dataKey="creditUsed"
+                                  nameKey="name"
+                                  label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                                >
+                                  {creditAnalytics.creditDistribution.slice(0, 5).map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                  ))}
+                                </Pie>
+                                <Tooltip formatter={(value) => formatCurrency(Number(value))} />
+                                <Legend />
+                              </RechartsPieChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
+                        
+                        {/* Credit Metrics */}
+                        <div className="space-y-4">
+                          <div className="bg-purple-50 p-4 rounded-lg">
+                            <p className="text-sm text-purple-700">Total Credit Used</p>
+                            <p className="text-2xl font-bold text-purple-900">{formatCurrency(creditAnalytics.totalCreditUsed)}</p>
+                            <p className="text-xs text-purple-600">Pending deductions from payments</p>
+                          </div>
+                          
+                          <div className="bg-indigo-50 p-4 rounded-lg">
+                            <p className="text-sm text-indigo-700">Credit Impact</p>
+                            <p className="text-2xl font-bold text-indigo-900">{creditAnalytics.creditImpact.toFixed(1)}%</p>
+                            <p className="text-xs text-indigo-600">Of total payments</p>
+                          </div>
+                          
+                          <div className="bg-blue-50 p-4 rounded-lg">
+                            <p className="text-sm text-blue-700">Active Credit Users</p>
+                            <p className="text-2xl font-bold text-blue-900">{creditAnalytics.creditDistribution.length}</p>
+                            <p className="text-xs text-blue-600">Farmers using credit</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Credit Impact Analysis */}
+                    <div className="bg-white rounded-xl shadow-lg p-6">
+                      <h3 className="text-xl font-bold text-gray-900 mb-6">Credit Impact Analysis</h3>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                        <div className="bg-green-50 p-4 rounded-lg">
+                          <p className="text-sm text-green-700">Gross Payments</p>
+                          <p className="text-xl font-bold text-green-900">{formatCurrency(analytics.total_pending + analytics.total_paid)}</p>
+                        </div>
+                        
+                        <div className="bg-purple-50 p-4 rounded-lg">
+                          <p className="text-sm text-purple-700">Credit Deductions</p>
+                          <p className="text-xl font-bold text-purple-900">{formatCurrency(analytics.total_credit_used)}</p>
+                          <p className="text-xs text-purple-600">Pending deductions from payments</p>
+                        </div>
+                        
+                        <div className="bg-indigo-50 p-4 rounded-lg">
+                          <p className="text-sm text-indigo-700">Net Payments</p>
+                          <p className="text-xl font-bold text-indigo-900">{formatCurrency(analytics.total_net_payment)}</p>
+                        </div>
+                      </div>
+                      
+                      {/* Credit Analytics by Farmer */}
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Farmer</th>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Amount</th>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Credit Used</th>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Net Payment</th>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Credit %</th>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody className="bg-white divide-y divide-gray-200">
+                            {creditAnalytics.creditDistribution.map((farmer, index) => (
+                              <tr key={index}>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{farmer.name}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{formatCurrency(farmer.totalAmount)}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{formatCurrency(farmer.creditUsed)}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{formatCurrency(farmer.netPayment)}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                    farmer.creditPercentage > 20 ? 'bg-red-100 text-red-800' : 
+                                    farmer.creditPercentage > 10 ? 'bg-yellow-100 text-yellow-800' : 
+                                    'bg-green-100 text-green-800'
+                                  }`}>
+                                    {farmer.creditPercentage.toFixed(1)}%
+                                  </span>
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                    {farmer.status}
+                                  </span>
+                                </td>
+                              </tr>
                             ))}
-                          </Pie>
-                          <Tooltip formatter={(value) => formatCurrency(Number(value))} />
-                          <Legend />
-                        </RechartsPieChart>
-                      </ResponsiveContainer>
+                            {creditAnalytics.creditDistribution.length === 0 && (
+                              <tr>
+                                <td colSpan={6} className="px-6 py-4 text-center text-sm text-gray-500">
+                                  No credit usage data available
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Farmers Payments Content */}
+                {activeAnalyticsTab === 'farmers-payments' && (
+                  <div className="space-y-6">
+                    {/* Collections and Payments Trend Chart */}
+                    <div className="bg-white rounded-xl shadow-lg p-6">
+                      <CardHeader className="p-0 mb-4">
+                        <CardTitle className="flex items-center gap-2 text-xl">
+                          <BarChart3 className="w-5 h-5 text-primary" />
+                          Collections and Payments Trend
+                        </CardTitle>
+                        <p className="text-sm text-gray-500 mt-1">Daily overview of collections and payment amounts</p>
+                      </CardHeader>
+                      <CardContent className="p-0">
+                        <div className="h-96">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <ComposedChart
+                              data={analytics.daily_trend.map(item => ({
+                                date: item.date,
+                                paid: item.paidAmount,
+                                pending: item.pendingAmount,
+                                credit: item.creditUsed
+                              }))}
+                              margin={{ top: 20, right: 30, left: 20, bottom: 30 }}
+                            >
+                              <defs>
+                                <linearGradient id="paidGradient" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                                  <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                                </linearGradient>
+                                <linearGradient id="pendingGradient" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.3}/>
+                                  <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
+                                </linearGradient>
+                                <linearGradient id="creditGradient" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/>
+                                  <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
+                                </linearGradient>
+                              </defs>
+                              
+                              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                              
+                              <XAxis 
+                                dataKey="date" 
+                                tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                stroke="#666"
+                                fontSize={12}
+                              >
+                                <Label value="Days" offset={-10} position="insideBottom" />
+                              </XAxis>
+                              
+                              <YAxis 
+                                tickFormatter={(value) => `KSh${(value / 1000).toFixed(0)}k`} 
+                                stroke="#666"
+                                fontSize={12}
+                                tickMargin={10}
+                              >
+                                <Label value="Amount (KES)" angle={-90} position="insideLeft" offset={10} />
+                              </YAxis>
+                              
+                              <Tooltip 
+                                formatter={(value, name) => {
+                                  const formattedValue = formatCurrency(Number(value));
+                                  switch(name) {
+                                    case 'paid': return [formattedValue, 'Paid Amounts'];
+                                    case 'pending': return [formattedValue, 'Pending Amounts'];
+                                    case 'credit': return [formattedValue, 'Credit Used'];
+                                    default: return [formattedValue, name];
+                                  }
+                                }}
+                                labelFormatter={(label) => `Date: ${new Date(label).toLocaleDateString()}`}
+                                contentStyle={{ 
+                                  backgroundColor: 'white', 
+                                  border: '1px solid #e5e7eb', 
+                                  borderRadius: '0.5rem',
+                                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
+                                }}
+                                itemStyle={{ color: '#333' }}
+                                labelStyle={{ fontWeight: 'bold', color: '#333' }}
+                              />
+                              
+                              <Legend 
+                                verticalAlign="top" 
+                                height={40}
+                                wrapperStyle={{ paddingBottom: '10px' }}
+                              />
+                              
+                              <ReferenceLine y={0} stroke="#000" strokeWidth={0.5} />
+                              
+                              {/* Area charts for better visualization */}
+                              <Area 
+                                type="monotone" 
+                                dataKey="paid" 
+                                fill="url(#paidGradient)" 
+                                stroke="none"
+                                name="Paid Amounts"
+                              />
+                              <Area 
+                                type="monotone" 
+                                dataKey="pending" 
+                                fill="url(#pendingGradient)" 
+                                stroke="none"
+                                name="Pending Amounts"
+                              />
+                              <Area 
+                                type="monotone" 
+                                dataKey="credit" 
+                                fill="url(#creditGradient)" 
+                                stroke="none"
+                                name="Credit Used"
+                              />
+                              
+                              {/* Line charts for clear trends */}
+                              <Line 
+                                type="monotone" 
+                                dataKey="paid" 
+                                stroke="#10b981" 
+                                strokeWidth={2} 
+                                dot={{ r: 4, strokeWidth: 2, fill: '#fff', stroke: '#10b981' }} 
+                                activeDot={{ r: 6, strokeWidth: 2, fill: '#fff', stroke: '#10b981' }} 
+                                name="Paid Amounts" 
+                                animationDuration={500}
+                              />
+                              <Line 
+                                type="monotone" 
+                                dataKey="pending" 
+                                stroke="#f59e0b" 
+                                strokeWidth={2} 
+                                dot={{ r: 4, strokeWidth: 2, fill: '#fff', stroke: '#f59e0b' }} 
+                                activeDot={{ r: 6, strokeWidth: 2, fill: '#fff', stroke: '#f59e0b' }} 
+                                name="Pending Amounts" 
+                                animationDuration={500}
+                              />
+                              <Line 
+                                type="monotone" 
+                                dataKey="credit" 
+                                stroke="#8b5cf6" 
+                                strokeWidth={2} 
+                                dot={{ r: 4, strokeWidth: 2, fill: '#fff', stroke: '#8b5cf6' }} 
+                                activeDot={{ r: 6, strokeWidth: 2, fill: '#fff', stroke: '#8b5cf6' }} 
+                                name="Credit Used" 
+                                animationDuration={500}
+                              />
+                            </ComposedChart>
+                          </ResponsiveContainer>
+                        </div>
+                        
+                        {/* Enhanced insights section */}
+                        <div className="mt-6 p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border border-blue-100">
+                          <div className="flex items-start gap-3">
+                            <div className="p-2 bg-blue-100 rounded-lg">
+                              <BarChart3 className="w-4 h-4 text-blue-600" />
+                            </div>
+                            <div>
+                              <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                                <span className="inline-flex items-center px-2 py-1 rounded-full bg-green-100 text-green-800">
+                                  <div className="w-2 h-2 rounded-full bg-green-500 mr-1"></div>
+                                  Solid line = Actual values
+                                </span>
+                                <span className="inline-flex items-center px-2 py-1 rounded-full bg-blue-100 text-blue-800">
+                                  <div className="w-2 h-2 rounded-full bg-blue-500 mr-1"></div>
+                                  Shaded area = Trend visualization
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Pending Tab */}
+          {activeTab === 'pending' && (
+            <div className="space-y-6">
+              {/* Search and Filter */}
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
+                      <Input
+                        type="text"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        placeholder="Search by farmer name or collection ID"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                      <select
+                        value={filterStatus}
+                        onChange={(e) => setFilterStatus(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      >
+                        <option value="all">All</option>
+                        <option value="Pending">Pending</option>
+                        <option value="Approved">Approved</option>
+                        <option value="Paid">Paid</option>
+                      </select>
                     </div>
                   </div>
                   
-                  {/* Credit Metrics */}
-                  <div className="space-y-4">
-                    <div className="bg-purple-50 p-4 rounded-lg">
-                      <p className="text-sm text-purple-700">Total Credit Used</p>
-                      <p className="text-2xl font-bold text-purple-900">{formatCurrency(creditAnalytics.totalCreditUsed)}</p>
-                      <p className="text-xs text-purple-600">Pending deductions from payments</p>
-                    </div>
-                    
-                    <div className="bg-indigo-50 p-4 rounded-lg">
-                      <p className="text-sm text-indigo-700">Credit Impact</p>
-                      <p className="text-2xl font-bold text-indigo-900">{creditAnalytics.creditImpact.toFixed(1)}%</p>
-                      <p className="text-xs text-indigo-600">Of total payments</p>
-                    </div>
-                    
-                    <div className="bg-blue-50 p-4 rounded-lg">
-                      <p className="text-sm text-blue-700">Active Credit Users</p>
-                      <p className="text-2xl font-bold text-blue-900">{creditAnalytics.creditDistribution.length}</p>
-                      <p className="text-xs text-blue-600">Farmers using credit</p>
-                    </div>
-                  </div>
+                  <Button
+                    onClick={deductCollectorFees}
+                    className="bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                  >
+                    Deduct Collector Fees
+                  </Button>
                 </div>
               </div>
               
-              {/* Credit Impact Analysis */}
+              {/* Pending Payment Collections */}
               <div className="bg-white rounded-xl shadow-lg p-6">
-                <h3 className="text-xl font-bold text-gray-900 mb-6">Credit Impact Analysis</h3>
+                <h3 className="text-xl font-bold text-gray-900 mb-6">Pending Payment Collections</h3>
                 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                  <div className="bg-green-50 p-4 rounded-lg">
-                    <p className="text-sm text-green-700">Gross Payments</p>
-                    <p className="text-xl font-bold text-green-900">{formatCurrency(analytics.total_pending + analytics.total_paid)}</p>
-                  </div>
-                  
-                  <div className="bg-purple-50 p-4 rounded-lg">
-                    <p className="text-sm text-purple-700">Credit Deductions</p>
-                    <p className="text-xl font-bold text-purple-900">{formatCurrency(analytics.total_credit_used)}</p>
-                    <p className="text-xs text-purple-600">Pending deductions from payments</p>
-                  </div>
-                  
-                  <div className="bg-indigo-50 p-4 rounded-lg">
-                    <p className="text-sm text-indigo-700">Net Payments</p>
-                    <p className="text-xl font-bold text-indigo-900">{formatCurrency(analytics.total_net_payment)}</p>
-                  </div>
-                </div>
-                
-                {/* Credit Analytics by Farmer */}
                 <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
+                  <table className="w-full">
                     <thead className="bg-gray-50">
                       <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Farmer</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Amount</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Credit Used</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Net Payment</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Credit %</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Farmer</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Collection ID</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Amount</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Liters</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Approved</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
                       </tr>
                     </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {creditAnalytics.creditDistribution.map((farmer, index) => (
-                        <tr key={index}>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{farmer.name}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{formatCurrency(farmer.totalAmount)}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{formatCurrency(farmer.creditUsed)}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{formatCurrency(farmer.netPayment)}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                              farmer.creditPercentage > 20 ? 'bg-red-100 text-red-800' : 
-                              farmer.creditPercentage > 10 ? 'bg-yellow-100 text-yellow-800' : 
-                              'bg-green-100 text-green-800'
-                            }`}>
-                              {farmer.creditPercentage.toFixed(1)}%
-                            </span>
+                    <tbody>
+                      {filteredCollections.map((collection) => (
+                        <tr key={collection.id} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm font-medium text-gray-900">
+                              {collection.farmers?.profiles?.full_name}
+                            </div>
+                            <div className="text-sm text-gray-500">
+                              {collection.farmers?.profiles?.phone}
+                            </div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                              {farmer.status}
-                            </span>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {collection.collection_id}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {formatCurrency(collection.total_amount)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {collection.liters.toFixed(2)}L
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {new Date(collection.collection_date).toLocaleDateString()}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {collection.status}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {collection.approved_for_payment ? 'Yes' : 'No'}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                onClick={() => approveCollectionsForPayment(collection.farmer_id, [collection.id])}
+                                disabled={collection.approved_for_payment}
+                              >
+                                Approve
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() => markAsPaid(collection.id, collection.farmer_id)}
+                                disabled={collection.status === 'Paid'}
+                              >
+                                Mark Paid
+                              </Button>
+                            </div>
                           </td>
                         </tr>
                       ))}
-                      {creditAnalytics.creditDistribution.length === 0 && (
+                      {filteredCollections.length === 0 && (
                         <tr>
-                          <td colSpan={6} className="px-6 py-4 text-center text-sm text-gray-500">
-                            No credit usage data available
+                          <td colSpan={8} className="px-6 py-4 text-center text-sm text-gray-500">
+                            No pending payment collections found
                           </td>
                         </tr>
                       )}
@@ -1554,204 +1716,98 @@ const PaymentSystem = () => {
             </div>
           )}
 
-          {/* Pending Tab */}
-          {activeTab === 'pending' && (
-            <div className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                    <div className="flex items-center gap-2">
-                      <Clock className="w-5 h-5 text-yellow-600" />
-                      <CardTitle>
-                        Pending Collections
-                      </CardTitle>
-                    </div>
-                    
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Farmer</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Liters</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rate</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Credit Used</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Collector Fee</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Net Payment</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Approval Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredCollections
-                          .filter(c => c.status !== 'Paid')
-                          .map((collection) => {
-                            // Calculate collector fee for this collection
-                            const collectorRate = collectorRateConfig.ratePerLiter;
-                            const collectorFee = (collection.liters || 0) * collectorRate;
-                            const creditUsed = collection.collection_payments?.[0]?.credit_used || 0;
-                            const netPayment = collection.total_amount - creditUsed - collectorFee;
-                            
-                            return (
-                              <tr key={collection.id} className="hover:bg-gray-50">
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  <div className="text-sm font-medium text-gray-900">
-                                    {collection.farmers?.profiles?.full_name || 'Unknown Farmer'}
-                                  </div>
-                                  <div className="text-sm text-gray-500">
-                                    {collection.farmers?.profiles?.phone || 'No phone'}
-                                  </div>
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                  {new Date(collection.collection_date).toLocaleDateString()}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                  {collection.liters.toFixed(2)}L
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                  KSh {collection.rate_per_liter.toFixed(2)}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                  {formatCurrency(collection.total_amount)}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-purple-600 font-medium">
-                                  {formatCurrency(creditUsed)}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-orange-600 font-medium">
-                                  {formatCurrency(collectorFee)}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium">
-                                  {formatCurrency(netPayment)}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  {collection.approved_for_payment ? (
-                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                      <CheckCircle className="w-3 h-3 mr-1" />
-                                      Approved
-                                    </span>
-                                  ) : (
-                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                                      <Clock className="w-3 h-3 mr-1" />
-                                      Pending
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                  {!collection.approved_for_payment && collection.status !== 'Paid' ? (
-                                    <Button
-                                      size="sm"
-                                      onClick={() => approveCollectionsForPayment(collection.farmer_id, [collection.id])}
-                                    >
-                                      Approve
-                                    </Button>
-                                  ) : null}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                      </tbody>
-                    </table>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          )}
-
-          {/* Paid Tab */}
+          {/* Paid Payments Tab */}
           {activeTab === 'paid' && (
             <div className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <CheckCircle className="w-5 h-5 text-green-600" />
-                    Paid Collections
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Farmer</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Liters</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rate</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Credit Used</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Collector Fee</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Net Payment</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Approval Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredCollections
-                          .filter(c => c.status === 'Paid')
-                          .map((collection) => {
-                            // Calculate collector fee for this collection
-                            const collectorRate = collectorRateConfig.ratePerLiter;
-                            const collectorFee = (collection.liters || 0) * collectorRate;
-                            const creditUsed = collection.collection_payments?.[0]?.credit_used || 0;
-                            const netPayment = collection.total_amount - creditUsed - collectorFee;
-                            
-                            return (
-                              <tr key={collection.id} className="hover:bg-gray-50">
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  <div className="text-sm font-medium text-gray-900">
-                                    {collection.farmers?.profiles?.full_name || 'Unknown Farmer'}
-                                  </div>
-                                  <div className="text-sm text-gray-500">
-                                    {collection.farmers?.profiles?.phone || 'No phone'}
-                                  </div>
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                  {new Date(collection.collection_date).toLocaleDateString()}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                  {collection.liters.toFixed(2)}L
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                  KSh {collection.rate_per_liter.toFixed(2)}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                  {formatCurrency(collection.total_amount)}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-purple-600 font-medium">
-                                  {formatCurrency(creditUsed)}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-orange-600 font-medium">
-                                  {formatCurrency(collectorFee)}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium">
-                                  {formatCurrency(netPayment)}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  {collection.approved_for_payment ? (
-                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                      <CheckCircle className="w-3 h-3 mr-1" />
-                                      Approved
-                                    </span>
-                                  ) : (
-                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                                      <Clock className="w-3 h-3 mr-1" />
-                                      Pending
-                                    </span>
-                                  )}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                      </tbody>
-                    </table>
+              {/* Search and Filter */}
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
+                      <Input
+                        type="text"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        placeholder="Search by farmer name or collection ID"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                      <select
+                        value={filterStatus}
+                        onChange={(e) => setFilterStatus(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      >
+                        <option value="all">All</option>
+                        <option value="Pending">Pending</option>
+                        <option value="Approved">Approved</option>
+                        <option value="Paid">Paid</option>
+                      </select>
+                    </div>
                   </div>
-                </CardContent>
-              </Card>
+                </div>
+              </div>
+              
+              {/* Paid Payment Collections */}
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <h3 className="text-xl font-bold text-gray-900 mb-6">Paid Payment Collections</h3>
+                
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Farmer</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Collection ID</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Amount</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Liters</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredCollections.map((collection) => (
+                        <tr key={collection.id} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm font-medium text-gray-900">
+                              {collection.farmers?.profiles?.full_name}
+                            </div>
+                            <div className="text-sm text-gray-500">
+                              {collection.farmers?.profiles?.phone}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {collection.collection_id}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {formatCurrency(collection.total_amount)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {collection.liters.toFixed(2)}L
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {new Date(collection.collection_date).toLocaleDateString()}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {collection.status}
+                          </td>
+                        </tr>
+                      ))}
+                      {filteredCollections.length === 0 && (
+                        <tr>
+                          <td colSpan={6} className="px-6 py-4 text-center text-sm text-gray-500">
+                            No paid payment collections found
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           )}
-
-
 
           {/* Settings Tab */}
           {activeTab === 'settings' && (

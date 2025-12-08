@@ -19,8 +19,9 @@ import {
   SelectValue 
 } from '@/components/ui/select';
 import { format } from 'date-fns';
-import { Loader2, BarChart3, Eye, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
+import { Loader2, BarChart3, Eye, AlertTriangle, CheckCircle, Clock, Bot } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import AdminAIInstructionsPage from './AdminAIInstructionsPage';
 
 const AdminAIMonitoringDashboard = () => {
   const [loading, setLoading] = useState(true);
@@ -33,11 +34,14 @@ const AdminAIMonitoringDashboard = () => {
     pending: 0,
     needsReview: 0
   });
+  const [activeTab, setActiveTab] = useState('monitoring'); // 'monitoring' or 'instructions'
   const { toast } = useToast();
 
   useEffect(() => {
-    fetchVerificationResults();
-  }, [filterStatus]);
+    if (activeTab === 'monitoring') {
+      fetchVerificationResults();
+    }
+  }, [filterStatus, activeTab]);
 
   const fetchVerificationResults = async () => {
     try {
@@ -147,7 +151,7 @@ const AdminAIMonitoringDashboard = () => {
     return 'text-red-600';
   };
 
-  if (loading) {
+  if (loading && activeTab === 'monitoring') {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Loader2 className="h-8 w-8 animate-spin" />
@@ -161,7 +165,7 @@ const AdminAIMonitoringDashboard = () => {
         <div>
           <h1 className="text-3xl font-bold">AI Monitoring Dashboard</h1>
           <p className="text-muted-foreground">
-            Monitor AI verification results for milk collection photos
+            Monitor AI verification results and configure AI instructions
           </p>
         </div>
         <Button onClick={fetchVerificationResults}>
@@ -170,165 +174,202 @@ const AdminAIMonitoringDashboard = () => {
         </Button>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center">
-              <div className="rounded-full bg-blue-100 p-2 mr-3">
-                <BarChart3 className="h-5 w-5 text-blue-600" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Total Verifications</p>
-                <p className="text-2xl font-bold">{stats.total}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center">
-              <div className="rounded-full bg-green-100 p-2 mr-3">
-                <CheckCircle className="h-5 w-5 text-green-600" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Verified</p>
-                <p className="text-2xl font-bold">{stats.verified}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center">
-              <div className="rounded-full bg-red-100 p-2 mr-3">
-                <AlertTriangle className="h-5 w-5 text-red-600" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Flagged</p>
-                <p className="text-2xl font-bold">{stats.flagged}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center">
-              <div className="rounded-full bg-yellow-100 p-2 mr-3">
-                <Clock className="h-5 w-5 text-yellow-600" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Pending</p>
-                <p className="text-2xl font-bold">{stats.pending}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center">
-              <div className="rounded-full bg-purple-100 p-2 mr-3">
-                <Eye className="h-5 w-5 text-purple-600" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Needs Review</p>
-                <p className="text-2xl font-bold">{stats.needsReview}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      {/* Tab Navigation */}
+      <div className="bg-white rounded-lg shadow mb-6">
+        <div className="border-b border-gray-200">
+          <nav className="flex -mb-px">
+            <button
+              onClick={() => setActiveTab('monitoring')}
+              className={`py-4 px-6 text-center border-b-2 font-medium text-sm ${
+                activeTab === 'monitoring'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <BarChart3 className="h-4 w-4 inline mr-2" />
+              Monitoring Dashboard
+            </button>
+            <button
+              onClick={() => setActiveTab('instructions')}
+              className={`py-4 px-6 text-center border-b-2 font-medium text-sm ${
+                activeTab === 'instructions'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <Bot className="h-4 w-4 inline mr-2" />
+              AI Instructions
+            </button>
+          </nav>
+        </div>
       </div>
 
-      {/* Filters */}
-      <Card className="mb-6">
-        <CardContent className="p-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <h2 className="text-lg font-semibold">Verification Results</h2>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">Filter by status:</span>
-              <Select value={filterStatus} onValueChange={setFilterStatus}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Select status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Statuses</SelectItem>
-                  <SelectItem value="verified">Verified</SelectItem>
-                  <SelectItem value="flagged">Flagged</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="needs_review">Needs Review</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+      {/* Tab Content */}
+      {activeTab === 'monitoring' ? (
+        <>
+          {/* Stats Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center">
+                  <div className="rounded-full bg-blue-100 p-2 mr-3">
+                    <BarChart3 className="h-5 w-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Total Verifications</p>
+                    <p className="text-2xl font-bold">{stats.total}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center">
+                  <div className="rounded-full bg-green-100 p-2 mr-3">
+                    <CheckCircle className="h-5 w-5 text-green-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Verified</p>
+                    <p className="text-2xl font-bold">{stats.verified}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center">
+                  <div className="rounded-full bg-red-100 p-2 mr-3">
+                    <AlertTriangle className="h-5 w-5 text-red-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Flagged</p>
+                    <p className="text-2xl font-bold">{stats.flagged}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center">
+                  <div className="rounded-full bg-yellow-100 p-2 mr-3">
+                    <Clock className="h-5 w-5 text-yellow-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Pending</p>
+                    <p className="text-2xl font-bold">{stats.pending}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center">
+                  <div className="rounded-full bg-purple-100 p-2 mr-3">
+                    <Eye className="h-5 w-5 text-purple-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Needs Review</p>
+                    <p className="text-2xl font-bold">{stats.needsReview}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </div>
-        </CardContent>
-      </Card>
 
-      {/* Results Table */}
-      <Card>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Collection ID</TableHead>
-                <TableHead>Farmer</TableHead>
-                <TableHead>Recorded/Estimated</TableHead>
-                <TableHead>Confidence</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Date</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {verificationResults.length > 0 ? (
-                verificationResults.map((result) => (
-                  <TableRow key={result.id}>
-                    <TableCell className="font-medium">
-                      {result.collections?.collection_id || result.collection_id}
-                    </TableCell>
-                    <TableCell>
-                      {result.collections?.farmers?.full_name || 
-                       result.collections?.farmer_id || 
-                       'Unknown Farmer'}
-                    </TableCell>
-                    <TableCell>
-                      <div className="text-sm">
-                        <span>{result.recorded_liters}L → </span>
-                        <span className={result.matches_recorded ? 'text-green-600' : 'text-red-600'}>
-                          {result.estimated_liters}L
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <span className={getConfidenceColor(result.confidence_score || 0)}>
-                        {((result.confidence_score || 0) * 100).toFixed(1)}%
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      {getStatusBadge(result.status)}
-                    </TableCell>
-                    <TableCell>
-                      <div className="text-sm text-muted-foreground">
-                        {format(new Date(result.created_at), 'MMM dd, yyyy')}
-                        <br />
-                        {format(new Date(result.created_at), 'HH:mm')}
-                      </div>
-                    </TableCell>
+          {/* Filters */}
+          <Card className="mb-6">
+            <CardContent className="p-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <h2 className="text-lg font-semibold">Verification Results</h2>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">Filter by status:</span>
+                  <Select value={filterStatus} onValueChange={setFilterStatus}>
+                    <SelectTrigger className="w-[180px]">
+                      <SelectValue placeholder="Select status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Statuses</SelectItem>
+                      <SelectItem value="verified">Verified</SelectItem>
+                      <SelectItem value="flagged">Flagged</SelectItem>
+                      <SelectItem value="pending">Pending</SelectItem>
+                      <SelectItem value="needs_review">Needs Review</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Results Table */}
+          <Card>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Collection ID</TableHead>
+                    <TableHead>Farmer</TableHead>
+                    <TableHead>Recorded/Estimated</TableHead>
+                    <TableHead>Confidence</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Date</TableHead>
                   </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                    No verification results found
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+                </TableHeader>
+                <TableBody>
+                  {verificationResults.length > 0 ? (
+                    verificationResults.map((result) => (
+                      <TableRow key={result.id}>
+                        <TableCell className="font-medium">
+                          {result.collections?.collection_id || result.collection_id}
+                        </TableCell>
+                        <TableCell>
+                          {result.collections?.farmers?.full_name || 
+                           result.collections?.farmer_id || 
+                           'Unknown Farmer'}
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm">
+                            <span>{result.recorded_liters}L → </span>
+                            <span className={result.matches_recorded ? 'text-green-600' : 'text-red-600'}>
+                              {result.estimated_liters}L
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <span className={getConfidenceColor(result.confidence_score || 0)}>
+                            {((result.confidence_score || 0) * 100).toFixed(1)}%
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          {getStatusBadge(result.status)}
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm text-muted-foreground">
+                            {format(new Date(result.created_at), 'MMM dd, yyyy')}
+                            <br />
+                            {format(new Date(result.created_at), 'HH:mm')}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                        No verification results found
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </>
+      ) : (
+        <AdminAIInstructionsPage />
+      )}
     </div>
   );
 };

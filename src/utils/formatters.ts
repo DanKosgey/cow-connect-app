@@ -16,6 +16,20 @@ export const formatCurrency = (amount: number, currency: string = 'KES'): string
 };
 
 /**
+ * Format a number without currency symbol
+ * @param amount - The amount to format
+ * @returns Formatted number string without currency symbol
+ */
+export const formatNumberWithoutCurrency = (amount: number): string => {
+  if (amount === null || amount === undefined) return 'N/A';
+  
+  return new Intl.NumberFormat('en-KE', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(amount);
+};
+
+/**
  * Format a date as a readable string
  * @param date - The date to format
  * @returns Formatted date string

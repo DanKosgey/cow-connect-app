@@ -51,12 +51,11 @@ const CreditRiskAssessment = lazy(() => import('@/components/admin/CreditRiskAss
 const CreditSettings = lazy(() => import('@/components/admin/CreditSettings'));
 const PenaltyManagementPage = lazy(() => import('@/pages/admin/PenaltyManagementPage'));
 const ErrorReportingDashboard = lazy(() => import('@/pages/admin/ErrorReportingDashboard'));
-const VarianceReportingDashboard = lazy(() => import('@/pages/admin/VarianceReportingDashboard'));
+const VarianceReportingDashboard = lazy(() => import('@/components/admin/variance/ModularEnhancedVarianceReportingDashboard'));
 const VarianceInsightsDashboard = lazy(() => import('@/pages/admin/VarianceInsightsDashboard'));
 const CollectorsPage = lazy(() => import('@/pages/admin/CollectorsPage'));
 const CollectionsDebugPage = lazy(() => import('@/pages/admin/CollectionsDebugPage'));
 const ServicesPage = lazy(() => import('@/pages/admin/ServicesPage'));
-const AdminAIInstructionsPage = lazy(() => import('@/pages/admin/ai/AdminAIInstructionsPage'));
 const AdminAIMonitoringDashboard = lazy(() => import('@/pages/admin/ai/AdminAIMonitoringDashboard'));
 
 export const adminRoutes = [
@@ -89,13 +88,9 @@ export const adminRoutes = [
   { path: '/admin/variance-reporting', element: <VarianceReportingDashboard /> },
   { path: '/admin/variance-insights', element: <VarianceInsightsDashboard /> },
   { path: '/admin/penalty-management', element: <PenaltyManagementPage /> },
-  { path: '/admin/error-reporting', element: <ErrorReportingDashboard /> },
-  { path: '/admin/variance-reporting', element: <VarianceReportingDashboard /> },
-  { path: '/admin/variance-insights', element: <VarianceInsightsDashboard /> },
   { path: '/admin/collectors', element: <CollectorsPage /> },
   { path: '/admin/collections-debug', element: <CollectionsDebugPage /> },
   { path: '/admin/deductions', element: <ServicesPage /> },
-  { path: '/admin/ai-instructions', element: <AdminAIInstructionsPage /> },
   { path: '/admin/ai-monitoring', element: <AdminAIMonitoringDashboard /> },
   { path: '/admin', element: <Navigate to="/admin/dashboard" replace /> },
 ];
@@ -193,7 +188,6 @@ export default function AdminRoutes() {
                 <Route path="collectors" element={<CollectorsPage />} />
                 <Route path="collections-debug" element={<CollectionsDebugPage />} />
                 <Route path="deductions" element={<ServicesPage />} />
-                <Route path="ai-instructions" element={<AdminAIInstructionsPage />} />
                 <Route path="ai-monitoring" element={<AdminAIMonitoringDashboard />} />
                 <Route index element={<Navigate to="dashboard" replace />} />
                 <Route path="*" element={<Navigate to="/admin" replace />} />

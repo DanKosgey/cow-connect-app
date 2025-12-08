@@ -25,7 +25,6 @@ interface Collection {
   farmer_id: string;
   staff_id: string;
   liters: number;
-  quality_grade: string;
   rate_per_liter: number;
   total_amount: number;
   collection_date: string;
@@ -48,6 +47,14 @@ interface Staff {
   created_at: string;
 }
 
+interface PaymentTrendData {
+  date: string;
+  paidAmount: number;
+  pendingAmount: number;
+  creditUsed: number;
+  collections: number;
+}
+
 interface AnalyticsData {
   collections: Collection[];
   farmers: Farmer[];
@@ -55,6 +62,7 @@ interface AnalyticsData {
   metrics: any[];
   collectionTrends: any[];
   revenueData: any[];
+  paymentTrends: PaymentTrendData[];
 }
 
 const getDateFilter = (dateRange: string) => {
@@ -113,7 +121,6 @@ const fetchPreviousPeriodData = async (startDate: string, endDate: string) => {
         farmer_id,
         staff_id,
         liters,
-        quality_grade,
         rate_per_liter,
         total_amount,
         collection_date,
@@ -155,6 +162,48 @@ const fetchPreviousPeriodData = async (startDate: string, endDate: string) => {
   }
 };
 
+// Function to calculate payment trends
+const calculatePaymentTrends = async (collectionsData: Collection[], startDate: string, endDate: string) => {
+  // Determine date range for trend calculation
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  
+  // Generate daily trend data
+  const dailyTrend = [];
+  
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const dateString = new Date(d).toISOString().split('T')[0];
+    
+    // Count collections for this date
+    const collectionsCount = collectionsData
+      .filter(c => c.collection_date?.startsWith(dateString))
+      .length;
+    
+    const paidAmount = collectionsData
+      .filter(c => c.status === 'Paid' && c.collection_date?.startsWith(dateString))
+      .reduce((sum, c) => sum + (c.total_amount || 0), 0);
+    
+    // Calculate gross pending amount for this date
+    const pendingAmount = collectionsData
+      .filter(c => c.status !== 'Paid' && c.collection_date?.startsWith(dateString))
+      .reduce((sum, c) => sum + (c.total_amount || 0), 0);
+    
+    // For credit used, we'll use a simplified approach since we don't have access to credit_requests table here
+    // In a real implementation, you would fetch actual credit data
+    const creditUsed = pendingAmount * 0.1; // Assume 10% credit usage for demo
+    
+    dailyTrend.push({ 
+      date: dateString, 
+      collections: collectionsCount,
+      paidAmount,
+      pendingAmount,
+      creditUsed
+    });
+  }
+  
+  return dailyTrend;
+};
+
 export const useAnalyticsData = (dateRange: string) => {
   return useQuery<AnalyticsData>({
     queryKey: [CACHE_KEYS.ADMIN_ANALYTICS, dateRange],
@@ -169,7 +218,6 @@ export const useAnalyticsData = (dateRange: string) => {
           farmer_id,
           staff_id,
           liters,
-          quality_grade,
           rate_per_liter,
           total_amount,
           collection_date,
@@ -235,9 +283,7 @@ export const useAnalyticsData = (dateRange: string) => {
             date,
             liters: 0,
             collections: 0,
-            revenue: 0,
-            avgQuality: 0,
-            qualityCount: 0
+            revenue: 0
           };
         }
         // SUM the liters for each date instead of counting collections
@@ -245,21 +291,11 @@ export const useAnalyticsData = (dateRange: string) => {
         acc[date].collections += 1;
         acc[date].revenue += collection.total_amount;
         
-        const qualityValue = collection.quality_grade === 'A+' ? 4 : 
-                          collection.quality_grade === 'A' ? 3 : 
-                          collection.quality_grade === 'B' ? 2 : 1;
-        acc[date].avgQuality += qualityValue;
-        acc[date].qualityCount += 1;
-        
         return acc;
       }, {});
 
       // Convert to array and sort by date
       const trendsArray = Object.values(trendsData)
-        .map((item: any) => ({
-          ...item,
-          avgQuality: item.qualityCount > 0 ? item.avgQuality / item.qualityCount : 0
-        }))
         .sort((a: any, b: any) => {
           const dateA = new Date(a.date);
           const dateB = new Date(b.date);
@@ -273,13 +309,17 @@ export const useAnalyticsData = (dateRange: string) => {
         predicted: trend.revenue * 1.05 // Simple prediction for demo
       }));
 
+      // Calculate payment trends
+      const paymentTrends = await calculatePaymentTrends(collectionsData || [], startDate, endDate);
+
       return {
         collections: collectionsData || [],
         farmers: farmersData || [],
         staff: staffData || [],
         metrics: calculatedMetrics,
         collectionTrends: trendsArray,
-        revenueData: revenueData
+        revenueData: revenueData,
+        paymentTrends: paymentTrends
       };
     },
     staleTime: 1000 * 60 * 5, // 5 minutes
