@@ -607,9 +607,11 @@ const EnhancedCollectionForm = () => {
                           <SelectValue placeholder="Selected farmer" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value={selectedFarmer}>
-                            {selectedFarmerData?.full_name} ({selectedFarmer})
-                          </SelectItem>
+                          {selectedFarmer && (
+                            <SelectItem value={selectedFarmer}>
+                              {selectedFarmerData?.full_name} ({selectedFarmer})
+                            </SelectItem>
+                          )}
                         </SelectContent>
                       </Select>
                     </div>

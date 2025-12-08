@@ -98,7 +98,7 @@ interface CreditRequest {
 }
 
 // Database Service Functions
-const databaseService = {
+export const creditDashboardLoader = {
   // Farmer Data
   async getFarmerCreditProfile(farmerId) {
     const { data, error } = await supabase
@@ -151,8 +151,8 @@ const databaseService = {
     }
   },
 
-  // Credit Transactions
-  async getCreditTransactions(farmerId, limit = 50) {
+  // Credit Transactions with status filtering
+  async getCreditTransactions(farmerId: string, status?: string, limit = 50) {
     const { data, error } = await supabase
       .from('credit_transactions')
       .select('*')
@@ -161,11 +161,17 @@ const databaseService = {
       .limit(limit);
 
     if (error) throw error;
+    
+    // Filter by status if provided
+    if (status) {
+      return data.filter(transaction => transaction.status === status);
+    }
+    
     return data;
   },
 
-  // Purchases
-  async getFarmerPurchases(farmerId, limit = 50) {
+  // Purchases with payment status filtering
+  async getFarmerPurchases(farmerId: string, paymentStatus?: string, limit = 50) {
     const { data, error } = await supabase
       .from('agrovet_purchases')
       .select(`
@@ -181,6 +187,12 @@ const databaseService = {
       .limit(limit);
 
     if (error) throw error;
+    
+    // Filter by payment status if provided
+    if (paymentStatus) {
+      return data.filter(purchase => purchase.payment_status === paymentStatus);
+    }
+    
     return data;
   },
 
@@ -1468,7 +1480,7 @@ const EnhancedCreditSystem = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 p-4 md:p-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {currentView === 'dashboard' && <DashboardView />}
         {currentView === 'shop' && <ShopView />}
@@ -1615,4 +1627,4 @@ const CartItem = ({ item, onUpdateQuantity, onRemove }) => (
   </div>
 );
 
-export default EnhancedCreditSystem;
+export default CreditDashboard;

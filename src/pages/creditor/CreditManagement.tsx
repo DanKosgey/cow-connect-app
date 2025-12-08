@@ -37,6 +37,7 @@ import { useToast } from "@/components/ui/use-toast";
 import RefreshButton from '@/components/ui/RefreshButton';
 import { useCreditManagementData } from '@/hooks/useCreditManagementData';
 import CreditRequestManagement from '@/components/creditor/CreditRequestManagement';
+import StatusBadge from '@/components/StatusBadge';
 
 interface FarmerCreditSummary {
   farmer_id: string;
@@ -47,24 +48,6 @@ interface FarmerCreditSummary {
   credit_used: number;
   pending_payments: number;
   credit_percentage: number;
-}
-
-interface CreditLimit {
-  id: string;
-  farmer_id: string;
-  credit_limit_percentage: number;
-  max_credit_amount: number;
-  current_credit_balance: number;
-  total_credit_used: number;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
-  farmers: {
-    profiles: {
-      full_name: string;
-      phone: string;
-    };
-  };
 }
 
 const CreditManagement = () => {
@@ -109,7 +92,7 @@ const CreditManagement = () => {
       });
       
       // Refresh data
-      window.location.reload();
+      refetch();
     } catch (error: any) {
       console.error("Error granting credit:", error);
       toast({
@@ -201,14 +184,15 @@ const CreditManagement = () => {
                 </CardContent>
               </Card>
 
-              <Card className="border-l-4 border-l-amber-500">
+              <Card className="border-l-4 border-l-orange-500">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-gray-500">Total Credit Used</CardTitle>
+                  <CardTitle className="text-sm font-medium text-gray-500">Avg. Credit Limit</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <p className="text-2xl font-bold text-gray-900">
                     {formatCurrency(
-                      creditLimits.reduce((sum, cl) => sum + (cl.total_credit_used || 0), 0)
+                      creditLimits.reduce((sum, cl) => sum + cl.max_credit_amount, 0) / 
+                      (creditLimits.length || 1)
                     )}
                   </p>
                 </CardContent>
@@ -216,149 +200,111 @@ const CreditManagement = () => {
 
               <Card className="border-l-4 border-l-purple-500">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-gray-500">Available Credit</CardTitle>
+                  <CardTitle className="text-sm font-medium text-gray-500">Total Credit Used</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <p className="text-2xl font-bold text-gray-900">
-                    {formatCurrency(
-                      creditLimits.reduce((sum, cl) => sum + (cl.current_credit_balance || 0), 0)
-                    )}
+                    {formatCurrency(creditLimits.reduce((sum, cl) => sum + cl.total_credit_used, 0))}
                   </p>
                 </CardContent>
               </Card>
             </div>
 
-            {/* Controls */}
+            {/* Filters */}
             <div className="flex flex-col md:flex-row gap-4 mb-6">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <Input
-                  placeholder="Search farmers by name or phone..."
-                  className="pl-10"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
+              <div className="flex-1">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                  <Input
+                    placeholder="Search farmers..."
+                    className="pl-10"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                </div>
               </div>
-              
-              <Select value={filterStatus} onValueChange={setFilterStatus}>
-                <SelectTrigger className="w-full md:w-48">
-                  <SelectValue placeholder="Filter by status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Farmers</SelectItem>
-                  <SelectItem value="high_credit">High Credit (&gt;50,000)</SelectItem>
-                  <SelectItem value="low_credit">Low Credit (&lt;10,000)</SelectItem>
-                  <SelectItem value="no_credit">No Credit Available</SelectItem>
-                </SelectContent>
-              </Select>
-              
-              <Button variant="outline">
-                <Download className="w-4 h-4 mr-2" />
-                Export Report
-              </Button>
+              <div className="w-full md:w-48">
+                <Select value={filterStatus} onValueChange={setFilterStatus}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Filter by status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
+                    <SelectItem value="high_credit">High Credit (&gt;50k)</SelectItem>
+                    <SelectItem value="low_credit">Low Credit (&lt;10k)</SelectItem>
+                    <SelectItem value="no_credit">No Credit</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             {/* Farmers Table */}
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Users className="w-5 h-5" />
-                  Farmers Credit Status
-                </CardTitle>
+                <CardTitle>Farmer Credit Profiles</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Farmer</TableHead>
-                        <TableHead>Phone</TableHead>
-                        <TableHead>Pending Payments</TableHead>
-                        <TableHead>Credit Limit</TableHead>
-                        <TableHead>Available Credit</TableHead>
-                        <TableHead>Credit Used</TableHead>
-                        <TableHead>Credit %</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Actions</TableHead>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Farmer</TableHead>
+                      <TableHead>Credit Limit</TableHead>
+                      <TableHead>Available Credit</TableHead>
+                      <TableHead>Credit Used</TableHead>
+                      <TableHead>Pending Payments</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredFarmers.map((farmer) => (
+                      <TableRow key={farmer.farmer_id}>
+                        <TableCell>
+                          <div>
+                            <div className="font-medium">{farmer.farmer_name}</div>
+                            <div className="text-sm text-gray-500">{farmer.farmer_phone}</div>
+                          </div>
+                        </TableCell>
+                        <TableCell>{formatCurrency(farmer.credit_limit || 0)}</TableCell>
+                        <TableCell>{formatCurrency(farmer.available_credit || 0)}</TableCell>
+                        <TableCell>{formatCurrency(farmer.credit_used || 0)}</TableCell>
+                        <TableCell>{formatCurrency(farmer.pending_payments || 0)}</TableCell>
+                        <TableCell>
+                          <StatusBadge 
+                            status="active" 
+                            type="default" 
+                          />
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleAdjustCreditLimit(farmer.farmer_id, farmer.farmer_name)}
+                            >
+                              <Edit className="h-4 w-4 mr-1" />
+                              Adjust
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleGrantCredit(farmer.farmer_id, farmer.farmer_name)}
+                            >
+                              <Plus className="h-4 w-4 mr-1" />
+                              Grant Credit
+                            </Button>
+                          </div>
+                        </TableCell>
                       </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredFarmers.map((farmer) => {
-                        const hasCredit = farmer.available_credit > 0;
-                        const creditUtilization = farmer.credit_limit > 0 
-                          ? (farmer.credit_used / farmer.credit_limit) * 100 
-                          : 0;
-                        
-                        return (
-                          <TableRow key={farmer.farmer_id} className="hover:bg-gray-50">
-                            <TableCell className="font-medium">{farmer.farmer_name}</TableCell>
-                            <TableCell>{farmer.farmer_phone}</TableCell>
-                            <TableCell>{formatCurrency(farmer.pending_payments)}</TableCell>
-                            <TableCell>{formatCurrency(farmer.credit_limit)}</TableCell>
-                            <TableCell className={farmer.available_credit > 0 ? "text-green-600 font-semibold" : ""}>
-                              {formatCurrency(farmer.available_credit)}
-                            </TableCell>
-                            <TableCell>{formatCurrency(farmer.credit_used)}</TableCell>
-                            <TableCell>{farmer.credit_percentage}%</TableCell>
-                            <TableCell>
-                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                                hasCredit 
-                                  ? creditUtilization > 80 
-                                    ? "bg-red-100 text-red-800" 
-                                    : "bg-green-100 text-green-800"
-                                  : "bg-gray-100 text-gray-800"
-                              }`}>
-                                {hasCredit ? (
-                                  <>
-                                    <CheckCircle className="w-3 h-3 mr-1" />
-                                    Active
-                                  </>
-                                ) : (
-                                  <>
-                                    <Clock className="w-3 h-3 mr-1" />
-                                    No Credit
-                                  </>
-                                )}
-                              </span>
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex gap-2">
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => handleAdjustCreditLimit(farmer.farmer_id, farmer.farmer_name)}
-                                >
-                                  <Edit className="w-4 h-4" />
-                                </Button>
-                                {!hasCredit && farmer.pending_payments > 0 && (
-                                  <Button
-                                    size="sm"
-                                    onClick={() => handleGrantCredit(farmer.farmer_id, farmer.farmer_name)}
-                                  >
-                                    <CreditCard className="w-4 h-4 mr-1" />
-                                    Grant Credit
-                                  </Button>
-                                )}
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
-                
-                {filteredFarmers.length === 0 && (
-                  <div className="text-center py-8 text-gray-500">
-                    <Users className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                    <p>No farmers found matching your criteria</p>
-                  </div>
-                )}
+                    ))}
+                  </TableBody>
+                </Table>
               </CardContent>
             </Card>
           </>
         ) : (
-          /* Credit Requests Tab */
           <CreditRequestManagement />
         )}
       </div>

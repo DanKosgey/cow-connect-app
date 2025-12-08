@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/SimplifiedAuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { 
   TrendingUp, 
@@ -10,12 +10,13 @@ import {
   Award, 
   Calendar, 
   Truck, 
-  Beaker, 
   Users,
   Clock,
   Target,
   BarChart3,
-  LineChart
+  LineChart,
+  Activity,
+  Star
 } from 'lucide-react';
 import useToastNotifications from '@/hooks/useToastNotifications';
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
@@ -26,23 +27,20 @@ interface DailyStats {
   collections: number;
   liters: number;
   farmers: number;
-  avg_quality_score: number;
 }
 
-interface PerformanceStats {
+interface Stats {
   daily: DailyStats[];
   weekly: {
     collections: number;
     liters: number;
     farmers: number;
-    avg_quality_score: number;
-    trend: 'up' | 'down' | 'stable';
+    trend: string;
   };
   monthly: {
     collections: number;
     liters: number;
     farmers: number;
-    avg_quality_score: number;
     target_achievement: number;
     performanceRating: number;
   };
@@ -60,7 +58,7 @@ export default function EnhancedPerformanceDashboard() {
   const { user } = useAuth();
   const { show, error: showError } = useToastNotifications();
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState<PerformanceStats | null>(null);
+  const [stats, setStats] = useState<Stats | null>(null);
   const [staffInfo, setStaffInfo] = useState<StaffInfo | null>(null);
   const [timeRange, setTimeRange] = useState<'week' | 'month'>('week');
 
@@ -112,7 +110,6 @@ export default function EnhancedPerformanceDashboard() {
         .select(`
           id,
           liters,
-          quality_grade,
           collection_date,
           farmer_id
         `)
@@ -133,15 +130,12 @@ export default function EnhancedPerformanceDashboard() {
           date,
           collections: 0,
           liters: 0,
-          farmers: 0,
-          avg_quality_score: 0
+          farmers: 0
         };
       }
 
       // Process collections
       const farmersSet = new Set<string>();
-      let totalQualityScore = 0;
-      let qualityCount = 0;
 
       collectionsData?.forEach(collection => {
         const date = format(new Date(collection.collection_date), 'yyyy-MM-dd');
@@ -149,16 +143,6 @@ export default function EnhancedPerformanceDashboard() {
           dailyStatsMap[date].collections += 1;
           dailyStatsMap[date].liters += collection.liters || 0;
           farmersSet.add(collection.farmer_id);
-          
-          // Calculate quality score
-          if (collection.quality_grade) {
-            const score = collection.quality_grade === 'A+' ? 10 : 
-                         collection.quality_grade === 'A' ? 8 : 
-                         collection.quality_grade === 'B' ? 6 : 4;
-            totalQualityScore += score;
-            qualityCount++;
-            dailyStatsMap[date].avg_quality_score = score; // For daily display
-          }
         }
       });
 
@@ -168,7 +152,6 @@ export default function EnhancedPerformanceDashboard() {
       const weeklyCollections = dailyStats.reduce((sum, day) => sum + day.collections, 0);
       const weeklyLiters = dailyStats.reduce((sum, day) => sum + day.liters, 0);
       const weeklyFarmers = farmersSet.size;
-      const weeklyAvgQuality = qualityCount > 0 ? totalQualityScore / qualityCount : 0;
       
       // Calculate trend (compare first half vs second half of the week)
       const firstHalf = dailyStats.slice(0, 3);
@@ -181,8 +164,8 @@ export default function EnhancedPerformanceDashboard() {
       const monthlyTarget = 1000;
       const monthlyAchievement = (weeklyLiters * 4.3) / monthlyTarget * 100; // Approximate monthly based on weekly
       
-      // Performance rating (simplified)
-      const performanceRating = Math.min(5, Math.floor(weeklyAvgQuality / 2));
+      // Performance rating (based on volume)
+      const performanceRating = Math.min(5, Math.floor(weeklyLiters / 100));
 
       setStats({
         daily: dailyStats,
@@ -190,14 +173,12 @@ export default function EnhancedPerformanceDashboard() {
           collections: weeklyCollections,
           liters: parseFloat(weeklyLiters.toFixed(1)),
           farmers: weeklyFarmers,
-          avg_quality_score: parseFloat(weeklyAvgQuality.toFixed(1)),
           trend
         },
         monthly: {
           collections: Math.round(weeklyCollections * 4.3),
           liters: parseFloat((weeklyLiters * 4.3).toFixed(1)),
           farmers: weeklyFarmers,
-          avg_quality_score: parseFloat(weeklyAvgQuality.toFixed(1)),
           target_achievement: parseFloat(Math.min(100, monthlyAchievement).toFixed(1)),
           performanceRating
         }
@@ -219,11 +200,10 @@ export default function EnhancedPerformanceDashboard() {
   }
 
   // Prepare data for charts
-  const qualityDistribution = [
-    { name: 'A+', value: stats?.daily.filter(d => d.avg_quality_score >= 9).length || 0 },
-    { name: 'A', value: stats?.daily.filter(d => d.avg_quality_score >= 8 && d.avg_quality_score < 9).length || 0 },
-    { name: 'B', value: stats?.daily.filter(d => d.avg_quality_score >= 6 && d.avg_quality_score < 8).length || 0 },
-    { name: 'C', value: stats?.daily.filter(d => d.avg_quality_score < 6).length || 0 },
+  const volumeDistribution = [
+    { name: 'High Volume', value: stats?.daily.filter(d => d.liters >= 50).length || 0 },
+    { name: 'Medium Volume', value: stats?.daily.filter(d => d.liters >= 25 && d.liters < 50).length || 0 },
+    { name: 'Low Volume', value: stats?.daily.filter(d => d.liters < 25).length || 0 }
   ];
 
   return (
@@ -273,16 +253,16 @@ export default function EnhancedPerformanceDashboard() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              Quality Score
+              Avg Volume per Collection
             </CardTitle>
-            <Beaker className="h-4 w-4 text-muted-foreground" />
+            <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {stats?.weekly.avg_quality_score?.toFixed(1) || '0.0'}
+              {stats?.weekly.collections ? (stats.weekly.liters / stats.weekly.collections).toFixed(1) : '0.0'}L
             </div>
             <p className="text-xs text-muted-foreground">
-              Average quality rating
+              Average liters per collection
             </p>
           </CardContent>
         </Card>
@@ -313,7 +293,7 @@ export default function EnhancedPerformanceDashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {stats?.monthly.target_achievement?.toFixed(0) || 0}%
+              {stats?.monthly.target_achievement?.toFixed(1) || '0.0'}%
             </div>
             <p className="text-xs text-muted-foreground">
               Monthly target achievement
@@ -325,236 +305,122 @@ export default function EnhancedPerformanceDashboard() {
       {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Daily Collections Chart */}
-        <Card className="col-span-1">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <BarChart3 className="h-5 w-5" />
-              Daily Collections
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <RechartsLineChart data={stats?.daily || []}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis 
-                  dataKey="date" 
-                  tickFormatter={(date) => format(new Date(date), 'EEE')}
-                />
-                <YAxis />
-                <Tooltip 
-                  formatter={(value) => [value, 'Liters']}
-                  labelFormatter={(date) => format(new Date(date), 'EEEE, MMM d')}
-                />
-                <Legend />
-                <Line 
-                  type="monotone" 
-                  dataKey="liters" 
-                  stroke="#3b82f6" 
-                  name="Liters Collected" 
-                  strokeWidth={2}
-                  dot={{ r: 4 }}
-                  activeDot={{ r: 6 }}
-                />
-                <Line 
-                  type="monotone" 
-                  dataKey="collections" 
-                  stroke="#10b981" 
-                  name="Collections" 
-                  strokeWidth={2}
-                  dot={{ r: 4 }}
-                  activeDot={{ r: 6 }}
-                />
-              </RechartsLineChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        {/* Quality Distribution */}
-        <Card className="col-span-1">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Beaker className="h-5 w-5" />
-              Quality Distribution
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={qualityDistribution}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {qualityDistribution.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(value) => [value, 'Days']} />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Weekly & Monthly Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Weekly Performance */}
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Clock className="h-5 w-5" />
-                Weekly Overview
-              </CardTitle>
-              <Badge variant={
-                stats?.weekly.trend === 'up' ? 'default' :
-                stats?.weekly.trend === 'down' ? 'destructive' : 'secondary'
-              }>
-                {stats?.weekly.trend === 'up' && <TrendingUp className="h-4 w-4 mr-1" />}
-                {stats?.weekly.trend === 'down' && <TrendingDown className="h-4 w-4 mr-1" />}
-                {stats?.weekly.trend === 'stable' && <Minus className="h-4 w-4 mr-1" />}
-                {stats?.weekly.trend?.charAt(0).toUpperCase() + stats?.weekly.trend?.slice(1) || 'No data'}
-              </Badge>
-            </div>
+            <CardTitle>Daily Collections</CardTitle>
+            <CardDescription>
+              Collection volume trends for the current week
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-3 bg-muted rounded-lg">
-                  <p className="text-sm text-muted-foreground">Avg. Collections</p>
-                  <p className="text-xl font-bold">
-                    {stats?.weekly.collections ? Math.round(stats.weekly.collections / 7) : 0}/day
-                  </p>
-                </div>
-                <div className="p-3 bg-muted rounded-lg">
-                  <p className="text-sm text-muted-foreground">Avg. Volume</p>
-                  <p className="text-xl font-bold">
-                    {stats?.weekly.liters ? (stats.weekly.liters / 7).toFixed(1) : 0}L/day
-                  </p>
-                </div>
-                <div className="p-3 bg-muted rounded-lg">
-                  <p className="text-sm text-muted-foreground">Quality Score</p>
-                  <p className="text-xl font-bold">
-                    {stats?.weekly.avg_quality_score?.toFixed(1) || '0.0'}/10
-                  </p>
-                </div>
-                <div className="p-3 bg-muted rounded-lg">
-                  <p className="text-sm text-muted-foreground">Farmers/Day</p>
-                  <p className="text-xl font-bold">
-                    {stats?.weekly.farmers ? (stats.weekly.farmers / 7).toFixed(1) : 0}
-                  </p>
-                </div>
-              </div>
+            <div className="h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={stats?.daily}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="date" />
+                  <YAxis />
+                  <Tooltip />
+                  <Legend />
+                  <Bar dataKey="collections" fill="#3b82f6" name="Collections" />
+                  <Bar dataKey="liters" fill="#10b981" name="Liters" />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           </CardContent>
         </Card>
 
-        {/* Monthly Performance */}
+        {/* Volume Distribution */}
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Calendar className="h-5 w-5" />
-                Monthly Projection
-              </CardTitle>
-              <Badge>
-                <Calendar className="h-4 w-4 mr-1" />
-                {new Date().toLocaleString('default', { month: 'long' })}
-              </Badge>
-            </div>
+            <CardTitle>Volume Distribution</CardTitle>
+            <CardDescription>
+              Distribution of collection volumes
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-3 bg-muted rounded-lg">
-                  <p className="text-sm text-muted-foreground">Projected Collections</p>
-                  <p className="text-xl font-bold">
-                    {stats?.monthly.collections || 0}
-                  </p>
-                </div>
-                <div className="p-3 bg-muted rounded-lg">
-                  <p className="text-sm text-muted-foreground">Projected Volume</p>
-                  <p className="text-xl font-bold">
-                    {stats?.monthly.liters?.toFixed(0) || 0}L
-                  </p>
-                </div>
-                <div className="p-3 bg-muted rounded-lg">
-                  <p className="text-sm text-muted-foreground">Target Achievement</p>
-                  <p className="text-xl font-bold">
-                    {stats?.monthly.target_achievement?.toFixed(0) || 0}%
-                  </p>
-                </div>
-                <div className="p-3 bg-muted rounded-lg">
-                  <p className="text-sm text-muted-foreground">Performance Rating</p>
-                  <div className="flex items-center">
-                    {[1, 2, 3, 4, 5].map((star) => (
-                      <Award
-                        key={star}
-                        className={`h-5 w-5 ${
-                          star <= (stats?.monthly.performanceRating || 0)
-                            ? 'text-yellow-400 fill-current'
-                            : 'text-gray-300'
-                        }`}
-                      />
+            <div className="h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={volumeDistribution}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="value"
+                    nameKey="name"
+                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                  >
+                    {volumeDistribution.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={['#10b981', '#3b82f6', '#f59e0b'][index % 3]} />
                     ))}
-                  </div>
-                </div>
-              </div>
-              
-              {/* Progress Bar */}
-              <div className="pt-2">
-                <div className="flex justify-between text-sm mb-1">
-                  <span>Monthly Target Progress</span>
-                  <span>{stats?.monthly.target_achievement?.toFixed(0) || 0}%</span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div 
-                    className="bg-blue-600 h-2 rounded-full" 
-                    style={{ width: `${Math.min(100, stats?.monthly.target_achievement || 0)}%` }}
-                  ></div>
-                </div>
-              </div>
+                  </Pie>
+                  <Tooltip />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Recent Activity */}
+      {/* Weekly Summary */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <LineChart className="h-5 w-5" />
-            Recent Activity
-          </CardTitle>
+          <CardTitle>Weekly Performance Summary</CardTitle>
+          <CardDescription>
+            Key performance indicators for the current week
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={stats?.daily || []}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis 
-                  dataKey="date" 
-                  tickFormatter={(date) => format(new Date(date), 'EEE')}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="text-center">
+              <div className="text-3xl font-bold text-blue-600">
+                {stats?.weekly.collections || 0}
+              </div>
+              <div className="text-sm text-muted-foreground mt-1">
+                Total Collections
+              </div>
+            </div>
+            <div className="text-center">
+              <div className="text-3xl font-bold text-green-600">
+                {stats?.weekly.liters?.toFixed(1) || '0.0'}L
+              </div>
+              <div className="text-sm text-muted-foreground mt-1">
+                Total Volume
+              </div>
+            </div>
+            <div className="text-center">
+              <div className="text-3xl font-bold text-purple-600">
+                {stats?.weekly.farmers || 0}
+              </div>
+              <div className="text-sm text-muted-foreground mt-1">
+                Farmers Visited
+              </div>
+            </div>
+          </div>
+          
+          {/* Performance Rating */}
+          <div className="mt-6">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium">Performance Rating</span>
+              <span className="text-sm font-medium">
+                {stats?.monthly.performanceRating || 0}/5
+              </span>
+            </div>
+            <div className="flex space-x-1">
+              {[1, 2, 3, 4, 5].map((star) => (
+                <Star
+                  key={star}
+                  className={`h-5 w-5 ${
+                    star <= (stats?.monthly.performanceRating || 0)
+                      ? 'text-yellow-400 fill-current'
+                      : 'text-gray-300'
+                  }`}
                 />
-                <YAxis />
-                <Tooltip 
-                  formatter={(value) => [value, 'Liters']}
-                  labelFormatter={(date) => format(new Date(date), 'EEEE, MMM d')}
-                />
-                <Legend />
-                <Bar 
-                  dataKey="liters" 
-                  fill="#3b82f6" 
-                  name="Liters Collected" 
-                />
-              </BarChart>
-            </ResponsiveContainer>
+              ))}
+            </div>
           </div>
         </CardContent>
       </Card>

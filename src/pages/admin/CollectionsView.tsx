@@ -61,7 +61,6 @@ interface Collection {
   farmer_id: string;
   staff_id: string;
   liters: number;
-  quality_grade: string;
   rate_per_liter: number;
   total_amount: number;
   collection_date: string;
@@ -87,7 +86,6 @@ interface Collection {
 
 interface AnalyticsData {
   dailyTrends: any[];
-  qualityDistribution: any[];
   topFarmers: any[];
   staffPerformance: any[];
 }
@@ -99,16 +97,13 @@ interface CollectionsData {
 }
 
 // Constants
-const GRADE_VALUES = { 'A+': 4, 'A': 3, 'B': 2, 'C': 1 } as const;
 const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6'];
-const GRADE_COLORS = { 'A+': '#10b981', 'A': '#3b82f6', 'B': '#f59e0b', 'C': '#ef4444' };
 
 const TABS = [
   { id: 'overview', label: 'Overview', icon: BarChart3 },
   { id: 'trends', label: 'Trends', icon: TrendingUp },
   { id: 'farmers', label: 'Farmers', icon: Users },
   { id: 'staff', label: 'Staff', icon: Award },
-  { id: 'quality', label: 'Quality', icon: Target },
   { id: 'collections', label: 'All Collections', icon: Droplet }
 ] as const;
 
@@ -161,7 +156,6 @@ const useCollectionsData = () => {
           farmer_id,
           staff_id,
           liters,
-          quality_grade,
           rate_per_liter,
           total_amount,
           collection_date,
@@ -251,6 +245,8 @@ const CollectionsAnalyticsDashboard = () => {
   const [selectedFarmer, setSelectedFarmer] = useState('all');
   const [selectedStaff, setSelectedStaff] = useState('all');
   const [currentView, setCurrentView] = useState('overview');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   // Log component mount
   useEffect(() => {
@@ -348,48 +344,25 @@ const CollectionsAnalyticsDashboard = () => {
   }, [filteredCollections, dateRange, filterStatus]);
 
   // Memoized analytics calculations
-  const analytics = useMemo((): AnalyticsData => {
-    collectionsViewLogger.info('Calculating analytics', { collectionCount: filteredCollections.length });
-
+  const analyticsData = useMemo<AnalyticsData>(() => {
+    collectionsViewLogger.info('Starting analytics calculation', { collectionCount: filteredCollections.length });
+    
     // Daily trends
     const dailyData = filteredCollections.reduce((acc, c) => {
-      const date = new Date(c.collection_date).toLocaleDateString();
+      const date = new Date(c.collection_date).toISOString().split('T')[0];
       if (!acc[date]) {
-        acc[date] = { date, collections: 0, liters: 0, amount: 0, qualitySum: 0, qualityCount: 0 };
+        acc[date] = { date, collections: 0, liters: 0, amount: 0 };
       }
       acc[date].collections += 1;
       acc[date].liters += Number(c.liters) || 0;
       acc[date].amount += Number(c.total_amount) || 0;
-      acc[date].qualitySum += GRADE_VALUES[c.quality_grade as keyof typeof GRADE_VALUES] || 0;
-      acc[date].qualityCount += 1;
       return acc;
     }, {} as Record<string, any>);
 
     const dailyTrends = Object.values(dailyData)
-      .map(d => ({
-        ...d,
-        avgQuality: d.qualityCount > 0 ? d.qualitySum / d.qualityCount : 0
-      }))
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     collectionsViewLogger.debug('Daily trends calculated', { count: dailyTrends.length });
-
-    // Quality distribution
-    const qualityCounts = filteredCollections.reduce((acc, c) => {
-      if (c.quality_grade && acc.hasOwnProperty(c.quality_grade)) {
-        acc[c.quality_grade]++;
-      }
-      return acc;
-    }, { 'A+': 0, 'A': 0, 'B': 0, 'C': 0 } as Record<string, number>);
-
-    const total = filteredCollections.length || 1;
-    const qualityDistribution = Object.entries(qualityCounts).map(([grade, count]) => ({
-      name: `Grade ${grade}`,
-      value: count,
-      percentage: Math.round((count / total) * 100)
-    }));
-
-    collectionsViewLogger.debug('Quality distribution calculated', qualityDistribution);
 
     // Top farmers
     const farmerStats = filteredCollections.reduce((acc, c) => {
@@ -400,22 +373,16 @@ const CollectionsAnalyticsDashboard = () => {
           name: c.farmers?.profiles?.full_name || 'Unknown',
           collections: 0,
           liters: 0,
-          amount: 0,
-          qualitySum: 0
+          amount: 0
         };
       }
       acc[id].collections += 1;
       acc[id].liters += Number(c.liters) || 0;
       acc[id].amount += Number(c.total_amount) || 0;
-      acc[id].qualitySum += GRADE_VALUES[c.quality_grade as keyof typeof GRADE_VALUES] || 0;
       return acc;
     }, {} as Record<string, any>);
 
     const topFarmers = Object.values(farmerStats)
-      .map(f => ({
-        ...f,
-        avgQuality: f.collections > 0 ? f.qualitySum / f.collections : 0
-      }))
       .sort((a, b) => b.liters - a.liters)
       .slice(0, 10);
 
@@ -450,7 +417,7 @@ const CollectionsAnalyticsDashboard = () => {
 
     collectionsViewLogger.debug('Staff performance calculated', { count: staffPerformance.length });
 
-    const result = { dailyTrends, qualityDistribution, topFarmers, staffPerformance };
+    const result = { dailyTrends, topFarmers, staffPerformance };
     collectionsViewLogger.info('Analytics calculation completed');
     return result;
   }, [filteredCollections]);
@@ -465,11 +432,6 @@ const CollectionsAnalyticsDashboard = () => {
     const avgRate = totalLiters > 0 ? totalAmount / totalLiters : 0;
     const uniqueFarmers = new Set(filteredCollections.map(c => c.farmer_id)).size;
     const uniqueStaff = new Set(filteredCollections.map(c => c.staff?.id)).size;
-    const avgQuality = totalCollections > 0
-      ? filteredCollections.reduce((sum, c) => 
-          sum + (GRADE_VALUES[c.quality_grade as keyof typeof GRADE_VALUES] || 0), 0
-        ) / totalCollections
-      : 0;
 
     const result = {
       totalCollections,
@@ -477,8 +439,7 @@ const CollectionsAnalyticsDashboard = () => {
       totalAmount,
       avgRate,
       uniqueFarmers,
-      uniqueStaff,
-      avgQuality
+      uniqueStaff
     };
 
     collectionsViewLogger.info('Key metrics calculated', result);
@@ -501,7 +462,6 @@ const CollectionsAnalyticsDashboard = () => {
       c.farmers?.profiles?.full_name || 'N/A',
       c.staff?.profiles?.full_name || 'N/A',
       c.liters,
-      c.quality_grade,
       c.rate_per_liter,
       c.total_amount,
       c.status,
@@ -509,7 +469,7 @@ const CollectionsAnalyticsDashboard = () => {
       c.gps_longitude || 'N/A'
     ]);
 
-    const headers = ['Collection ID', 'Date', 'Farmer', 'Staff', 'Liters', 'Quality Grade',
+    const headers = ['Collection ID', 'Date', 'Farmer', 'Staff', 'Liters',
       'Rate per Liter', 'Total Amount', 'Status', 'GPS Latitude', 'GPS Longitude'];
     const csv = [headers, ...csvData].map(row => row.join(',')).join('\n');
 
@@ -570,6 +530,12 @@ const CollectionsAnalyticsDashboard = () => {
   const farmers = collectionsData?.farmers || [];
   const staff = collectionsData?.staff || [];
 
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredCollections.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedCollections = filteredCollections.slice(startIndex, endIndex);
+
   // Render views
   const renderView = useCallback(() => {
     collectionsViewLogger.info('Rendering view', { currentView });
@@ -580,7 +546,7 @@ const CollectionsAnalyticsDashboard = () => {
         return (
           <>
             {/* Key Metrics */}
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
               <MetricCard
                 icon={Droplet}
                 title="Total Collections"
@@ -590,31 +556,24 @@ const CollectionsAnalyticsDashboard = () => {
               />
               <MetricCard
                 icon={Activity}
-                title="Total Liters"
-                value={`${metrics.totalLiters.toFixed(2)}L`}
-                subtitle={`Avg: ${(metrics.totalLiters / metrics.totalCollections || 0).toFixed(2)}L/collection`}
+                title="Total Volume"
+                value={`${metrics.totalLiters.toFixed(0)}L`}
+                subtitle={`Avg ${(metrics.totalLiters / (metrics.totalCollections || 1)).toFixed(1)}L per collection`}
                 gradient="from-green-500 to-green-600"
               />
               <MetricCard
                 icon={DollarSign}
                 title="Total Revenue"
                 value={formatCurrency(metrics.totalAmount)}
-                subtitle={`Avg rate: ${formatCurrency(metrics.avgRate)}/L`}
-                gradient="from-yellow-500 to-yellow-600"
+                subtitle={`Avg rate ${formatCurrency(metrics.avgRate)}/L`}
+                gradient="from-emerald-500 to-emerald-600"
               />
               <MetricCard
                 icon={Users}
-                title="Active Farmers"
-                value={metrics.uniqueFarmers}
-                subtitle={`${metrics.uniqueStaff} active staff`}
+                title="Active Participants"
+                value={metrics.uniqueFarmers + metrics.uniqueStaff}
+                subtitle={`${metrics.uniqueFarmers} farmers, ${metrics.uniqueStaff} staff`}
                 gradient="from-purple-500 to-purple-600"
-              />
-              <MetricCard
-                icon={Award}
-                title="Avg Quality"
-                value={metrics.avgQuality.toFixed(1)}
-                subtitle="Quality Score"
-                gradient="from-indigo-500 to-indigo-600"
               />
             </div>
 
@@ -624,7 +583,7 @@ const CollectionsAnalyticsDashboard = () => {
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Daily Collection Trends</h3>
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={analytics.dailyTrends}>
+                    <ComposedChart data={analyticsData.dailyTrends}>
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="date" />
                       <YAxis yAxisId="left" />
@@ -633,40 +592,28 @@ const CollectionsAnalyticsDashboard = () => {
                         formatter={(value, name) => {
                           if (name === 'liters') return [`${value}L`, 'Liters'];
                           if (name === 'amount') return [formatCurrency(Number(value)), 'Revenue'];
-                          if (name === 'avgQuality') return [`${Number(value).toFixed(2)}`, 'Avg Quality'];
                           return [value, name];
                         }}
                       />
                       <Legend />
                       <Area yAxisId="left" type="monotone" dataKey="liters" fill="#3b82f6" stroke="#3b82f6" fillOpacity={0.3} name="Liters" />
                       <Line yAxisId="right" type="monotone" dataKey="amount" stroke="#10b981" strokeWidth={2} name="Revenue" />
-                      <Line yAxisId="right" type="monotone" dataKey="avgQuality" stroke="#f59e0b" strokeWidth={2} name="Avg Quality" />
                     </ComposedChart>
                   </ResponsiveContainer>
                 </div>
               </div>
 
               <div className="bg-white rounded-lg shadow-lg p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Quality Grade Distribution</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Top Performing Farmers</h3>
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={analytics.qualityDistribution}
-                        cx="50%"
-                        cy="50%"
-                        labelLine={false}
-                        label={({ name, percentage }) => `${name}: ${percentage}%`}
-                        outerRadius={100}
-                        fill="#8884d8"
-                        dataKey="value"
-                      >
-                        {analytics.qualityDistribution.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip formatter={(value) => [value, 'Collections']} />
-                    </PieChart>
+                    <BarChart data={analyticsData.topFarmers.slice(0, 10)}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="name" />
+                      <YAxis />
+                      <Tooltip formatter={(value) => [`${value}L`, 'Liters']} />
+                      <Bar dataKey="liters" fill="#3b82f6" name="Liters" />
+                    </BarChart>
                   </ResponsiveContainer>
                 </div>
               </div>
@@ -681,7 +628,7 @@ const CollectionsAnalyticsDashboard = () => {
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Collection Trends Over Time</h3>
             <div className="h-96">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={analytics.dailyTrends}>
+                <AreaChart data={analyticsData.dailyTrends}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="date" />
                   <YAxis />
@@ -704,11 +651,11 @@ const CollectionsAnalyticsDashboard = () => {
       case 'farmers':
       case 'staff':
         collectionsViewLogger.info('Rendering farmers/staff view', { viewType: currentView });
-        const data = currentView === 'farmers' ? analytics.topFarmers : analytics.staffPerformance;
+        const data = currentView === 'farmers' ? analyticsData.topFarmers : analyticsData.staffPerformance;
         const title = currentView === 'farmers' ? 'Top Performing Farmers' : 'Staff Performance';
         const columns = currentView === 'farmers'
-          ? ['Rank', 'Farmer Name', 'Collections', 'Total Liters', 'Revenue', 'Avg Quality']
-          : ['Rank', 'Staff Name', 'Collections', 'Total Liters', 'Farmers Served', 'Avg/Collection'];
+          ? ['Rank', 'Farmer Name', 'Collections', 'Total Liters', 'Revenue']
+          : ['Rank', 'Staff Name', 'Collections', 'Total Liters', 'Farmers Served'];
 
         return (
           <div className="bg-white rounded-lg shadow-lg overflow-hidden">
@@ -739,23 +686,9 @@ const CollectionsAnalyticsDashboard = () => {
                       <td className="px-6 py-4 text-sm text-gray-900">{item.collections}</td>
                       <td className="px-6 py-4 text-sm font-medium text-blue-600">{item.liters.toFixed(2)}L</td>
                       {currentView === 'farmers' ? (
-                        <>
-                          <td className="px-6 py-4 text-sm text-gray-900">{formatCurrency(item.amount)}</td>
-                          <td className="px-6 py-4">
-                            <span className={`px-2 py-1 rounded text-xs font-medium ${
-                              item.avgQuality >= 3.5 ? 'bg-green-100 text-green-800' :
-                              item.avgQuality >= 2.5 ? 'bg-blue-100 text-blue-800' :
-                              'bg-yellow-100 text-yellow-800'
-                            }`}>
-                              {item.avgQuality.toFixed(1)}/4.0
-                            </span>
-                          </td>
-                        </>
+                        <td className="px-6 py-4 text-sm text-gray-900">{formatCurrency(item.amount)}</td>
                       ) : (
-                        <>
-                          <td className="px-6 py-4 text-sm text-gray-900">{item.farmers}</td>
-                          <td className="px-6 py-4 text-sm text-gray-900">{(item.liters / item.collections || 0).toFixed(2)}L</td>
-                        </>
+                        <td className="px-6 py-4 text-sm text-gray-900">{item.farmers}</td>
                       )}
                     </tr>
                   ))}
@@ -770,125 +703,51 @@ const CollectionsAnalyticsDashboard = () => {
           </div>
         );
 
-      case 'quality':
-        collectionsViewLogger.info('Rendering quality view');
-        return (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-white rounded-lg shadow-lg p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Quality Distribution</h3>
-              <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={analytics.qualityDistribution}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={true}
-                      label={({ name, percentage, value }) => `${name}: ${value} (${percentage}%)`}
-                      outerRadius={100}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {analytics.qualityDistribution.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value) => [value, 'Collections']} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-lg shadow-lg p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Quality Insights</h3>
-              <div className="space-y-4">
-                {analytics.qualityDistribution.map((grade, idx) => (
-                  <div key={idx} className="border-l-4 pl-4 py-2" style={{ borderColor: COLORS[idx % COLORS.length] }}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-medium text-gray-900">{grade.name}</span>
-                      <span className="text-sm text-gray-600">{grade.value} collections</span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div
-                        className="h-2 rounded-full transition-all duration-500"
-                        style={{
-                          width: `${grade.percentage}%`,
-                          backgroundColor: COLORS[idx % COLORS.length]
-                        }}
-                      />
-                    </div>
-                    <span className="text-xs text-gray-500">{grade.percentage}% of total</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        );
-
       case 'collections':
-        collectionsViewLogger.info('Rendering collections view', { collectionCount: filteredCollections.length });
+        collectionsViewLogger.info('Rendering collections view');
         return (
           <div className="bg-white rounded-lg shadow-lg overflow-hidden">
-            <div className="px-6 py-4 border-b bg-gradient-to-r from-blue-50 to-indigo-50">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-gray-900">All Collections</h3>
-                <span className="text-sm text-gray-600">
-                  Showing {filteredCollections.length} of {realtimeCollections.length} collections
-                </span>
-              </div>
+            <div className="px-6 py-4 border-b bg-gradient-to-r from-blue-50 to-indigo-50 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900">All Collections</h3>
+              <Button onClick={exportToCSV} variant="outline" size="sm">
+                <Download className="h-4 w-4 mr-2" />
+                Export CSV
+              </Button>
             </div>
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>ID</TableHead>
-                    <TableHead>Date & Time</TableHead>
+                    <TableHead>Collection ID</TableHead>
+                    <TableHead>Date</TableHead>
                     <TableHead>Farmer</TableHead>
                     <TableHead>Staff</TableHead>
                     <TableHead>Liters</TableHead>
-                    <TableHead>Grade</TableHead>
-                    <TableHead>Rate</TableHead>
-                    <TableHead>Amount</TableHead>
+                    <TableHead>Rate/L</TableHead>
+                    <TableHead>Total</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead>Approval</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredCollections.map((c) => (
-                    <TableRow key={c.id}>
-                      <TableCell className="font-mono">{c.collection_id}</TableCell>
-                      <TableCell>
-                        <div>{format(new Date(c.collection_date), 'MMM dd, yyyy')}</div>
-                        <div className="text-xs text-gray-500">{format(new Date(c.collection_date), 'HH:mm')}</div>
-                      </TableCell>
-                      <TableCell className="font-medium">{c.farmers?.profiles?.full_name || 'Unknown'}</TableCell>
-                      <TableCell>{c.staff?.profiles?.full_name || 'Unknown'}</TableCell>
-                      <TableCell className="font-medium text-blue-600">{c.liters}L</TableCell>
-                      <TableCell>
-                        <span
-                          className="px-3 py-1 rounded-full text-xs font-semibold text-white"
-                          style={{ backgroundColor: GRADE_COLORS[c.quality_grade as keyof typeof GRADE_COLORS] || '#6b7280' }}
-                        >
-                          {c.quality_grade}
-                        </span>
-                      </TableCell>
+                  {paginatedCollections.map((c) => (
+                    <TableRow key={c.id} className="hover:bg-gray-50">
+                      <TableCell className="font-medium">{c.collection_id}</TableCell>
+                      <TableCell>{new Date(c.collection_date).toLocaleDateString()}</TableCell>
+                      <TableCell>{c.farmers?.profiles?.full_name || 'N/A'}</TableCell>
+                      <TableCell>{c.staff?.profiles?.full_name || 'N/A'}</TableCell>
+                      <TableCell>{c.liters}L</TableCell>
                       <TableCell>{formatCurrency(c.rate_per_liter)}</TableCell>
-                      <TableCell className="font-medium text-green-600">{formatCurrency(c.total_amount)}</TableCell>
+                      <TableCell className="font-medium">{formatCurrency(c.total_amount)}</TableCell>
                       <TableCell>
-                        <Badge variant={getStatusVariant(c.status)}>{c.status}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        {c.approved_for_company ? (
-                          <Badge variant="default">Approved</Badge>
-                        ) : (
-                          <Badge variant="destructive">Pending</Badge>
-                        )}
+                        <Badge variant={getStatusVariant(c.status)}>
+                          {c.status}
+                        </Badge>
                       </TableCell>
                       <TableCell>
                         <Dialog>
                           <DialogTrigger asChild>
-                            <Button variant="outline" size="sm" onClick={() => setSelectedCollection(c)}>
+                            <Button variant="ghost" size="sm" onClick={() => setSelectedCollection(c)}>
                               <Eye className="h-4 w-4" />
                             </Button>
                           </DialogTrigger>
@@ -896,102 +755,39 @@ const CollectionsAnalyticsDashboard = () => {
                             <DialogHeader>
                               <DialogTitle>Collection Details</DialogTitle>
                             </DialogHeader>
-                            {selectedCollection && selectedCollection.id === c.id && (
+                            {selectedCollection && (
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-4">
                                 <div>
-                                  <h3 className="font-semibold text-gray-900 mb-3">Collection Information</h3>
-                                  <div className="space-y-2">
-                                    <div className="flex justify-between">
-                                      <span className="text-gray-600">Collection ID:</span>
-                                      <span className="font-medium">{selectedCollection.collection_id}</span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                      <span className="text-gray-600">Date:</span>
-                                      <span className="font-medium">
-                                        {format(new Date(selectedCollection.collection_date), 'MMM dd, yyyy HH:mm')}
-                                      </span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                      <span className="text-gray-600">Status:</span>
-                                      <Badge variant={getStatusVariant(selectedCollection.status)}>
-                                        {selectedCollection.status}
-                                      </Badge>
-                                    </div>
-                                    <div className="flex justify-between">
-                                      <span className="text-gray-600">Quality Grade:</span>
-                                      <span
-                                        className="px-3 py-1 rounded-full text-xs font-semibold text-white"
-                                        style={{
-                                          backgroundColor: GRADE_COLORS[selectedCollection.quality_grade as keyof typeof GRADE_COLORS] || '#6b7280'
-                                        }}
-                                      >
-                                        {selectedCollection.quality_grade}
-                                      </span>
-                                    </div>
+                                  <h4 className="font-semibold mb-2">Basic Information</h4>
+                                  <div className="space-y-2 text-sm">
+                                    <div><span className="font-medium">ID:</span> {selectedCollection.collection_id}</div>
+                                    <div><span className="font-medium">Date:</span> {new Date(selectedCollection.collection_date).toLocaleString()}</div>
+                                    <div><span className="font-medium">Status:</span> <Badge variant={getStatusVariant(selectedCollection.status)}>{selectedCollection.status}</Badge></div>
                                   </div>
                                 </div>
                                 <div>
-                                  <h3 className="font-semibold text-gray-900 mb-3">Quantity & Payment</h3>
-                                  <div className="space-y-2">
-                                    <div className="flex justify-between">
-                                      <span className="text-gray-600">Liters:</span>
-                                      <span className="font-medium">{selectedCollection.liters}L</span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                      <span className="text-gray-600">Rate per Liter:</span>
-                                      <span className="font-medium">{formatCurrency(selectedCollection.rate_per_liter)}</span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                      <span className="text-gray-600">Total Amount:</span>
-                                      <span className="font-medium text-green-600">
-                                        {formatCurrency(selectedCollection.total_amount)}
-                                      </span>
-                                    </div>
+                                  <h4 className="font-semibold mb-2">Financial Details</h4>
+                                  <div className="space-y-2 text-sm">
+                                    <div><span className="font-medium">Liters:</span> {selectedCollection.liters}L</div>
+                                    <div><span className="font-medium">Rate:</span> {formatCurrency(selectedCollection.rate_per_liter)}/L</div>
+                                    <div><span className="font-medium">Total:</span> {formatCurrency(selectedCollection.total_amount)}</div>
                                   </div>
                                 </div>
-                                <div className="md:col-span-2">
-                                  <h3 className="font-semibold text-gray-900 mb-3">Farmer Information</h3>
-                                  <div className="space-y-2">
-                                    <div className="flex justify-between">
-                                      <span className="text-gray-600">Name:</span>
-                                      <span className="font-medium">
-                                        {selectedCollection.farmers?.profiles?.full_name || 'N/A'}
-                                      </span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                      <span className="text-gray-600">Phone:</span>
-                                      <span className="font-medium">
-                                        {selectedCollection.farmers?.profiles?.phone || 'N/A'}
-                                      </span>
-                                    </div>
+                                <div>
+                                  <h4 className="font-semibold mb-2">Participants</h4>
+                                  <div className="space-y-2 text-sm">
+                                    <div><span className="font-medium">Farmer:</span> {selectedCollection.farmers?.profiles?.full_name || 'N/A'}</div>
+                                    <div><span className="font-medium">Phone:</span> {selectedCollection.farmers?.profiles?.phone || 'N/A'}</div>
+                                    <div><span className="font-medium">Staff:</span> {selectedCollection.staff?.profiles?.full_name || 'N/A'}</div>
                                   </div>
                                 </div>
-                                <div className="md:col-span-2">
-                                  <h3 className="font-semibold text-gray-900 mb-3">Staff Information</h3>
-                                  <div className="space-y-2">
-                                    <div className="flex justify-between">
-                                      <span className="text-gray-600">Name:</span>
-                                      <span className="font-medium">
-                                        {selectedCollection.staff?.profiles?.full_name || 'N/A'}
-                                      </span>
-                                    </div>
+                                <div>
+                                  <h4 className="font-semibold mb-2">Location</h4>
+                                  <div className="space-y-2 text-sm">
+                                    <div><span className="font-medium">Latitude:</span> {selectedCollection.gps_latitude || 'N/A'}</div>
+                                    <div><span className="font-medium">Longitude:</span> {selectedCollection.gps_longitude || 'N/A'}</div>
                                   </div>
                                 </div>
-                                {selectedCollection.gps_latitude && selectedCollection.gps_longitude && (
-                                  <div className="md:col-span-2">
-                                    <h3 className="font-semibold text-gray-900 mb-3">Location</h3>
-                                    <div className="space-y-2">
-                                      <div className="flex justify-between">
-                                        <span className="text-gray-600">Latitude:</span>
-                                        <span className="font-medium">{selectedCollection.gps_latitude}</span>
-                                      </div>
-                                      <div className="flex justify-between">
-                                        <span className="text-gray-600">Longitude:</span>
-                                        <span className="font-medium">{selectedCollection.gps_longitude}</span>
-                                      </div>
-                                    </div>
-                                  </div>
-                                )}
                               </div>
                             )}
                           </DialogContent>
@@ -1001,29 +797,49 @@ const CollectionsAnalyticsDashboard = () => {
                   ))}
                 </TableBody>
               </Table>
-              {filteredCollections.length === 0 && (
-                <div className="text-center py-12">
-                  <AlertCircle className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-1">No collections found</h3>
-                  <p className="text-gray-500">Try adjusting your search or filter criteria</p>
-                  <div className="mt-4 text-sm text-gray-400">
-                    <p>Debug info:</p>
-                    <p>Total collections from database: {realtimeCollections.length}</p>
-                    <p>Date range: {dateRange}</p>
-                    <p>Status filter: {filterStatus}</p>
-                    <p>Search term: "{searchTerm}"</p>
-                  </div>
+            </div>
+            
+            {/* Pagination */}
+            <div className="px-6 py-4 border-t flex items-center justify-between">
+              <div className="text-sm text-gray-700">
+                Showing {startIndex + 1}-{Math.min(endIndex, filteredCollections.length)} of {filteredCollections.length} collections
+              </div>
+              <div className="flex items-center space-x-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                >
+                  Previous
+                </Button>
+                <div className="text-sm">
+                  Page {currentPage} of {totalPages}
                 </div>
-              )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                >
+                  Next
+                </Button>
+              </div>
             </div>
           </div>
         );
-
+        
       default:
-        collectionsViewLogger.warn('Unknown view requested', { viewId: currentView });
-        return null;
+        collectionsViewLogger.warn('Unknown view requested', { view: currentView });
+        return (
+          <div className="text-center py-12">
+            <AlertCircle className="mx-auto h-12 w-12 text-gray-400" />
+            <h3 className="mt-2 text-sm font-medium text-gray-900">Unknown view</h3>
+            <p className="mt-1 text-sm text-gray-500">The requested view could not be found.</p>
+          </div>
+        );
     }
-  }, [currentView, filteredCollections, realtimeCollections, analytics, metrics, selectedCollection]);
+  }, [currentView, filteredCollections, realtimeCollections, analyticsData, metrics, selectedCollection]);
 
   // Check if we're still loading (either initial data or realtime data)
   const isLoading = initialLoading || collectionsLoading || (realtimeLoading && realtimeCollections.length === 0);

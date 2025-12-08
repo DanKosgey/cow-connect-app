@@ -18,6 +18,8 @@ import {
     DialogTrigger,
 } from "@/components/ui/dialog";
 import { supabase } from '@/integrations/supabase/client';
+import StatusBadge from '@/components/StatusBadge';
+import StatusFilter from '@/components/StatusFilter';
 
 interface ExtendedAgrovetPurchase extends AgrovetPurchase {
     agrovet_inventory?: {
@@ -42,6 +44,7 @@ const DisbursementPage = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [processingId, setProcessingId] = useState<string | null>(null);
     const [selectedPurchase, setSelectedPurchase] = useState<ExtendedAgrovetPurchase | null>(null);
+    const [statusFilter, setStatusFilter] = useState('all');
 
     useEffect(() => {
         fetchPendingPurchases();
@@ -153,10 +156,23 @@ const DisbursementPage = () => {
         const productName = purchase.agrovet_inventory?.name?.toLowerCase() || '';
         const query = searchQuery.toLowerCase();
 
-        return farmerName.includes(query) ||
+        // Apply status filter
+        const statusMatch = statusFilter === 'all' || purchase.status === statusFilter;
+
+        return statusMatch && (
+            farmerName.includes(query) ||
             farmerPhone.includes(query) ||
-            productName.includes(query);
+            productName.includes(query)
+        );
     });
+
+    // Define status options for filtering
+    const statusOptions = [
+        { value: 'all', label: 'All Statuses' },
+        { value: 'pending_collection', label: 'Pending Collection' },
+        { value: 'completed', label: 'Completed' },
+        { value: 'cancelled', label: 'Cancelled' }
+    ];
 
     return (
         <div className="container mx-auto p-6 space-y-6">
@@ -172,7 +188,7 @@ const DisbursementPage = () => {
 
             <Card>
                 <CardHeader>
-                    <div className="flex items-center gap-4">
+                    <div className="flex flex-col md:flex-row gap-4">
                         <div className="relative flex-1">
                             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                             <Input
@@ -180,6 +196,14 @@ const DisbursementPage = () => {
                                 className="pl-10"
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
+                            />
+                        </div>
+                        <div className="w-full md:w-48">
+                            <StatusFilter
+                                value={statusFilter}
+                                onValueChange={setStatusFilter}
+                                statusOptions={statusOptions}
+                                placeholder="Filter by status"
                             />
                         </div>
                     </div>
@@ -198,99 +222,93 @@ const DisbursementPage = () => {
                     ) : (
                         <div className="space-y-4">
                             {filteredPurchases.map((purchase) => (
-                                <div key={purchase.id} className="flex flex-col md:flex-row justify-between items-start md:items-center p-4 border rounded-lg hover:bg-gray-50 transition-colors">
-                                    <div className="flex gap-4 mb-4 md:mb-0">
-                                        <div className="bg-blue-100 p-3 rounded-full h-fit">
-                                            <Package className="h-6 w-6 text-blue-600" />
+                                <div key={purchase.id} className="border rounded-lg p-4 hover:bg-muted/50 transition-colors">
+                                    <div className="flex justify-between items-start">
+                                        <div className="flex-1">
+                                            <div className="flex items-center gap-3 mb-2">
+                                                <h3 className="font-semibold">
+                                                    {purchase.agrovet_inventory?.name || 'Unknown Product'}
+                                                </h3>
+                                                <StatusBadge status={purchase.status || 'unknown'} type="purchase" />
+                                            </div>
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                                                <div>
+                                                    <div className="text-muted-foreground">Farmer</div>
+                                                    <div className="font-medium">
+                                                        {purchase.farmers?.profiles?.full_name || 'Unknown Farmer'}
+                                                    </div>
+                                                    <div className="text-muted-foreground text-xs">
+                                                        {purchase.farmers?.profiles?.phone || 'No phone'}
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-muted-foreground">Quantity</div>
+                                                    <div className="font-medium">
+                                                        {purchase.quantity} {purchase.agrovet_inventory?.unit || 'units'}
+                                                    </div>
+                                                    <div className="text-muted-foreground text-xs">
+                                                        {formatCurrency(purchase.unit_price)} each
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-muted-foreground">Total Amount</div>
+                                                    <div className="font-medium text-lg">
+                                                        {formatCurrency(purchase.total_amount)}
+                                                    </div>
+                                                    <div className="text-muted-foreground text-xs">
+                                                        {new Date(purchase.created_at).toLocaleDateString()}
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <h3 className="font-semibold text-lg">{purchase.agrovet_inventory?.name}</h3>
-                                            <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground mt-1">
-                                                <div className="flex items-center gap-1">
-                                                    <User className="h-3 w-3" />
-                                                    {purchase.farmers?.profiles?.full_name || 'Unknown Farmer'}
-                                                </div>
-                                                <div className="flex items-center gap-1">
-                                                    <Phone className="h-3 w-3" />
-                                                    {purchase.farmers?.profiles?.phone || 'No Phone'}
-                                                </div>
-                                                <div className="flex items-center gap-1">
-                                                    <Clock className="h-3 w-3" />
-                                                    {new Date(purchase.created_at).toLocaleDateString()}
-                                                </div>
-                                            </div>
-                                            <div className="mt-2 flex gap-2">
-                                                <Badge variant="outline">
-                                                    Qty: {purchase.quantity} {purchase.agrovet_inventory?.unit}
-                                                </Badge>
-                                                <Badge variant="secondary">
-                                                    {formatCurrency(purchase.total_amount)}
-                                                </Badge>
-                                                <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-200 border-amber-200">
-                                                    Pending Collection
-                                                </Badge>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <Dialog>
-                                        <DialogTrigger asChild>
-                                            <Button onClick={() => setSelectedPurchase(purchase)}>
-                                                Confirm Collection
-                                            </Button>
-                                        </DialogTrigger>
-                                        <DialogContent>
-                                            <DialogHeader>
-                                                <DialogTitle>Confirm Product Collection</DialogTitle>
-                                                <DialogDescription>
-                                                    Please verify the farmer's identity before releasing the product.
-                                                </DialogDescription>
-                                            </DialogHeader>
-
-                                            <div className="py-4 space-y-4">
-                                                <div className="bg-gray-50 p-4 rounded-md space-y-2">
-                                                    <div className="flex justify-between">
-                                                        <span className="text-muted-foreground">Farmer:</span>
-                                                        <span className="font-medium">{purchase.farmers?.profiles?.full_name}</span>
-                                                    </div>
-                                                    <div className="flex justify-between">
-                                                        <span className="text-muted-foreground">Product:</span>
-                                                        <span className="font-medium">{purchase.agrovet_inventory?.name}</span>
-                                                    </div>
-                                                    <div className="flex justify-between">
-                                                        <span className="text-muted-foreground">Quantity:</span>
-                                                        <span className="font-medium">{purchase.quantity} {purchase.agrovet_inventory?.unit}</span>
-                                                    </div>
-                                                    <div className="flex justify-between border-t pt-2 mt-2">
-                                                        <span className="font-semibold">Total Value:</span>
-                                                        <span className="font-bold text-primary">{formatCurrency(purchase.total_amount)}</span>
-                                                    </div>
-                                                </div>
-
-                                                <div className="flex items-start gap-2 text-sm text-amber-600 bg-amber-50 p-3 rounded border border-amber-200">
-                                                    <CheckCircle className="h-5 w-5 shrink-0" />
-                                                    <p>By confirming, you acknowledge that the farmer has physically collected the items listed above.</p>
-                                                </div>
-                                            </div>
-
-                                            <DialogFooter>
+                                        <Dialog open={selectedPurchase?.id === purchase.id} onOpenChange={(open) => {
+                                            if (!open) setSelectedPurchase(null);
+                                        }}>
+                                            <DialogTrigger asChild>
                                                 <Button
-                                                    onClick={() => handleConfirmCollection(purchase.id)}
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => setSelectedPurchase(purchase)}
                                                     disabled={processingId === purchase.id}
-                                                    className="w-full sm:w-auto"
                                                 >
                                                     {processingId === purchase.id ? (
-                                                        <>
-                                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                                            Processing...
-                                                        </>
+                                                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
                                                     ) : (
-                                                        "Confirm Release"
+                                                        <CheckCircle className="h-4 w-4 mr-2" />
                                                     )}
+                                                    Confirm Collection
                                                 </Button>
-                                            </DialogFooter>
-                                        </DialogContent>
-                                    </Dialog>
+                                            </DialogTrigger>
+                                            <DialogContent>
+                                                <DialogHeader>
+                                                    <DialogTitle>Confirm Product Collection</DialogTitle>
+                                                    <DialogDescription>
+                                                        Are you sure you want to confirm that {purchase.farmers?.profiles?.full_name} has collected their purchase of {purchase.quantity} {purchase.agrovet_inventory?.unit} of {purchase.agrovet_inventory?.name}?
+                                                    </DialogDescription>
+                                                </DialogHeader>
+                                                <DialogFooter>
+                                                    <Button
+                                                        variant="outline"
+                                                        onClick={() => setSelectedPurchase(null)}
+                                                        disabled={processingId === purchase.id}
+                                                    >
+                                                        Cancel
+                                                    </Button>
+                                                    <Button
+                                                        onClick={() => handleConfirmCollection(purchase.id)}
+                                                        disabled={processingId === purchase.id}
+                                                    >
+                                                        {processingId === purchase.id ? (
+                                                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                                        ) : (
+                                                            <CheckCircle className="h-4 w-4 mr-2" />
+                                                        )}
+                                                        Confirm Collection
+                                                    </Button>
+                                                </DialogFooter>
+                                            </DialogContent>
+                                        </Dialog>
+                                    </div>
                                 </div>
                             ))}
                         </div>

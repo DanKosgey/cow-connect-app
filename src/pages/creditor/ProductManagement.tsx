@@ -18,12 +18,14 @@ import { useRealtimeInventory } from '@/hooks/useRealtimeInventory';
 import { fuzzySearchWithScore } from '@/utils/fuzzySearch';
 import PackagingOptionsDisplay from '@/components/creditor/product-management/PackagingOptionsDisplay';
 import PackagingSelector from '@/components/creditor/product-management/PackagingSelector';
+import InventoryReservationSystem from '@/components/creditor/InventoryReservationSystem';
 import {
   Accordion,
   AccordionContent,
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const ProductManagement = () => {
   const [loading, setLoading] = useState(true);
@@ -631,213 +633,227 @@ const ProductManagement = () => {
           </div>
         </div>
 
-        {/* Top Section - Category Overview, Quick Stats, and Category Management */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-          {/* Category Overview */}
-          <div className="lg:col-span-2">
-            <Card className="h-full shadow-sm border border-gray-200">
-              <CardHeader>
+        {/* Tabs for different views */}
+        <Tabs defaultValue="catalog" className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="catalog">Product Catalog</TabsTrigger>
+            <TabsTrigger value="reservations">Inventory Reservations</TabsTrigger>
+          </TabsList>
+          
+          <TabsContent value="catalog">
+            {/* Top Section - Category Overview, Quick Stats, and Category Management */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+              {/* Category Overview */}
+              <div className="lg:col-span-2">
+                <Card className="h-full shadow-sm border border-gray-200">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <BarChart3 className="w-5 h-5 text-blue-600" />
+                      Category Overview
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {allCategories.length === 0 ? (
+                      <div className="text-center py-8 text-gray-500">
+                        <Package className="w-12 h-12 mx-auto text-gray-300 mb-4" />
+                        <p className="font-medium">No categories found</p>
+                        <p className="text-sm mt-1">Add products to see category overview</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {allCategories.map(category => {
+                          const categoryProducts = products.filter(p => p.category === category);
+                          const creditEligibleCount = categoryProducts.filter(p => p.is_credit_eligible).length;
+                          
+                          return (
+                            <div 
+                              key={category} 
+                              className="p-4 bg-gradient-to-br from-white to-gray-50 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow"
+                            >
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <h3 className="font-bold text-gray-900">{category}</h3>
+                                  <p className="text-sm text-gray-600 mt-1">{categoryProducts.length} products</p>
+                                </div>
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                  {creditEligibleCount} credit
+                                </span>
+                              </div>
+                              <div className="mt-3 pt-3 border-t border-gray-100">
+                                <div className="flex justify-between text-xs text-gray-500">
+                                  <span>Credit rate</span>
+                                  <span className="font-medium">
+                                    {categoryProducts.length > 0 
+                                      ? `${Math.round((creditEligibleCount / categoryProducts.length) * 100)}%` 
+                                      : '0%'}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Quick Stats and Category Management */}
+              <div className="space-y-6">
+                {/* Quick Stats */}
+                <Card className="shadow-sm border border-gray-200">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <BarChart3 className="w-5 h-5 text-green-600" />
+                      Quick Stats
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      <div className="flex justify-between items-center p-4 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg">
+                        <div>
+                          <p className="text-sm font-medium text-blue-700">Total Products</p>
+                          <p className="text-2xl font-bold text-blue-900 mt-1">{products.length}</p>
+                        </div>
+                        <div className="bg-blue-200 p-2 rounded-full">
+                          <Package className="w-6 h-6 text-blue-700" />
+                        </div>
+                      </div>
+                      <div className="flex justify-between items-center p-4 bg-gradient-to-r from-green-50 to-green-100 rounded-lg">
+                        <div>
+                          <p className="text-sm font-medium text-green-700">Credit Eligible</p>
+                          <p className="text-2xl font-bold text-green-900 mt-1">
+                            {products.filter(p => p.is_credit_eligible).length}
+                          </p>
+                        </div>
+                        <div className="bg-green-200 p-2 rounded-full">
+                          <CreditCard className="w-6 h-6 text-green-700" />
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Category Management */}
+                <CategoryManagement 
+                  onCategoriesUpdate={handleCategoriesUpdate}
+                />
+              </div>
+            </div>
+
+            {/* Search and Filter Controls - Enhanced */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="md:col-span-2 relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                  <input
+                    type="text"
+                    placeholder="Search products by name, category, or supplier..."
+                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base shadow-sm"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                  <select
+                    value={filterCategory}
+                    onChange={(e) => setFilterCategory(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base shadow-sm"
+                  >
+                    <option value="all">All Categories</option>
+                    {allCategories.map(category => (
+                      <option key={category} value={category}>{category}</option>
+                    ))}
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Credit Status</label>
+                  <select
+                    value={filterCreditEligible}
+                    onChange={(e) => setFilterCreditEligible(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base shadow-sm"
+                  >
+                    <option value="all">All Products</option>
+                    <option value="yes">Credit Eligible</option>
+                    <option value="no">Cash Only</option>
+                  </select>
+                </div>
+              </div>
+              
+              <div className="mt-4 flex justify-end">
+                <Button 
+                  variant="outline" 
+                  onClick={clearAllFilters}
+                  className="flex items-center gap-2 px-4 py-2 hover:bg-gray-100"
+                >
+                  <X className="w-4 h-4" />
+                  Clear All Filters
+                </Button>
+              </div>
+            </div>
+
+            {/* Products Table - Larger and More Prominent */}
+            <Card className="shadow-lg border border-gray-200">
+              <CardHeader className="bg-gray-50 rounded-t-lg">
                 <CardTitle className="flex items-center gap-2">
-                  <BarChart3 className="w-5 h-5 text-blue-600" />
-                  Category Overview
+                  <Package className="w-5 h-5 text-blue-600" />
+                  Available Products
+                  <span className="text-sm font-normal text-gray-500 ml-2">
+                    ({filteredProducts.length} items)
+                  </span>
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                {allCategories.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
-                    <Package className="w-12 h-12 mx-auto text-gray-300 mb-4" />
-                    <p className="font-medium">No categories found</p>
-                    <p className="text-sm mt-1">Add products to see category overview</p>
+              <CardContent className="p-0">
+                {filteredProducts.length === 0 ? (
+                  <div className="text-center py-12">
+                    <Package className="w-12 h-12 mx-auto text-gray-400 mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-1">No products found</h3>
+                    <p className="text-gray-500">
+                      {searchTerm || filterCategory !== "all" || filterCreditEligible !== "all"
+                        ? "No products match your search criteria" 
+                        : "Products will appear here once added"}
+                    </p>
+                    <div className="mt-4">
+                      <Button 
+                        onClick={openCreateDialog}
+                        className="bg-blue-600 hover:bg-blue-700"
+                      >
+                        <Plus className="w-4 h-4 mr-2" />
+                        Add Your First Product
+                      </Button>
+                    </div>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {allCategories.map(category => {
-                      const categoryProducts = products.filter(p => p.category === category);
-                      const creditEligibleCount = categoryProducts.filter(p => p.is_credit_eligible).length;
-                      
-                      return (
-                        <div 
-                          key={category} 
-                          className="p-4 bg-gradient-to-br from-white to-gray-50 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow"
-                        >
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <h3 className="font-bold text-gray-900">{category}</h3>
-                              <p className="text-sm text-gray-600 mt-1">{categoryProducts.length} products</p>
-                            </div>
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                              {creditEligibleCount} credit
-                            </span>
-                          </div>
-                          <div className="mt-3 pt-3 border-t border-gray-100">
-                            <div className="flex justify-between text-xs text-gray-500">
-                              <span>Credit rate</span>
-                              <span className="font-medium">
-                                {categoryProducts.length > 0 
-                                  ? `${Math.round((creditEligibleCount / categoryProducts.length) * 100)}%` 
-                                  : '0%'}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <ProductTable
+                    products={filteredProducts}
+                    toggleCreditEligibility={toggleCreditEligibility}
+                    actionLoading={actionLoading}
+                    openEditDialog={openEditDialog}
+                    handleDelete={handleDelete}
+                  />
                 )}
               </CardContent>
             </Card>
-          </div>
-
-          {/* Quick Stats and Category Management */}
-          <div className="space-y-6">
-            {/* Quick Stats */}
-            <Card className="shadow-sm border border-gray-200">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <BarChart3 className="w-5 h-5 text-green-600" />
-                  Quick Stats
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center p-4 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg">
-                    <div>
-                      <p className="text-sm font-medium text-blue-700">Total Products</p>
-                      <p className="text-2xl font-bold text-blue-900 mt-1">{products.length}</p>
-                    </div>
-                    <div className="bg-blue-200 p-2 rounded-full">
-                      <Package className="w-6 h-6 text-blue-700" />
-                    </div>
-                  </div>
-                  <div className="flex justify-between items-center p-4 bg-gradient-to-r from-green-50 to-green-100 rounded-lg">
-                    <div>
-                      <p className="text-sm font-medium text-green-700">Credit Eligible</p>
-                      <p className="text-2xl font-bold text-green-900 mt-1">
-                        {products.filter(p => p.is_credit_eligible).length}
-                      </p>
-                    </div>
-                    <div className="bg-green-200 p-2 rounded-full">
-                      <CreditCard className="w-6 h-6 text-green-700" />
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Category Management */}
-            <CategoryManagement 
-              onCategoriesUpdate={handleCategoriesUpdate}
-            />
-          </div>
-        </div>
-
-        {/* Search and Filter Controls - Enhanced */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="md:col-span-2 relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input
-                type="text"
-                placeholder="Search products by name, category, or supplier..."
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base shadow-sm"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
             
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-              <select
-                value={filterCategory}
-                onChange={(e) => setFilterCategory(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base shadow-sm"
-              >
-                <option value="all">All Categories</option>
-                {allCategories.map(category => (
-                  <option key={category} value={category}>{category}</option>
-                ))}
-              </select>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Credit Status</label>
-              <select
-                value={filterCreditEligible}
-                onChange={(e) => setFilterCreditEligible(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base shadow-sm"
-              >
-                <option value="all">All Products</option>
-                <option value="yes">Credit Eligible</option>
-                <option value="no">Cash Only</option>
-              </select>
-            </div>
-          </div>
-          
-          <div className="mt-4 flex justify-end">
-            <Button 
-              variant="outline" 
-              onClick={clearAllFilters}
-              className="flex items-center gap-2 px-4 py-2 hover:bg-gray-100"
-            >
-              <X className="w-4 h-4" />
-              Clear All Filters
-            </Button>
-          </div>
-        </div>
-
-        {/* Products Table - Larger and More Prominent */}
-        <Card className="shadow-lg border border-gray-200">
-          <CardHeader className="bg-gray-50 rounded-t-lg">
-            <CardTitle className="flex items-center gap-2">
-              <Package className="w-5 h-5 text-blue-600" />
-              Available Products
-              <span className="text-sm font-normal text-gray-500 ml-2">
-                ({filteredProducts.length} items)
-              </span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            {filteredProducts.length === 0 ? (
-              <div className="text-center py-12">
-                <Package className="w-12 h-12 mx-auto text-gray-400 mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-1">No products found</h3>
-                <p className="text-gray-500">
-                  {searchTerm || filterCategory !== "all" || filterCreditEligible !== "all"
-                    ? "No products match your search criteria" 
-                    : "Products will appear here once added"}
-                </p>
-                <div className="mt-4">
-                  <Button 
-                    onClick={openCreateDialog}
-                    className="bg-blue-600 hover:bg-blue-700"
-                  >
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add Your First Product
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <ProductTable
-                products={filteredProducts}
-                toggleCreditEligibility={toggleCreditEligibility}
-                actionLoading={actionLoading}
-                openEditDialog={openEditDialog}
-                handleDelete={handleDelete}
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <PaginationControl
+                currentPage={currentPage}
+                totalPages={totalPages}
+                totalItems={totalItems}
+                itemsPerPage={itemsPerPage}
+                onPageChange={setCurrentPage}
               />
             )}
-          </CardContent>
-        </Card>
-        
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <PaginationControl
-            currentPage={currentPage}
-            totalPages={totalPages}
-            totalItems={totalItems}
-            itemsPerPage={itemsPerPage}
-            onPageChange={setCurrentPage}
-          />
-        )}
+          </TabsContent>
+          
+          <TabsContent value="reservations">
+            <InventoryReservationSystem />
+          </TabsContent>
+        </Tabs>
       </div>
       
       {/* Product Dialogs - Updated to use packaging props and pass categories */}

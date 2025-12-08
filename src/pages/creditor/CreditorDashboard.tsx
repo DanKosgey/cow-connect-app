@@ -17,6 +17,7 @@ import { CreditService } from '@/services/credit-service';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import DisbursementStatusTracker from '@/components/creditor/DisbursementStatusTracker';
 
 const CreditorDashboard = () => {
   const navigate = useNavigate();
@@ -278,6 +279,9 @@ const CreditorDashboard = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* Disbursement Status Tracker */}
+      <DisbursementStatusTracker />
 
       {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

@@ -114,7 +114,7 @@ const AgrovetCreditRequest = () => {
       if (!user) throw new Error('Not authenticated');
 
       const { error } = await supabase
-        .from('agrovet_credit_requests')
+        .from('credit_requests')
         .insert({
           farmer_id: user.id,
           product_id: selectedProduct.id,

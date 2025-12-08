@@ -27,10 +27,12 @@ export interface AgrovetPurchase {
   total_amount: number;
   payment_method: 'cash' | 'credit';
   credit_transaction_id?: string;
-  status: 'pending' | 'completed' | 'cancelled';
+  status: 'pending' | 'completed' | 'cancelled' | 'pending_collection';
   purchased_by?: string;
   created_at: string;
   agrovet_inventory?: AgrovetInventory;
+  // Add payment_status field
+  payment_status?: 'pending' | 'processing' | 'paid' | 'overdue' | 'cancelled';
 }
 
 export class AgrovetService {
@@ -204,6 +206,36 @@ export class AgrovetService {
     }
   }
 
+  // Get purchase history for a farmer with payment status filtering
+  static async getPurchaseHistoryByPaymentStatus(farmerId: string, paymentStatus?: string): Promise<AgrovetPurchase[]> {
+    try {
+      let query = supabase
+        .from('agrovet_purchases')
+        .select(`
+          *,
+          agrovet_inventory(name, category, selling_price)
+        `)
+        .eq('farmer_id', farmerId)
+        .order('created_at', { ascending: false });
+
+      if (paymentStatus) {
+        query = query.eq('payment_status', paymentStatus);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        logger.errorWithContext('AgrovetService - fetching purchase history by payment status', error);
+        throw error;
+      }
+
+      return data as AgrovetPurchase[];
+    } catch (error) {
+      logger.errorWithContext('AgrovetService - getPurchaseHistoryByPaymentStatus', error);
+      throw error;
+    }
+  }
+
   // Get all purchases (for admin)
   static async getAllPurchases(): Promise<AgrovetPurchase[]> {
     try {
@@ -249,6 +281,24 @@ export class AgrovetService {
       return data as AgrovetPurchase | null;
     } catch (error) {
       logger.errorWithContext('AgrovetService - getPurchaseById', error);
+      throw error;
+    }
+  }
+
+  // Update agrovet purchase payment status
+  static async updatePurchasePaymentStatus(purchaseId: string, paymentStatus: 'pending' | 'processing' | 'paid' | 'overdue' | 'cancelled'): Promise<void> {
+    try {
+      const { error } = await supabase
+        .from('agrovet_purchases')
+        .update({ payment_status: paymentStatus })
+        .eq('id', purchaseId);
+
+      if (error) {
+        logger.errorWithContext('AgrovetService - updating purchase payment status', error);
+        throw error;
+      }
+    } catch (error) {
+      logger.errorWithContext('AgrovetService - updatePurchasePaymentStatus', error);
       throw error;
     }
   }

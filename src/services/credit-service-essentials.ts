@@ -41,6 +41,8 @@ export interface CreditTransaction {
   approved_by: string | null;
   approval_status: 'pending' | 'approved' | 'rejected';
   created_at: string;
+  // Add status field
+  status?: 'pending' | 'active' | 'paid' | 'cancelled' | 'disputed';
 }
 
 export interface AgrovetInventory {
@@ -273,6 +275,32 @@ export class CreditServiceEssentials {
         throw updateError;
       }
 
+      // Convert user ID to staff ID if provided
+      // If the user is an admin, we'll set approved_by to NULL since admins don't have staff records
+      let staffId = null;
+      if (grantedBy) {
+        try {
+          const { data: staffData, error: staffError } = await supabase
+            .from('staff')
+            .select('id')
+            .eq('user_id', grantedBy)
+            .maybeSingle();
+          
+          if (!staffError && staffData) {
+            staffId = staffData.id;
+          } else {
+            // If no staff record found, it might be an admin user
+            // We'll leave staffId as null for admins
+            logger.info(`CreditServiceEssentials - No staff record found for user (might be admin)`, {
+              userId: grantedBy
+            });
+          }
+        } catch (staffLookupError) {
+          logger.errorWithContext('CreditServiceEssentials - fetching staff record for grant', staffLookupError);
+          // Continue with staffId as null
+        }
+      }
+
       // Create credit transaction record
       const { error: transactionError } = await supabase
         .from('credit_transactions')
@@ -285,7 +313,7 @@ export class CreditServiceEssentials {
           description: creditInfo.pendingPayments > 0 
             ? `Credit granted based on pending payments of KES ${(creditInfo.pendingPayments || 0).toFixed(2)}`
             : `Credit granted based on farmer tier and profile`,
-          approved_by: grantedBy,
+          approved_by: staffId, // Use staff ID or NULL for admins
           approval_status: 'approved'
         })
         .select();
@@ -337,6 +365,32 @@ export class CreditServiceEssentials {
         throw updateError;
       }
 
+      // Convert user ID to staff ID if provided
+      // If the user is an admin, we'll set approved_by to NULL since admins don't have staff records
+      let staffId = null;
+      if (adjustedBy) {
+        try {
+          const { data: staffData, error: staffError } = await supabase
+            .from('staff')
+            .select('id')
+            .eq('user_id', adjustedBy)
+            .maybeSingle();
+          
+          if (!staffError && staffData) {
+            staffId = staffData.id;
+          } else {
+            // If no staff record found, it might be an admin user
+            // We'll leave staffId as null for admins
+            logger.info(`CreditServiceEssentials - No staff record found for user (might be admin)`, {
+              userId: adjustedBy
+            });
+          }
+        } catch (staffLookupError) {
+          logger.errorWithContext('CreditServiceEssentials - fetching staff record for adjustment', staffLookupError);
+          // Continue with staffId as null
+        }
+      }
+
       // Create credit transaction record
       const { error: transactionError } = await supabase
         .from('credit_transactions')
@@ -347,7 +401,7 @@ export class CreditServiceEssentials {
           balance_before: profile.current_credit_balance,
           balance_after: profile.current_credit_balance,
           description: `Credit limit adjusted from KES ${(profile.max_credit_amount || 0).toFixed(2)} to KES ${(newLimit || 0).toFixed(2)}`,
-          approved_by: adjustedBy,
+          approved_by: staffId, // Use staff ID or NULL for admins
           approval_status: 'approved'
         })
         .select();
@@ -400,6 +454,32 @@ export class CreditServiceEssentials {
         throw updateError;
       }
 
+      // Convert user ID to staff ID if provided
+      // If the user is an admin, we'll set approved_by to NULL since admins don't have staff records
+      let staffId = null;
+      if (actionedBy) {
+        try {
+          const { data: staffData, error: staffError } = await supabase
+            .from('staff')
+            .select('id')
+            .eq('user_id', actionedBy)
+            .maybeSingle();
+          
+          if (!staffError && staffData) {
+            staffId = staffData.id;
+          } else {
+            // If no staff record found, it might be an admin user
+            // We'll leave staffId as null for admins
+            logger.info(`CreditServiceEssentials - No staff record found for user (might be admin)`, {
+              userId: actionedBy
+            });
+          }
+        } catch (staffLookupError) {
+          logger.errorWithContext('CreditServiceEssentials - fetching staff record for freeze/unfreeze', staffLookupError);
+          // Continue with staffId as null
+        }
+      }
+
       // Create credit transaction record
       const { error: transactionError } = await supabase
         .from('credit_transactions')
@@ -410,7 +490,7 @@ export class CreditServiceEssentials {
           balance_before: profile.current_credit_balance,
           balance_after: profile.current_credit_balance,
           description: freeze ? `Credit line frozen: ${reason}` : 'Credit line unfrozen',
-          approved_by: actionedBy,
+          approved_by: staffId, // Use staff ID or NULL for admins
           approval_status: 'approved'
         })
         .select();
@@ -583,7 +663,7 @@ export class CreditServiceEssentials {
     }
   }
 
-  // Process credit transaction with enhanced enforcement
+  // Process credit transaction with enhanced enforcement and status tracking
   static async processCreditTransaction(
     farmerId: string,
     productId: string,
@@ -599,68 +679,44 @@ export class CreditServiceEssentials {
       quantity,
       packagingOptionId,
       usedBy,
-      isExistingCreditRequest,
-      storedUnitPrice
+      isExistingCreditRequest
     });
-    
+
     try {
       // Validate inputs
       if (!farmerId) {
-        logger.error(`CreditServiceEssentials - processCreditTransaction: Farmer ID is required`);
         return { success: false, errorMessage: 'Farmer ID is required' };
       }
-      
+
       if (!productId) {
-        logger.error(`CreditServiceEssentials - processCreditTransaction: Product ID is required`);
         return { success: false, errorMessage: 'Product ID is required' };
       }
-      
-      if (!quantity || quantity <= 0) {
-        logger.error(`CreditServiceEssentials - processCreditTransaction: Valid quantity is required`, { quantity });
-        return { success: false, errorMessage: 'Valid quantity is required' };
+
+      const validatedQuantity = typeof quantity === 'string' ? parseFloat(quantity) : quantity;
+      if (isNaN(validatedQuantity) || validatedQuantity <= 0) {
+        return { success: false, errorMessage: 'Quantity must be a positive number' };
       }
 
       // Get product details
-      const { data: productData, error: productError } = await supabase
-        .from('agrovet_inventory')
-        .select('*')
-        .eq('id', productId)
-        .maybeSingle();
-
-      if (productError) {
-        logger.errorWithContext('CreditServiceEssentials - fetching product', productError);
-        throw productError;
-      }
-
-      if (!productData) {
-        logger.error(`CreditServiceEssentials - processCreditTransaction: Product not found or no longer available`, { productId });
-        return { success: false, errorMessage: 'Product not found or no longer available' };
-      }
-
-      const product = productData as AgrovetInventory;
-
-      // Check if product is credit eligible
-      if (!product.is_credit_eligible) {
-        logger.warn(`CreditServiceEssentials - processCreditTransaction: Product is not eligible for credit purchase`, { productId });
-        return { success: false, errorMessage: 'This product is not eligible for credit purchase' };
+      const product = await this.getProductById(productId);
+      if (!product) {
+        return { success: false, errorMessage: 'Product not found' };
       }
 
       // Get packaging option if specified
       let packagingOption = null;
-      let unitPrice = product.cost_price || 0; // fallback to cost_price with default 0
+      let unitPrice = product.selling_price;
       
       if (packagingOptionId) {
-        // Fetch the specific packaging option
         const { data: packagingData, error: packagingError } = await supabase
           .from('product_packaging')
           .select('*')
           .eq('id', packagingOptionId)
-          .eq('product_id', productId)
           .maybeSingle();
-          
+
         if (packagingError) {
           logger.errorWithContext('CreditServiceEssentials - fetching packaging option', packagingError);
-          throw packagingError;
+          return { success: false, errorMessage: 'Error fetching packaging option' };
         }
         
         if (packagingData) {
@@ -694,244 +750,49 @@ export class CreditServiceEssentials {
             // Use the stored unit price if provided
             if (storedUnitPrice && storedUnitPrice > 0) {
               unitPrice = storedUnitPrice;
-              logger.info(`CreditServiceEssentials - Using stored unit price for existing credit request`, {
-                storedUnitPrice,
-                finalUnitPrice: unitPrice
-              });
             }
           } else {
-            // Return a more specific error when packaging option is not found
-            return { 
-              success: false, 
-              errorMessage: `The selected packaging option is no longer available. Please contact administrator.` 
-            };
+            return { success: false, errorMessage: 'Selected packaging option not found' };
           }
         }
-      } else {
-        // If no packaging option specified, try to get the first available packaging option
-        const { data: packagingOptions, error: packagingOptionsError } = await supabase
-          .from('product_packaging')
-          .select('*')
-          .eq('product_id', productId)
-          .eq('is_credit_eligible', true)
-          .order('price', { ascending: true })
-          .limit(1);
-          
-        if (!packagingOptionsError && packagingOptions && packagingOptions.length > 0) {
-          packagingOption = packagingOptions[0] as ProductPackaging;
-          logger.info(`CreditServiceEssentials - default packaging option found`, {
-            productId,
-            rawPrice: packagingOption.price,
-            priceType: typeof packagingOption.price
-          });
-          
-          // Ensure proper type conversion for numeric fields
-          const convertedPrice = typeof packagingOption.price === 'string' ? parseFloat(packagingOption.price) : packagingOption.price;
-          unitPrice = convertedPrice && convertedPrice > 0 ? convertedPrice : unitPrice;
-          
-          logger.info(`CreditServiceEssentials - default price conversion result`, {
-            convertedPrice,
-            finalUnitPrice: unitPrice
-          });
-        } else {
-          logger.warn(`CreditServiceEssentials - no default packaging option found`, {
-            productId
-          });
-        }
       }
 
-      // Calculate total amount with proper validation
-      const validatedQuantity = typeof quantity === 'number' && !isNaN(quantity) ? quantity : 0;
-      const validatedUnitPrice = typeof unitPrice === 'number' && !isNaN(unitPrice) ? unitPrice : 0;
-      const totalAmount = validatedQuantity * validatedUnitPrice;
-
-      // Validate that we have a valid total amount
-      if (totalAmount <= 0) {
-        logger.error(`CreditServiceEssentials - processCreditTransaction: Invalid transaction amount`, {
-          quantity: validatedQuantity,
-          unitPrice: validatedUnitPrice,
-          totalAmount,
-          packagingOptionId,
-          productId
-        });
-        
-        // Provide more specific error messages
-        if (validatedQuantity <= 0) {
-          return { 
-            success: false, 
-            errorMessage: 'Invalid quantity. Quantity must be greater than zero.' 
-          };
-        }
-        
-        if (validatedUnitPrice <= 0) {
-          if (packagingOptionId && !packagingOption) {
-            return { 
-              success: false, 
-              errorMessage: `The selected packaging option is no longer available. Please contact administrator.` 
-            };
-          }
-          
-          if (packagingOption) {
-            return { 
-              success: false, 
-              errorMessage: `Invalid unit price (${validatedUnitPrice}) for selected packaging option "${packagingOption.name}". Please check the packaging option configuration.` 
-            };
-          } else {
-            return { 
-              success: false, 
-              errorMessage: `Invalid unit price (${validatedUnitPrice}). Product price must be greater than zero.` 
-            };
-          }
-        }
-        
-        return { 
-          success: false, 
-          errorMessage: 'Invalid transaction amount. Quantity and price must be greater than zero.' 
-        };
-      }
-
-      // Enhanced credit limit enforcement
-      const enforcementResult = await this.enforceCreditLimit(farmerId, totalAmount, 'credit_used');
-      
-      if (!enforcementResult.isAllowed) {
-        logger.warn(`CreditServiceEssentials - processCreditTransaction: Credit limit enforcement failed`, {
-          farmerId,
-          totalAmount,
-          reason: enforcementResult.reason
-        });
-        return { 
-          success: false, 
-          errorMessage: enforcementResult.reason,
-          enforcementDetails: enforcementResult
-        };
-      }
-
-      // Get current credit profile
-      const { data: creditProfile, error: profileError } = await supabase
-        .from('farmer_credit_profiles')
-        .select('*')
-        .eq('farmer_id', farmerId)
-        .maybeSingle();
-
-      if (profileError) {
-        logger.errorWithContext('CreditServiceEssentials - fetching credit profile for purchase', profileError);
-        throw profileError;
-      }
-
-      if (!creditProfile) {
-        logger.error(`CreditServiceEssentials - processCreditTransaction: Credit profile not found`, { farmerId });
-        return { success: false, errorMessage: 'Credit profile not found' };
-      }
-
-      const profile = creditProfile as FarmerCreditProfile;
-
-      // Double-check balance before processing (race condition protection)
-      if (totalAmount > profile.current_credit_balance) {
-        logger.warn(`CreditServiceEssentials - processCreditTransaction: Insufficient credit balance`, {
-          farmerId,
-          required: totalAmount,
-          available: profile.current_credit_balance
-        });
-        return { 
-          success: false, 
-          errorMessage: `Insufficient credit balance. Available: ${formatCurrency(profile.current_credit_balance)}, Required: ${formatCurrency(totalAmount)}` 
-        };
-      }
-
-      // Calculate new balance
-      const newBalance = profile.current_credit_balance - totalAmount;
-      const newTotalUsed = profile.total_credit_used + totalAmount;
-      // When credit is used, we should deduct from pending deductions (payments that will be collected)
-      const newPendingDeductions = Math.max(0, profile.pending_deductions - totalAmount);
-
-      logger.info(`CreditServiceEssentials - processCreditTransaction updating profile`, {
-        farmerId,
-        oldBalance: profile.current_credit_balance,
-        newBalance,
-        totalAmount,
-        oldPendingDeductions: profile.pending_deductions,
-        newPendingDeductions
+      // Calculate total amount
+      const totalAmount = unitPrice * validatedQuantity;
+      logger.info(`CreditServiceEssentials - calculated total amount`, {
+        unitPrice,
+        validatedQuantity,
+        totalAmount
       });
 
-      // Update credit profile
-      const { error: updateError } = await supabase
-        .from('farmer_credit_profiles')
-        .update({
-          current_credit_balance: newBalance,
-          total_credit_used: newTotalUsed,
-          pending_deductions: newPendingDeductions,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', profile.id);
-
-      if (updateError) {
-        logger.errorWithContext('CreditServiceEssentials - updating credit profile for purchase', updateError);
-        throw updateError;
+      // Pre-approval check with enhanced enforcement
+      const preApprovalCheck = await this.enforceCreditLimit(farmerId, totalAmount);
+      logger.info(`CreditServiceEssentials - preApprovalCheck result`, preApprovalCheck);
+      
+      if (!preApprovalCheck.isAllowed) {
+        logger.warn(`CreditServiceEssentials - processCreditTransaction: Pre-approval check failed`, {
+          farmerId,
+          totalAmount,
+          reason: preApprovalCheck.reason
+        });
+        return { 
+          success: false, 
+          errorMessage: `Pre-approval check failed: ${preApprovalCheck.reason}`,
+          enforcementDetails: preApprovalCheck
+        };
       }
 
-      // Deduct the amount from farmer's pending collections/payments
-      // Get all pending collections for this farmer
-      const { data: pendingCollections, error: collectionsError } = await supabase
-        .from('collections')
-        .select('id, total_amount')
-        .eq('farmer_id', farmerId)
-        .neq('status', 'Paid');
-
-      if (collectionsError) {
-        logger.errorWithContext('CreditServiceEssentials - fetching pending collections', collectionsError);
-        // Don't throw error here as this is supplementary, but log it
-      } else if (pendingCollections && pendingCollections.length > 0) {
-        let remainingAmountToDeduct = totalAmount;
-        
-        // Process collections in order until we've deducted the full amount
-        for (const collection of pendingCollections) {
-          if (remainingAmountToDeduct <= 0) break;
-          
-          const collectionAmount = collection.total_amount || 0;
-          const amountToDeductFromCollection = Math.min(remainingAmountToDeduct, collectionAmount);
-          
-          if (amountToDeductFromCollection > 0) {
-            // Update the collection to reduce its amount
-            const newCollectionAmount = collectionAmount - amountToDeductFromCollection;
-            
-            const { error: updateCollectionError } = await supabase
-              .from('collections')
-              .update({
-                total_amount: newCollectionAmount,
-                updated_at: new Date().toISOString()
-              })
-              .eq('id', collection.id);
-              
-            if (updateCollectionError) {
-              logger.errorWithContext('CreditServiceEssentials - updating collection amount', updateCollectionError);
-              // Continue with other collections even if one fails
-            } else {
-              logger.info(`CreditServiceEssentials - deducted ${amountToDeductFromCollection} from collection ${collection.id}`, {
-                collectionId: collection.id,
-                oldAmount: collectionAmount,
-                newAmount: newCollectionAmount
-              });
-              
-              remainingAmountToDeduct -= amountToDeductFromCollection;
-            }
-          }
-        }
-        
-        if (remainingAmountToDeduct > 0) {
-          logger.warn(`CreditServiceEssentials - Could not deduct full amount from pending collections`, {
-            farmerId,
-            requestedAmount: totalAmount,
-            undeductedAmount: remainingAmountToDeduct
-          });
-        }
+      // Get farmer's credit profile
+      const creditProfile = await this.getCreditProfile(farmerId);
+      if (!creditProfile) {
+        return { success: false, errorMessage: 'Farmer credit profile not found' };
       }
 
-      // Convert user ID to staff ID if the user is a staff member
+      // Convert user ID to staff ID if provided
       // If the user is an admin, we'll set approved_by to NULL since admins don't have staff records
-      let staffIdForTransaction = null;
+      let staffId = null;
       if (usedBy) {
         try {
-          // Try to get the staff ID for this user
           const { data: staffData, error: staffError } = await supabase
             .from('staff')
             .select('id')
@@ -939,70 +800,59 @@ export class CreditServiceEssentials {
             .maybeSingle();
           
           if (!staffError && staffData) {
-            staffIdForTransaction = staffData.id;
-            logger.info(`CreditServiceEssentials - Found staff ID for user`, {
-              userId: usedBy,
-              staffId: staffIdForTransaction
-            });
+            staffId = staffData.id;
           } else {
             // If no staff record found, it might be an admin user
-            // We'll leave staffIdForTransaction as null for admins
+            // We'll leave staffId as null for admins
             logger.info(`CreditServiceEssentials - No staff record found for user (might be admin)`, {
               userId: usedBy
             });
           }
         } catch (staffLookupError) {
-          logger.errorWithContext('CreditServiceEssentials - Error looking up staff record', staffLookupError);
-          // Continue with staffIdForTransaction as null
+          logger.errorWithContext('CreditServiceEssentials - fetching staff record', staffLookupError);
+          // Continue with staffId as null
         }
       }
 
-      // Create credit transaction record
-      const transactionData = {
-        farmer_id: farmerId,
-        transaction_type: 'credit_used',
-        amount: totalAmount,
-        balance_before: profile.current_credit_balance,
-        balance_after: newBalance,
-        product_id: productId,
-        product_name: product.name,
-        quantity: quantity,
-        unit_price: unitPrice,
-        reference_id: packagingOption?.id || null,
-        description: packagingOption 
-          ? `Credit used for ${product.name} (${quantity} × ${packagingOption.name} @ ${formatCurrency(unitPrice)} each). Utilization: ${(enforcementResult.utilizationPercentage || 0).toFixed(1)}%`
-          : `Credit used for ${product.name} (${quantity} ${product.unit} @ ${formatCurrency(unitPrice)} each). Utilization: ${(enforcementResult.utilizationPercentage || 0).toFixed(1)}%`,
-        approved_by: staffIdForTransaction, // Use the staff ID or NULL for admins
-        approval_status: 'approved'
-      };
-      
-      logger.info(`CreditServiceEssentials - processCreditTransaction creating transaction record`, {
-        farmerId,
-        transactionData
-      });
-
+      // Create credit transaction with initial status as 'active'
       const { data: insertedTransaction, error: transactionError } = await supabase
         .from('credit_transactions')
-        .insert(transactionData)
+        .insert({
+          farmer_id: farmerId,
+          transaction_type: 'credit_used',
+          amount: totalAmount,
+          balance_before: creditProfile.current_credit_balance,
+          balance_after: creditProfile.current_credit_balance - totalAmount,
+          product_id: productId,
+          product_name: product.name,
+          quantity: validatedQuantity,
+          unit_price: unitPrice,
+          description: packagingOptionId 
+            ? `Credit used for ${product.name} (${packagingOption?.name || 'packaged item'})` 
+            : `Credit used for ${product.name}`,
+          approved_by: staffId, // Use staff ID or NULL for admins
+          status: 'active' // Set initial status to active
+        })
         .select()
         .single();
 
       if (transactionError) {
-        logger.errorWithContext('CreditServiceEssentials - creating credit transaction for purchase', transactionError);
-        throw transactionError;
+        logger.errorWithContext('CreditServiceEssentials - creating credit transaction', transactionError);
+        return { success: false, errorMessage: 'Failed to create credit transaction' };
       }
 
       // Create agrovet purchase record
       const purchaseData = {
         farmer_id: farmerId,
         item_id: productId,
-        quantity: quantity,
+        quantity: validatedQuantity,
         unit_price: unitPrice,
         total_amount: totalAmount,
         payment_method: 'credit',
         credit_transaction_id: (insertedTransaction as CreditTransaction).id,
         status: 'completed',
-        purchased_by: usedBy
+        payment_status: 'processing', // Set initial payment status to processing
+        purchased_by: staffId // Use staff ID or NULL for admins
       };
 
       const { data: insertedPurchase, error: purchaseError } = await supabase
@@ -1032,10 +882,10 @@ export class CreditServiceEssentials {
       return { 
         success: true, 
         transactionId: (insertedTransaction as CreditTransaction).id,
-        enforcementDetails: enforcementResult
+        enforcementDetails: preApprovalCheck
       };
     } catch (error) {
-      logger.errorWithContext('CreditServiceEssentials - useCreditForPurchase', error);
+      logger.errorWithContext('CreditServiceEssentials - processCreditTransaction', error);
       return { success: false, errorMessage: (error as Error).message };
     }
   }
@@ -1057,6 +907,27 @@ export class CreditServiceEssentials {
       return data as FarmerCreditProfile | null;
     } catch (error) {
       logger.errorWithContext('CreditServiceEssentials - getCreditProfile', error);
+      throw error;
+    }
+  }
+
+  // Get product details by ID
+  static async getProductById(productId: string): Promise<AgrovetInventory | null> {
+    try {
+      const { data, error } = await supabase
+        .from('agrovet_inventory')
+        .select('*')
+        .eq('id', productId)
+        .maybeSingle();
+
+      if (error) {
+        logger.errorWithContext('CreditServiceEssentials - fetching product', error);
+        throw error;
+      }
+
+      return data as AgrovetInventory | null;
+    } catch (error) {
+      logger.errorWithContext('CreditServiceEssentials - getProductById', error);
       throw error;
     }
   }
@@ -1197,6 +1068,32 @@ export class CreditServiceEssentials {
         throw updateError;
       }
 
+      // Convert user ID to staff ID if provided
+      // If the user is an admin, we'll set approved_by to NULL since admins don't have staff records
+      let staffId = null;
+      if (settledBy) {
+        try {
+          const { data: staffData, error: staffError } = await supabase
+            .from('staff')
+            .select('id')
+            .eq('user_id', settledBy)
+            .maybeSingle();
+          
+          if (!staffError && staffData) {
+            staffId = staffData.id;
+          } else {
+            // If no staff record found, it might be an admin user
+            // We'll leave staffId as null for admins
+            logger.info(`CreditServiceEssentials - No staff record found for user (might be admin)`, {
+              userId: settledBy
+            });
+          }
+        } catch (staffLookupError) {
+          logger.errorWithContext('CreditServiceEssentials - fetching staff record for settlement', staffLookupError);
+          // Continue with staffId as null
+        }
+      }
+
       // Create settlement transaction
       const { error: transactionError } = await supabase
         .from('credit_transactions')
@@ -1207,7 +1104,7 @@ export class CreditServiceEssentials {
           balance_before: profile.current_credit_balance,
           balance_after: profile.max_credit_amount,
           description: `Monthly settlement completed. KES ${(profile.pending_deductions || 0).toFixed(2)} deducted from milk payments.`,
-          approved_by: settledBy,
+          approved_by: staffId, // Use staff ID or NULL for admins
           approval_status: 'approved'
         })
         .select();
@@ -1224,9 +1121,168 @@ export class CreditServiceEssentials {
     }
   }
 
+  // Get credit transactions with status filtering
+  static async getCreditTransactionsByStatus(farmerId: string, status?: string, limit: number = 50): Promise<CreditTransaction[]> {
+    try {
+      let query = supabase
+        .from('credit_transactions')
+        .select('*')
+        .eq('farmer_id', farmerId)
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+      if (status) {
+        query = query.eq('status', status);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        logger.errorWithContext('CreditServiceEssentials - fetching credit transactions by status', error);
+        throw error;
+      }
+
+      return data as CreditTransaction[];
+    } catch (error) {
+      logger.errorWithContext('CreditServiceEssentials - getCreditTransactionsByStatus', error);
+      throw error;
+    }
+  }
+
+  // Update credit transaction status
+  static async updateCreditTransactionStatus(transactionId: string, status: 'pending' | 'active' | 'paid' | 'cancelled' | 'disputed'): Promise<void> {
+    try {
+      const { error } = await supabase
+        .from('credit_transactions')
+        .update({ status: status })
+        .eq('id', transactionId);
+
+      if (error) {
+        logger.errorWithContext('CreditServiceEssentials - updating credit transaction status', error);
+        throw error;
+      }
+    } catch (error) {
+      logger.errorWithContext('CreditServiceEssentials - updateCreditTransactionStatus', error);
+      throw error;
+    }
+  }
+
+  // Get agrovet purchases with payment status filtering
+  static async getAgrovetPurchasesByPaymentStatus(farmerId: string, paymentStatus?: string): Promise<any[]> {
+    try {
+      let query = supabase
+        .from('agrovet_purchases')
+        .select(`
+          *,
+          agrovet_inventory:name (name)
+        `)
+        .eq('farmer_id', farmerId)
+        .order('created_at', { ascending: false });
+
+      if (paymentStatus) {
+        query = query.eq('payment_status', paymentStatus);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        logger.errorWithContext('CreditServiceEssentials - fetching agrovet purchases by payment status', error);
+        throw error;
+      }
+
+      return data || [];
+    } catch (error) {
+      logger.errorWithContext('CreditServiceEssentials - getAgrovetPurchasesByPaymentStatus', error);
+      throw error;
+    }
+  }
+
   // Clear agrovet inventory cache
   static clearAgrovetInventoryCache(): void {
     fetchAgrovetInventoryPromise = null;
     fetchAgrovetInventoryTimestamp = null;
+  }
+
+  // Mark credit transaction as paid and update farmer credit profile
+  static async markCreditTransactionAsPaid(transactionId: string): Promise<boolean> {
+    try {
+      logger.info(`CreditServiceEssentials - marking credit transaction as paid`, { transactionId });
+      
+      // First, get the transaction details
+      const { data: transaction, error: fetchError } = await supabase
+        .from('credit_transactions')
+        .select('*')
+        .eq('id', transactionId)
+        .maybeSingle();
+
+      if (fetchError) {
+        logger.errorWithContext('CreditServiceEssentials - fetching transaction details', fetchError);
+        return false;
+      }
+
+      if (!transaction) {
+        logger.warn(`CreditServiceEssentials - transaction not found`, { transactionId });
+        return false;
+      }
+
+      // Update the credit transaction status to 'paid'
+      const { error: updateError } = await supabase
+        .from('credit_transactions')
+        .update({ status: 'paid' })
+        .eq('id', transactionId);
+
+      if (updateError) {
+        logger.errorWithContext('CreditServiceEssentials - marking credit transaction as paid', updateError);
+        return false;
+      }
+
+      // Update the farmer's credit profile to reduce pending deductions
+      // Only do this if the transaction was previously 'active'
+      if (transaction.status === 'active') {
+        const { data: creditProfile, error: profileError } = await supabase
+          .from('farmer_credit_profiles')
+          .select('*')
+          .eq('farmer_id', transaction.farmer_id)
+          .maybeSingle();
+
+        if (profileError) {
+          logger.errorWithContext('CreditServiceEssentials - fetching farmer credit profile', profileError);
+          // We still consider this a success since the transaction was marked as paid
+          return true;
+        }
+
+        if (creditProfile) {
+          // Reduce pending deductions by the transaction amount
+          const newPendingDeductions = Math.max(0, creditProfile.pending_deductions - transaction.amount);
+          
+          const { error: profileUpdateError } = await supabase
+            .from('farmer_credit_profiles')
+            .update({ 
+              pending_deductions: newPendingDeductions,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', creditProfile.id);
+
+          if (profileUpdateError) {
+            logger.errorWithContext('CreditServiceEssentials - updating farmer credit profile', profileUpdateError);
+            // We still consider this a success since the transaction was marked as paid
+            return true;
+          }
+
+          logger.info(`CreditServiceEssentials - farmer credit profile updated successfully`, {
+            farmerId: transaction.farmer_id,
+            oldPendingDeductions: creditProfile.pending_deductions,
+            newPendingDeductions,
+            transactionAmount: transaction.amount
+          });
+        }
+      }
+
+      logger.info(`CreditServiceEssentials - credit transaction marked as paid successfully`, { transactionId });
+      return true;
+    } catch (error) {
+      logger.errorWithContext('CreditServiceEssentials - markCreditTransactionAsPaid', error);
+      return false;
+    }
   }
 }

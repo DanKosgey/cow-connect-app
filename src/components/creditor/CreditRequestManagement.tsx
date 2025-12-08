@@ -78,7 +78,7 @@ const CreditRequestManagement = () => {
     try {
       // Fetch credit requests with related data
       const { data, error } = await supabase
-        .from('agrovet_credit_requests')
+        .from('credit_requests')
         .select(`
           *,
           farmers!inner (

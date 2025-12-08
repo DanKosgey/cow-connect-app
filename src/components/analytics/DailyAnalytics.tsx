@@ -106,27 +106,22 @@ const DailyAnalytics = () => {
       if (collectionsError) throw collectionsError;
 
       // Process daily stats
-      const statsByDate = collectionsData?.reduce((acc: Record<string, DailyStats>, collection: any) => {
-        const date = collection.collection_date.split('T')[0];
+      const statsByDate = (collectionsData || []).reduce((acc: any, collection: any) => {
+        const date = format(new Date(collection.collection_date), 'MMM dd');
         if (!acc[date]) {
           acc[date] = {
             date,
             collections: 0,
-            farmers: 0,
+            farmers: new Set(),
             liters: 0,
-            amount: 0,
-            avgQuality: 0
+            amount: 0
           };
         }
-
-        const qualityScore = collection.quality_grade === 'A+' ? 10 : 
-                           collection.quality_grade === 'A' ? 8 :
-                           collection.quality_grade === 'B' ? 6 : 4;
 
         acc[date].collections += 1;
         acc[date].liters += parseInt(collection.liters) || 0;
         acc[date].amount += parseInt(collection.total_amount) || 0;
-        acc[date].avgQuality = ((acc[date].avgQuality * acc[date].collections) + qualityScore) / (acc[date].collections + 1);
+        acc[date].farmers.add(collection.farmer_id);
         
         return acc;
       }, {});
@@ -136,10 +131,6 @@ const DailyAnalytics = () => {
       // Calculate weekly trends
       const weeklyData = calculateWeeklyTrends(collectionsData || []);
       setWeeklyTrends(weeklyData);
-
-      // Calculate quality distribution
-      const qualityData = calculateQualityDistribution(collectionsData || []);
-      setQualityDistribution(qualityData);
 
       // Calculate top farmers
       const farmerData = calculateTopFarmers(collectionsData || []);
@@ -173,35 +164,14 @@ const DailyAnalytics = () => {
     return Object.entries(weeks).map(([week, data]) => {
       const totalLiters = data.collections.reduce((sum, c) => sum + (parseFloat(c.liters) || 0), 0);
       const revenue = data.collections.reduce((sum, c) => sum + (parseFloat(c.total_amount) || 0), 0);
-      const avgQuality = data.collections.reduce((sum, c) => {
-        const gradeScore = c.quality_grade === 'A+' ? 10 : c.quality_grade === 'A' ? 8 : c.quality_grade === 'B' ? 6 : 4;
-        return sum + gradeScore;
-      }, 0) / data.collections.length;
 
       return {
         week,
         totalCollections: data.collections.length,
         totalLiters,
-        avgQuality: avgQuality || 0,
         revenue
       };
     });
-  };
-
-  const calculateQualityDistribution = (collections: any[]): QualityDistribution[] => {
-    const distribution: Record<string, number> = {};
-    
-    collections.forEach(collection => {
-      const grade = collection.quality_grade || 'Unknown';
-      distribution[grade] = (distribution[grade] || 0) + 1;
-    });
-
-    const total = collections.length;
-    return Object.entries(distribution).map(([grade, count]) => ({
-      grade,
-      count,
-      percentage: (count / total) * 100
-    }));
   };
 
   const calculateTopFarmers = (collections: any[]): FarmerRanking[] => {
@@ -232,17 +202,11 @@ const DailyAnalytics = () => {
 
     return Object.entries(farmerData)
       .map(([farmerId, data]) => {
-        const avgQuality = data.collections.reduce((sum, c) => {
-          const gradeScore = c.quality_grade === 'A+' ? 10 : c.quality_grade === 'A' ? 8 : c.quality_grade === 'B' ? 6 : 4;
-          return sum + gradeScore;
-        }, 0) / data.collections.length;
-
         return {
           farmer_id: farmerId,
           farmer_name: data.name,
           totalLiters: data.totalLiters,
           collectionsCount: data.collections.length,
-          avgQuality: avgQuality || 0,
           totalEarnings: data.totalEarnings
         };
       })
@@ -258,14 +222,13 @@ const DailyAnalytics = () => {
 
   const exportAnalytics = () => {
     const csvContent = [
-      ['Date', 'Collections', 'Farmers', 'Total Liters', 'Total Amount', 'Average Quality'],
+      ['Date', 'Collections', 'Farmers', 'Total Liters', 'Total Amount'],
       ...dailyStats.map(stat => [
         stat.date,
         stat.collections,
         stat.farmers,
         stat.liters.toFixed(2),
-        stat.amount.toFixed(2),
-        stat.avgQuality.toFixed(1)
+        stat.amount.toFixed(2)
       ])
     ].map(row => row.join(',')).join('\n');
 
@@ -281,9 +244,6 @@ const DailyAnalytics = () => {
   const totalCollections = dailyStats.reduce((sum, day) => sum + day.collections, 0);
   const totalLiters = dailyStats.reduce((sum, day) => sum + day.liters, 0);
   const totalAmount = dailyStats.reduce((sum, day) => sum + day.amount, 0);
-  const avgQuality = dailyStats.length > 0 
-    ? dailyStats.reduce((sum, day) => sum + day.avgQuality, 0) / dailyStats.length 
-    : 0;
 
   const renderMetricCard = (title: string, value: number, icon: React.ReactNode, suffix?: string, trend?: string) => (
     <Card>

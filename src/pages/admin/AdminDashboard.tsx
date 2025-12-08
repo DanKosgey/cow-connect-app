@@ -82,7 +82,6 @@ interface Collection {
   farmer_id: string;
   staff_id: string;
   liters: number;
-  quality_grade: string;
   rate_per_liter: number;
   total_amount: number;
   collection_date: string;
@@ -159,7 +158,6 @@ interface CachedDashboardData {
   staff: Staff[];
   collectionTrends: any[];
   revenueTrends: any[];
-  qualityDistribution: any[];
   alerts: Alert[];
   kycStats: {
     pending: number;
@@ -214,7 +212,6 @@ const AdminDashboard = () => {
   const [timeRange, setTimeRange] = useState('week');
   const [collectionTrends, setCollectionTrends] = useState<any[]>([]);
   const [revenueTrends, setRevenueTrends] = useState<any[]>([]);
-  const [qualityDistribution, setQualityDistribution] = useState<any[]>([]);
   const [initialLoad, setInitialLoad] = useState(true);
   const isProcessing = useRef(false);
   const prevTimeRange = useRef(timeRange);
@@ -334,7 +331,6 @@ const AdminDashboard = () => {
           staff_id,
           approved_by,
           liters,
-          quality_grade,
           rate_per_liter,
           total_amount,
           collection_date,
@@ -423,20 +419,12 @@ const AdminDashboard = () => {
           date,
           liters: 0,
           collections: 0,
-          revenue: 0,
-          avgQuality: 0,
-          qualityCount: 0
+          revenue: 0
         };
       }
       acc[date].liters += collection.liters;
       acc[date].collections += 1;
       acc[date].revenue += collection.total_amount;
-      
-      const qualityValue = collection.quality_grade === 'A+' ? 4 : 
-                        collection.quality_grade === 'A' ? 3 : 
-                        collection.quality_grade === 'B' ? 2 : 1;
-      acc[date].avgQuality += qualityValue;
-      acc[date].qualityCount += 1;
       
       return acc;
     }, {});
@@ -444,8 +432,7 @@ const AdminDashboard = () => {
     // Convert to array and sort by date to fix the order issue
     const trendsArray = Object.values(trendsData)
       .map((item: any) => ({
-        ...item,
-        avgQuality: item.qualityCount > 0 ? item.avgQuality / item.qualityCount : 0
+        ...item
       }))
       .sort((a: any, b: any) => {
         const dateA = new Date(a.date);
@@ -456,37 +443,11 @@ const AdminDashboard = () => {
     setCollectionTrends(trendsArray);
     setRevenueTrends(trendsArray);
     
-    // Process quality distribution
-    const qualityCounts = processedCollections.reduce((acc: any, collection: any) => {
-      acc[collection.quality_grade] = (acc[collection.quality_grade] || 0) + 1;
-      return acc;
-    }, {});
-    
-    const qualityDistributionData = Object.entries(qualityCounts).map(([grade, count]) => ({
-      name: grade,
-      count: count as number,
-      percentage: Math.round(((count as number) / processedCollections.length) * 100)
-    }));
-    
-    setQualityDistribution(qualityDistributionData);
-    
     // Generate alerts - ENHANCED WITH COLLECTIONS AND PAYMENTS ACTIVITIES
     const newAlerts: Alert[] = [];
     
-    // Add low quality collections alert
-    const lowQualityCollections = processedCollections.filter(c => c.quality_grade === 'C');
-    if (lowQualityCollections.length > 0) {
-      newAlerts.push({
-        type: 'quality',
-        message: `${lowQualityCollections.length} collections with low quality (Grade C) detected`,
-        severity: 'warning',
-        time: format(new Date(), 'HH:mm'),
-        icon: AlertCircle
-      });
-    }
-    
     // Add recent collections alerts
-    const recentCollections = processedCollections.slice(0, 3);
+    const recentCollections = (processedCollections || []).slice(0, 3);
     recentCollections.forEach(collection => {
       newAlerts.push({
         type: 'collection',
@@ -498,7 +459,7 @@ const AdminDashboard = () => {
     });
     
     // Add high value collections alerts
-    const highValueCollections = processedCollections
+    const highValueCollections = (processedCollections || [])
       .filter(c => c.total_amount > 5000)
       .sort((a, b) => b.total_amount - a.total_amount)
       .slice(0, 2);
@@ -514,7 +475,7 @@ const AdminDashboard = () => {
     });
     
     // Add pending payments alerts
-    const pendingPayments = processedCollections
+    const pendingPayments = (processedCollections || [])
       .filter(c => c.status !== 'Paid')
       .slice(0, 2);
     
@@ -534,7 +495,7 @@ const AdminDashboard = () => {
       const timeB = b.time.split(':').map(Number);
       return timeB[0] * 60 + timeB[1] - (timeA[0] * 60 + timeA[1]);
     });
-    
+
     setAlerts(newAlerts);
 
     const approvedCount = farmers.filter(f => f.kyc_status === 'approved').length;
@@ -575,7 +536,6 @@ const AdminDashboard = () => {
 
   const { data: stableCollectionTrends, isStable: collectionTrendsStable } = useChartStabilizer(collectionTrends, 50);
   const { data: stableRevenueTrends, isStable: revenueTrendsStable } = useChartStabilizer(revenueTrends, 50);
-  const { data: stableQualityDistribution, isStable: qualityDistributionStable } = useChartStabilizer(qualityDistribution, 50);
 
   // Fetch pending farmers data with React Query
   const { data: pendingFarmersData, isLoading: isPendingFarmersLoading } = useQuery({
@@ -772,59 +732,7 @@ const AdminDashboard = () => {
     );
   };
 
-  const QualityDistributionChart = () => {
-    // Always use the latest data, don't rely on stabilization for charts
-    if (qualityDistribution.length === 0 || qualityDistribution.every(q => q.count === 0)) {
-      return (
-        <div className="h-80 flex items-center justify-center">
-          <p className="text-gray-500 dark:text-gray-400">No data available for the selected timeframe</p>
-        </div>
-      );
-    }
-    
-    const qualityColors: Record<string, string> = {
-      'A+': CHART_COLORS.secondary,
-      'A': CHART_COLORS.primary,
-      'B': CHART_COLORS.accent,
-      'C': CHART_COLORS.danger
-    };
-    
-    return (
-      <div className="h-80" style={{ height: '320px' }}>
-        <ResponsiveContainer width="100%" height="100%">
-          <PieChart>
-            <Pie
-              data={qualityDistribution}
-              cx="50%"
-              cy="50%"
-              labelLine={true}
-              outerRadius={80}
-              fill="#8884d8"
-              dataKey="count"
-              nameKey="name"
-              label={({ name, percentage }) => `${name}: ${percentage}%`}
-              isAnimationActive={false}
-              key={`quality-distribution-${timeRange}`} // Force re-render when timeframe changes
-            >
-              {qualityDistribution.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={qualityColors[entry.name] || '#8884d8'} />
-              ))}
-            </Pie>
-            <Tooltip 
-              formatter={(value) => [formatNumber(Number(value)), 'Collections']}
-              contentStyle={{ 
-                backgroundColor: 'white', 
-                border: '1px solid #e5e7eb', 
-                borderRadius: '0.5rem',
-                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
-              }}
-            />
-            <Legend />
-          </PieChart>
-        </ResponsiveContainer>
-      </div>
-    );
-  };
+
 
   // React Query hook for fetching dashboard data with caching
   const { data: dashboardData, isLoading: isDashboardLoading, error: dashboardError, refetch } = useQuery({
@@ -857,7 +765,6 @@ const AdminDashboard = () => {
           staff_id,
           approved_by,
           liters,
-          quality_grade,
           rate_per_liter,
           total_amount,
           collection_date,
@@ -985,62 +892,54 @@ const AdminDashboard = () => {
             date,
             liters: 0,
             collections: 0,
-            revenue: 0,
-            avgQuality: 0,
-            qualityCount: 0
+            revenue: 0
           };
         }
         acc[date].liters += collection.liters;
         acc[date].collections += 1;
         acc[date].revenue += collection.total_amount;
         
-        const qualityValue = collection.quality_grade === 'A+' ? 4 : 
-                          collection.quality_grade === 'A' ? 3 : 
-                          collection.quality_grade === 'B' ? 2 : 1;
-        acc[date].avgQuality += qualityValue;
-        acc[date].qualityCount += 1;
-        
         return acc;
       }, {});
-      
+
       // Convert to array and sort by date to fix the order issue
       const trendsArray = Object.values(trendsData)
         .map((item: any) => ({
-          ...item,
-          avgQuality: item.qualityCount > 0 ? item.avgQuality / item.qualityCount : 0
+          ...item
         }))
         .sort((a: any, b: any) => {
           const dateA = new Date(a.date);
           const dateB = new Date(b.date);
           return dateA.getTime() - dateB.getTime(); // Sort chronologically
         });
+
+      const approvedCount = (farmersData || []).filter(f => f.kyc_status === 'approved').length;
+      const rejectedCount = (farmersData || []).filter(f => f.kyc_status === 'rejected').length;
       
-      // Process quality distribution
-      const qualityCounts = (processedCollections || []).reduce((acc: any, collection: any) => {
-        acc[collection.quality_grade] = (acc[collection.quality_grade] || 0) + 1;
-        return acc;
-      }, {});
+      const kycStatsData = {
+        pending: 0, // Will be updated from pending farmers query
+        approved: approvedCount,
+        rejected: rejectedCount,
+        resubmissions: 0
+      };
       
-      const qualityDistributionData = Object.entries(qualityCounts).map(([grade, count]) => ({
-        name: grade,
-        count: count as number,
-        percentage: Math.round(((count as number) / (processedCollections || []).length) * 100)
-      }));
+      performanceMonitor.endProcessing();
+      
+      // Define the type for current data to match calculateMetricsWithTrends signature
+      const currentDataForMetrics = {
+        collections: processedCollections,
+        farmers: farmersData || [],
+        staff: staffDashboardData || [],
+        payments: processedCollections
+      };
+      
+      const metricsWithTrends = calculateMetricsWithTrends(
+        currentDataForMetrics,
+        previousData
+      );
       
       // Generate alerts - ENHANCED WITH COLLECTIONS AND PAYMENTS ACTIVITIES
       const newAlerts: Alert[] = [];
-      
-      // Add low quality collections alert
-      const lowQualityCollections = (processedCollections || []).filter(c => c.quality_grade === 'C');
-      if (lowQualityCollections.length > 0) {
-        newAlerts.push({
-          type: 'quality',
-          message: `${lowQualityCollections.length} collections with low quality (Grade C) detected`,
-          severity: 'warning',
-          time: format(new Date(), 'HH:mm'),
-          icon: AlertCircle
-        });
-      }
       
       // Add recent collections alerts
       const recentCollections = (processedCollections || []).slice(0, 3);
@@ -1092,31 +991,6 @@ const AdminDashboard = () => {
         return timeB[0] * 60 + timeB[1] - (timeA[0] * 60 + timeA[1]);
       });
 
-      const approvedCount = (farmersData || []).filter(f => f.kyc_status === 'approved').length;
-      const rejectedCount = (farmersData || []).filter(f => f.kyc_status === 'rejected').length;
-      
-      const kycStatsData = {
-        pending: 0, // Will be updated from pending farmers query
-        approved: approvedCount,
-        rejected: rejectedCount,
-        resubmissions: 0
-      };
-      
-      performanceMonitor.endProcessing();
-      
-      // Define the type for current data to match calculateMetricsWithTrends signature
-      const currentDataForMetrics = {
-        collections: processedCollections,
-        farmers: farmersData || [],
-        staff: staffDashboardData || [],
-        payments: processedCollections
-      };
-      
-      const metricsWithTrends = calculateMetricsWithTrends(
-        currentDataForMetrics,
-        previousData
-      );
-      
       // Return all processed data instead of updating state directly
       const result: CachedDashboardData = {
         collections: processedCollections,
@@ -1124,7 +998,6 @@ const AdminDashboard = () => {
         staff: staffDashboardData || [],
         collectionTrends: trendsArray,
         revenueTrends: trendsArray,
-        qualityDistribution: qualityDistributionData,
         alerts: newAlerts,
         kycStats: kycStatsData,
         metrics: metricsWithTrends
@@ -1156,7 +1029,7 @@ const AdminDashboard = () => {
       setStaff(dashboardData.staff);
       setCollectionTrends(dashboardData.collectionTrends);
       setRevenueTrends(dashboardData.revenueTrends);
-      setQualityDistribution(dashboardData.qualityDistribution);
+
       setAlerts(dashboardData.alerts);
       setKycStats(dashboardData.kycStats);
       setMetrics(dashboardData.metrics);
@@ -1275,7 +1148,7 @@ const AdminDashboard = () => {
         />
       </div>
 
-      {/* Charts Grid */}
+      {/* Charts Grid - REMOVED QUALITY DISTRIBUTION CHART */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm bg-white dark:bg-gray-800">
           <CardHeader className="border-b border-gray-200 dark:border-gray-700">
@@ -1307,26 +1180,6 @@ const AdminDashboard = () => {
           </CardHeader>
           <CardContent className="p-4">
             <RevenueTrendChart />
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Quality Distribution */}
-      <div className="grid grid-cols-1 gap-6">
-        <Card className="rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm bg-white dark:bg-gray-800">
-          <CardHeader className="border-b border-gray-200 dark:border-gray-700">
-            <CardTitle className="flex items-center gap-3 text-gray-900 dark:text-white">
-              <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-900/50">
-                <Award className="h-5 w-5 text-purple-500 dark:text-purple-400" />
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold">Quality Distribution</h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400">Milk quality grade distribution</p>
-              </div>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-4">
-            <QualityDistributionChart />
           </CardContent>
         </Card>
       </div>

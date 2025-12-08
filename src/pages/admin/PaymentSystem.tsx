@@ -34,8 +34,9 @@ import { formatCurrency } from '@/utils/formatters';
 import { deductionService } from '@/services/deduction-service';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, 
-  Tooltip, Legend, ResponsiveContainer, Area, AreaChart, PieChart as RechartsPieChart, 
-  Pie, Cell
+  Tooltip, Legend, ResponsiveContainer, AreaChart, Area, ComposedChart,
+  PieChart as RechartsPieChart, 
+  Pie, Cell, ReferenceLine, Label
 } from 'recharts';
 
 import PaymentOverviewChart from '@/components/admin/PaymentOverviewChart';
@@ -715,7 +716,7 @@ const PaymentSystem = () => {
           {/* Navigation Tabs */}
           <div className="bg-white rounded-xl shadow-lg mb-6">
             <div className="flex border-b">
-              {['overview', 'analytics', 'pending', 'paid', 'settings'].map((tab) => (
+              {['overview', 'analytics', 'payments', 'pending', 'paid', 'settings'].map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
@@ -727,6 +728,7 @@ const PaymentSystem = () => {
                 >
                   {tab === 'overview' && <BarChart3 className="w-4 h-4 inline mr-2" />}
                   {tab === 'analytics' && <PieChart className="w-4 h-4 inline mr-2" />}
+                  {tab === 'payments' && <DollarSign className="w-4 h-4 inline mr-2" />}
                   {tab === 'pending' && <Clock className="w-4 h-4 inline mr-2" />}
                   {tab === 'paid' && <CheckCircle className="w-4 h-4 inline mr-2" />}
                   {tab === 'settings' && <Settings className="w-4 h-4 inline mr-2" />}
@@ -829,32 +831,158 @@ const PaymentSystem = () => {
                   <p className="text-sm text-gray-500 mt-1">Daily overview of collections and payment amounts</p>
                 </CardHeader>
                 <CardContent className="p-0">
-                  <div className="h-80">
+                  <div className="h-96">
                     <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart
+                      <ComposedChart
                         data={analytics.daily_trend.map(item => ({
                           date: item.date,
                           paid: item.paidAmount,
                           pending: item.pendingAmount,
                           credit: item.creditUsed
                         }))}
-                        margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
+                        margin={{ top: 20, right: 30, left: 20, bottom: 30 }}
                       >
-                        <CartesianGrid strokeDasharray="3 3" />
+                        <defs>
+                          <linearGradient id="paidGradient" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                            <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                          </linearGradient>
+                          <linearGradient id="pendingGradient" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.3}/>
+                            <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
+                          </linearGradient>
+                          <linearGradient id="creditGradient" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/>
+                            <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
+                          </linearGradient>
+                        </defs>
+                        
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                        
                         <XAxis 
                           dataKey="date" 
                           tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                        />
-                        <YAxis tickFormatter={(value) => `KSh${(value / 1000).toFixed(0)}k`} />
+                          stroke="#666"
+                          fontSize={12}
+                        >
+                          <Label value="Days" offset={-10} position="insideBottom" />
+                        </XAxis>
+                        
+                        <YAxis 
+                          tickFormatter={(value) => `KSh${(value / 1000).toFixed(0)}k`} 
+                          stroke="#666"
+                          fontSize={12}
+                          tickMargin={10}
+                        >
+                          <Label value="Amount (KES)" angle={-90} position="insideLeft" offset={10} />
+                        </YAxis>
+                        
                         <Tooltip 
-                          formatter={(value) => formatCurrency(Number(value))}
-                          labelFormatter={(label) => new Date(label).toLocaleDateString()}
+                          formatter={(value, name) => {
+                            const formattedValue = formatCurrency(Number(value));
+                            switch(name) {
+                              case 'paid': return [formattedValue, 'Paid Amounts'];
+                              case 'pending': return [formattedValue, 'Pending Amounts'];
+                              case 'credit': return [formattedValue, 'Credit Used'];
+                              default: return [formattedValue, name];
+                            }
+                          }}
+                          labelFormatter={(label) => `Date: ${new Date(label).toLocaleDateString()}`}
+                          contentStyle={{ 
+                            backgroundColor: 'white', 
+                            border: '1px solid #e5e7eb', 
+                            borderRadius: '0.5rem',
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
+                          }}
+                          itemStyle={{ color: '#333' }}
+                          labelStyle={{ fontWeight: 'bold', color: '#333' }}
                         />
-                        <Area type="monotone" dataKey="paid" stackId="1" stroke="#10b981" fill="#10b981" name="Paid" />
-                        <Area type="monotone" dataKey="pending" stackId="1" stroke="#f59e0b" fill="#f59e0b" name="Pending" />
-                        <Area type="monotone" dataKey="credit" stackId="1" stroke="#8b5cf6" fill="#8b5cf6" name="Credit Used" />
-                      </AreaChart>
+                        
+                        <Legend 
+                          verticalAlign="top" 
+                          height={40}
+                          wrapperStyle={{ paddingBottom: '10px' }}
+                        />
+                        
+                        <ReferenceLine y={0} stroke="#000" strokeWidth={0.5} />
+                        
+                        {/* Area charts for better visualization */}
+                        <Area 
+                          type="monotone" 
+                          dataKey="paid" 
+                          fill="url(#paidGradient)" 
+                          stroke="none"
+                          name="Paid Amounts"
+                        />
+                        <Area 
+                          type="monotone" 
+                          dataKey="pending" 
+                          fill="url(#pendingGradient)" 
+                          stroke="none"
+                          name="Pending Amounts"
+                        />
+                        <Area 
+                          type="monotone" 
+                          dataKey="credit" 
+                          fill="url(#creditGradient)" 
+                          stroke="none"
+                          name="Credit Used"
+                        />
+                        
+                        {/* Line charts for clear trends */}
+                        <Line 
+                          type="monotone" 
+                          dataKey="paid" 
+                          stroke="#10b981" 
+                          strokeWidth={2} 
+                          dot={{ r: 4, strokeWidth: 2, fill: '#fff', stroke: '#10b981' }} 
+                          activeDot={{ r: 6, strokeWidth: 2, fill: '#fff', stroke: '#10b981' }} 
+                          name="Paid Amounts" 
+                          animationDuration={500}
+                        />
+                        <Line 
+                          type="monotone" 
+                          dataKey="pending" 
+                          stroke="#f59e0b" 
+                          strokeWidth={2} 
+                          dot={{ r: 4, strokeWidth: 2, fill: '#fff', stroke: '#f59e0b' }} 
+                          activeDot={{ r: 6, strokeWidth: 2, fill: '#fff', stroke: '#f59e0b' }} 
+                          name="Pending Amounts" 
+                          animationDuration={500}
+                        />
+                        <Line 
+                          type="monotone" 
+                          dataKey="credit" 
+                          stroke="#8b5cf6" 
+                          strokeWidth={2} 
+                          dot={{ r: 4, strokeWidth: 2, fill: '#fff', stroke: '#8b5cf6' }} 
+                          activeDot={{ r: 6, strokeWidth: 2, fill: '#fff', stroke: '#8b5cf6' }} 
+                          name="Credit Used" 
+                          animationDuration={500}
+                        />
+                      </ComposedChart>
                     </ResponsiveContainer>
+                  </div>
+                  
+                  {/* Enhanced insights section */}
+                  <div className="mt-6 p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border border-blue-100">
+                    <div className="flex items-start gap-3">
+                      <div className="p-2 bg-blue-100 rounded-lg">
+                        <BarChart3 className="w-4 h-4 text-blue-600" />
+                      </div>
+                      <div>
+                        <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                          <span className="inline-flex items-center px-2 py-1 rounded-full bg-green-100 text-green-800">
+                            <div className="w-2 h-2 rounded-full bg-green-500 mr-1"></div>
+                            Solid line = Actual values
+                          </span>
+                          <span className="inline-flex items-center px-2 py-1 rounded-full bg-blue-100 text-blue-800">
+                            <div className="w-2 h-2 rounded-full bg-blue-500 mr-1"></div>
+                            Shaded area = Trend visualization
+                          </span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </CardContent>
               </div>
@@ -865,10 +993,225 @@ const PaymentSystem = () => {
                   date: item.date,
                   collections: item.collections,
                   pendingAmount: item.pendingAmount,
-                  paidAmount: item.paidAmount
+                  paidAmount: item.paidAmount,
+                  creditUsed: item.creditUsed  // Add creditUsed to the mapping
                 }))}
               />
 
+              {/* Farmer Payment Summary */}
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-2xl font-bold text-gray-900">Farmer Payment Summary</h2>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setViewMode('list')}
+                      className={viewMode === 'list' ? 'bg-indigo-100' : ''}
+                    >
+                      <List className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setViewMode('grid')}
+                      className={viewMode === 'grid' ? 'bg-indigo-100' : ''}
+                    >
+                      <Grid className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+                
+                {viewMode === 'list' ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Farmer</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Collections</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Liters</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pending</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Paid</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Deductions</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Credit Used</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Net Payment</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {farmerPaymentSummaries.map((farmer) => {
+                          const hasCredit = farmer.credit_used > 0;
+                          const totalDeductions = farmer.total_deductions || 0;
+                          return (
+                            <tr key={farmer.farmer_id} className="hover:bg-gray-50">
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm font-medium text-gray-900">{farmer.farmer_name}</div>
+                                <div className="text-sm text-gray-500">{farmer.farmer_phone}</div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {farmer.total_collections}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {farmer.total_liters.toFixed(2)}L
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {formatCurrency(farmer.pending_net_amount)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {formatCurrency(farmer.paid_amount)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600 font-medium">
+                                {formatCurrency(totalDeductions)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className={`text-sm font-medium ${hasCredit ? 'text-purple-600' : 'text-gray-500'}`}>
+                                  {formatCurrency(farmer.credit_used)}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className="text-sm font-medium text-green-600">
+                                  {formatCurrency(farmer.net_payment || 0)}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                {formatCurrency(farmer.total_gross_amount)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                <div className="flex gap-2">
+                                  {/* Check if there are any unapproved collections for this farmer */}
+                                  {collections.filter(c => c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid').length > 0 ? (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => {
+                                        const unapprovedCollections = collections.filter(c => 
+                                          c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid'
+                                        );
+                                        const collectionIds = unapprovedCollections.map(c => c.id);
+                                        approveCollectionsForPayment(farmer.farmer_id, collectionIds);
+                                      }}
+                                      className="mr-2"
+                                    >
+                                      Approve All
+                                    </Button>
+                                  ) : null}
+                                  <Button
+                                    size="sm"
+                                    onClick={() => markAllFarmerPaymentsAsPaid(farmer.farmer_id)}
+                                    disabled={farmer.pending_net_amount <= 0}
+                                  >
+                                    Mark Paid
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  // Grid view
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {farmerPaymentSummaries.map((farmer) => (
+                      <Card key={farmer.farmer_id} className="hover:shadow-lg transition-shadow">
+                        <CardHeader>
+                          <CardTitle className="text-lg">{farmer.farmer_name}</CardTitle>
+                          <p className="text-sm text-gray-500">{farmer.farmer_phone}</p>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-3">
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Collections:</span>
+                              <span className="text-sm font-medium">{farmer.total_collections}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Total Liters:</span>
+                              <span className="text-sm font-medium">{farmer.total_liters.toFixed(2)}L</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Pending:</span>
+                              <span className="text-sm font-medium text-yellow-600">
+                                {formatCurrency(farmer.pending_net_amount)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Paid:</span>
+                              <span className="text-sm font-medium text-green-600">
+                                {formatCurrency(farmer.paid_amount)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Credit Used:</span>
+                              <span className="text-sm font-medium text-purple-600">
+                                {formatCurrency(farmer.credit_used)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Deductions:</span>
+                              <span className="text-sm font-medium text-red-600">
+                                {formatCurrency(farmer.total_deductions || 0)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Net Payment:</span>
+                              <span className="text-sm font-medium text-blue-600">
+                                {formatCurrency(farmer.net_payment || 0)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between pt-2 border-t">
+                              <span className="text-sm font-medium">Total:</span>
+                              <span className="text-sm font-bold">
+                                {formatCurrency(farmer.total_gross_amount)}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="mt-4">
+                            <div className="flex gap-2 mb-2">
+                              {/* Check if there are any unapproved collections for this farmer */}
+                              {collections.filter(c => c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid').length > 0 ? (
+                                <Button
+                                  size="sm"
+                                  onClick={() => {
+                                    const unapprovedCollections = collections.filter(c => 
+                                      c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid'
+                                    );
+                                    const collectionIds = unapprovedCollections.map(c => c.id);
+                                    approveCollectionsForPayment(farmer.farmer_id, collectionIds);
+                                  }}
+                                  className="flex-1"
+                                >
+                                  Approve All
+                                </Button>
+                              ) : null}
+                            </div>
+                            <Button
+                              className="w-full"
+                              onClick={() => markAllFarmerPaymentsAsPaid(farmer.farmer_id)}
+                              disabled={farmer.pending_net_amount <= 0}
+                            >
+                              Mark Paid
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+                
+                {farmerPaymentSummaries.length === 0 && (
+                  <div className="text-center py-8 text-gray-500">
+                    <Users className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                    <p>No farmer payment data available</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Payments Tab */}
+          {activeTab === 'payments' && (
+            <div className="space-y-6">
               {/* Farmer Payment Summary */}
               <div className="bg-white rounded-xl shadow-lg p-6">
                 <div className="flex justify-between items-center mb-6">

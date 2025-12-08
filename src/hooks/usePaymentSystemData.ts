@@ -130,7 +130,7 @@ const filterCollectionsByTimeFrame = (collectionsData: Collection[], timeFrame: 
   });
 };
 
-const calculateAnalytics = (collectionsData: Collection[], timeFrame: string, customDateRange: { from: string; to: string }) => {
+const calculateAnalytics = async (collectionsData: Collection[], timeFrame: string, customDateRange: { from: string; to: string }) => {
   // Apply time frame filtering
   const filteredData = filterCollectionsByTimeFrame(collectionsData, timeFrame, customDateRange);
   
@@ -142,11 +142,41 @@ const calculateAnalytics = (collectionsData: Collection[], timeFrame: string, cu
   const totalPaid = paidCollections.reduce((sum, c) => sum + (c.total_amount || 0), 0);
   const uniqueFarmers = new Set(filteredData.map(c => c.farmer_id)).size;
   
-  // Calculate credit usage from collection payments
-  const totalCreditUsed = filteredData.reduce((sum, c) => {
-    const collectionCredit = c.collection_payments?.[0]?.credit_used || 0;
-    return sum + collectionCredit;
-  }, 0);
+  // Calculate credit usage from credit_requests table with approved status and pending settlement
+  let totalCreditUsed = 0;
+  try {
+    // Get all approved credit requests with pending settlement across all farmers in the filtered data
+    const farmerIds = [...new Set(filteredData.map(c => c.farmer_id))];
+    if (farmerIds.length > 0) {
+      const { data: creditRequests, error: creditError } = await supabase
+        .from('credit_requests')
+        .select('farmer_id, total_amount, status, settlement_status')
+        .in('farmer_id', farmerIds);
+      
+      if (!creditError && creditRequests) {
+        // Log for debugging
+        console.log('Found credit requests:', creditRequests.length);
+        console.log('Sample credit requests:', creditRequests.slice(0, 3));
+        
+        // Filter for approved requests with pending settlement
+        const approvedPendingRequests = creditRequests.filter(req => 
+          req.status === 'approved' && req.settlement_status === 'pending'
+        );
+        
+        console.log('Approved pending requests:', approvedPendingRequests.length);
+        console.log('Sample approved pending requests:', approvedPendingRequests.slice(0, 3));
+        
+        // Sum all approved credit requests with pending settlement
+        totalCreditUsed = approvedPendingRequests.reduce((sum, request) => sum + (request.total_amount || 0), 0);
+        
+        console.log('Total credit used:', totalCreditUsed);
+      } else if (creditError) {
+        console.error('Error fetching credit requests:', creditError);
+      }
+    }
+  } catch (error) {
+    console.warn('Error fetching credit requests for analytics:', error);
+  }
   
   // Calculate net pending (gross pending - credit used)
   const netPending = Math.max(0, grossPending - totalCreditUsed);
@@ -185,6 +215,9 @@ const calculateAnalytics = (collectionsData: Collection[], timeFrame: string, cu
     trendStartDate.setDate(trendStartDate.getDate() - 6);
   }
   
+  // Get unique farmer IDs from filtered data
+  const farmerIds = [...new Set(filteredData.map(c => c.farmer_id))];
+  
   // Generate daily trend data
   for (let d = new Date(trendStartDate); d <= trendEndDate; d.setDate(d.getDate() + 1)) {
     const dateString = new Date(d).toISOString().split('T')[0];
@@ -203,13 +236,44 @@ const calculateAnalytics = (collectionsData: Collection[], timeFrame: string, cu
       .filter(c => c.status !== 'Paid' && c.collection_date?.startsWith(dateString))
       .reduce((sum, c) => sum + (c.total_amount || 0), 0);
     
-    // Calculate credit used for this date
-    const creditUsed = filteredData
-      .filter(c => c.collection_date?.startsWith(dateString))
-      .reduce((sum, c) => {
-        const collectionCredit = c.collection_payments?.[0]?.credit_used || 0;
-        return sum + collectionCredit;
-      }, 0);
+    // Calculate credit used for this date from credit_requests table
+    let creditUsed = 0;
+    if (farmerIds.length > 0) {
+      try {
+        // Get credit requests for this specific date
+        const { data: creditRequests, error: creditError } = await supabase
+          .from('credit_requests')
+          .select('total_amount, created_at, status, settlement_status')
+          .in('farmer_id', farmerIds);
+        
+        if (!creditError && creditRequests) {
+          // Filter credit requests by date and status
+          const dailyCreditRequests = creditRequests.filter(request => {
+            if (!request.created_at) return false;
+            const requestDate = new Date(request.created_at);
+            const requestDateString = requestDate.toISOString().split('T')[0];
+            
+            // Check if it matches our date and has the right status
+            const dateMatch = requestDateString === dateString;
+            const statusMatch = request.status === 'approved' && request.settlement_status === 'pending';
+            
+            if (dateMatch && statusMatch) {
+              console.log(`Matching credit request for ${dateString}:`, request);
+            }
+            
+            return dateMatch && statusMatch;
+          });
+          
+          creditUsed = dailyCreditRequests.reduce((sum, request) => sum + (request.total_amount || 0), 0);
+          
+          if (creditUsed > 0) {
+            console.log(`Credit used for ${dateString}:`, creditUsed);
+          }
+        }
+      } catch (error) {
+        console.warn('Error fetching credit requests for date:', dateString, error);
+      }
+    }
     
     // Calculate net pending amount (gross pending - credit used)
     const netPendingAmount = Math.max(0, grossPendingAmount - creditUsed);
@@ -218,7 +282,7 @@ const calculateAnalytics = (collectionsData: Collection[], timeFrame: string, cu
       date: dateString, 
       collections: collectionsCount,
       paidAmount,
-      pendingAmount: netPendingAmount, // Use net pending instead of gross pending
+      pendingAmount: grossPendingAmount, // Show gross pending amount for the chart
       creditUsed
     });
   }
@@ -310,27 +374,26 @@ const calculateFarmerSummaries = async (
     const pendingGrossAmount = pendingCollections.reduce((sum, c) => sum + (c.total_amount || 0), 0);
     const pendingNetAmount = pendingCollections.reduce((sum, c) => sum + ((c.total_amount || 0) - ((c.liters || 0) * collectorRate)), 0);
     
-    // Calculate credit used from collection payments
-    let creditUsed = collectionsArray.reduce((sum, c) => {
-      const collectionCredit = c.collection_payments?.[0]?.credit_used || 0;
-      return sum + collectionCredit;
-    }, 0);
-    
-    // Fetch credit data for the farmer
+    // Calculate credit used from credit_requests table with approved status and pending settlement
+    let creditUsed = 0;
     try {
-      const { data: creditData, error: creditError } = await supabase
-        .from('farmer_credit_profiles')
-        .select('current_credit_balance, total_credit_used, pending_deductions')
-        .eq('farmer_id', farmerId)
-        .eq('is_frozen', false)
-        .maybeSingle();
+      // Get all approved credit requests for this farmer that are pending settlement
+      const { data: creditRequests, error: creditError } = await supabase
+        .from('credit_requests')
+        .select('total_amount, status, settlement_status')
+        .eq('farmer_id', farmerId);
       
-      if (!creditError && creditData) {
-        // Use the pending deductions as the credit used indicator
-        creditUsed = creditData.pending_deductions || 0;
+      if (!creditError && creditRequests) {
+        // Filter for approved requests with pending settlement
+        const approvedPendingRequests = creditRequests.filter(req => 
+          req.status === 'approved' && req.settlement_status === 'pending'
+        );
+        
+        // Sum all approved credit requests with pending settlement
+        creditUsed = approvedPendingRequests.reduce((sum, request) => sum + (request.total_amount || 0), 0);
       }
     } catch (error) {
-      console.warn('Error fetching credit data for farmer:', farmerId, error);
+      console.warn('Error fetching credit requests for farmer:', farmerId, error);
     }
 
     // Calculate total deductions for the farmer
@@ -405,7 +468,7 @@ export const usePaymentSystemData = (timeFrame: string = 'all', customDateRange:
       const collections = collectionsData || [];
       
       // Calculate analytics and farmer summaries
-      const analytics = calculateAnalytics(collections, timeFrame, customDateRange);
+      const analytics = await calculateAnalytics(collections, timeFrame, customDateRange);
       const farmerPaymentSummaries = await calculateFarmerSummaries(collections, timeFrame, customDateRange);
 
       return {

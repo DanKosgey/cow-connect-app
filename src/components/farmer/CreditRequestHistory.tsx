@@ -36,7 +36,7 @@ const CreditRequestHistory = () => {
       if (!user) return;
 
       const { data, error } = await supabase
-        .from('agrovet_credit_requests')
+        .from('credit_requests')
         .select(`
           id,
           quantity,

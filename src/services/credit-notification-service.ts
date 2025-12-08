@@ -618,4 +618,175 @@ export class CreditNotificationService {
       throw error;
     }
   }
+
+  // Send credit transaction status change notification to farmer
+  static async sendTransactionStatusChange(
+    farmerId: string,
+    transactionId: string,
+    previousStatus: string,
+    newStatus: string,
+    amount: number
+  ): Promise<void> {
+    try {
+      // Get farmer's user ID
+      const { data: farmerData, error: farmerError } = await supabase
+        .from('farmers')
+        .select('user_id, profiles(full_name)')
+        .eq('id', farmerId)
+        .maybeSingle();
+
+      if (farmerError) {
+        logger.errorWithContext('CreditNotificationService - fetching farmer data', farmerError);
+        throw farmerError;
+      }
+
+      if (!farmerData) {
+        logger.warn('Warning: Farmer not found for transaction status change notification', farmerId);
+        return;
+      }
+
+      const userId = (farmerData as any).user_id;
+      const farmerName = (farmerData as any).profiles?.full_name || 'Farmer';
+      
+      // Define status change messages
+      const statusMessages: Record<string, string> = {
+        'pending->active': `Your credit transaction of KES ${amount.toFixed(2)} is now active and will be tracked for repayment.`,
+        'active->paid': `Your credit transaction of KES ${amount.toFixed(2)} has been successfully paid through your milk collection payments.`,
+        'active->cancelled': `Your credit transaction of KES ${amount.toFixed(2)} has been cancelled.`,
+        'active->disputed': `Your credit transaction of KES ${amount.toFixed(2)} has been marked as disputed. Our team will review your case shortly.`,
+        'disputed->active': `Your disputed credit transaction of KES ${amount.toFixed(2)} has been resolved and is now active again.`,
+        'disputed->paid': `Your disputed credit transaction of KES ${amount.toFixed(2)} has been resolved and marked as paid.`,
+        'disputed->cancelled': `Your disputed credit transaction of KES ${amount.toFixed(2)} has been resolved and cancelled.`
+      };
+
+      const statusKey = `${previousStatus}->${newStatus}`;
+      const defaultMessage = `Your credit transaction status has changed from ${previousStatus} to ${newStatus}.`;
+      const message = statusMessages[statusKey] || defaultMessage;
+
+      // Create notification
+      const { error: notificationError } = await supabase
+        .from('notifications')
+        .insert({
+          user_id: userId,
+          title: 'Credit Transaction Status Update',
+          message: `Dear ${farmerName}, ${message}`,
+          type: this.getStatusNotificationType(newStatus),
+          category: 'transaction_status_change',
+          metadata: {
+            transaction_id: transactionId,
+            previous_status: previousStatus,
+            new_status: newStatus,
+            amount: amount
+          }
+        });
+
+      if (notificationError) {
+        logger.errorWithContext('CreditNotificationService - sending transaction status change notification', notificationError);
+        throw notificationError;
+      }
+
+      logger.info(`Transaction status change notification sent to farmer ${farmerId}`, {
+        transactionId,
+        previousStatus,
+        newStatus
+      });
+    } catch (error) {
+      logger.errorWithContext('CreditNotificationService - sendTransactionStatusChange', error);
+      throw error;
+    }
+  }
+
+  // Send agrovet purchase payment status change notification to farmer
+  static async sendPurchasePaymentStatusChange(
+    farmerId: string,
+    purchaseId: string,
+    previousStatus: string,
+    newStatus: string,
+    totalAmount: number,
+    itemName: string
+  ): Promise<void> {
+    try {
+      // Get farmer's user ID
+      const { data: farmerData, error: farmerError } = await supabase
+        .from('farmers')
+        .select('user_id, profiles(full_name)')
+        .eq('id', farmerId)
+        .maybeSingle();
+
+      if (farmerError) {
+        logger.errorWithContext('CreditNotificationService - fetching farmer data', farmerError);
+        throw farmerError;
+      }
+
+      if (!farmerData) {
+        logger.warn('Warning: Farmer not found for purchase payment status change notification', farmerId);
+        return;
+      }
+
+      const userId = (farmerData as any).user_id;
+      const farmerName = (farmerData as any).profiles?.full_name || 'Farmer';
+      
+      // Define status change messages
+      const statusMessages: Record<string, string> = {
+        'pending->processing': `Your purchase of ${itemName} worth KES ${totalAmount.toFixed(2)} is now being processed and prepared for collection.`,
+        'processing->paid': `Your purchase of ${itemName} worth KES ${totalAmount.toFixed(2)} has been fully paid.`,
+        'processing->overdue': `Your purchase of ${itemName} worth KES ${totalAmount.toFixed(2)} is now overdue. Please contact our office immediately.`,
+        'processing->cancelled': `Your purchase of ${itemName} worth KES ${totalAmount.toFixed(2)} has been cancelled.`,
+        'overdue->paid': `Your overdue purchase of ${itemName} worth KES ${totalAmount.toFixed(2)} has been successfully paid and resolved.`,
+        'overdue->cancelled': `Your overdue purchase of ${itemName} worth KES ${totalAmount.toFixed(2)} has been cancelled.`
+      };
+
+      const statusKey = `${previousStatus}->${newStatus}`;
+      const defaultMessage = `Your purchase payment status for ${itemName} has changed from ${previousStatus} to ${newStatus}.`;
+      const message = statusMessages[statusKey] || defaultMessage;
+
+      // Create notification
+      const { error: notificationError } = await supabase
+        .from('notifications')
+        .insert({
+          user_id: userId,
+          title: 'Purchase Payment Status Update',
+          message: `Dear ${farmerName}, ${message}`,
+          type: this.getStatusNotificationType(newStatus),
+          category: 'purchase_payment_status_change',
+          metadata: {
+            purchase_id: purchaseId,
+            previous_status: previousStatus,
+            new_status: newStatus,
+            total_amount: totalAmount,
+            item_name: itemName
+          }
+        });
+
+      if (notificationError) {
+        logger.errorWithContext('CreditNotificationService - sending purchase payment status change notification', notificationError);
+        throw notificationError;
+      }
+
+      logger.info(`Purchase payment status change notification sent to farmer ${farmerId}`, {
+        purchaseId,
+        previousStatus,
+        newStatus
+      });
+    } catch (error) {
+      logger.errorWithContext('CreditNotificationService - sendPurchasePaymentStatusChange', error);
+      throw error;
+    }
+  }
+
+  // Helper method to determine notification type based on status
+  private static getStatusNotificationType(status: string): string {
+    const alertStatuses = ['overdue', 'cancelled', 'disputed'];
+    const successStatuses = ['paid'];
+    const infoStatuses = ['pending', 'processing', 'active'];
+
+    if (alertStatuses.includes(status)) {
+      return 'alert';
+    } else if (successStatuses.includes(status)) {
+      return 'success';
+    } else if (infoStatuses.includes(status)) {
+      return 'info';
+    }
+    return 'info'; // default
+  }
 }

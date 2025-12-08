@@ -26,6 +26,7 @@ export interface FarmerCreditTransaction {
   description?: string;
   created_by?: string;
   created_at: string;
+  status?: 'pending' | 'active' | 'paid' | 'cancelled' | 'disputed';
 }
 
 export interface AgrovetInventory {
@@ -54,6 +55,7 @@ export interface AgrovetPurchase {
   payment_method: 'cash' | 'credit';
   credit_transaction_id?: string;
   status: 'pending' | 'completed' | 'cancelled' | 'pending_collection';
+  payment_status?: 'pending' | 'processing' | 'paid' | 'overdue' | 'cancelled';
   purchased_by?: string;
   created_at: string;
 }
@@ -68,7 +70,7 @@ export class CreditService {
       }
       // Get the credit request details
       const { data: request, error: requestError } = await supabase
-        .from('agrovet_credit_requests')
+        .from('credit_requests')
         .select(`
           *,
           farmers:farmer_id (id, full_name),
@@ -88,7 +90,7 @@ export class CreditService {
 
       // Update the credit request status
       const { error: updateError } = await supabase
-        .from('agrovet_credit_requests')
+        .from('credit_requests')
         .update({
           status: 'approved',
           processed_by: approvedBy,
@@ -131,7 +133,7 @@ export class CreditService {
         throw new Error('Rejection reason is required');
       }
       const { error } = await supabase
-        .from('agrovet_credit_requests')
+        .from('credit_requests')
         .update({
           status: 'rejected',
           notes: rejectionReason,
@@ -148,7 +150,7 @@ export class CreditService {
 
       // Get farmer ID for notification
       const { data: request, error: requestError } = await supabase
-        .from('agrovet_credit_requests')
+        .from('credit_requests')
         .select('farmer_id, product_name, total_amount')
         .eq('id', requestId)
         .maybeSingle();
@@ -199,7 +201,7 @@ export class CreditService {
 
       // Get total credit issued
       const { data: totalCreditData, error: totalCreditError } = await supabase
-        .from('agrovet_credit_requests')
+        .from('credit_requests')
         .select('total_amount')
         .eq('status', 'approved');
 
@@ -978,6 +980,99 @@ export class CreditService {
       return data || [];
     } catch (error) {
       logger.errorWithContext('CreditService - getPaymentSchedules', error);
+      throw error;
+    }
+  }
+
+  // Get credit transactions with status filtering
+  static async getCreditTransactionsByStatus(farmerId: string, status?: string): Promise<FarmerCreditTransaction[]> {
+    try {
+      let query = supabase
+        .from('credit_transactions')
+        .select('*')
+        .eq('farmer_id', farmerId)
+        .order('created_at', { ascending: false });
+
+      if (status) {
+        query = query.eq('status', status);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        logger.errorWithContext('CreditService - fetching credit transactions by status', error);
+        throw error;
+      }
+
+      return data as FarmerCreditTransaction[];
+    } catch (error) {
+      logger.errorWithContext('CreditService - getCreditTransactionsByStatus', error);
+      throw error;
+    }
+  }
+
+  // Update credit transaction status
+  static async updateCreditTransactionStatus(transactionId: string, status: 'pending' | 'active' | 'paid' | 'cancelled' | 'disputed'): Promise<void> {
+    try {
+      const { error } = await supabase
+        .from('credit_transactions')
+        .update({ status: status })
+        .eq('id', transactionId);
+
+      if (error) {
+        logger.errorWithContext('CreditService - updating credit transaction status', error);
+        throw error;
+      }
+    } catch (error) {
+      logger.errorWithContext('CreditService - updateCreditTransactionStatus', error);
+      throw error;
+    }
+  }
+
+  // Get agrovet purchases with payment status filtering
+  static async getAgrovetPurchasesByPaymentStatus(farmerId: string, paymentStatus?: string): Promise<AgrovetPurchase[]> {
+    try {
+      let query = supabase
+        .from('agrovet_purchases')
+        .select(`
+          *,
+          agrovet_inventory(name, category)
+        `)
+        .eq('farmer_id', farmerId)
+        .order('created_at', { ascending: false });
+
+      if (paymentStatus) {
+        query = query.eq('payment_status', paymentStatus);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        logger.errorWithContext('CreditService - fetching agrovet purchases by payment status', error);
+        throw error;
+      }
+
+      return data as AgrovetPurchase[];
+    } catch (error) {
+      logger.errorWithContext('CreditService - getAgrovetPurchasesByPaymentStatus', error);
+      throw error;
+    }
+  }
+
+  // Update agrovet purchase payment status
+  static async updateAgrovetPurchasePaymentStatus(purchaseId: string, paymentStatus: 'pending' | 'processing' | 'paid' | 'overdue' | 'cancelled'): Promise<void> {
+    try {
+      const { error } = await supabase
+        .from('agrovet_purchases')
+        .update({ payment_status: paymentStatus })
+        .eq('id', purchaseId);
+
+      if (error) {
+        logger.errorWithContext('CreditService - updating agrovet purchase payment status', error);
+        throw error;
+      }
+    } catch (error) {
+      logger.errorWithContext('CreditService - updateAgrovetPurchasePaymentStatus', error);
       throw error;
     }
   }

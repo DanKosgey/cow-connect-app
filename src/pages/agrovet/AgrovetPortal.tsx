@@ -71,7 +71,7 @@ const AgrovetPortal = () => {
   const loadCreditRequests = async () => {
     try {
       const { data, error } = await supabase
-        .from('agrovet_credit_requests')
+        .from('credit_requests')
         .select(`
           *,
           farmers:farmer_id (
