@@ -11,8 +11,8 @@ interface Collection {
   id: string;
   collection_id: string;
   farmer_id: string;
+  staff_id: string;
   liters: number;
-  quality_grade: string;
   rate_per_liter: number;
   total_amount: number;
   collection_date: string;
@@ -85,12 +85,6 @@ const VirtualizedCollectionsTable: React.FC<VirtualizedCollectionsTableProps> = 
           {c.staff?.profiles?.full_name || 'Unknown'}
         </TableCell>
         <TableCell className="px-6 py-4 text-sm font-medium text-blue-600">{c.liters}L</TableCell>
-        <TableCell className="px-6 py-4">
-          <span className="px-3 py-1 rounded-full text-xs font-semibold text-white"
-                style={{ backgroundColor: GRADE_COLORS[c.quality_grade as keyof typeof GRADE_COLORS] || '#6b7280' }}>
-            {c.quality_grade}
-          </span>
-        </TableCell>
         <TableCell className="px-6 py-4 text-sm text-text-light dark:text-text-dark">{formatCurrency(c.rate_per_liter)}</TableCell>
         <TableCell className="px-6 py-4 text-sm font-medium text-green-600">{formatCurrency(c.total_amount)}</TableCell>
         <TableCell className="px-6 py-4">
@@ -130,12 +124,6 @@ const VirtualizedCollectionsTable: React.FC<VirtualizedCollectionsTableProps> = 
                       <span className="text-subtle-text-light dark:text-subtle-text-dark">Status:</span>
                       <Badge variant={getStatusVariant(c.status)}>
                         {c.status}
-                      </Badge>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-subtle-text-light dark:text-subtle-text-dark">Quality Grade:</span>
-                      <Badge variant={c.quality_grade === 'A+' ? 'default' : c.quality_grade === 'A' ? 'secondary' : c.quality_grade === 'B' ? 'outline' : 'destructive'}>
-                        {c.quality_grade}
                       </Badge>
                     </div>
                   </div>
@@ -222,7 +210,6 @@ const VirtualizedCollectionsTable: React.FC<VirtualizedCollectionsTableProps> = 
             <TableHead className="px-6 py-3 text-left text-xs font-medium text-subtle-text-light dark:text-subtle-text-dark uppercase">Farmer</TableHead>
             <TableHead className="px-6 py-3 text-left text-xs font-medium text-subtle-text-light dark:text-subtle-text-dark uppercase">Staff</TableHead>
             <TableHead className="px-6 py-3 text-left text-xs font-medium text-subtle-text-light dark:text-subtle-text-dark uppercase">Liters</TableHead>
-            <TableHead className="px-6 py-3 text-left text-xs font-medium text-subtle-text-light dark:text-subtle-text-dark uppercase">Grade</TableHead>
             <TableHead className="px-6 py-3 text-left text-xs font-medium text-subtle-text-light dark:text-subtle-text-dark uppercase">Rate</TableHead>
             <TableHead className="px-6 py-3 text-left text-xs font-medium text-subtle-text-light dark:text-subtle-text-dark uppercase">Amount</TableHead>
             <TableHead className="px-6 py-3 text-left text-xs font-medium text-subtle-text-light dark:text-subtle-text-dark uppercase">Status</TableHead>

@@ -8,7 +8,6 @@ interface Collection {
   farmer_id: string;
   staff_id: string;
   liters: number;
-  quality_grade: string;
   rate_per_liter: number;
   total_amount: number;
   collection_date: string;
@@ -51,7 +50,6 @@ export const useCollectionsData = () => {
           farmer_id,
           staff_id,
           liters,
-          quality_grade,
           rate_per_liter,
           total_amount,
           collection_date,

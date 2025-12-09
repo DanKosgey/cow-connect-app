@@ -8,8 +8,8 @@ interface Collection {
   id: string;
   collection_id: string;
   farmer_id: string;
+  staff_id: string;
   liters: number;
-  quality_grade: string;
   rate_per_liter: number;
   total_amount: number;
   collection_date: string;
@@ -228,7 +228,6 @@ export const useCollectionAnalyticsData = () => {
         c.farmers?.profiles?.full_name || 'N/A',
         c.staff?.profiles?.full_name || 'N/A',
         c.liters,
-        c.quality_grade,
         c.rate_per_liter,
         c.total_amount,
         c.status,
@@ -236,7 +235,7 @@ export const useCollectionAnalyticsData = () => {
         c.gps_longitude || 'N/A'
       ]);
 
-      const headers = ['Collection ID', 'Date', 'Farmer', 'Staff', 'Liters', 'Quality Grade', 
+      const headers = ['Collection ID', 'Date', 'Farmer', 'Staff', 'Liters', 
                        'Rate per Liter', 'Total Amount', 'Status', 'GPS Latitude', 'GPS Longitude'];
       const csv = [headers, ...csvData].map(row => row.join(',')).join('\n');
       

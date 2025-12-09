@@ -135,10 +135,6 @@ const DetailedBusinessInsights = ({ metrics, timeRange = 'week' }: DetailedBusin
             <h3 className="font-semibold text-green-900">Farmer Retention</h3>
             <p className="text-2xl font-bold text-green-600">{formatPercentage(farmerRetention)}</p>
           </div>
-          <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
-            <h3 className="font-semibold text-purple-900">Quality Index</h3>
-            <p className="text-2xl font-bold text-purple-600">{qualityIndex.toFixed(1)}/100</p>
-          </div>
         </div>
       </CardContent>
     </Card>

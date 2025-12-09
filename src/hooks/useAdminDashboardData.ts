@@ -24,7 +24,6 @@ export const useAdminDashboardData = (options: UseAdminDashboardDataOptions) => 
         staff_id,
         approved_by,
         liters,
-        quality_grade,
         rate_per_liter,
         total_amount,
         collection_date,

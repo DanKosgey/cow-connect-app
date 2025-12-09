@@ -136,7 +136,7 @@ export class BusinessIntelligenceService {
   /**
    * Fetch data for a specific period - OPTIMIZED VERSION
    */
-  private async fetchPeriodData(startDate: string, endDate: string): Promise<PeriodData> {
+  private async fetchPeriodData(startDate: string, endDate: string) {
     try {
       // Check if we have cached data for this period
       const cacheKey = `${startDate}-${endDate}`;
@@ -153,7 +153,6 @@ export class BusinessIntelligenceService {
         .from('collections')
         .select(`
           liters,
-          quality_grade,
           total_amount
         `)
         .gte('collection_date', startDate)
@@ -189,7 +188,6 @@ export class BusinessIntelligenceService {
       let totalCollections = 0;
       let totalLiters = 0;
       let totalRevenue = 0;
-      let qualitySum = 0;
       
       // Use for loop for better performance
       if (collections) {
@@ -202,46 +200,24 @@ export class BusinessIntelligenceService {
           // Calculate revenue using admin rate if total_amount is not available
           const collectionRevenue = c.total_amount || (c.liters * adminRate);
           totalRevenue += collectionRevenue;
-          
-          // Quality mapping (assuming A+ = 100, A = 90, B = 75, C = 60)
-          const qualityValue = c.quality_grade === 'A+' ? 100 : 
-                              c.quality_grade === 'A' ? 90 : 
-                              c.quality_grade === 'B' ? 75 : 60;
-          qualitySum += qualityValue;
         }
       }
-
-      const avgQuality = collections && collections.length > 0 ? qualitySum / collections.length : 0;
 
       // Calculate operating costs (assuming 70% of revenue as costs)
       const totalOperatingCosts = totalRevenue * 0.7;
-
-      // Calculate quality tests data
-      const totalQualityTests = totalCollections;
-      let passedQualityTests = 0;
-      
-      if (collections) {
-        for (let i = 0; i < collections.length; i++) {
-          const c = collections[i];
-          if (c.quality_grade === 'A+' || c.quality_grade === 'A' || c.quality_grade === 'B') {
-            passedQualityTests++;
-          }
-        }
-      }
-
-      // Calculate farmer retention rate (simplified)
-      const farmerRetentionRate = activeFarmers ? (activeFarmers / (activeFarmers + 10)) * 100 : 0;
 
       const result = {
         totalCollections,
         totalLiters,
         totalRevenue,
         activeFarmers: activeFarmers || 0,
-        avgQuality,
+        // Removed quality-related metrics since quality_grade column was deleted
+        avgQuality: 0,
         totalOperatingCosts,
-        totalQualityTests,
-        passedQualityTests,
-        farmerRetentionRate
+        // Removed quality tests data since quality_grade column was deleted
+        totalQualityTests: 0,
+        passedQualityTests: 0,
+        farmerRetentionRate: activeFarmers ? (activeFarmers / (activeFarmers + 10)) * 100 : 0
       };
 
       // console.log('Calculated period data:', result);
@@ -258,8 +234,10 @@ export class BusinessIntelligenceService {
         totalLiters: 0,
         totalRevenue: 0,
         activeFarmers: 0,
+        // Removed quality-related metrics since quality_grade column was deleted
         avgQuality: 0,
         totalOperatingCosts: 0,
+        // Removed quality tests data since quality_grade column was deleted
         totalQualityTests: 0,
         passedQualityTests: 0,
         farmerRetentionRate: 0

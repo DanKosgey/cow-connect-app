@@ -27,9 +27,7 @@ interface CompanyLocation {
   address: string;
   gps_latitude?: number;
   gps_longitude?: number;
-  warehouse_collections: {
-    count: number;
-  };
+  // Removed warehouse_collections reference since the table was deleted
 }
 
 const Checkpoints = () => {
@@ -53,13 +51,10 @@ const Checkpoints = () => {
         console.warn('Session refresh failed, continuing with data fetch', error);
       });
       
-      // Fetch company locations with collection counts
+      // Fetch company locations without collection counts since warehouse_collections table was deleted
       const { data, error: fetchError } = await supabase
         .from('warehouses')
-        .select(`
-          *,
-          warehouse_collections!warehouse_collections_warehouse_id_fkey(count)
-        `)
+        .select('*')
         .order('name');
 
       if (fetchError) throw fetchError;
@@ -162,12 +157,7 @@ const Checkpoints = () => {
                           <div>
                             <h3 className="font-bold text-gray-900">{location.name}</h3>
                             <p className="text-sm text-gray-600 mt-1">{location.address}</p>
-                            <div className="mt-3 flex items-center gap-2">
-                              <Truck className="h-4 w-4 text-blue-500" />
-                              <span className="text-sm font-medium">
-                                {location.warehouse_collections?.count || 0} collections
-                              </span>
-                            </div>
+                            {/* Removed collection count display since warehouse_collections table was deleted */}
                           </div>
                           {location.gps_latitude && location.gps_longitude && (
                             <MapPin className="h-5 w-5 text-green-500" />

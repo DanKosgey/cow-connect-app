@@ -4,6 +4,34 @@ interface ChartDataPoint {
   [key: string]: any;
 }
 
+// Deep equality function for comparing arrays of objects
+const deepEqual = (a: any, b: any): boolean => {
+  if (a === b) return true;
+  
+  if (a && b && typeof a === 'object' && typeof b === 'object') {
+    if (Array.isArray(a) && Array.isArray(b)) {
+      if (a.length !== b.length) return false;
+      for (let i = 0; i < a.length; i++) {
+        if (!deepEqual(a[i], b[i])) return false;
+      }
+      return true;
+    }
+    
+    const keysA = Object.keys(a);
+    const keysB = Object.keys(b);
+    
+    if (keysA.length !== keysB.length) return false;
+    
+    for (let key of keysA) {
+      if (!keysB.includes(key) || !deepEqual(a[key], b[key])) return false;
+    }
+    
+    return true;
+  }
+  
+  return false;
+};
+
 export const useChartStabilizer = <T extends ChartDataPoint>(
   data: T[],
   delay: number = 100
@@ -35,10 +63,8 @@ export const useChartStabilizer = <T extends ChartDataPoint>(
       timeoutRef.current = null;
     }
 
-    // Check if data has actually changed by comparing stringified versions
-    const currentDataString = JSON.stringify(data);
-    const prevDataString = JSON.stringify(prevDataRef.current);
-    const hasChanged = currentDataString !== prevDataString;
+    // Check if data has actually changed using deep comparison
+    const hasChanged = !deepEqual(data, prevDataRef.current);
     
     // For immediate render on first load or empty data
     if (prevDataRef.current.length === 0 || data.length === 0) {
@@ -86,7 +112,7 @@ export const useChartStabilizer = <T extends ChartDataPoint>(
         timeoutRef.current = null;
       }
     };
-  }, [data, delay, isStable, updateData]);
+  }, [data, delay, updateData]); // Removed isStable from dependency array
 
   return {
     data: stabilizedData,

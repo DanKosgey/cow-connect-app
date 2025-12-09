@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -14,7 +14,13 @@ import {
   Warehouse as WarehouseIcon,
   Droplets,
   Users,
-  RefreshCw
+  RefreshCw,
+  Layers,
+  Download,
+  TrendingUp,
+  Calendar,
+  DollarSign,
+  AlertCircle
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -31,9 +37,6 @@ interface Warehouse {
   address: string;
   gps_latitude?: number;
   gps_longitude?: number;
-  warehouse_collections: {
-    count: number;
-  };
 }
 
 interface CollectionPoint {
@@ -51,6 +54,15 @@ interface CollectionPoint {
   };
 }
 
+interface MapStats {
+  totalCollections: number;
+  totalLiters: number;
+  totalAmount: number;
+  uniqueFarmers: number;
+  averageLiters: number;
+  largestCollection: number;
+}
+
 const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
   const [collections, setCollections] = useState<CollectionPoint[]>([]);
   const [filteredCollections, setFilteredCollections] = useState<CollectionPoint[]>([]);
@@ -58,47 +70,64 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
   const [error, setError] = useState<string | null>(null);
   const [mapInitialized, setMapInitialized] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [qualityFilter, setQualityFilter] = useState('all');
   const [dateRange, setDateRange] = useState('week');
-  const [connectionStatus, setConnectionStatus] = useState<'online' | 'offline' | 'checking'>('checking');
+  const [selectedLayer, setSelectedLayer] = useState('carto');
+  const [viewMode, setViewMode] = useState<'map' | 'heatmap' | 'clusters'>('clusters');
+  const [showStats, setShowStats] = useState(true);
   
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
   const layersRef = useRef<any>(null);
   const clusterGroupRef = useRef<any>(null);
+  const heatLayerRef = useRef<any>(null);
+  const tileLayersRef = useRef<any>({});
 
-  // Load Leaflet CSS and JS
+  // Calculate statistics
+  const stats: MapStats = useMemo(() => {
+    const totalLiters = filteredCollections.reduce((sum, c) => sum + (c.liters || 0), 0);
+    const totalAmount = filteredCollections.reduce((sum, c) => sum + (c.total_amount || 0), 0);
+    const uniqueFarmers = new Set(filteredCollections.map(c => c.farmer_id)).size;
+    const averageLiters = filteredCollections.length > 0 ? totalLiters / filteredCollections.length : 0;
+    const largestCollection = Math.max(...filteredCollections.map(c => c.liters || 0), 0);
+
+    return {
+      totalCollections: filteredCollections.length,
+      totalLiters,
+      totalAmount,
+      uniqueFarmers,
+      averageLiters,
+      largestCollection
+    };
+  }, [filteredCollections]);
+
+  // Load Leaflet and plugins
   useEffect(() => {
     let isMounted = true;
     
     const loadLeaflet = async () => {
       try {
-        // Dynamically import Leaflet only when needed and attach to window for plugins
         const leafletModule = await import('leaflet');
         const leaflet = (leafletModule as any).default ?? leafletModule;
         (window as any).L = leaflet;
         
-        // Only proceed if component is still mounted
         if (!isMounted) return;
         
-        // Create link element for Leaflet CSS
-        const link = document.createElement('link');
-        link.rel = 'stylesheet';
-        link.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css';
-        document.head.appendChild(link);
+        // Load CSS files
+        const cssFiles = [
+          'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css',
+          'https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css',
+          'https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css'
+        ];
         
-        // Create link element for Marker Cluster CSS
-        const clusterLink = document.createElement('link');
-        clusterLink.rel = 'stylesheet';
-        clusterLink.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css';
-        document.head.appendChild(clusterLink);
-        
-        // Create link element for Marker Cluster Default CSS
-        const clusterDefaultLink = document.createElement('link');
-        clusterDefaultLink.rel = 'stylesheet';
-        clusterDefaultLink.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css';
-        document.head.appendChild(clusterDefaultLink);
+        cssFiles.forEach(href => {
+          if (!document.querySelector(`link[href="${href}"]`)) {
+            const link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.href = href;
+            document.head.appendChild(link);
+          }
+        });
         
         if (isMounted) {
           setMapInitialized(true);
@@ -107,7 +136,7 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
       } catch (err) {
         console.error('Error loading Leaflet:', err);
         if (isMounted) {
-          setError('Failed to load map functionality. Please check your internet connection and try again.');
+          setError('Failed to load map functionality. Please refresh the page.');
         }
       }
     };
@@ -127,29 +156,10 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
     };
   }, []);
 
-  // Monitor network status
-  useEffect(() => {
-    const updateOnlineStatus = () => {
-      setConnectionStatus(navigator.onLine ? 'online' : 'offline');
-    };
-
-    window.addEventListener('online', updateOnlineStatus);
-    window.addEventListener('offline', updateOnlineStatus);
-
-    // Initial check
-    updateOnlineStatus();
-
-    return () => {
-      window.removeEventListener('online', updateOnlineStatus);
-      window.removeEventListener('offline', updateOnlineStatus);
-    };
-  }, []);
-
-  // Initialize the map with more detailed settings
-  const initializeMap = () => {
+  // Initialize the map
+  const initializeMap = useCallback(() => {
     if (typeof window === 'undefined' || !window.L || !mapRef.current) return;
 
-    // Remove existing map if any
     if (mapInstanceRef.current) {
       try {
         mapInstanceRef.current.remove();
@@ -159,145 +169,188 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
       }
     }
 
-    // Check if map container already has a map instance
     if (mapRef.current.querySelector('.leaflet-container')) {
-      // Clear the container
       mapRef.current.innerHTML = '';
     }
 
     try {
-      // Create new map with more detailed settings
       const map = window.L.map(mapRef.current, {
         center: [-1.2921, 36.8219],
         zoom: 10,
         minZoom: 3,
         maxZoom: 18,
-        zoomControl: true,
-        attributionControl: true
+        zoomControl: false,
+        attributionControl: true,
+        preferCanvas: true
+      });
+
+      // Custom zoom control
+      window.L.control.zoom({
+        position: 'topright'
+      }).addTo(map);
+      
+      // Tile layers with better error handling and fallbacks
+      tileLayersRef.current = {
+        openstreetmap: window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '© OpenStreetMap',
+          maxZoom: 19,
+          className: 'map-tiles',
+          errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+          timeout: 10000,
+          keepBuffer: 2,
+          updateWhenIdle: false,
+          updateWhenZooming: false
+        }),
+        carto: window.L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+          attribution: '© CARTO © OpenStreetMap',
+          maxZoom: 19,
+          subdomains: 'abcd',
+          errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+          timeout: 10000
+        }),
+        satellite: window.L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+          attribution: '© Esri',
+          maxZoom: 19,
+          errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+          timeout: 10000
+        }),
+        dark: window.L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+          attribution: '© CARTO',
+          maxZoom: 19,
+          subdomains: 'abcd',
+          errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+          timeout: 10000
+        })
+      };
+      
+      tileLayersRef.current[selectedLayer].addTo(map);
+      
+      // Add tile error handling with automatic fallback
+      let tileErrorCount = 0;
+      const maxTileErrors = 5;
+      
+      tileLayersRef.current[selectedLayer].on('tileerror', (error: any) => {
+        tileErrorCount++;
+        console.warn(`Tile loading error (${tileErrorCount}/${maxTileErrors}):`, error);
+        
+        if (tileErrorCount >= maxTileErrors && selectedLayer !== 'carto') {
+          console.log('Too many tile errors, switching to stable CARTO layer');
+          setError('Map tiles failed to load. Switching to stable map provider...');
+          setTimeout(() => {
+            handleLayerChange('carto');
+            setError(null);
+          }, 2000);
+        }
       });
       
-      // Add multiple tile layers with fallbacks and retry mechanism
-      const primaryLayer = window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors',
-        maxZoom: 19,
-        className: 'primary-tiles',
-        errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==', // Transparent pixel
-        retryOnError: true
+      tileLayersRef.current[selectedLayer].on('tileload', () => {
+        // Reset error count on successful tile load
+        if (tileErrorCount > 0) {
+          tileErrorCount = Math.max(0, tileErrorCount - 1);
+        }
       });
-      
-      const fallbackLayer1 = window.L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-        attribution: '© CARTO',
-        maxZoom: 19,
-        className: 'fallback-tiles-1',
-        errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==',
-        retryOnError: true
-      });
-      
-      const fallbackLayer2 = window.L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
-        attribution: '© Esri',
-        maxZoom: 19,
-        className: 'fallback-tiles-2',
-        errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==',
-        retryOnError: true
-      });
-      
-      // Add layers to map with fallback priority
-      fallbackLayer2.addTo(map); // Lowest priority fallback
-      fallbackLayer1.addTo(map); // Medium priority fallback
-      primaryLayer.addTo(map);   // Primary layer
       
       mapInstanceRef.current = map;
       layersRef.current = window.L.layerGroup().addTo(map);
       
-      // Add warehouse markers
       addWarehouseMarkers();
-      
-      // Fetch and display collection data
       fetchCollectionData();
       
-      // Add layer control for users to switch between providers
-      const baseMaps = {
-        "OpenStreetMap": primaryLayer,
-        "CARTO Light": fallbackLayer1,
-        "Esri World Street": fallbackLayer2
-      };
+      // Add scale
+      window.L.control.scale({ imperial: false, position: 'bottomleft' }).addTo(map);
       
-      window.L.control.layers(baseMaps).addTo(map);
-      
-      // Add scale control
-      window.L.control.scale({imperial: false}).addTo(map);
     } catch (error) {
       console.error('Error initializing map:', error);
       setError('Failed to initialize map');
     }
-  };
+  }, [selectedLayer]);
 
-  // Add warehouse markers to the map
-  const addWarehouseMarkers = () => {
+  // Add warehouse markers
+  const addWarehouseMarkers = useCallback(() => {
     if (!mapInstanceRef.current || !window.L || !layersRef.current) return;
     
-    // Clear existing markers
-    layersRef.current.clearLayers();
-    markersRef.current = [];
-    
-    // Add warehouse markers
     warehouses.forEach((warehouse, index) => {
       if (warehouse.gps_latitude && warehouse.gps_longitude) {
         const marker = window.L.marker([warehouse.gps_latitude, warehouse.gps_longitude], {
           icon: window.L.divIcon({
             className: 'warehouse-marker',
-            html: `<div class="bg-purple-600 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold border-2 border-white shadow-lg">
-              W${index + 1}
+            html: `<div class="relative">
+              <div class="absolute -inset-2 bg-purple-500 rounded-full opacity-20 animate-ping"></div>
+              <div class="relative bg-gradient-to-br from-purple-600 to-purple-800 text-white rounded-full w-10 h-10 flex items-center justify-center font-bold border-3 border-white shadow-2xl hover:scale-110 transition-transform cursor-pointer">
+                <span class="text-xs">W${index + 1}</span>
+              </div>
             </div>`,
-            iconSize: [32, 32],
-            iconAnchor: [16, 16]
-          })
+            iconSize: [40, 40],
+            iconAnchor: [20, 20]
+          }),
+          zIndexOffset: 1000
         }).addTo(layersRef.current);
         
         marker.bindPopup(`
-          <div class="p-2">
-            <h3 class="font-bold text-purple-700">${warehouse.name}</h3>
-            <p class="text-sm">${warehouse.address}</p>
-            <p class="text-sm mt-1"><strong>Collections:</strong> ${warehouse.warehouse_collections?.count || 0}</p>
+          <div class="p-4 min-w-64">
+            <div class="flex items-center gap-2 mb-3 pb-3 border-b border-purple-200">
+              <div class="p-2 bg-purple-100 rounded-lg">
+                <svg class="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
+                </svg>
+              </div>
+              <h3 class="font-bold text-lg text-gray-900">${warehouse.name}</h3>
+            </div>
+            <div class="space-y-2">
+              <div class="flex items-start gap-2">
+                <svg class="w-4 h-4 text-gray-500 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                </svg>
+                <p class="text-sm text-gray-600">${warehouse.address}</p>
+              </div>
+              <div class="mt-3 pt-3 border-t border-gray-200">
+                <p class="text-xs text-gray-500">
+                  <strong>Coordinates:</strong><br/>
+                  ${warehouse.gps_latitude.toFixed(6)}, ${warehouse.gps_longitude.toFixed(6)}
+                </p>
+              </div>
+            </div>
           </div>
-        `);
+        `, {
+          maxWidth: 320,
+          className: 'custom-popup'
+        });
         
         markersRef.current.push(marker);
       }
     });
-  };
+  }, [warehouses]);
 
-  // Fetch collection data with GPS coordinates
+  // Fetch collection data
   const fetchCollectionData = async () => {
     setLoading(true);
     setError(null);
     
     try {
-      // Calculate date filter with more precise date handling
       const now = new Date();
       let startDate = new Date();
       
       switch(dateRange) {
         case 'today':
-          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+          startDate.setHours(0, 0, 0, 0);
           break;
         case 'week':
-          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7, 0, 0, 0, 0);
+          startDate.setDate(now.getDate() - 7);
           break;
         case 'month':
-          startDate = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate(), 0, 0, 0, 0);
+          startDate.setMonth(now.getMonth() - 1);
           break;
         case '90days':
-          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 90, 0, 0, 0, 0);
+          startDate.setDate(now.getDate() - 90);
           break;
         case 'year':
-          startDate = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate(), 0, 0, 0, 0);
+          startDate.setFullYear(now.getFullYear() - 1);
           break;
         default:
-          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7, 0, 0, 0, 0);
+          startDate.setDate(now.getDate() - 7);
       }
       
-      // Fetch collections with GPS data
       const { data, error: fetchError } = await supabase
         .from('collections')
         .select(`
@@ -311,12 +364,12 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
           gps_longitude,
           farmers (full_name, registration_number)
         `)
-        .eq('approved_for_company', true) // Only fetch approved collections
+        .eq('approved_for_company', true)
         .not('gps_latitude', 'is', null)
         .not('gps_longitude', 'is', null)
         .gte('collection_date', startDate.toISOString())
         .order('collection_date', { ascending: false })
-        .limit(1000);
+        .limit(2000);
 
       if (fetchError) throw fetchError;
       
@@ -334,7 +387,7 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
       
       setCollections(collectionPoints);
       setFilteredCollections(collectionPoints);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error fetching collection data:', err);
       setError(err.message || 'Failed to fetch collection data');
     } finally {
@@ -342,14 +395,20 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
     }
   };
 
-  // Add collection markers to the map with clustering
+  // Get marker color based on collection size
+  const getMarkerColor = (liters: number) => {
+    if (liters >= 1000) return { border: '#10b981', bg: '#d1fae5', text: '#059669' };
+    if (liters >= 500) return { border: '#3b82f6', bg: '#dbeafe', text: '#2563eb' };
+    if (liters >= 100) return { border: '#f59e0b', bg: '#fef3c7', text: '#d97706' };
+    return { border: '#ef4444', bg: '#fee2e2', text: '#dc2626' };
+  };
+
+  // Add collection markers
   const addCollectionMarkers = async () => {
     if (!mapInstanceRef.current || !window.L || !layersRef.current) return;
     
-    // Get L reference
     const L = window.L;
     
-    // Clear existing collection markers
     if (clusterGroupRef.current) {
       try {
         clusterGroupRef.current.clearLayers();
@@ -360,212 +419,153 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
     }
     
     try {
-      // Dynamically import leaflet.markercluster
       await import('leaflet.markercluster');
       
-      // Create marker cluster group using Leaflet factory with error checking
-      if (!(window as any).L.markerClusterGroup) {
-        throw new Error('markerClusterGroup not found in Leaflet');
+      if (viewMode === 'clusters') {
+        clusterGroupRef.current = L.markerClusterGroup({
+          chunkedLoading: true,
+          maxClusterRadius: 60,
+          spiderfyOnMaxZoom: true,
+          showCoverageOnHover: true,
+          zoomToBoundsOnClick: true,
+          removeOutsideVisibleBounds: true,
+          iconCreateFunction: function(cluster: any) {
+            const childCount = cluster.getChildCount();
+            let size = 'small';
+            
+            if (childCount >= 100) size = 'large';
+            else if (childCount >= 10) size = 'medium';
+            
+            const dimension = size === 'large' ? 60 : size === 'medium' ? 50 : 40;
+            
+            return new L.DivIcon({
+              html: `<div class="cluster-inner bg-gradient-to-br from-blue-500 to-blue-700 text-white rounded-full flex items-center justify-center font-bold shadow-2xl border-4 border-white" style="width: ${dimension}px; height: ${dimension}px;">
+                <div class="text-center">
+                  <div class="text-lg">${childCount}</div>
+                  <div class="text-xs opacity-90">points</div>
+                </div>
+              </div>`,
+              className: `marker-cluster marker-cluster-${size}`,
+              iconSize: new L.Point(dimension, dimension)
+            });
+          }
+        });
+        
+        clusterGroupRef.current.addTo(mapInstanceRef.current);
       }
       
-      // Create marker cluster group using Leaflet factory
-      clusterGroupRef.current = (window as any).L.markerClusterGroup({
-        chunkedLoading: true,
-        maxClusterRadius: 80,
-        spiderfyOnMaxZoom: true,
-        showCoverageOnHover: false,
-        zoomToBoundsOnClick: true,
-        iconCreateFunction: function(cluster: any) {
-          const childCount = cluster.getChildCount();
-          let size = 40;
-          let className = 'marker-cluster marker-cluster-';
-          
-          if (childCount < 10) {
-            className += 'small';
-          } else if (childCount < 100) {
-            className += 'medium';
-          } else {
-            className += 'large';
-            size = 50;
-          }
-          
-          return new (window as any).L.DivIcon({
-            html: `<div class="flex items-center justify-center w-full h-full text-white font-bold text-sm">
-              <span>${childCount}</span>
-            </div>`,
-            className: className,
-            iconSize: new (window as any).L.Point(size, size)
-          });
-        }
-      });
-      
-      // Add cluster group to map
-      clusterGroupRef.current.addTo(mapInstanceRef.current);
-      
-      // Add collection point markers with more detail
       filteredCollections.forEach(collection => {
         if (collection.gps_latitude && collection.gps_longitude) {
-          // Determine marker color based on liters (since quality_grade is removed)
-          let markerColor = '#3b82f6'; // Blue for default
-          if (collection.liters >= 1000) {
-            markerColor = '#10b981'; // Green for large collections
-          } else if (collection.liters >= 500) {
-            markerColor = '#3b82f6'; // Blue for medium collections
-          } else if (collection.liters >= 100) {
-            markerColor = '#f59e0b'; // Yellow for small collections
-          } else {
-            markerColor = '#ef4444'; // Red for very small collections
-          }
+          const colors = getMarkerColor(collection.liters);
           
-          const marker = window.L.marker([collection.gps_latitude, collection.gps_longitude], {
-            icon: window.L.divIcon({
+          const marker = L.marker([collection.gps_latitude, collection.gps_longitude], {
+            icon: L.divIcon({
               className: 'collection-marker',
-              html: `<div class="bg-white border-2 rounded-full w-8 h-8 flex items-center justify-center font-bold shadow-lg hover:scale-110 transition-transform" 
-                       style="border-color: ${markerColor}; transform: translate(-50%, -50%);">
-                       <div class="w-3 h-3 rounded-full" style="background-color: ${markerColor};"></div>
-                     </div>`,
-              iconSize: [32, 32],
-              iconAnchor: [16, 16]
+              html: `<div class="relative group">
+                <div class="absolute -inset-1 rounded-full opacity-0 group-hover:opacity-30 transition-opacity" style="background-color: ${colors.border};"></div>
+                <div class="relative bg-white rounded-full w-9 h-9 flex items-center justify-center font-bold shadow-xl hover:scale-125 transition-all duration-200 cursor-pointer" 
+                     style="border: 3px solid ${colors.border};">
+                  <div class="w-4 h-4 rounded-full" style="background-color: ${colors.border};"></div>
+                </div>
+              </div>`,
+              iconSize: [36, 36],
+              iconAnchor: [18, 18]
             })
           });
           
-          // Format date for display
           const collectionDate = new Date(collection.collection_date);
-          const formattedDate = collectionDate.toLocaleDateString() + ' ' + collectionDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+          const formattedDate = collectionDate.toLocaleDateString('en-US', { 
+            year: 'numeric', 
+            month: 'short', 
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          });
           
           marker.bindPopup(`
-            <div class="p-3 min-w-64 max-w-80">
-              <h3 class="font-bold text-lg text-gray-800 border-b pb-2">${collection.farmers?.full_name || 'Unknown Farmer'}</h3>
-              <p class="text-sm text-gray-600 mb-2">${collection.farmers?.registration_number || 'N/A'}</p>
-              <div class="space-y-2">
-                <div class="flex justify-between">
-                  <span class="font-medium">Collection ID:</span>
-                  <span>${collection.collection_id}</span>
+            <div class="p-4 min-w-80">
+              <div class="flex items-start justify-between mb-4 pb-3 border-b border-gray-200">
+                <div>
+                  <h3 class="font-bold text-lg text-gray-900">${collection.farmers?.full_name || 'Unknown Farmer'}</h3>
+                  <p class="text-sm text-gray-500 mt-1">Reg: ${collection.farmers?.registration_number || 'N/A'}</p>
                 </div>
-                <div class="flex justify-between">
-                  <span class="font-medium">Liters:</span>
-                  <span class="font-bold text-blue-600">${collection.liters}L</span>
+                <div class="px-3 py-1 rounded-full text-xs font-semibold" style="background-color: ${colors.bg}; color: ${colors.text};">
+                  ${collection.liters}L
                 </div>
-                <div class="flex justify-between">
-                  <span class="font-medium">Amount:</span>
-                  <span class="font-bold text-green-600">KES ${Math.round(collection.total_amount)}</span>
+              </div>
+              <div class="space-y-3">
+                <div class="grid grid-cols-2 gap-3">
+                  <div class="bg-blue-50 p-3 rounded-lg">
+                    <p class="text-xs text-blue-600 font-medium mb-1">Collection ID</p>
+                    <p class="text-sm font-bold text-blue-900">${collection.collection_id}</p>
+                  </div>
+                  <div class="bg-green-50 p-3 rounded-lg">
+                    <p class="text-xs text-green-600 font-medium mb-1">Amount</p>
+                    <p class="text-sm font-bold text-green-900">KES ${Math.round(collection.total_amount).toLocaleString()}</p>
+                  </div>
                 </div>
-                <div class="flex justify-between">
-                  <span class="font-medium">Date:</span>
-                  <span>${formattedDate}</span>
+                <div class="bg-gray-50 p-3 rounded-lg">
+                  <p class="text-xs text-gray-600 font-medium mb-1">Collection Date</p>
+                  <p class="text-sm font-semibold text-gray-900">${formattedDate}</p>
+                </div>
+                <div class="pt-3 border-t border-gray-200">
+                  <p class="text-xs text-gray-500">
+                    <strong>GPS:</strong> ${collection.gps_latitude.toFixed(6)}, ${collection.gps_longitude.toFixed(6)}
+                  </p>
                 </div>
               </div>
             </div>
           `, {
-            maxWidth: 320,
+            maxWidth: 350,
             className: 'custom-popup'
           });
           
-          // Add hover effect
           marker.on('mouseover', function() {
             this.openPopup();
           });
           
-          clusterGroupRef.current.addLayer(marker);
+          if (viewMode === 'clusters' && clusterGroupRef.current) {
+            clusterGroupRef.current.addLayer(marker);
+          } else {
+            marker.addTo(layersRef.current);
+          }
+          
           markersRef.current.push(marker);
         }
       });
       
-      // Fit map to show all markers
       if (markersRef.current.length > 0) {
-        const group = window.L.featureGroup(markersRef.current);
+        const group = L.featureGroup(markersRef.current);
         mapInstanceRef.current.fitBounds(group.getBounds().pad(0.1));
       }
     } catch (error) {
-      console.error('Error loading leaflet.markercluster:', error);
-      setError('Failed to load map clustering functionality');
-      
-      // Fallback: Add markers without clustering
-      try {
-        // Clear any existing layers
-        layersRef.current.clearLayers();
-        markersRef.current = [];
-        
-        // Add warehouse markers
-        addWarehouseMarkers();
-        
-        // Add collection point markers directly to layersRef
-        filteredCollections.forEach(collection => {
-          if (collection.gps_latitude && collection.gps_longitude) {
-            // Determine marker color based on liters (since quality_grade is removed)
-            let markerColor = '#3b82f6'; // Blue for default
-            if (collection.liters >= 1000) {
-              markerColor = '#10b981'; // Green for large collections
-            } else if (collection.liters >= 500) {
-              markerColor = '#3b82f6'; // Blue for medium collections
-            } else if (collection.liters >= 100) {
-              markerColor = '#f59e0b'; // Yellow for small collections
-            } else {
-              markerColor = '#ef4444'; // Red for very small collections
-            }
-            
-            const marker = window.L.marker([collection.gps_latitude, collection.gps_longitude], {
-              icon: window.L.divIcon({
-                className: 'collection-marker',
-                html: `<div class="bg-white border-2 rounded-full w-6 h-6 flex items-center justify-center font-bold shadow-lg" 
-                         style="border-color: ${markerColor};">
-                  </div>`,
-                iconSize: [24, 24],
-                iconAnchor: [12, 12]
-              })
-            });
-            
-            marker.bindPopup(`
-              <div class="p-2 min-w-48">
-                <h3 class="font-bold text-gray-800">${collection.farmers?.full_name || 'Unknown Farmer'}</h3>
-                <p class="text-sm text-gray-600">${collection.farmers?.registration_number || 'N/A'}</p>
-                <div class="mt-2 space-y-1">
-                  <p><strong>Collection ID:</strong> ${collection.collection_id}</p>
-                  <p><strong>Liters:</strong> ${collection.liters}L</p>
-                  <p><strong>Amount:</strong> KES ${Math.round(collection.total_amount)}</p>
-                  <p><strong>Date:</strong> ${new Date(collection.collection_date).toLocaleDateString()}</p>
-                </div>
-              </div>
-            `);
-            
-            marker.addTo(layersRef.current);
-            markersRef.current.push(marker);
-          }
-        });
-        
-        // Fit map to show all markers
-        if (markersRef.current.length > 0) {
-          const group = window.L.featureGroup(markersRef.current);
-          mapInstanceRef.current.fitBounds(group.getBounds().pad(0.1));
-        }
-      } catch (fallbackError) {
-        console.error('Error in fallback marker rendering:', fallbackError);
-      }
+      console.error('Error adding markers:', error);
+      setError('Failed to load map markers');
     }
   };
 
-  // Apply filters to collections
+  // Apply filters
   useEffect(() => {
     let filtered = [...collections];
     
-    // Apply search filter
     if (searchTerm) {
+      const term = searchTerm.toLowerCase();
       filtered = filtered.filter(collection => 
-        collection.farmers?.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        collection.collection_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        collection.farmers?.registration_number.toLowerCase().includes(searchTerm.toLowerCase())
+        collection.farmers?.full_name.toLowerCase().includes(term) ||
+        collection.collection_id.toLowerCase().includes(term) ||
+        collection.farmers?.registration_number.toLowerCase().includes(term)
       );
     }
     
     setFilteredCollections(filtered);
-  }, [collections, searchTerm, qualityFilter]);
+  }, [collections, searchTerm]);
 
   // Update map when filtered collections change
   useEffect(() => {
     if (mapInitialized && mapInstanceRef.current) {
       addCollectionMarkers();
     }
-  }, [filteredCollections, mapInitialized]);
+  }, [filteredCollections, mapInitialized, viewMode]);
 
   // Refresh data when date range changes
   useEffect(() => {
@@ -574,62 +574,18 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
     }
   }, [dateRange, mapInitialized]);
 
-  // Handle search
-  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchTerm(e.target.value);
-  };
-
-  // Handle quality filter
-  const handleQualityFilter = (quality: string) => {
-    setQualityFilter(quality);
-  };
-
-  // Handle date range filter
-  const handleDateRangeChange = (range: string) => {
-    setDateRange(range);
-    // Trigger data refresh when date range changes
-    fetchCollectionData();
-  };
-
-  // Handle zoom in
-  const handleZoomIn = () => {
-    if (mapInstanceRef.current) {
-      mapInstanceRef.current.zoomIn();
+  // Handle layer change
+  const handleLayerChange = (layer: string) => {
+    if (mapInstanceRef.current && tileLayersRef.current) {
+      Object.values(tileLayersRef.current).forEach((l: any) => {
+        mapInstanceRef.current.removeLayer(l);
+      });
+      tileLayersRef.current[layer].addTo(mapInstanceRef.current);
+      setSelectedLayer(layer);
     }
   };
 
-  // Handle zoom out
-  const handleZoomOut = () => {
-    if (mapInstanceRef.current) {
-      mapInstanceRef.current.zoomOut();
-    }
-  };
-
-  // Handle retry mechanism
-  const handleRefresh = useCallback(() => {
-    setError(null);
-    setLoading(true);
-    setCollections([]);
-    setFilteredCollections([]);
-    
-    // Clear existing map
-    if (mapInstanceRef.current) {
-      try {
-        mapInstanceRef.current.remove();
-        mapInstanceRef.current = null;
-      } catch (e) {
-        console.warn('Error removing map:', e);
-      }
-    }
-    
-    // Reinitialize
-    setTimeout(() => {
-      initializeMap();
-      fetchCollectionData();
-    }, 100);
-  }, []);
-
-  // Format currency
+  // Format helpers
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-KE', {
       style: 'currency',
@@ -638,57 +594,71 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
     }).format(amount);
   };
 
-  // Format number
   const formatNumber = (num: number) => {
-    return new Intl.NumberFormat('en-KE').format(num);
+    return new Intl.NumberFormat('en-KE').format(Math.round(num));
+  };
+
+  // Format currency without KES prefix for cleaner display
+  const formatCleanCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-KE', {
+      minimumFractionDigits: 0
+    }).format(amount);
   };
 
   return (
     <div className="space-y-6">
-      {/* Map Controls */}
-      <Card className="border-0 shadow-md">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <MapPin className="h-5 w-5 text-blue-500" />
-            Collection Points Map
-          </CardTitle>
+      {/* Enhanced Controls */}
+      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-blue-50">
+        <CardHeader className="pb-4">
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <MapPin className="h-6 w-6 text-blue-500" />
+              Collection Points Map
+            </CardTitle>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowStats(!showStats)}
+              className="gap-2"
+            >
+              <TrendingUp className="h-4 w-4" />
+              {showStats ? 'Hide' : 'Show'} Stats
+            </Button>
+          </div>
         </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
-            {/* Search */}
+        <CardContent className="space-y-4">
+          {/* Search and Filters */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="search">Search Collections</Label>
+              <Label htmlFor="search" className="text-sm font-medium">Search Collections</Label>
               <div className="relative">
                 <Input
                   id="search"
-                  placeholder="Search by farmer, ID, or registration..."
+                  placeholder="Farmer, ID, or registration..."
                   value={searchTerm}
-                  onChange={handleSearch}
-                  className="pl-10"
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10 bg-white"
                 />
                 <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
               </div>
             </div>
             
-            {/* Quality Filter - removed since quality_grade is no longer available */}
-            
-            {/* Date Range */}
             <div className="space-y-2">
-              <Label>Date Range</Label>
+              <Label className="text-sm font-medium">Date Range</Label>
               <div className="flex flex-wrap gap-2">
                 {[
-                  { key: 'today', label: 'Today' },
-                  { key: 'week', label: 'Last 7 Days' },
-                  { key: 'month', label: 'Last 30 Days' },
-                  { key: '90days', label: 'Last 90 Days' },
-                  { key: 'year', label: 'Last Year' }
+                  { key: 'today', label: 'Today', icon: Calendar },
+                  { key: 'week', label: '7 Days' },
+                  { key: 'month', label: '30 Days' },
+                  { key: '90days', label: '90 Days' },
+                  { key: 'year', label: 'Year' }
                 ].map(range => (
                   <Button
                     key={range.key}
                     variant={dateRange === range.key ? 'default' : 'outline'}
                     size="sm"
-                    onClick={() => handleDateRangeChange(range.key)}
-                    className="whitespace-nowrap"
+                    onClick={() => setDateRange(range.key)}
+                    className="text-xs"
                   >
                     {range.label}
                   </Button>
@@ -696,198 +666,299 @@ const AdvancedWarehouseMap = ({ warehouses }: { warehouses: Warehouse[] }) => {
               </div>
             </div>
             
-            {/* Map Controls */}
             <div className="space-y-2">
-              <Label>Map Controls</Label>
+              <Label className="text-sm font-medium">View Mode</Label>
               <div className="flex flex-wrap gap-2">
-                <Button variant="outline" size="sm" onClick={handleZoomIn}>
-                  <ZoomIn className="h-4 w-4" />
-                  <span className="ml-1">Zoom In</span>
-                </Button>
-                <Button variant="outline" size="sm" onClick={handleZoomOut}>
-                  <ZoomOut className="h-4 w-4" />
-                  <span className="ml-1">Zoom Out</span>
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => mapInstanceRef.current && mapInstanceRef.current.setView([-1.2921, 36.8219], 10)}>
-                  <Navigation className="h-4 w-4" />
-                  <span className="ml-1">Reset View</span>
-                </Button>
-                <Button variant="outline" size="sm" onClick={handleRefresh}>
-                  <RefreshCw className="h-4 w-4" />
-                  <span className="ml-1">Refresh</span>
-                </Button>
+                {[
+                  { key: 'clusters', label: 'Clusters', icon: Layers },
+                  { key: 'map', label: 'Individual' }
+                ].map(mode => (
+                  <Button
+                    key={mode.key}
+                    variant={viewMode === mode.key ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setViewMode(mode.key as any)}
+                    className="gap-1 text-xs"
+                  >
+                    {mode.icon && <mode.icon className="h-3 w-3" />}
+                    {mode.label}
+                  </Button>
+                ))}
               </div>
             </div>
           </div>
+
+          {/* Map Layer Selection */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <Label className="text-sm font-medium">Map Style:</Label>
+            {[
+              { key: 'carto', label: 'Street (Stable)' },
+              { key: 'openstreetmap', label: 'OSM' },
+              { key: 'satellite', label: 'Satellite' },
+              { key: 'dark', label: 'Dark' }
+            ].map(layer => (
+              <Button
+                key={layer.key}
+                variant={selectedLayer === layer.key ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => handleLayerChange(layer.key)}
+                className="text-xs"
+              >
+                {layer.label}
+              </Button>
+            ))}
+          </div>
+          
+          {/* Map Controls */}
+          <div className="flex flex-wrap gap-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => mapInstanceRef.current?.zoomIn()}
+              className="gap-1"
+            >
+              <ZoomIn className="h-4 w-4" />
+              Zoom In
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => mapInstanceRef.current?.zoomOut()}
+              className="gap-1"
+            >
+              <ZoomOut className="h-4 w-4" />
+              Zoom Out
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => mapInstanceRef.current?.setView([-1.2921, 36.8219], 10)}
+              className="gap-1"
+            >
+              <Navigation className="h-4 w-4" />
+              Reset View
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => {
+                setError(null);
+                fetchCollectionData();
+              }}
+              className="gap-1"
+            >
+              <RefreshCw className="h-4 w-4" />
+              Refresh
+            </Button>
+          </div>
           
           {/* Map Container */}
-          <div className="border-2 border-gray-300 rounded-lg overflow-hidden relative" style={{ height: '600px' }}>
+          <div className="relative border-2 border-gray-300 rounded-xl overflow-hidden shadow-lg" style={{ height: '650px' }}>
             <div ref={mapRef} style={{ height: '100%', width: '100%' }} className="z-0" />
             {!mapInitialized && (
-              <div className="absolute inset-0 flex items-center justify-center bg-gray-50 z-10">
+              <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 z-10">
                 <div className="text-center">
-                  <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-4"></div>
-                  <p className="text-gray-600 font-medium">Loading map...</p>
-                  <p className="text-gray-500 text-sm mt-1">Please wait while we load the collection points</p>
+                  <div className="inline-block animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-600 mb-4"></div>
+                  <p className="text-gray-700 font-semibold text-lg">Loading Interactive Map...</p>
+                  <p className="text-gray-500 text-sm mt-2">Preparing your collection points</p>
+                </div>
+              </div>
+            )}
+            {error && (
+              <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-20 max-w-md">
+                <div className="bg-red-50 border-2 border-red-200 rounded-lg p-4 shadow-lg">
+                  <div className="flex items-start gap-3">
+<AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-red-700 font-semibold mb-1">Map Error</p>
+                      <p className="text-sm text-red-600">{error}</p>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
           </div>
           
-          {/* Stats */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
-            <Card className="bg-blue-50 border-blue-200">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-blue-100 rounded-full">
-                    <Droplets className="h-5 w-5 text-blue-600" />
+          {/* Enhanced Statistics */}
+          {showStats && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 mt-6">
+              <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200 hover:shadow-lg transition-shadow">
+                <CardContent className="p-3">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 bg-blue-500 rounded-lg shadow">
+                      <Droplets className="h-5 w-5 text-white" />
+                    </div>
+                    <div>
+                      <p className="text-[0.65rem] text-blue-700 font-semibold uppercase tracking-wide whitespace-nowrap">Collections</p>
+                      <p className="text-lg font-bold text-blue-900">{formatNumber(stats.totalCollections)}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-sm text-blue-600 font-medium">Total Collections</p>
-                    <p className="text-xl font-bold text-blue-900">{filteredCollections.length}</p>
+                </CardContent>
+              </Card>
+              
+              <Card className="bg-gradient-to-br from-green-50 to-green-100 border-green-200 hover:shadow-lg transition-shadow">
+                <CardContent className="p-3">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 bg-green-500 rounded-lg shadow">
+                      <Droplets className="h-5 w-5 text-white" />
+                    </div>
+                    <div>
+                      <p className="text-[0.65rem] text-green-700 font-semibold uppercase tracking-wide whitespace-nowrap">Total Liters</p>
+                      <p className="text-lg font-bold text-green-900">{formatNumber(stats.totalLiters)}L</p>
+                    </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-            
-            <Card className="bg-green-50 border-green-200">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-green-100 rounded-full">
-                    <Droplets className="h-5 w-5 text-green-600" />
+                </CardContent>
+              </Card>
+              
+              <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200 hover:shadow-lg transition-shadow">
+                <CardContent className="p-3">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 bg-purple-500 rounded-lg shadow">
+                      <WarehouseIcon className="h-5 w-5 text-white" />
+                    </div>
+                    <div>
+                      <p className="text-[0.65rem] text-purple-700 font-semibold uppercase tracking-wide whitespace-nowrap">Warehouses</p>
+                      <p className="text-lg font-bold text-purple-900">{warehouses.length}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-sm text-green-600 font-medium">Total Liters</p>
-                    <p className="text-xl font-bold text-green-900">
-                      {formatNumber(filteredCollections.reduce((sum, c) => sum + (c.liters || 0), 0))}
-                    </p>
+                </CardContent>
+              </Card>
+              
+              <Card className="bg-gradient-to-br from-yellow-50 to-yellow-100 border-yellow-200 hover:shadow-lg transition-shadow">
+                <CardContent className="p-3">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 bg-yellow-500 rounded-lg shadow">
+                      <Users className="h-5 w-5 text-white" />
+                    </div>
+                    <div>
+                      <p className="text-[0.65rem] text-yellow-700 font-semibold uppercase tracking-wide whitespace-nowrap">Farmers</p>
+                      <p className="text-lg font-bold text-yellow-900">{formatNumber(stats.uniqueFarmers)}</p>
+                    </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-            
-            <Card className="bg-purple-50 border-purple-200">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-purple-100 rounded-full">
-                    <WarehouseIcon className="h-5 w-5 text-purple-600" />
+                </CardContent>
+              </Card>
+              
+              <Card className="bg-gradient-to-br from-indigo-50 to-indigo-100 border-indigo-200 hover:shadow-lg transition-shadow">
+                <CardContent className="p-3">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 bg-indigo-500 rounded-lg shadow">
+                      <TrendingUp className="h-5 w-5 text-white" />
+                    </div>
+                    <div>
+                      <p className="text-[0.65rem] text-indigo-700 font-semibold uppercase tracking-wide whitespace-nowrap">Avg Liters</p>
+                      <p className="text-lg font-bold text-indigo-900">{formatNumber(stats.averageLiters)}L</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-sm text-purple-600 font-medium">Warehouses</p>
-                    <p className="text-xl font-bold text-purple-900">{warehouses.length}</p>
+                </CardContent>
+              </Card>
+              
+              <Card className="bg-gradient-to-br from-pink-50 to-pink-100 border-pink-200 hover:shadow-lg transition-shadow">
+                <CardContent className="p-3">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 bg-pink-500 rounded-lg shadow">
+                      <DollarSign className="h-5 w-5 text-white" />
+                    </div>
+                    <div>
+                      <p className="text-[0.65rem] text-pink-700 font-semibold uppercase tracking-wide whitespace-nowrap">Revenue</p>
+                      <p className="text-lg font-bold text-pink-900">{formatCleanCurrency(stats.totalAmount)}</p>
+                    </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-            
-            <Card className="bg-yellow-50 border-yellow-200">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-yellow-100 rounded-full">
-                    <Users className="h-5 w-5 text-yellow-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-yellow-600 font-medium">Unique Farmers</p>
-                    <p className="text-xl font-bold text-yellow-900">
-                      {new Set(filteredCollections.map(c => c.farmer_id)).size}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </CardContent>
       </Card>
       
       {/* Collection Points List */}
-      <Card className="border-0 shadow-md">
+      <Card className="border-0 shadow-lg">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Truck className="h-5 w-5 text-green-500" />
             Recent Collection Points
+            <Badge variant="secondary" className="ml-2">{filteredCollections.length} records</Badge>
           </CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="flex items-center justify-center h-32">
+            <div className="flex items-center justify-center h-40">
               <div className="text-center">
-                <div className="inline-block animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500 mb-2"></div>
-                <p className="text-gray-500">Loading collection data...</p>
+                <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500 mb-3"></div>
+                <p className="text-gray-600 font-medium">Loading collection data...</p>
               </div>
-            </div>
-          ) : error ? (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-              <p className="text-red-700 mb-2">Map Loading Error</p>
-              <p className="text-sm text-red-600 mb-3">
-                {error.includes('503') 
-                  ? 'The map service is temporarily unavailable. This is usually due to high demand on the map servers. Please try again in a few minutes.'
-                  : error}
-              </p>
-              <div className="flex flex-col sm:flex-row gap-2">
-                <Button onClick={handleRefresh} className="flex items-center gap-2">
-                  <RefreshCw className="h-4 w-4" />
-                  Retry
-                </Button>
-                <Button 
-                  variant="outline" 
-                  onClick={() => {
-                    setError(null);
-                    setMapInitialized(false);
-                    setTimeout(() => setMapInitialized(true), 100);
-                  }}
-                  className="flex items-center gap-2"
-                >
-                  <Navigation className="h-4 w-4" />
-                  Try Different Map Provider
-                </Button>
-              </div>
-              <p className="text-xs text-gray-500 mt-3">
-                Tip: You can switch between different map providers using the layer control in the top-right corner of the map.
-              </p>
             </div>
           ) : filteredCollections.length === 0 ? (
-            <div className="text-center py-8">
-              <MapPin className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-              <p className="text-gray-500">No collection points found matching your criteria</p>
+            <div className="text-center py-12">
+              <MapPin className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+              <p className="text-gray-600 font-medium text-lg">No collection points found</p>
+              <p className="text-gray-500 text-sm mt-2">Try adjusting your search or date filters</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-3 px-4 font-medium">Collection ID</th>
-                    <th className="text-left py-3 px-4 font-medium">Farmer</th>
-                    <th className="text-left py-3 px-4 font-medium">Liters</th>
-                    <th className="text-left py-3 px-4 font-medium">Amount</th>
-                    <th className="text-left py-3 px-4 font-medium">Date</th>
-                    <th className="text-left py-3 px-4 font-medium">Location</th>
+                  <tr className="border-b-2 border-gray-200 bg-gray-50">
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Collection ID</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Farmer</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Liters</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Amount</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Date</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Location</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredCollections.slice(0, 10).map(collection => (
-                    <tr key={collection.id} className="border-b hover:bg-gray-50">
-                      <td className="py-3 px-4 font-medium">{collection.collection_id}</td>
-                      <td className="py-3 px-4">
-                        <div>
-                          <div className="font-medium">{collection.farmers?.full_name || 'Unknown'}</div>
-                          <div className="text-sm text-gray-500">{collection.farmers?.registration_number || 'N/A'}</div>
-                        </div>
-                      </td>
-                      <td className="py-3 px-4">{formatNumber(collection.liters)}L</td>
-                      <td className="py-3 px-4">{formatCurrency(collection.total_amount)}</td>
-                      <td className="py-3 px-4">
-                        {new Date(collection.collection_date).toLocaleDateString()}
-                      </td>
-                      <td className="py-3 px-4">
-                        <div className="text-sm">
-                          <div>Lat: {collection.gps_latitude?.toFixed(4)}</div>
-                          <div>Lng: {collection.gps_longitude?.toFixed(4)}</div>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {filteredCollections.slice(0, 15).map((collection, index) => {
+                    const colors = getMarkerColor(collection.liters);
+                    return (
+                      <tr 
+                        key={collection.id} 
+                        className={`border-b hover:bg-gray-50 transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}
+                      >
+                        <td className="py-3 px-4 font-mono text-sm">{collection.collection_id}</td>
+                        <td className="py-3 px-4">
+                          <div>
+                            <div className="font-semibold text-gray-900">{collection.farmers?.full_name || 'Unknown'}</div>
+                            <div className="text-xs text-gray-500">{collection.farmers?.registration_number || 'N/A'}</div>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <Badge 
+                            className="font-semibold" 
+                            style={{ 
+                              backgroundColor: colors.bg, 
+                              color: colors.text,
+                              borderColor: colors.border 
+                            }}
+                          >
+                            {formatNumber(collection.liters)}L
+                          </Badge>
+                        </td>
+                        <td className="py-3 px-4 font-semibold text-green-700">{formatCurrency(collection.total_amount)}</td>
+                        <td className="py-3 px-4 text-sm text-gray-600">
+                          {new Date(collection.collection_date).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric'
+                          })}
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="text-xs font-mono text-gray-500">
+                            <div>{collection.gps_latitude?.toFixed(4)}</div>
+                            <div>{collection.gps_longitude?.toFixed(4)}</div>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
+              {filteredCollections.length > 15 && (
+                <div className="mt-4 text-center">
+                  <p className="text-sm text-gray-500">
+                    Showing 15 of {formatNumber(filteredCollections.length)} collection points
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </CardContent>

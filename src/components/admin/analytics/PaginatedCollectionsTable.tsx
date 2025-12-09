@@ -19,8 +19,8 @@ interface Collection {
   id: string;
   collection_id: string;
   farmer_id: string;
+  staff_id: string;
   liters: number;
-  quality_grade: string;
   rate_per_liter: number;
   total_amount: number;
   collection_date: string;
@@ -51,6 +51,13 @@ interface PaginatedCollectionsTableProps {
   formatCurrency: (amount: number) => string;
 }
 
+interface CollectionRowProps {
+  collection: Collection;
+  setSelectedCollection: (collection: Collection) => void;
+  getStatusVariant: (status: string) => any;
+  formatCurrency: (amount: number) => string;
+}
+
 // Memoized components to prevent unnecessary re-renders
 const EmptyState = memo(() => (
   <div className="text-center py-12">
@@ -62,36 +69,25 @@ const EmptyState = memo(() => (
 
 const CollectionRow = memo(({ 
   collection, 
-  setSelectedCollection, 
-  getStatusVariant, 
-  formatCurrency,
-  GRADE_COLORS
-}: { 
-  collection: Collection;
-  setSelectedCollection: (collection: Collection) => void;
-  getStatusVariant: (status: string) => any;
-  formatCurrency: (amount: number) => string;
-  GRADE_COLORS: Record<string, string>;
-}) => (
-  <TableRow key={collection.id} className="hover:bg-gray-50 dark:hover:bg-gray-800 transition">
-    <TableCell className="px-6 py-4 text-sm font-mono text-text-light dark:text-text-dark">{collection.collection_id}</TableCell>
-    <TableCell className="px-6 py-4 text-sm text-subtle-text-light dark:text-subtle-text-dark">
-      <div>{format(new Date(collection.collection_date), 'MMM dd, yyyy')}</div>
-      <div className="text-xs text-subtle-text-light dark:text-subtle-text-dark">{format(new Date(collection.collection_date), 'HH:mm')}</div>
+  setSelectedCollection,
+  getStatusVariant,
+  formatCurrency
+}: CollectionRowProps) => (
+  <TableRow 
+    key={collection.id} 
+    className="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors duration-150 cursor-pointer border-b border-border-light dark:border-border-dark"
+  >
+    <TableCell className="px-6 py-4 font-mono text-sm font-medium text-blue-600">{collection.collection_id}</TableCell>
+    <TableCell className="px-6 py-4 text-sm text-text-light dark:text-text-dark">
+      {format(new Date(collection.collection_date), 'MMM dd, yyyy HH:mm')}
     </TableCell>
     <TableCell className="px-6 py-4 text-sm font-medium text-text-light dark:text-text-dark">
       {collection.farmers?.profiles?.full_name || 'Unknown'}
     </TableCell>
-    <TableCell className="px-6 py-4 text-sm text-subtle-text-light dark:text-subtle-text-dark">
+    <TableCell className="px-6 py-4 text-sm font-medium text-text-light dark:text-text-dark">
       {collection.staff?.profiles?.full_name || 'Unknown'}
     </TableCell>
     <TableCell className="px-6 py-4 text-sm font-medium text-blue-600">{collection.liters}L</TableCell>
-    <TableCell className="px-6 py-4">
-      <span className="px-3 py-1 rounded-full text-xs font-semibold text-white"
-            style={{ backgroundColor: GRADE_COLORS[collection.quality_grade as keyof typeof GRADE_COLORS] || '#6b7280' }}>
-        {collection.quality_grade}
-      </span>
-    </TableCell>
     <TableCell className="px-6 py-4 text-sm text-text-light dark:text-text-dark">{formatCurrency(collection.rate_per_liter)}</TableCell>
     <TableCell className="px-6 py-4 text-sm font-medium text-green-600">{formatCurrency(collection.total_amount)}</TableCell>
     <TableCell className="px-6 py-4">
@@ -131,12 +127,6 @@ const CollectionRow = memo(({
                   <span className="text-subtle-text-light dark:text-subtle-text-dark">Status:</span>
                   <Badge variant={getStatusVariant(collection.status)}>
                     {collection.status}
-                  </Badge>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-subtle-text-light dark:text-subtle-text-dark">Quality Grade:</span>
-                  <Badge variant={collection.quality_grade === 'A+' ? 'default' : collection.quality_grade === 'A' ? 'secondary' : collection.quality_grade === 'B' ? 'outline' : 'destructive'}>
-                    {collection.quality_grade}
                   </Badge>
                 </div>
               </div>
@@ -259,7 +249,6 @@ export const PaginatedCollectionsTable = memo(({
                 <TableHead className="px-6 py-3 text-left text-xs font-medium text-subtle-text-light dark:text-subtle-text-dark uppercase">Farmer</TableHead>
                 <TableHead className="px-6 py-3 text-left text-xs font-medium text-subtle-text-light dark:text-subtle-text-dark uppercase">Staff</TableHead>
                 <TableHead className="px-6 py-3 text-left text-xs font-medium text-subtle-text-light dark:text-subtle-text-dark uppercase">Liters</TableHead>
-                <TableHead className="px-6 py-3 text-left text-xs font-medium text-subtle-text-light dark:text-subtle-text-dark uppercase">Grade</TableHead>
                 <TableHead className="px-6 py-3 text-left text-xs font-medium text-subtle-text-light dark:text-subtle-text-dark uppercase">Rate</TableHead>
                 <TableHead className="px-6 py-3 text-left text-xs font-medium text-subtle-text-light dark:text-subtle-text-dark uppercase">Amount</TableHead>
                 <TableHead className="px-6 py-3 text-left text-xs font-medium text-subtle-text-light dark:text-subtle-text-dark uppercase">Status</TableHead>
@@ -274,7 +263,6 @@ export const PaginatedCollectionsTable = memo(({
                   setSelectedCollection={setSelectedCollection}
                   getStatusVariant={getStatusVariant}
                   formatCurrency={formatCurrency}
-                  GRADE_COLORS={GRADE_COLORS}
                 />
               ))}
             </TableBody>

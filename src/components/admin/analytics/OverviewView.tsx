@@ -29,7 +29,7 @@ interface OverviewViewProps {
   totalCollections: number;
   totalLiters: number;
   totalAmount: number;
-  avgQuality: number;
+  avgQuality?: number;
   collections: any[]; // Add this line to include collections data
   // Add trend data props
   collectionsTrend?: { value: number; isPositive: boolean };
@@ -165,7 +165,7 @@ const OverviewView: React.FC<OverviewViewProps> = ({
   totalCollections,
   totalLiters,
   totalAmount,
-  avgQuality,
+  avgQuality = 0, // Default to 0 if not provided
   collections, // Add this line to destructure collections
   // Destructure trend data props
   collectionsTrend,
@@ -208,7 +208,7 @@ const OverviewView: React.FC<OverviewViewProps> = ({
 
   // Memoized Key Metrics Cards
   const KeyMetricsCards = memo(() => (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
       <TodaysCollectionsCard collections={collections} />
       <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-gray-800 dark:to-gray-900 border border-blue-100 dark:border-gray-700 shadow-xl hover:shadow-2xl transition-all duration-300 rounded-2xl transform hover:-translate-y-1">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -260,24 +260,6 @@ const OverviewView: React.FC<OverviewViewProps> = ({
             </p>
           ) : (
             <p className="text-xs text-amber-700 dark:text-amber-300">No data available</p>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card className="bg-gradient-to-br from-purple-50 to-violet-50 dark:from-gray-800 dark:to-gray-900 border border-purple-100 dark:border-gray-700 shadow-xl hover:shadow-2xl transition-all duration-300 rounded-2xl transform hover:-translate-y-1">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium text-purple-800 dark:text-purple-200">Avg Quality</CardTitle>
-          <Award className="h-5 w-5 text-purple-600 dark:text-purple-400" />
-        </CardHeader>
-        <CardContent>
-          <div className="text-2xl font-bold text-purple-900 dark:text-purple-100">{avgQuality.toFixed(1)}</div>
-          {qualityTrend ? (
-            <p className={`text-xs ${qualityTrend.isPositive ? 'text-green-600' : 'text-red-600'} flex items-center mt-1`}>
-              <span className="mr-1">{qualityTrend.isPositive ? '↗' : '↘'}</span>
-              {qualityTrend.isPositive ? '↑' : '↓'} {qualityTrend.value}% from last period
-            </p>
-          ) : (
-            <p className="text-xs text-purple-700 dark:text-purple-300">No data available</p>
           )}
         </CardContent>
       </Card>
@@ -333,9 +315,6 @@ const OverviewView: React.FC<OverviewViewProps> = ({
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-bold text-green-600">{formatCurrency(farmer.amount)}</p>
-                  <Badge variant="secondary" className="text-xs mt-1">
-                    Grade {farmer.avgQuality.toFixed(1)}
-                  </Badge>
                 </div>
               </div>
             ))}

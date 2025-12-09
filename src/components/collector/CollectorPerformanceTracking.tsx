@@ -51,7 +51,6 @@ interface DailyStats {
   collections: number;
   liters: number;
   farmers: number;
-  avg_quality_score: number;
   earnings: number;
 }
 
@@ -61,7 +60,6 @@ interface PerformanceStats {
     collections: number;
     liters: number;
     farmers: number;
-    avg_quality_score: number;
     earnings: number;
     trend: 'up' | 'down' | 'stable';
   };
@@ -69,7 +67,6 @@ interface PerformanceStats {
     collections: number;
     liters: number;
     farmers: number;
-    avg_quality_score: number;
     earnings: number;
     target_achievement: number;
     performanceRating: number;
@@ -78,7 +75,6 @@ interface PerformanceStats {
     collections: number;
     liters: number;
     farmers: number;
-    avg_quality_score: number;
     earnings: number;
     target_achievement: number;
     performanceRating: number;
@@ -96,7 +92,6 @@ interface CollectionRecord {
   collection_id: string;
   farmer_name: string;
   liters: number;
-  quality_grade: string;
   rate_per_liter: number;
   total_amount: number;
   collection_date: string;
@@ -178,7 +173,6 @@ export default function StaffPerformanceTracking() {
           id,
           collection_id,
           liters,
-          quality_grade,
           rate_per_liter,
           total_amount,
           collection_date,
@@ -209,7 +203,6 @@ export default function StaffPerformanceTracking() {
             collections: 0,
             liters: 0,
             farmers: 0,
-            avg_quality_score: 0,
             earnings: 0
           };
         }

@@ -6,7 +6,6 @@ interface Collection {
   farmer_id: string;
   staff_id: string;
   liters: number;
-  quality_grade: string;
   collection_date: string;
   total_amount?: number;
   status: string;
@@ -146,7 +145,6 @@ export class TrendService {
         farmer_id,
         staff_id,
         liters,
-        quality_grade,
         collection_date,
         total_amount,
         status
@@ -275,32 +273,25 @@ export class TrendService {
       const currentTotalCollections = currentCollections.length;
       const currentTotalLiters = currentCollections.reduce((sum, c) => sum + (c.liters || 0), 0);
       const currentTotalRevenue = currentCollections.reduce((sum, c) => sum + (c.total_amount || 0), 0);
-      
-      const qualityScores: Record<string, number> = { 'A+': 100, 'A': 90, 'B': 75, 'C': 60 };
-      const currentAvgQuality = currentCollections.length > 0
-        ? currentCollections.reduce((sum, c) => sum + (qualityScores[c.quality_grade] || 0), 0) / currentCollections.length
-        : 0;
 
       // Calculate metrics for previous period
       const previousTotalCollections = previousCollections.length;
       const previousTotalLiters = previousCollections.reduce((sum, c) => sum + (c.liters || 0), 0);
       const previousTotalRevenue = previousCollections.reduce((sum, c) => sum + (c.total_amount || 0), 0);
-      
-      const previousAvgQuality = previousCollections.length > 0
-        ? previousCollections.reduce((sum, c) => sum + (qualityScores[c.quality_grade] || 0), 0) / previousCollections.length
-        : 0;
 
       // Calculate trends
       const collectionsTrend = this.calculateTrendPercentage(currentTotalCollections, previousTotalCollections);
       const litersTrend = this.calculateTrendPercentage(currentTotalLiters, previousTotalLiters);
       const revenueTrend = this.calculateTrendPercentage(currentTotalRevenue, previousTotalRevenue);
-      const qualityTrend = this.calculateTrendPercentage(currentAvgQuality, previousAvgQuality);
+      // Removed quality trend since quality_grade column was deleted
+      const qualityTrend = { value: 0, isPositive: true };
 
       const result = {
         totalCollections: currentTotalCollections,
         totalLiters: currentTotalLiters,
         totalRevenue: currentTotalRevenue,
-        avgQuality: currentAvgQuality,
+        // Removed avgQuality since quality_grade column was deleted
+        avgQuality: 0,
         collectionsTrend,
         litersTrend,
         revenueTrend,

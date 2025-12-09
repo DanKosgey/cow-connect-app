@@ -45,9 +45,6 @@ interface Warehouse {
   id: string;
   name: string;
   address: string;
-  warehouse_collections: {
-    count: number;
-  };
 }
 
 // Analytics data types
@@ -650,60 +647,28 @@ export class AnalyticsService {
   }
 
   private async fetchWarehouses(): Promise<Warehouse[]> {
-    // Test: Fetch all warehouses to see what exists
-    const { data: allWarehouses, error: allWarehousesError } = await supabase
-      .from('warehouses')
-      .select('*');
-
-    if (allWarehousesError) {
-      console.error('Error fetching all warehouses:', allWarehousesError);
-    } else {
-      console.log('All warehouses:', allWarehouses);
-    }
-
+    console.log('Fetching warehouses...');
+    
     const { data, error } = await supabase
       .from('warehouses')
-      .select(`
-        id,
-        name,
-        address
-      `);
+      .select('*')
+      .order('name');
 
     if (error) {
       console.error('Error fetching warehouses:', error);
-      throw error;
-    }
-
-    // If no warehouses exist, return empty array
-    if (!data || data.length === 0) {
-      console.log('No warehouses found, returning empty array');
       return [];
     }
 
-    // Get collection counts for each warehouse
-    const warehouseCollectionCounts = await Promise.all(
-      data.map(async (warehouse) => {
-        const { count, error: countError } = await supabase
-          .from('warehouse_collections')
-          .select('*', { count: 'exact', head: true })
-          .eq('warehouse_id', warehouse.id);
+    if (!data || data.length === 0) {
+      console.log('No warehouses found in database');
+      return [];
+    }
 
-        if (countError) {
-          console.error(`Error fetching collection count for warehouse ${warehouse.id}:`, countError);
-          return { ...warehouse, count: 0 };
-        }
-
-        return { ...warehouse, count: count || 0 };
-      })
-    );
-
-    const processedWarehouses = warehouseCollectionCounts.map(warehouse => ({
+    // Since warehouse_collections table was deleted, we can't get collection counts
+    const processedWarehouses = data.map(warehouse => ({
       id: warehouse.id,
       name: warehouse.name,
-      address: warehouse.address,
-      warehouse_collections: {
-        count: warehouse.count
-      }
+      address: warehouse.address
     }));
     
     console.log('Fetched warehouses:', processedWarehouses.length, 'Data:', processedWarehouses);
@@ -1099,9 +1064,9 @@ export class AnalyticsService {
     } else {
       // Fallback to mock data if there are no warehouses in the database
       processedWarehouses = [
-        { id: 'wh-1', name: 'Main Warehouse', address: 'Nairobi', warehouse_collections: { count: 234 } },
-        { id: 'wh-2', name: 'North Warehouse', address: 'Nakuru', warehouse_collections: { count: 189 } },
-        { id: 'wh-3', name: 'South Warehouse', address: 'Mombasa', warehouse_collections: { count: 156 } }
+        { id: 'wh-1', name: 'Main Warehouse', address: 'Nairobi' },
+        { id: 'wh-2', name: 'North Warehouse', address: 'Nakuru' },
+        { id: 'wh-3', name: 'South Warehouse', address: 'Mombasa' }
       ];
     }
 

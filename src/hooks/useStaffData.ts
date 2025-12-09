@@ -16,7 +16,6 @@ interface Collection {
   collection_id: string;
   farmer_id: string;
   liters: number;
-  quality_grade: string;
   rate_per_liter: number;
   total_amount: number;
   collection_date: string;
