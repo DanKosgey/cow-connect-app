@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { 
   BarChart3, 
@@ -17,7 +17,26 @@ import {
   UserCog,
   Droplets,
   Package,
-  CreditCard
+  CreditCard,
+  Home,
+  FileText,
+  Settings,
+  Filter,
+  Download,
+  MoreVertical,
+  ChevronRight,
+  Target,
+  TrendingDown,
+  Percent,
+  Calendar,
+  Search,
+  BarChart as BarChartIcon,
+  PieChart as PieChartIcon,
+  LineChart as LineChartIcon,
+  Shield,
+  Truck,
+  Coffee,
+  Zap
 } from 'lucide-react';
 import useToastNotifications from '@/hooks/useToastNotifications';
 import { useChartStabilizer } from '@/hooks/useChartStabilizer';
@@ -36,7 +55,9 @@ import {
   Legend,
   ResponsiveContainer,
   AreaChart,
-  Area
+  Area,
+  ComposedChart,
+  Scatter
 } from 'recharts';
 import { 
   format, 
@@ -54,7 +75,11 @@ import {
   endOfWeek,
   endOfMonth,
   endOfQuarter,
-  endOfYear
+  endOfYear,
+  parseISO,
+  eachDayOfInterval,
+  eachWeekOfInterval,
+  eachMonthOfInterval
 } from 'date-fns';
 import { 
   Select, 
@@ -64,7 +89,10 @@ import {
   SelectValue 
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Progress } from '@/components/ui/progress';
 import { 
+  getCurrentPeriodFilter,
   getPreviousPeriodFilter, 
   calculateMetricsWithTrends 
 } from '@/utils/dashboardTrends';
@@ -74,6 +102,29 @@ import { dataCache } from '@/utils/dataCache';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { CACHE_KEYS } from '@/services/cache-utils';
 import RefreshButton from '@/components/ui/RefreshButton';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb';
+import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 
 // Types
 interface Collection {
@@ -139,33 +190,21 @@ interface PendingFarmer {
 interface Alert {
   type: string;
   message: string;
-  severity: 'warning' | 'info' | 'success';
+  severity: 'warning' | 'info' | 'success' | 'error';
   time: string;
   icon?: React.ComponentType<{ className?: string }>;
 }
 
-// Define interface for previous period data
-interface PreviousPeriodData {
-  collections: any[];
-  farmers: any[];
-  payments: any[];
-}
-
-// Define interface for cached dashboard data
-interface CachedDashboardData {
-  collections: Collection[];
-  farmers: Farmer[];
-  staff: Staff[];
-  collectionTrends: any[];
-  revenueTrends: any[];
-  alerts: Alert[];
-  kycStats: {
-    pending: number;
-    approved: number;
-    rejected: number;
-    resubmissions: number;
-  };
-  metrics: any[];
+interface DashboardMetric {
+  id: string;
+  label: string;
+  value: number;
+  change: number;
+  changeType: 'increase' | 'decrease';
+  icon: React.ComponentType<{ className?: string }>;
+  color: string;
+  format: 'currency' | 'number' | 'percent';
+  target: number;
 }
 
 const TIME_RANGE_OPTIONS = [
@@ -185,6 +224,13 @@ const TIME_RANGE_OPTIONS = [
   { value: 'allTime', label: 'All Time' }
 ];
 
+const CHART_TYPES = [
+  { id: 'area', label: 'Area', icon: AreaChart },
+  { id: 'line', label: 'Line', icon: LineChartIcon },
+  { id: 'bar', label: 'Bar', icon: BarChart3 },
+  { id: 'composed', label: 'Composed', icon: BarChartIcon },
+];
+
 // Color palette for charts
 const CHART_COLORS = {
   primary: '#3b82f6',     // Blue
@@ -195,6 +241,8 @@ const CHART_COLORS = {
   pink: '#ec4899',        // Pink
   indigo: '#6366f1',      // Indigo
   teal: '#14b8a6',        // Teal
+  cyan: '#06b6d4',        // Cyan
+  orange: '#f97316',      // Orange
 };
 
 const AdminDashboard = () => {
@@ -213,8 +261,6 @@ const AdminDashboard = () => {
   const [collectionTrends, setCollectionTrends] = useState<any[]>([]);
   const [revenueTrends, setRevenueTrends] = useState<any[]>([]);
   const [initialLoad, setInitialLoad] = useState(true);
-  const isProcessing = useRef(false);
-  const prevTimeRange = useRef(timeRange);
   const [pendingFarmers, setPendingFarmers] = useState<PendingFarmer[]>([]);
   const [kycStats, setKycStats] = useState({
     pending: 0,
@@ -222,408 +268,630 @@ const AdminDashboard = () => {
     rejected: 0,
     resubmissions: 0
   });
-
-  const { refreshSession } = useSessionRefresh({ refreshInterval: 60 * 60 * 1000 }); // 60 minutes
-
-  // Clear cache when timeframe changes with debounce
+  
+  // New state for enhanced features
+  const [activeTab, setActiveTab] = useState('overview');
+  const [chartType, setChartType] = useState('composed');
+  const [dateRange, setDateRange] = useState({ start: '', end: '' });
+  const [quickFilters, setQuickFilters] = useState({
+    status: 'all',
+    type: 'all',
+    region: 'all'
+  });
+  const [searchQuery, setSearchQuery] = useState('');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [expandedCard, setExpandedCard] = useState<string | null>(null);
+  
+  // State for dashboard targets - initialized as empty array
+  const [dashboardTargets, setDashboardTargets] = useState<any[]>([]);
+  
+  // State for loading settings
+  const [settingsLoading, setSettingsLoading] = useState(true);
+  
+  // Monitor dashboard targets changes
   useEffect(() => {
-    // Clear the cache for the previous timeframe to ensure fresh data
-    const timeoutId = setTimeout(() => {
-      queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.ADMIN_DASHBOARD] });
-      dataCache.clear();
-      // Note: We can't call refetch here because it's not declared yet
-      // Refetching will happen automatically when the query key changes
-    }, 1000); // Increase debounce to 1 second
+    console.log('Dashboard targets updated:', dashboardTargets);
+  }, [dashboardTargets]);
+  
+  // Load targets from database on component mount
+  useEffect(() => {
+    let isMounted = true;
     
-    return () => clearTimeout(timeoutId);
-  }, [timeRange, queryClient]); // Remove refetch from dependencies
-
-  const getDateFilter = useCallback(() => {
-    const now = new Date();
-    let startDate = new Date();
-    let endDate = new Date();
-    
-    switch(timeRange) {
-      case 'today':
-        startDate = startOfDay(now);
-        endDate = endOfDay(now);
-        break;
-      case 'yesterday':
-        startDate = startOfDay(subDays(now, 1));
-        endDate = endOfDay(subDays(now, 1));
-        break;
-      case 'week':
-        startDate = startOfWeek(now, { weekStartsOn: 1 });
-        endDate = endOfWeek(now, { weekStartsOn: 1 });
-        break;
-      case 'lastWeek':
-        startDate = startOfWeek(subWeeks(now, 1), { weekStartsOn: 1 });
-        endDate = endOfWeek(subWeeks(now, 1), { weekStartsOn: 1 });
-        break;
-      case 'month':
-        startDate = startOfMonth(now);
-        endDate = endOfMonth(now);
-        break;
-      case 'lastMonth':
-        startDate = startOfMonth(subMonths(now, 1));
-        endDate = endOfMonth(subMonths(now, 1));
-        break;
-      case 'quarter':
-        startDate = startOfQuarter(now);
-        endDate = endOfQuarter(now);
-        break;
-      case 'lastQuarter':
-        startDate = startOfQuarter(subQuarters(now, 1));
-        endDate = endOfQuarter(subQuarters(now, 1));
-        break;
-      case 'year':
-        startDate = startOfYear(now);
-        endDate = endOfYear(now);
-        break;
-      case 'lastYear':
-        startDate = startOfYear(subYears(now, 1));
-        endDate = endOfYear(subYears(now, 1));
-        break;
-      case '90days':
-        startDate = subDays(now, 90);
-        endDate = now;
-        break;
-      case '180days':
-        startDate = subDays(now, 180);
-        endDate = now;
-        break;
-      case '365days':
-        startDate = subDays(now, 365);
-        endDate = now;
-        break;
-      case 'allTime':
-        startDate = new Date(2020, 0, 1);
-        endDate = now;
-        break;
-      default:
-        startDate = subWeeks(now, 1);
-        endDate = now;
-    }
-    
-    return {
-      startDate: startDate.toISOString(),
-      endDate: endDate.toISOString()
+    const loadDashboardSettings = async () => {
+      try {
+        setSettingsLoading(true);
+        console.log('Loading dashboard settings from database...');
+        
+        const { data, error } = await supabase
+          .from('dashboard_settings')
+          .select('*')
+          .eq('is_active', true)
+          .eq('category', 'targets');
+        
+        console.log('Dashboard settings query result:', { data, error });
+        
+        // Check if component is still mounted before updating state
+        if (!isMounted) return;
+        
+        if (error) {
+          console.error('Error loading dashboard settings:', error);
+          // Fallback to default targets if database load fails
+          const defaultTargets = [
+            { id: 'revenue', label: 'Total Revenue', target: 1000000, format: 'currency' },
+            { id: 'liters', label: 'Milk Collected', target: 50000, format: 'number' },
+            { id: 'farmers', label: 'Active Farmers', target: 100, format: 'number' },
+            { id: 'collections', label: 'Collections', target: 1000, format: 'number' },
+            { id: 'avgRate', label: 'Avg Rate/Liter', target: 45, format: 'currency' },
+            { id: 'efficiency', label: 'Collection Efficiency', target: 90, format: 'percent' },
+            { id: 'targetAchievement', label: 'Target Achievement', target: 100, format: 'percent' },
+            { id: 'farmerSatisfaction', label: 'Farmer Satisfaction', target: 95, format: 'percent' },
+            { id: 'paymentTimeliness', label: 'Payment Timeliness', target: 95, format: 'percent' },
+          ];
+          console.log('Using default targets:', defaultTargets);
+          if (isMounted) setDashboardTargets(defaultTargets);
+        } else {
+          console.log('Raw data from database:', data);
+          // Transform database settings to target format
+          const targets = data.map(setting => {
+            let targetValue = setting.setting_value;
+            if (setting.setting_type === 'number') {
+              targetValue = Number(setting.setting_value);
+            }
+            
+            // Map setting keys to target IDs
+            const idMap: Record<string, string> = {
+              'target_revenue': 'revenue',
+              'target_liters': 'liters',
+              'target_farmers': 'farmers',
+              'target_collections': 'collections',
+              'target_avg_rate': 'avgRate',
+              'target_efficiency': 'efficiency',
+              'target_achievement': 'targetAchievement',
+              'target_farmer_satisfaction': 'farmerSatisfaction',
+              'target_payment_timeliness': 'paymentTimeliness'
+            };
+            
+            const formatMap: Record<string, string> = {
+              'target_revenue': 'currency',
+              'target_liters': 'number',
+              'target_farmers': 'number',
+              'target_collections': 'number',
+              'target_avg_rate': 'currency',
+              'target_efficiency': 'percent',
+              'target_achievement': 'percent',
+              'target_farmer_satisfaction': 'percent',
+              'target_payment_timeliness': 'percent'
+            };
+            
+            const labelMap: Record<string, string> = {
+              'target_revenue': 'Total Revenue',
+              'target_liters': 'Milk Collected',
+              'target_farmers': 'Active Farmers',
+              'target_collections': 'Collections',
+              'target_avg_rate': 'Avg Rate/Liter',
+              'target_efficiency': 'Collection Efficiency',
+              'target_achievement': 'Target Achievement',
+              'target_farmer_satisfaction': 'Farmer Satisfaction',
+              'target_payment_timeliness': 'Payment Timeliness'
+            };
+            
+            const result = {
+              id: idMap[setting.setting_key] || setting.setting_key,
+              label: labelMap[setting.setting_key] || setting.setting_key,
+              target: targetValue,
+              format: formatMap[setting.setting_key] || 'number'
+            };
+            
+            console.log('Transformed target:', result);
+            return result;
+          });
+          
+          console.log('Final transformed targets:', targets);
+          if (isMounted) setDashboardTargets(targets);
+        }
+      } catch (err) {
+        console.error('Error loading dashboard settings:', err);
+        // Check if component is still mounted before updating state
+        if (!isMounted) return;
+        
+        // Fallback to default targets if any error occurs
+        const defaultTargets = [
+          { id: 'revenue', label: 'Total Revenue', target: 1000000, format: 'currency' },
+          { id: 'liters', label: 'Milk Collected', target: 50000, format: 'number' },
+          { id: 'farmers', label: 'Active Farmers', target: 100, format: 'number' },
+          { id: 'collections', label: 'Collections', target: 1000, format: 'number' },
+          { id: 'avgRate', label: 'Avg Rate/Liter', target: 45, format: 'currency' },
+          { id: 'efficiency', label: 'Collection Efficiency', target: 90, format: 'percent' },
+          { id: 'targetAchievement', label: 'Target Achievement', target: 100, format: 'percent' },
+          { id: 'farmerSatisfaction', label: 'Farmer Satisfaction', target: 95, format: 'percent' },
+          { id: 'paymentTimeliness', label: 'Payment Timeliness', target: 95, format: 'percent' },
+        ];
+        console.log('Using fallback default targets:', defaultTargets);
+        setDashboardTargets(defaultTargets);
+      } finally {
+        if (isMounted) {
+          setSettingsLoading(false);
+          console.log('Finished loading dashboard settings');
+        }
+      }
     };
-  }, [timeRange]);
-
-  const fetchPreviousPeriodData = useCallback(async () => {
-    try {
-      const { startDate, endDate } = getPreviousPeriodFilter(timeRange);
-      const cacheKey = `prev_data_${timeRange}_${startDate}_${endDate}`;
-      const cachedData = dataCache.get<PreviousPeriodData>(cacheKey);
-      
-      if (cachedData) {
-        console.log('Using cached previous period data');
-        return cachedData;
-      }
-      
-      // Simplified query - fetch collections with staff and approved_by IDs only
-      const { data: prevCollectionsData, error: collectionsError } = await supabase
-        .from('collections')
-        .select(`
-          id,
-          farmer_id,
-          staff_id,
-          approved_by,
-          liters,
-          rate_per_liter,
-          total_amount,
-          collection_date,
-          status,
-          farmers!inner(full_name)
-        `)
-        .gte('collection_date', startDate)
-        .lte('collection_date', endDate)
-        .order('collection_date', { ascending: false })
-        .limit(100);
-
-      if (collectionsError) {
-        console.error('Error fetching previous period collections:', collectionsError);
-        return null;
-      }
-
-      const { data: prevFarmersData, error: farmersError } = await supabase
-        .from('farmers')
-        .select(`
-          id,
-          user_id,
-          registration_number,
-          kyc_status,
-          created_at,
-          profiles:user_id (full_name, email)
-        `)
-        .order('created_at', { ascending: false })
-        .limit(50);
-
-      if (farmersError) {
-        console.error('Error fetching previous period farmers:', farmersError);
-        return null;
-      }
-
-      // Define the return type explicitly
-      const result: PreviousPeriodData = {
-        collections: prevCollectionsData || [],
-        farmers: prevFarmersData || [],
-        payments: prevCollectionsData || []
-      };
-      
-      dataCache.set(cacheKey, result, 5 * 60 * 1000);
-      return result;
-    } catch (error: any) {
-      console.error('Error fetching previous period data:', error);
-      return null;
-    }
-  }, [timeRange]);
-
-  const processData = useCallback((
-    rawCollections: any[],
-    farmers: Farmer[],
-    staff: Staff[]
-  ) => {
-    performanceMonitor.startProcessing();
     
-    const farmerMap = new Map(farmers.map(farmer => [farmer.id, farmer]));
-    const staffMap = new Map(staff.map(staffMember => [staffMember.id, staffMember]));
+    loadDashboardSettings();
     
-    // Use embedded staff objects first, fallback to map lookup
-    const processedCollections = rawCollections.map(collection => {
-      const farmer = farmerMap.get(collection.farmer_id);
-      
-      // Prefer embedded staff objects (explicit aliases), else fallback to staffMap lookup
-      const embeddedCollector = collection.staff;
-      const embeddedApprover = collection.approved_by;
-      const collector = embeddedCollector ?? (collection.staff_id ? staffMap.get(collection.staff_id) : null);
-      
-      return {
-        ...collection,
-        farmerName: farmer?.profiles?.full_name || 'Unknown Farmer',
-        staffName: collector?.profiles?.full_name || 'Unknown Staff',
-        approverName: embeddedApprover?.profiles?.full_name || (collection.approved_by ? staffMap.get(collection.approved_by)?.profiles?.full_name || 'Unknown Staff' : null)
-      };
-    });
+    // Set up real-time subscription for dashboard settings
+    const settingsChannel = supabase
+      .channel('dashboard-settings-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'dashboard_settings',
+          filter: 'category=eq.targets'
+        },
+        (payload) => {
+          console.log('Real-time update received:', payload);
+          // Reload all settings when any change occurs
+          loadDashboardSettings();
+        }
+      )
+      .subscribe();
+    
+    // Cleanup subscription on unmount
+    return () => {
+      console.log('Cleaning up dashboard settings subscription');
+      isMounted = false;
+      supabase.removeChannel(settingsChannel);
+    };
+  }, []);
+  
+  const DASHBOARD_TABS = [
+    { id: 'overview', label: 'Overview', icon: Home },
+    { id: 'settings', label: 'Settings', icon: Settings },
+  ];
 
-    setCollections(processedCollections);
-    setFarmers(farmers);
-    setStaff(staff);
+  
+  // Enhanced metrics calculation
+  const calculateEnhancedMetrics = useCallback((data: any) => {
+    const totalLiters = data.collections?.reduce((sum: number, c: any) => sum + (c.liters || 0), 0) || 0;
+    const totalRevenue = data.collections?.reduce((sum: number, c: any) => sum + (c.total_amount || 0), 0) || 0;
+    const avgRate = totalLiters > 0 ? totalRevenue / totalLiters : 0;
+    const activeFarmers = data.farmers?.filter((f: any) => f.kyc_status === 'approved').length || 0;
+    const totalFarmers = data.farmers?.length || 0;
+    const collectionsCount = data.collections?.length || 0;
     
-    // Process trends data - SORT DATA BY DATE TO FIX REVERSE ORDER ISSUE
-    const trendsData = processedCollections.reduce((acc: any, collection: any) => {
+    // Get targets from state (dashboard settings)
+    const revenueTarget = dashboardTargets.find(t => t.id === 'revenue')?.target || 1000000;
+    const litersTarget = dashboardTargets.find(t => t.id === 'liters')?.target || 50000;
+    const farmersTarget = dashboardTargets.find(t => t.id === 'farmers')?.target || 100;
+    const collectionsTarget = dashboardTargets.find(t => t.id === 'collections')?.target || 1000;
+    const avgRateTarget = dashboardTargets.find(t => t.id === 'avgRate')?.target || 45;
+    const efficiencyTarget = dashboardTargets.find(t => t.id === 'efficiency')?.target || 90;
+    
+    return [
+      {
+        id: 'revenue',
+        label: 'Total Revenue',
+        value: totalRevenue,
+        change: 12.5,
+        changeType: 'increase',
+        icon: DollarSign,
+        color: 'green',
+        format: 'currency',
+        target: revenueTarget
+      },
+      {
+        id: 'liters',
+        label: 'Milk Collected',
+        value: totalLiters,
+        change: 8.2,
+        changeType: 'increase',
+        icon: Droplets,
+        color: 'blue',
+        format: 'number',
+        target: litersTarget
+      },
+      {
+        id: 'farmers',
+        label: 'Active Farmers',
+        value: activeFarmers,
+        change: 5.3,
+        changeType: 'increase',
+        icon: Users,
+        color: 'purple',
+        format: 'number',
+        target: farmersTarget
+      },
+      {
+        id: 'collections',
+        label: 'Collections',
+        value: collectionsCount,
+        change: -2.1,
+        changeType: 'decrease',
+        icon: Truck,
+        color: 'orange',
+        format: 'number',
+        target: collectionsTarget
+      },
+      {
+        id: 'avgRate',
+        label: 'Avg Rate/Liter',
+        value: avgRate,
+        change: 3.7,
+        changeType: 'increase',
+        icon: TrendingUp,
+        color: 'teal',
+        format: 'currency',
+        target: avgRateTarget
+      },
+      {
+        id: 'efficiency',
+        label: 'Collection Efficiency',
+        value: 87.5,
+        change: 2.3,
+        changeType: 'increase',
+        icon: Zap,
+        color: 'amber',
+        format: 'percent',
+        target: efficiencyTarget
+      }
+    ];
+  }, [dashboardTargets]);
+
+  // Process data for dual-axis chart
+  const processDualAxisData = useCallback((collectionsData: Collection[]) => {
+    const groupedData = collectionsData.reduce((acc: any, collection) => {
       const date = format(new Date(collection.collection_date), 'MMM dd');
       if (!acc[date]) {
         acc[date] = {
           date,
           liters: 0,
+          revenue: 0,
           collections: 0,
-          revenue: 0
+          avgRate: 0,
+          farmers: new Set()
         };
       }
       acc[date].liters += collection.liters;
-      acc[date].collections += 1;
       acc[date].revenue += collection.total_amount;
+      acc[date].collections += 1;
+      acc[date].farmers.add(collection.farmer_id);
       
       return acc;
     }, {});
-    
-    // Convert to array and sort by date to fix the order issue
-    const trendsArray = Object.values(trendsData)
+
+    return Object.values(groupedData)
       .map((item: any) => ({
-        ...item
+        ...item,
+        farmers: item.farmers.size,
+        avgRate: item.liters > 0 ? item.revenue / item.liters : 0
       }))
-      .sort((a: any, b: any) => {
-        const dateA = new Date(a.date);
-        const dateB = new Date(b.date);
-        return dateA.getTime() - dateB.getTime(); // Sort chronologically
-      });
-    
-    setCollectionTrends(trendsArray);
-    setRevenueTrends(trendsArray);
-    
-    // Generate alerts - ENHANCED WITH COLLECTIONS AND PAYMENTS ACTIVITIES
-    const newAlerts: Alert[] = [];
-    
-    // Add recent collections alerts
-    const recentCollections = (processedCollections || []).slice(0, 3);
-    recentCollections.forEach(collection => {
-      newAlerts.push({
-        type: 'collection',
-        message: `New collection: ${collection.liters}L from ${collection.farmerName || 'Unknown Farmer'}`,
-        severity: 'info',
-        time: format(new Date(collection.collection_date), 'HH:mm'),
-        icon: Droplets
-      });
-    });
-    
-    // Add high value collections alerts
-    const highValueCollections = (processedCollections || [])
-      .filter(c => c.total_amount > 5000)
-      .sort((a, b) => b.total_amount - a.total_amount)
-      .slice(0, 2);
-    
-    highValueCollections.forEach(collection => {
-      newAlerts.push({
-        type: 'payment',
-        message: `High value collection: ${formatCurrency(collection.total_amount)} from ${collection.farmerName || 'Unknown Farmer'}`,
-        severity: 'success',
-        time: format(new Date(collection.collection_date), 'HH:mm'),
-        icon: DollarSign
-      });
-    });
-    
-    // Add pending payments alerts
-    const pendingPayments = (processedCollections || [])
-      .filter(c => c.status !== 'Paid')
-      .slice(0, 2);
-    
-    pendingPayments.forEach(collection => {
-      newAlerts.push({
-        type: 'pending',
-        message: `Pending payment: ${formatCurrency(collection.total_amount)} from ${collection.farmerName || 'Unknown Farmer'}`,
-        severity: 'warning',
-        time: format(new Date(collection.collection_date), 'HH:mm'),
-        icon: CreditCard
-      });
-    });
-    
-    // Sort alerts by time (newest first)
-    newAlerts.sort((a, b) => {
-      const timeA = a.time.split(':').map(Number);
-      const timeB = b.time.split(':').map(Number);
-      return timeB[0] * 60 + timeB[1] - (timeA[0] * 60 + timeA[1]);
-    });
-
-    setAlerts(newAlerts);
-
-    const approvedCount = farmers.filter(f => f.kyc_status === 'approved').length;
-    const rejectedCount = farmers.filter(f => f.kyc_status === 'rejected').length;
-    
-    setKycStats(prev => ({
-      ...prev,
-      approved: approvedCount,
-      rejected: rejectedCount
-    }));
-    
-    performanceMonitor.endProcessing();
+      .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
   }, []);
 
-  const fetchData = useCallback(async () => {
-    // Since we're now using React Query as the single source of truth,
-    // we don't need to do manual fetching anymore
-    // This function is kept for backward compatibility but should not be called
-    console.warn('fetchData called but React Query should be handling data fetching');
-    return Promise.resolve();
-  }, [timeRange]); // Minimal, stable dependencies only
+  // Process KPI data
+  const processKPIData = useCallback((data: any) => {
+    // Get targets from state (dashboard settings)
+    const targetAchievementTarget = dashboardTargets.find(t => t.id === 'targetAchievement')?.target || 100;
+    const farmerSatisfactionTarget = dashboardTargets.find(t => t.id === 'farmerSatisfaction')?.target || 95;
+    const collectionEfficiencyTarget = dashboardTargets.find(t => t.id === 'efficiency')?.target || 90;
+    const paymentTimelinessTarget = dashboardTargets.find(t => t.id === 'paymentTimeliness')?.target || 95;
 
+    // Calculate real KPI values based on data
+    const targetAchievement = data.collections && data.collections.length > 0 
+      ? Math.round((data.collections.filter((c: any) => c.status === 'Approved').length / data.collections.length) * 100)
+      : 0;
+      
+    const farmerSatisfaction = data.farmers && data.farmers.length > 0
+      ? Math.round((data.farmers.filter((f: any) => f.kyc_status === 'approved').length / data.farmers.length) * 100)
+      : 0;
+      
+    const collectionEfficiency = data.collections && data.collections.length > 0
+      ? Math.round((data.collections.filter((c: any) => 
+          new Date(c.collection_date) >= subDays(new Date(), 7)).length / 
+          Math.max(data.collections.length / 7, 1)) * 100)
+      : 0;
+      
+    const paymentTimeliness = data.collections && data.collections.length > 0
+      ? Math.round((data.collections.filter((c: any) => c.status === 'Paid').length / 
+          Math.max(data.collections.filter((c: any) => c.status === 'Approved').length, 1)) * 100)
+      : 0;
+
+    return [
+      { 
+        label: 'Target Achievement', 
+        value: Math.min(targetAchievement, 100), 
+        target: targetAchievementTarget,
+        color: CHART_COLORS.primary 
+      },
+      { 
+        label: 'Farmer Satisfaction', 
+        value: Math.min(farmerSatisfaction, 100), 
+        target: farmerSatisfactionTarget,
+        color: CHART_COLORS.secondary 
+      },
+      { 
+        label: 'Collection Efficiency', 
+        value: Math.min(collectionEfficiency, 100), 
+        target: collectionEfficiencyTarget,
+        color: CHART_COLORS.accent 
+      },
+      { 
+        label: 'Payment Timeliness', 
+        value: Math.min(paymentTimeliness, 100), 
+        target: paymentTimelinessTarget,
+        color: CHART_COLORS.teal 
+      }
+    ];
+  }, [dashboardTargets]);
+
+  // React Query for dashboard data
+  const { data: dashboardData, isLoading: isDashboardLoading, error: dashboardError, refetch } = useQuery({
+    queryKey: [CACHE_KEYS.ADMIN_DASHBOARD, timeRange, quickFilters, dashboardTargets],
+    queryFn: async () => {
+      const { startDate, endDate } = getCurrentPeriodFilter(timeRange);
+      
+      // Fetch multiple data sources in parallel
+      const [collectionsRes, farmersRes, staffRes, pendingRes] = await Promise.all([
+        supabase
+          .from('collections')
+          .select(`
+            id,
+            collection_id,
+            farmer_id,
+            staff_id,
+            approved_by,
+            liters,
+            rate_per_liter,
+            total_amount,
+            collection_date,
+            status,
+            notes,
+            farmers!inner(full_name)
+          `)
+          .gte('collection_date', startDate)
+          .lte('collection_date', endDate)
+          .order('collection_date', { ascending: false })
+          .limit(500),
+        
+        supabase
+          .from('farmers')
+          .select(`
+            id,
+            user_id,
+            registration_number,
+            kyc_status,
+            created_at,
+            profiles:user_id (full_name, email)
+          `)
+          .order('created_at', { ascending: false })
+          .limit(200),
+        
+        supabase
+          .from('staff')
+          .select(`
+            id,
+            user_id,
+            employee_id,
+            status,
+            created_at,
+            profiles:user_id (full_name, email)
+          `)
+          .limit(100),
+        
+        supabase
+          .from('pending_farmers')
+          .select('id, full_name, email, phone_number, status, created_at, rejection_count')
+          .in('status', ['pending_verification', 'email_verified'])
+          .limit(10)
+      ]);
+
+      const collections = collectionsRes.data || [];
+      const farmers = farmersRes.data || [];
+      const staff = staffRes.data || [];
+      const pendingFarmers = pendingRes.data || [];
+
+      // Process dual-axis data
+      const dualAxisData = processDualAxisData(collections);
+      
+      // Calculate enhanced metrics
+      const enhancedMetrics = calculateEnhancedMetrics({ collections, farmers, staff });
+      
+      // Process KPI data
+      const kpiData = processKPIData({ collections, farmers, staff });
+
+      // Generate alerts
+      const alerts = generateEnhancedAlerts(collections, farmers, pendingFarmers);
+
+      // Calculate KYC stats
+      const kycStats = {
+        pending: pendingFarmers.filter(f => f.status === 'email_verified').length,
+        approved: farmers.filter(f => f.kyc_status === 'approved').length,
+        rejected: farmers.filter(f => f.kyc_status === 'rejected').length,
+        resubmissions: pendingFarmers.filter(f => f.rejection_count > 0).length
+      };
+
+      return {
+        collections,
+        farmers,
+        staff,
+        pendingFarmers,
+        dualAxisData,
+        enhancedMetrics,
+        kpiData,
+        alerts,
+        kycStats
+      };
+    },
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: true,
+  });
+
+  // Update state when query data changes
   useEffect(() => {
-    fetchData();
-  }, [fetchData, timeRange]); // Add timeRange as dependency
+    if (dashboardData) {
+      setCollections(dashboardData.collections);
+      setFarmers(dashboardData.farmers);
+      setStaff(dashboardData.staff);
+      setPendingFarmers(dashboardData.pendingFarmers);
+      setCollectionTrends(dashboardData.dualAxisData);
+      setRevenueTrends(dashboardData.dualAxisData);
+      setMetrics(dashboardData.enhancedMetrics);
+      setAlerts(dashboardData.alerts);
+      setKycStats(dashboardData.kycStats);
+      setLoading(false);
+      setInitialLoad(false);
+    }
+  }, [dashboardData, dashboardTargets]);
 
+  // Generate enhanced alerts
+  const generateEnhancedAlerts = useCallback((collections: Collection[], farmers: Farmer[], pendingFarmers: PendingFarmer[]) => {
+    const alerts: Alert[] = [];
+
+    // High-value collections
+    collections
+      .filter(c => c.total_amount > 10000)
+      .slice(0, 2)
+      .forEach(c => {
+        alerts.push({
+          type: 'high_value',
+          message: `High-value collection: ${formatCurrency(c.total_amount)} from ${c.farmers?.full_name || 'Unknown'}`,
+          severity: 'success',
+          time: format(new Date(c.collection_date), 'HH:mm'),
+          icon: Award
+        });
+      });
+
+    // Pending KYC approvals
+    if (pendingFarmers.length > 3) {
+      alerts.push({
+        type: 'kyc_pending',
+        message: `${pendingFarmers.length} farmers awaiting KYC approval`,
+        severity: 'warning',
+        time: format(new Date(), 'HH:mm'),
+        icon: Shield
+      });
+    }
+
+    // Low stock alerts (simulated)
+    if (collections.reduce((sum, c) => sum + c.liters, 0) < 1000) {
+      alerts.push({
+        type: 'low_stock',
+        message: 'Milk collection below daily target',
+        severity: 'error',
+        time: format(new Date(), 'HH:mm'),
+        icon: AlertCircle
+      });
+    }
+
+    // Recent signups
+    const recentFarmers = farmers
+      .filter(f => new Date(f.created_at) > subDays(new Date(), 7))
+      .slice(0, 2);
+    
+    recentFarmers.forEach(f => {
+      alerts.push({
+        type: 'new_farmer',
+        message: `New farmer registered: ${f.profiles?.full_name || 'Unknown'}`,
+        severity: 'info',
+        time: format(new Date(f.created_at), 'HH:mm'),
+        icon: Users
+      });
+    });
+
+    return alerts.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+  }, []);
+
+  // Format currency
   const formatCurrency = useCallback((amount: number) => {
     return new Intl.NumberFormat('en-KE', {
       style: 'currency',
       currency: 'KES',
-      minimumFractionDigits: 0
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
     }).format(amount);
   }, []);
 
+  // Format number
   const formatNumber = useCallback((num: number) => {
     return new Intl.NumberFormat('en-KE').format(num);
   }, []);
 
-  const { data: stableCollectionTrends, isStable: collectionTrendsStable } = useChartStabilizer(collectionTrends, 50);
-  const { data: stableRevenueTrends, isStable: revenueTrendsStable } = useChartStabilizer(revenueTrends, 50);
+  // Format percentage
+  const formatPercent = useCallback((num: number) => {
+    return new Intl.NumberFormat('en-KE', {
+      style: 'percent',
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1
+    }).format(num / 100);
+  }, []);
 
-  // Fetch pending farmers data with React Query
-  const { data: pendingFarmersData, isLoading: isPendingFarmersLoading } = useQuery({
-    queryKey: [CACHE_KEYS.ADMIN_DASHBOARD, 'pending-farmers'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('pending_farmers')
-        .select('id, full_name, email, phone_number, status, created_at, rejection_count')
-        .in('status', ['pending_verification', 'email_verified'])
-        .order('created_at', { ascending: false })
-        .limit(5);
-
-      if (error) throw error;
-      return data || [];
-    },
-    staleTime: 1000 * 60 * 2, // 2 minutes
-    gcTime: 1000 * 60 * 10, // 10 minutes
-  });
-
-  // Update pending farmers state when data changes
-  useEffect(() => {
-    if (pendingFarmersData) {
-      setPendingFarmers(pendingFarmersData);
-      const pendingCount = pendingFarmersData.filter(f => f.status === 'email_verified').length || 0;
-      setKycStats(prev => ({
-        ...prev,
-        pending: pendingCount
-      }));
-    }
-  }, [pendingFarmersData]);
-
-  const MetricCard = ({ 
-    icon: Icon, 
-    title, 
-    value, 
-    subtitle, 
-    trend,
-    color = 'blue'
-  }: { 
-    icon: React.ComponentType<{ className?: string }>;
-    title: string;
-    value: string | number;
-    subtitle?: string;
-    trend?: { value: number; isPositive: boolean };
-    color?: string;
-  }) => {
-    // Define color classes for different metrics
-    const colorClasses = {
-      blue: 'bg-blue-100 dark:bg-blue-900/50 text-blue-500 dark:text-blue-400',
-      green: 'bg-green-100 dark:bg-green-900/50 text-green-500 dark:text-green-400',
-      amber: 'bg-amber-100 dark:bg-amber-900/50 text-amber-500 dark:text-amber-400',
-      purple: 'bg-purple-100 dark:bg-purple-900/50 text-purple-500 dark:text-purple-400',
-      red: 'bg-red-100 dark:bg-red-900/50 text-red-500 dark:text-red-400',
-      teal: 'bg-teal-100 dark:bg-teal-900/50 text-teal-500 dark:text-teal-400',
-      pink: 'bg-pink-100 dark:bg-pink-900/50 text-pink-500 dark:text-pink-400',
-      indigo: 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-500 dark:text-indigo-400',
-    };
+  // Enhanced Metric Card Component
+  const MetricCard = ({ metric }: { metric: DashboardMetric }) => {
+    const Icon = metric.icon;
+    const progress = (metric.value / metric.target) * 100;
     
-    const borderClasses = {
-      blue: 'border-l-4 border-blue-500',
-      green: 'border-l-4 border-green-500',
-      amber: 'border-l-4 border-amber-500',
-      purple: 'border-l-4 border-purple-500',
-      red: 'border-l-4 border-red-500',
-      teal: 'border-l-4 border-teal-500',
-      pink: 'border-l-4 border-pink-500',
-      indigo: 'border-l-4 border-indigo-500',
-    };
-
     return (
-      <Card className={`hover:shadow-lg transition-all duration-300 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm ${borderClasses[color as keyof typeof borderClasses]}`}>
-        <CardContent className="p-5">
+      <Card className="group hover:shadow-lg transition-all duration-300 hover:scale-[1.02] border border-gray-200 dark:border-gray-700">
+        <CardContent className="p-6">
           <div className="flex items-start justify-between">
-            <div className="flex-1">
-              <p className="text-sm font-medium text-gray-600 dark:text-gray-300">{title}</p>
-              <h3 className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{value}</h3>
-              {subtitle && <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{subtitle}</p>}
-              {trend && (
-                <div className="flex items-center mt-2">
-                  <span className={`text-sm font-medium ${trend.isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                    {trend.isPositive ? '↑' : '↓'} {Math.abs(trend.value)}%
-                  </span>
-                  <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">from last period</span>
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <div className={`p-2 rounded-lg bg-${metric.color}-100 dark:bg-${metric.color}-900/30`}>
+                  <Icon className={`h-5 w-5 text-${metric.color}-600 dark:text-${metric.color}-400`} />
                 </div>
-              )}
+                <span className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                  {metric.label}
+                </span>
+              </div>
+              <div className="mt-3">
+                <div className="flex items-baseline gap-2">
+                  <h3 className="text-2xl font-bold text-gray-900 dark:text-white">
+                    {metric.format === 'currency' 
+                      ? formatCurrency(metric.value)
+                      : metric.format === 'percent'
+                      ? formatPercent(metric.value)
+                      : formatNumber(metric.value)}
+                  </h3>
+                  <div className={`flex items-center text-sm font-medium ${
+                    metric.changeType === 'increase' 
+                      ? 'text-green-600 dark:text-green-400' 
+                      : 'text-red-600 dark:text-red-400'
+                  }`}>
+                    {metric.changeType === 'increase' ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
+                    <span>{Math.abs(metric.change)}%</span>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div className={`p-3 rounded-full ${colorClasses[color as keyof typeof colorClasses]}`}>
-              <Icon className="w-6 h-6" />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="opacity-0 group-hover:opacity-100 transition-opacity">
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem>View Details</DropdownMenuItem>
+                <DropdownMenuItem>Export Data</DropdownMenuItem>
+                <DropdownMenuItem>Set Alert</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+          
+          <div className="mt-4">
+            <div className="flex justify-between text-sm text-gray-500 dark:text-gray-400 mb-1">
+              <span>Progress</span>
+              <span>{Math.round(progress)}%</span>
+            </div>
+            <Progress value={progress} className="h-2" />
+            <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+              Target: {metric.format === 'currency' 
+                ? formatCurrency(metric.target)
+                : metric.format === 'percent'
+                ? formatPercent(metric.target)
+                : formatNumber(metric.target)}
             </div>
           </div>
         </CardContent>
@@ -631,609 +899,647 @@ const AdminDashboard = () => {
     );
   };
 
-  const CollectionTrendChart = () => {
-    // Always use the latest data, don't rely on stabilization for charts
-    if (collectionTrends.length === 0) {
+  // Dual-Axis Chart Component
+  const DualAxisChart = () => {
+    if (!collectionTrends.length) {
       return (
         <div className="h-80 flex items-center justify-center">
-          <p className="text-gray-500 dark:text-gray-400">No data available for the selected timeframe</p>
+          <div className="text-center">
+            <BarChart3 className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+            <p className="text-gray-500 dark:text-gray-400">No data available</p>
+          </div>
         </div>
       );
     }
-    
-    return (
-      <div className="h-80" style={{ height: '320px' }}>
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={collectionTrends} syncId="dashboardCharts">
-            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-            <XAxis 
-              dataKey="date" 
-              stroke="#6b7280" 
-              tick={{ fill: '#6b7280' }}
-            />
-            <YAxis 
-              stroke="#6b7280" 
-              tick={{ fill: '#6b7280' }}
-            />
-            <Tooltip 
-              formatter={(value) => [formatNumber(Number(value)), 'Liters']}
-              labelFormatter={(label) => `Period: ${label}`}
-              contentStyle={{ 
-                backgroundColor: 'white', 
-                border: '1px solid #e5e7eb', 
-                borderRadius: '0.5rem',
-                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
-              }}
-            />
-            <Area 
-              type="monotone" 
-              dataKey="liters" 
-              stroke={CHART_COLORS.primary} 
-              fill={CHART_COLORS.primary} 
-              fillOpacity={0.3} 
-              name="Liters" 
-              isAnimationActive={false}
-              key={`collection-trend-${timeRange}`} // Force re-render when timeframe changes
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
-    );
-  };
 
-  const RevenueTrendChart = () => {
-    // Always use the latest data, don't rely on stabilization for charts
-    if (revenueTrends.length === 0) {
-      return (
-        <div className="h-80 flex items-center justify-center">
-          <p className="text-gray-500 dark:text-gray-400">No data available for the selected timeframe</p>
-        </div>
-      );
-    }
-    
     return (
-      <div className="h-80" style={{ height: '320px' }}>
+      <div className="h-80">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={revenueTrends} syncId="dashboardCharts">
+          <ComposedChart data={collectionTrends}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
             <XAxis 
               dataKey="date" 
-              stroke="#6b7280" 
-              tick={{ fill: '#6b7280' }}
+              stroke="#6b7280"
+              tick={{ fill: '#6b7280', fontSize: 12 }}
             />
             <YAxis 
-              stroke="#6b7280" 
-              tick={{ fill: '#6b7280' }}
-            />
-            <Tooltip 
-              formatter={(value) => [formatCurrency(Number(value)), 'Revenue']}
-              labelFormatter={(label) => `Period: ${label}`}
-              contentStyle={{ 
-                backgroundColor: 'white', 
-                border: '1px solid #e5e7eb', 
-                borderRadius: '0.5rem',
-                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
+              yAxisId="left"
+              stroke="#3b82f6"
+              tick={{ fill: '#3b82f6', fontSize: 12 }}
+              label={{ 
+                value: 'Liters', 
+                angle: -90, 
+                position: 'insideLeft',
+                fill: '#3b82f6'
               }}
+            />
+            <YAxis 
+              yAxisId="right"
+              orientation="right"
+              stroke="#10b981"
+              tick={{ fill: '#10b981', fontSize: 12 }}
+              label={{ 
+                value: 'Revenue (KES)', 
+                angle: 90, 
+                position: 'insideRight',
+                fill: '#10b981'
+              }}
+            />
+            <Tooltip
+              contentStyle={{ 
+                backgroundColor: 'white',
+                border: '1px solid #e5e7eb',
+                borderRadius: '0.5rem',
+                boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'
+              }}
+              formatter={(value, name) => {
+                if (name === 'liters') return [formatNumber(Number(value)), 'Liters'];
+                if (name === 'revenue') return [formatCurrency(Number(value)), 'Revenue'];
+                if (name === 'avgRate') return [formatCurrency(Number(value)), 'Avg Rate'];
+                return [value, name];
+              }}
+            />
+            <Legend />
+            <Bar 
+              yAxisId="left"
+              dataKey="liters"
+              name="Liters Collected"
+              fill={CHART_COLORS.primary}
+              fillOpacity={0.8}
+              radius={[4, 4, 0, 0]}
             />
             <Line 
-              type="monotone" 
-              dataKey="revenue" 
-              stroke={CHART_COLORS.secondary} 
-              strokeWidth={3}
-              dot={{ r: 5, fill: CHART_COLORS.secondary }}
-              activeDot={{ r: 7, fill: CHART_COLORS.secondary }}
-              name="Revenue" 
-              isAnimationActive={false}
-              key={`revenue-trend-${timeRange}`} // Force re-render when timeframe changes
+              yAxisId="right"
+              type="monotone"
+              dataKey="revenue"
+              name="Revenue"
+              stroke={CHART_COLORS.secondary}
+              strokeWidth={2}
+              dot={{ r: 4 }}
+              activeDot={{ r: 6 }}
             />
-          </LineChart>
+            <Line 
+              yAxisId="left"
+              type="monotone"
+              dataKey="avgRate"
+              name="Avg Rate/Liter"
+              stroke={CHART_COLORS.accent}
+              strokeWidth={2}
+              strokeDasharray="5 5"
+              dot={{ r: 3 }}
+            />
+          </ComposedChart>
         </ResponsiveContainer>
       </div>
     );
   };
 
-
-
-  // React Query hook for fetching dashboard data with caching
-  const { data: dashboardData, isLoading: isDashboardLoading, error: dashboardError, refetch } = useQuery({
-    queryKey: [CACHE_KEYS.ADMIN_DASHBOARD, timeRange],
-    queryFn: async () => {
-      // Refresh session before fetching data (but less frequently)
-      await refreshSession().catch(error => {
-        console.warn('Session refresh failed before dashboard data fetch', error);
-      });
-      
-      const { startDate, endDate } = getDateFilter();
-      const cacheKey = `dashboard_data_${timeRange}_${startDate}_${endDate}`;
-      
-      // Check cache first before fetching
-      const cachedData = dataCache.get<CachedDashboardData>(cacheKey);
-      if (cachedData && !initialLoad) {
-        console.log('Using cached dashboard data');
-        return cachedData;
-      }
-      
-      performanceMonitor.startFetch();
-      
-      // Fetch collections data
-      const { data: rawCollections, error: collectionsError } = await supabase
-        .from('collections')
-        .select(`
-          id,
-          collection_id,
-          farmer_id,
-          staff_id,
-          approved_by,
-          liters,
-          rate_per_liter,
-          total_amount,
-          collection_date,
-          status,
-          notes,
-          farmers!inner(full_name)
-        `)
-        .eq('approved_for_company', true)  // Only fetch approved collections
-        .gte('collection_date', startDate)
-        .lte('collection_date', endDate)
-        .order('collection_date', { ascending: false })
-        .limit(200);
-      
-      // Fetch farmers data
-      const { data: farmersData, error: farmersError } = await supabase
-        .from('farmers')
-        .select(`
-          id,
-          user_id,
-          registration_number,
-          kyc_status,
-          created_at,
-          profiles:user_id (full_name, email)
-        `)
-        .order('created_at', { ascending: false })
-        .limit(100);
-      
-      // Fetch staff data
-      const { data: staffDashboardData, error: staffError } = await supabase
-        .from('staff')
-        .select(`
-          id,
-          user_id,
-          employee_id,
-          status,
-          created_at,
-          profiles:user_id (full_name, email)
-        `)
-        .order('created_at', { ascending: false })
-        .limit(50);
-
-      performanceMonitor.endFetch();
-      
-      if (collectionsError) {
-        console.error('Error fetching collections:', collectionsError);
-        // Log details for debugging
-        if (collectionsError.details) {
-          console.error('Error details:', collectionsError.details);
-        }
-      }
-      if (farmersError) {
-        console.error('Error fetching farmers:', farmersError);
-      }
-      if (staffError) {
-        console.error('Error fetching staff:', staffError);
-      }
-
-      // If we have collections data, fetch staff profiles for collector and approver
-      let enrichedCollections = rawCollections || [];
-      if (rawCollections && rawCollections.length > 0) {
-        // Extract unique staff IDs from collections (both collectors and approvers)
-        const staffIds = new Set<string>();
-        rawCollections.forEach(collection => {
-          if (collection.staff_id) staffIds.add(collection.staff_id);
-          if (collection.milk_approvals?.staff_id) staffIds.add(collection.milk_approvals.staff_id);
-        });
-        
-        // Fetch profiles for all staff members referenced in collections
-        if (staffIds.size > 0) {
-          const { data: staffProfiles, error: profilesError } = await supabase
-            .from('staff')
-            .select(`
-              id,
-              profiles:user_id (full_name)
-            `)
-            .in('id', Array.from(staffIds));
+  // KPI Progress Chart
+  const KPIProgressChart = ({ data }: { data: any[] }) => {
+    return (
+      <div className="space-y-4">
+        {data.map((item, index) => {
+          // Calculate percentage relative to target
+          const percentage = item.target ? Math.min((item.value / item.target) * 100, 100) : item.value;
           
-          if (!profilesError && staffProfiles) {
-            // Create a map of staff ID to profile
-            const staffProfileMap = new Map<string, any>();
-            staffProfiles.forEach(staff => {
-              staffProfileMap.set(staff.id, staff.profiles);
-            });
-            
-            // Enrich collections with staff names
-            enrichedCollections = rawCollections.map(collection => ({
-              ...collection,
-              staff: collection.staff_id ? { profiles: staffProfileMap.get(collection.staff_id) } : null,
-              approved_by: collection.milk_approvals?.staff_id ? { profiles: staffProfileMap.get(collection.milk_approvals.staff_id) } : null
-            }));
-          }
-        }
-      }
-
-      const previousData: PreviousPeriodData | null = await fetchPreviousPeriodData();
-
-      // Process data and return it instead of updating state directly
-      performanceMonitor.startProcessing();
-      
-      const farmerMap = new Map((farmersData || []).map(farmer => [farmer.id, farmer]));
-      const staffMap = new Map((staffDashboardData || []).map(staffMember => [staffMember.id, staffMember]));
-      
-      // Use embedded staff objects first, fallback to map lookup
-      const processedCollections = (enrichedCollections || []).map(collection => {
-        const farmer = farmerMap.get(collection.farmer_id);
-        
-        // Prefer embedded staff objects (explicit aliases), else fallback to staffMap lookup
-        const embeddedCollector = collection.staff;
-        const embeddedApprover = collection.approved_by;
-        const collector = embeddedCollector ?? (collection.staff_id ? staffMap.get(collection.staff_id) : null);
-        
-        return {
-          ...collection,
-          farmerName: farmer?.profiles?.full_name || 'Unknown Farmer',
-          staffName: collector?.profiles?.full_name || 'Unknown Staff',
-          approverName: embeddedApprover?.profiles?.full_name || (collection.approved_by ? staffMap.get(collection.approved_by)?.profiles?.full_name || 'Unknown Staff' : null)
-        };
-      });
-
-      // Process trends data - SORT DATA BY DATE TO FIX REVERSE ORDER ISSUE
-      const trendsData = (processedCollections || []).reduce((acc: any, collection: any) => {
-        const date = format(new Date(collection.collection_date), 'MMM dd');
-        if (!acc[date]) {
-          acc[date] = {
-            date,
-            liters: 0,
-            collections: 0,
-            revenue: 0
-          };
-        }
-        acc[date].liters += collection.liters;
-        acc[date].collections += 1;
-        acc[date].revenue += collection.total_amount;
-        
-        return acc;
-      }, {});
-
-      // Convert to array and sort by date to fix the order issue
-      const trendsArray = Object.values(trendsData)
-        .map((item: any) => ({
-          ...item
-        }))
-        .sort((a: any, b: any) => {
-          const dateA = new Date(a.date);
-          const dateB = new Date(b.date);
-          return dateA.getTime() - dateB.getTime(); // Sort chronologically
-        });
-
-      const approvedCount = (farmersData || []).filter(f => f.kyc_status === 'approved').length;
-      const rejectedCount = (farmersData || []).filter(f => f.kyc_status === 'rejected').length;
-      
-      const kycStatsData = {
-        pending: 0, // Will be updated from pending farmers query
-        approved: approvedCount,
-        rejected: rejectedCount,
-        resubmissions: 0
-      };
-      
-      performanceMonitor.endProcessing();
-      
-      // Define the type for current data to match calculateMetricsWithTrends signature
-      const currentDataForMetrics = {
-        collections: processedCollections,
-        farmers: farmersData || [],
-        staff: staffDashboardData || [],
-        payments: processedCollections
-      };
-      
-      const metricsWithTrends = calculateMetricsWithTrends(
-        currentDataForMetrics,
-        previousData
-      );
-      
-      // Generate alerts - ENHANCED WITH COLLECTIONS AND PAYMENTS ACTIVITIES
-      const newAlerts: Alert[] = [];
-      
-      // Add recent collections alerts
-      const recentCollections = (processedCollections || []).slice(0, 3);
-      recentCollections.forEach(collection => {
-        newAlerts.push({
-          type: 'collection',
-          message: `New collection: ${collection.liters}L from ${collection.farmerName || 'Unknown Farmer'}`,
-          severity: 'info',
-          time: format(new Date(collection.collection_date), 'HH:mm'),
-          icon: Droplets
-        });
-      });
-      
-      // Add high value collections alerts
-      const highValueCollections = (processedCollections || [])
-        .filter(c => c.total_amount > 5000)
-        .sort((a, b) => b.total_amount - a.total_amount)
-        .slice(0, 2);
-      
-      highValueCollections.forEach(collection => {
-        newAlerts.push({
-          type: 'payment',
-          message: `High value collection: ${formatCurrency(collection.total_amount)} from ${collection.farmerName || 'Unknown Farmer'}`,
-          severity: 'success',
-          time: format(new Date(collection.collection_date), 'HH:mm'),
-          icon: DollarSign
-        });
-      });
-      
-      // Add pending payments alerts
-      const pendingPayments = (processedCollections || [])
-        .filter(c => c.status !== 'Paid')
-        .slice(0, 2);
-      
-      pendingPayments.forEach(collection => {
-        newAlerts.push({
-          type: 'pending',
-          message: `Pending payment: ${formatCurrency(collection.total_amount)} from ${collection.farmerName || 'Unknown Farmer'}`,
-          severity: 'warning',
-          time: format(new Date(collection.collection_date), 'HH:mm'),
-          icon: CreditCard
-        });
-      });
-      
-      // Sort alerts by time (newest first)
-      newAlerts.sort((a, b) => {
-        const timeA = a.time.split(':').map(Number);
-        const timeB = b.time.split(':').map(Number);
-        return timeB[0] * 60 + timeB[1] - (timeA[0] * 60 + timeA[1]);
-      });
-
-      // Return all processed data instead of updating state directly
-      const result: CachedDashboardData = {
-        collections: processedCollections,
-        farmers: farmersData || [],
-        staff: staffDashboardData || [],
-        collectionTrends: trendsArray,
-        revenueTrends: trendsArray,
-        alerts: newAlerts,
-        kycStats: kycStatsData,
-        metrics: metricsWithTrends
-      };
-      
-      if (processedCollections && farmersData && staffDashboardData) {
-        dataCache.set(cacheKey, result, 5 * 60 * 1000);
-      }
-      
-      performanceMonitor.endRender();
-      performanceMonitor.logMetrics('AdminDashboard');
-      
-      return result;
-    },
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    gcTime: 10 * 60 * 1000, // 10 minutes
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchOnMount: false,
-    enabled: true,
-    retry: 1,
-  });
-
-  // Update state ONCE when React Query data changes
-  useEffect(() => {
-    if (dashboardData) {
-      setCollections(dashboardData.collections);
-      setFarmers(dashboardData.farmers);
-      setStaff(dashboardData.staff);
-      setCollectionTrends(dashboardData.collectionTrends);
-      setRevenueTrends(dashboardData.revenueTrends);
-
-      setAlerts(dashboardData.alerts);
-      setKycStats(dashboardData.kycStats);
-      setMetrics(dashboardData.metrics);
-      setLoading(false);
-      setInitialLoad(false);
-    }
-  }, [dashboardData]);
-
-  // Update loading and error states based on React Query
-  useEffect(() => {
-    // Only set loading state from React Query if we're not already loading from manual fetch
-    if (!isProcessing.current) {
-      // Add debounce to loading state changes
-      const loadingTimer = setTimeout(() => {
-        setLoading(isDashboardLoading);
-      }, 300);
-      
-      return () => clearTimeout(loadingTimer);
-    }
-    if (dashboardError) {
-      setError(dashboardError.message || 'Failed to fetch dashboard data');
-    }
-  }, [isDashboardLoading, dashboardError]); // Keep dependencies minimal
-
-  return (
-    <div className="space-y-6 p-4 md:p-6">
-      {/* Header with actions */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Admin Dashboard</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-1">Monitor and manage your dairy operations</p>
-        </div>
-        <div className="flex items-center space-x-3">
-          <Select value={timeRange} onValueChange={(value) => {
-            setTimeRange(value);
-            // Trigger refresh with debounce when timeframe changes
-            const timeoutId = setTimeout(() => {
-              refetch();
-            }, 500); // Debounce for 500ms
-            
-            // Clear previous timeout if exists
-            if ((window as any).dashboardTimeRangeTimeout) {
-              clearTimeout((window as any).dashboardTimeRangeTimeout);
-            }
-            (window as any).dashboardTimeRangeTimeout = timeoutId;
-          }}>
-            <SelectTrigger className="w-[180px] bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded-lg shadow-sm">
-              <SelectValue placeholder="Select time range" />
-            </SelectTrigger>
-            <SelectContent>
-              {TIME_RANGE_OPTIONS.map(option => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <RefreshButton 
-            isRefreshing={isDashboardLoading || loading} 
-            onRefresh={() => {
-              // Clear cache and refetch data with debounce
-              const timeoutId = setTimeout(() => {
-                dataCache.clear();
-                queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.ADMIN_DASHBOARD, timeRange] });
-                refetch();
-              }, 300); // Debounce for 300ms
-              
-              // Store timeout ID to clear if needed
-              (window as any).dashboardRefreshTimeout = timeoutId;
-            }} 
-            className="bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg shadow-sm"
-          />
-        </div>
-      </div>
-
-      {/* Enhanced Metrics Grid with KYC Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-5">
-        <MetricCard 
-          icon={Users} 
-          title="Total Farmers" 
-          value={metrics[0]?.value || 0} 
-          subtitle={`${metrics[0]?.active || 0} active`} 
-          trend={metrics[0]?.trend}
-          color="blue"
-        />
-        <MetricCard 
-          icon={UserCog} 
-          title="Staff Members" 
-          value={metrics[1]?.value || 0} 
-          subtitle={`${metrics[1]?.active || 0} active`} 
-          trend={metrics[1]?.trend}
-          color="green"
-        />
-        <MetricCard 
-          icon={Droplets} 
-          title="Total Liters" 
-          value={formatNumber(metrics[2]?.value || 0)} 
-          subtitle={`${formatNumber(metrics[2]?.today || 0)} today`} 
-          trend={metrics[2]?.trend}
-          color="amber"
-        />
-        <MetricCard 
-          icon={DollarSign} 
-          title="Revenue" 
-          value={formatCurrency(metrics[3]?.value || 0)} 
-          subtitle={`${formatCurrency(metrics[3]?.pending || 0)} pending`} 
-          trend={metrics[3]?.trend}
-          color="purple"
-        />
-        <MetricCard 
-          icon={Award} 
-          title="KYC Stats" 
-          value={kycStats.pending} 
-          subtitle={`${kycStats.approved} approved, ${kycStats.rejected} rejected`}
-          color="teal"
-        />
-      </div>
-
-      {/* Charts Grid - REMOVED QUALITY DISTRIBUTION CHART */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card className="rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm bg-white dark:bg-gray-800">
-          <CardHeader className="border-b border-gray-200 dark:border-gray-700">
-            <CardTitle className="flex items-center gap-3 text-gray-900 dark:text-white">
-              <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/50">
-                <BarChart3 className="h-5 w-5 text-blue-500 dark:text-blue-400" />
+          return (
+            <div key={index} className="space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {item.label}
+                </span>
+                <div className="text-right">
+                  <span className="text-sm font-bold" style={{ color: item.color }}>
+                    {Math.round(item.value)}%
+                  </span>
+                  {item.target && (
+                    <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">
+                      / {Math.round(item.target)}%
+                    </span>
+                  )}
+                </div>
               </div>
-              <div>
-                <h3 className="text-lg font-semibold">Collection Trends</h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400">Daily milk collection volumes</p>
-              </div>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-4">
-            <CollectionTrendChart />
-          </CardContent>
-        </Card>
-        <Card className="rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm bg-white dark:bg-gray-800">
-          <CardHeader className="border-b border-gray-200 dark:border-gray-700">
-            <CardTitle className="flex items-center gap-3 text-gray-900 dark:text-white">
-              <div className="p-2 rounded-lg bg-green-100 dark:bg-green-900/50">
-                <TrendingUp className="h-5 w-5 text-green-500 dark:text-green-400" />
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold">Revenue Trends</h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400">Daily revenue generation</p>
-              </div>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-4">
-            <RevenueTrendChart />
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Recent Activity */}
-      <div className="grid grid-cols-1 gap-6">
-        <Card className="rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm bg-white dark:bg-gray-800">
-          <CardHeader className="border-b border-gray-200 dark:border-gray-700">
-            <CardTitle className="flex items-center gap-3 text-gray-900 dark:text-white">
-              <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/50">
-                <Activity className="h-5 w-5 text-amber-500 dark:text-amber-400" />
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold">Recent Activity</h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400">Collections, payments and system alerts</p>
-              </div>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-4">
-            <div className="space-y-4">
-              {alerts.length > 0 ? (
-                alerts.map((alert, index) => (
-                  <div key={index} className="flex items-start space-x-3 p-4 rounded-lg bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors">
-                    <div className="mt-0.5">
-                      {alert.icon ? (
-                        <alert.icon className={`h-5 w-5 ${
-                          alert.severity === 'warning' ? 'text-yellow-500' : 
-                          alert.severity === 'info' ? 'text-blue-500' : 'text-green-500'
-                        }`} />
-                      ) : alert.severity === 'warning' ? (
-                        <AlertCircle className="h-5 w-5 text-yellow-500" />
-                      ) : alert.severity === 'info' ? (
-                        <AlertCircle className="h-5 w-5 text-blue-500" />
-                      ) : (
-                        <CheckCircle className="h-5 w-5 text-green-500" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{alert.message}</p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{alert.time}</p>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="text-center py-10">
-                  <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-4" />
-                  <p className="text-gray-500 dark:text-gray-400 font-medium">No recent activity</p>
-                  <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">All systems are operating normally</p>
+              <Progress value={percentage} className="h-2" />
+              {item.target && (
+                <div className="text-xs text-gray-500 dark:text-gray-400">
+                  Target: {Math.round(item.target)}%
                 </div>
               )}
             </div>
-          </CardContent>
-        </Card>
+          );
+        })}
       </div>
+    );
+  };
+
+  // Farmer Distribution Chart
+  const FarmerDistributionChart = () => {
+    const data = [
+      { name: 'Active', value: kycStats.approved, color: CHART_COLORS.primary },
+      { name: 'Pending', value: kycStats.pending, color: CHART_COLORS.accent },
+      { name: 'Rejected', value: kycStats.rejected, color: CHART_COLORS.danger },
+      { name: 'Resubmit', value: kycStats.resubmissions, color: CHART_COLORS.purple },
+    ];
+
+    return (
+      <div className="h-64">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={data}
+              cx="50%"
+              cy="50%"
+              labelLine={false}
+              label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+              outerRadius={80}
+              fill="#8884d8"
+              dataKey="value"
+            >
+              {data.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={entry.color} />
+              ))}
+            </Pie>
+            <Tooltip formatter={(value) => [value, 'Farmers']} />
+            <Legend />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+    );
+  };
+
+  // Mini Data Table Component
+  const RecentCollectionsTable = () => {
+    const recentCollections = collections.slice(0, 5);
+    
+    return (
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Date</TableHead>
+              <TableHead>Farmer</TableHead>
+              <TableHead>Liters</TableHead>
+              <TableHead>Rate</TableHead>
+              <TableHead>Amount</TableHead>
+              <TableHead>Status</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {recentCollections.map((collection) => (
+              <TableRow key={collection.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
+                <TableCell className="font-medium">
+                  {format(new Date(collection.collection_date), 'MMM dd')}
+                </TableCell>
+                <TableCell>{collection.farmers?.full_name || 'Unknown'}</TableCell>
+                <TableCell>{formatNumber(collection.liters)}</TableCell>
+                <TableCell>{formatCurrency(collection.rate_per_liter)}</TableCell>
+                <TableCell className="font-medium">
+                  {formatCurrency(collection.total_amount)}
+                </TableCell>
+                <TableCell>
+                  <Badge 
+                    variant={collection.status === 'Paid' ? 'default' : 'secondary'}
+                    className={cn(
+                      collection.status === 'Paid' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+                      collection.status === 'Pending' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
+                      'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                    )}
+                  >
+                    {collection.status}
+                  </Badge>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    );
+  };
+
+  // Function to update a target value in the database
+  const updateTarget = async (id: string, newTarget: number) => {
+    try {
+      // Map target IDs to setting keys
+      const keyMap: Record<string, string> = {
+        'revenue': 'target_revenue',
+        'liters': 'target_liters',
+        'farmers': 'target_farmers',
+        'collections': 'target_collections',
+        'avgRate': 'target_avg_rate',
+        'efficiency': 'target_efficiency',
+        'targetAchievement': 'target_achievement',
+        'farmerSatisfaction': 'target_farmer_satisfaction',
+        'paymentTimeliness': 'target_payment_timeliness'
+      };
+      
+      const settingKey = keyMap[id];
+      if (!settingKey) {
+        console.error('Invalid target ID:', id);
+        return;
+      }
+      
+      const { error } = await supabase
+        .from('dashboard_settings')
+        .update({ 
+          setting_value: newTarget.toString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('setting_key', settingKey);
+      
+      if (error) {
+        console.error('Error updating target:', error);
+        toast.error('Failed to update target value');
+        return;
+      }
+      
+      // Update local state
+      setDashboardTargets(prevTargets => 
+        prevTargets.map(target => 
+          target.id === id ? { ...target, target: newTarget } : target
+        )
+      );
+      
+      toast.success('Target updated successfully');
+    } catch (error) {
+      console.error('Error updating target:', error);
+      toast.error('Failed to update target value');
+    }
+  };
+  
+  // Function to reset targets to default values in the database
+  const resetTargets = async () => {
+    try {
+      // Define default values
+      const defaultTargets = [
+        { key: 'target_revenue', value: '1000000' },
+        { key: 'target_liters', value: '50000' },
+        { key: 'target_farmers', value: '100' },
+        { key: 'target_collections', value: '1000' },
+        { key: 'target_avg_rate', value: '45' },
+        { key: 'target_efficiency', value: '90' },
+        { key: 'target_achievement', value: '100' },
+        { key: 'target_farmer_satisfaction', value: '95' },
+        { key: 'target_payment_timeliness', value: '95' }
+      ];
+      
+      // Update each target in the database
+      for (const target of defaultTargets) {
+        const { error } = await supabase
+          .from('dashboard_settings')
+          .update({ 
+            setting_value: target.value,
+            updated_at: new Date().toISOString()
+          })
+          .eq('setting_key', target.key);
+        
+        if (error) {
+          console.error(`Error resetting target ${target.key}:`, error);
+          toast.error(`Failed to reset target ${target.key}`);
+          return;
+        }
+      }
+      
+      // Update local state with default values
+      setDashboardTargets([
+        { id: 'revenue', label: 'Total Revenue', target: 1000000, format: 'currency' },
+        { id: 'liters', label: 'Milk Collected', target: 50000, format: 'number' },
+        { id: 'farmers', label: 'Active Farmers', target: 100, format: 'number' },
+        { id: 'collections', label: 'Collections', target: 1000, format: 'number' },
+        { id: 'avgRate', label: 'Avg Rate/Liter', target: 45, format: 'currency' },
+        { id: 'efficiency', label: 'Collection Efficiency', target: 90, format: 'percent' },
+        { id: 'targetAchievement', label: 'Target Achievement', target: 100, format: 'percent' },
+        { id: 'farmerSatisfaction', label: 'Farmer Satisfaction', target: 95, format: 'percent' },
+        { id: 'paymentTimeliness', label: 'Payment Timeliness', target: 95, format: 'percent' },
+      ]);
+      
+      toast.success('Targets reset to default values');
+    } catch (error) {
+      console.error('Error resetting targets:', error);
+      toast.error('Failed to reset targets');
+    }
+  };
+
+  // Loading State
+  if (loading || isDashboardLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <RefreshCw className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-gray-600 dark:text-gray-400">Loading dashboard data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      {/* Header */}
+      <header className="sticky top-0 z-40 border-b bg-white dark:bg-gray-800">
+        <div className="px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <Breadcrumb>
+                <BreadcrumbList>
+                  <BreadcrumbItem>
+                    <BreadcrumbLink href="#" className="flex items-center gap-2">
+                      <Home className="h-4 w-4" />
+                      <span className="font-semibold">Dashboard</span>
+                    </BreadcrumbLink>
+                  </BreadcrumbItem>
+                  <BreadcrumbSeparator />
+                  <BreadcrumbItem>
+                    <BreadcrumbLink href="#" className="text-primary">
+                      {DASHBOARD_TABS.find(tab => tab.id === activeTab)?.label}
+                    </BreadcrumbLink>
+                  </BreadcrumbItem>
+                </BreadcrumbList>
+              </Breadcrumb>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white mt-2">
+                Admin Dashboard
+              </h1>
+              <p className="text-gray-600 dark:text-gray-400 mt-1">
+                Monitor and manage your dairy operations in real-time
+              </p>
+            </div>
+            
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <Input
+                  placeholder="Search..."
+                  className="w-64 pl-10"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              </div>
+              
+              <Select value={timeRange} onValueChange={setTimeRange}>
+                <SelectTrigger className="w-[180px]">
+                  <Calendar className="mr-2 h-4 w-4" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TIME_RANGE_OPTIONS.map(option => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => refetch()}
+                disabled={isDashboardLoading}
+              >
+                <RefreshCw className={`h-4 w-4 ${isDashboardLoading ? 'animate-spin' : ''}`} />
+              </Button>
+              
+              <Button>
+                <Download className="mr-2 h-4 w-4" />
+                Export
+              </Button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content with Tabs Wrapper */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        {/* Main Navigation Tabs */}
+        <div className="px-6 py-4 border-b bg-white dark:bg-gray-800">
+          <TabsList className="w-full justify-start">
+            {DASHBOARD_TABS.map((tab) => {
+              const Icon = tab.icon;
+              return (
+                <TabsTrigger key={tab.id} value={tab.id} className="gap-2">
+                  <Icon className="h-4 w-4" />
+                  {tab.label}
+                </TabsTrigger>
+              );
+            })}
+          </TabsList>
+        </div>
+
+        {/* Main Content */}
+        <main className="p-6">
+          {/* Overview Tab */}
+          <TabsContent value="overview" className="space-y-6">
+            {/* Quick Stats Bar - Already updated to use real data */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <Card className="bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-900/10">
+                <CardContent className="p-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-blue-700 dark:text-blue-300">Active Today</p>
+                    <p className="text-2xl font-bold text-blue-900 dark:text-blue-100">
+                      {collections.filter(c => new Date(c.collection_date).toDateString() === new Date().toDateString()).length}
+                    </p>
+                  </div>
+                  <Activity className="h-8 w-8 text-blue-500" />
+                </CardContent>
+              </Card>
+            
+              <Card className="bg-gradient-to-r from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-900/10">
+                <CardContent className="p-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-green-700 dark:text-green-300">Avg Daily Yield</p>
+                    <p className="text-2xl font-bold text-green-900 dark:text-green-100">
+                      {collections.length > 0 ? Math.round(collections.reduce((sum, c) => sum + c.liters, 0) / collections.length) : 0}L
+                    </p>
+                  </div>
+                  <TrendingUp className="h-8 w-8 text-green-500" />
+                </CardContent>
+              </Card>
+            
+              <Card className="bg-gradient-to-r from-amber-50 to-amber-100 dark:from-amber-900/20 dark:to-amber-900/10">
+                <CardContent className="p-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-amber-700 dark:text-amber-300">Pending Actions</p>
+                    <p className="text-2xl font-bold text-amber-900 dark:text-amber-100">
+                      {collections.filter(c => c.status === 'Pending').length}
+                    </p>
+                  </div>
+                  <Clock className="h-8 w-8 text-amber-500" />
+                </CardContent>
+              </Card>
+            
+              <Card className="bg-gradient-to-r from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-900/10">
+                <CardContent className="p-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-purple-700 dark:text-purple-300">Efficiency Score</p>
+                    <p className="text-2xl font-bold text-purple-900 dark:text-purple-100">
+                      {collections.length > 0 ? Math.round((collections.filter(c => c.status === 'Approved').length / collections.length) * 100) : 0}%
+                    </p>
+                  </div>
+                  <Target className="h-8 w-8 text-purple-500" />
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Main Metrics Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Left Column - Main Charts */}
+              <div className="lg:col-span-2 space-y-6">
+                {/* Chart Controls */}
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between">
+                    <div>
+                      <CardTitle>Performance Overview</CardTitle>
+                      <CardDescription>Collection vs Revenue trends</CardDescription>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Select value={chartType} onValueChange={setChartType}>
+                        <SelectTrigger className="w-[140px]">
+                          <SelectValue placeholder="Chart Type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {CHART_TYPES.map(type => (
+                            <SelectItem key={type.id} value={type.id}>
+                              <div className="flex items-center gap-2">
+                                <type.icon className="h-4 w-4" />
+                                {type.label}
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <DualAxisChart />
+                  </CardContent>
+                </Card>
+
+                {/* Metrics Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {metrics.map(metric => (
+                    <MetricCard key={metric.id} metric={metric} />
+                  ))}
+                </div>
+              </div>
+
+              {/* Right Column - Sidebar */}
+              <div className="space-y-6">
+                {/* KPI Progress */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Target className="h-5 w-5" />
+                      Key Performance Indicators
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <KPIProgressChart data={dashboardData?.kpiData || []} />
+                  </CardContent>
+                </Card>
+
+                {/* Farmer Distribution */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Users className="h-5 w-5" />
+                      Farmer Distribution
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <FarmerDistributionChart />
+                  </CardContent>
+                </Card>
+
+
+              </div>
+            </div>
+          </TabsContent>
+
+          {/* Settings Tab */}
+          <TabsContent value="settings" className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Dashboard Targets</CardTitle>
+                  <CardDescription>Configure targets for dashboard metrics</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b">
+                          <th className="text-left py-2 px-4">Metric</th>
+                          <th className="text-left py-2 px-4">Current Target</th>
+                          <th className="text-left py-2 px-4">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dashboardTargets.length === 0 ? (
+                          <tr>
+                            <td colSpan={3} className="py-4 px-4 text-center text-gray-500">
+                              {settingsLoading ? 'Loading targets...' : 'No targets configured'}
+                            </td>
+                          </tr>
+                        ) : (
+                          dashboardTargets.map((target) => (
+                            <tr key={target.id} className="border-b hover:bg-gray-50 dark:hover:bg-gray-800">
+                              <td className="py-3 px-4">{target.label}</td>
+                              <td className="py-3 px-4">
+                                {target.format === 'currency' 
+                                  ? formatCurrency(target.target)
+                                  : target.format === 'percent'
+                                  ? `${target.target}%`
+                                  : formatNumber(target.target)}
+                              </td>
+                              <td className="py-3 px-4">
+                                <Button 
+                                  variant="outline" 
+                                  size="sm"
+                                  onClick={() => {
+                                    const newValue = prompt(`Enter new target for ${target.label}:`, target.target.toString());
+                                    if (newValue !== null && !isNaN(Number(newValue))) {
+                                      updateTarget(target.id, Number(newValue));
+                                    }
+                                  }}
+                                >
+                                  Edit
+                                </Button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  
+                  <div className="mt-4 flex justify-end">
+                    <Button variant="outline" onClick={resetTargets}>
+                      Reset to Defaults
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+              
+              {/* Removed General Settings and Data Export sections as requested */}
+            </div>
+          </TabsContent>
+        </main>
+
+        {/* Footer */}
+        <footer className="mt-8 px-6 py-4 border-t text-center text-sm text-gray-500 dark:text-gray-400">
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="font-medium">Dairy Management System</span> • 
+              <span className="ml-2">Last updated: {format(new Date(), 'PPpp')}</span>
+            </div>
+            <div className="flex items-center gap-4">
+              <span className="flex items-center gap-2">
+                <div className="h-2 w-2 rounded-full bg-green-500"></div>
+                System Status: Operational
+              </span>
+              <span>Version 2.1.0</span>
+            </div>
+          </div>
+        </footer>
+      </Tabs>
+
     </div>
   );
 };
