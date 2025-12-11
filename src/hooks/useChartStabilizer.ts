@@ -43,20 +43,31 @@ export const useChartStabilizer = <T extends ChartDataPoint>(
   const lastUpdateTimeRef = useRef<number>(0);
   const mountedRef = useRef(true);
 
+  useEffect(() => {
+    // Set mounted ref to true
+    mountedRef.current = true;
+    
+    // Cleanup timeout on unmount
+    return () => {
+      mountedRef.current = false;
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+    };
+  }, []);
+
   // Using useCallback to prevent recreation of functions
   const updateData = useCallback((newData: T[]) => {
     if (!mountedRef.current) return;
     
     setStabilizedData(newData);
     setIsStable(true);
-    prevDataRef.current = newData;
+    prevDataRef.current = [...newData]; // Create a copy to avoid reference issues
     lastUpdateTimeRef.current = Date.now();
   }, []);
 
   useEffect(() => {
-    // Set mounted ref to true
-    mountedRef.current = true;
-    
     // Clear any existing timeout
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
@@ -103,15 +114,6 @@ export const useChartStabilizer = <T extends ChartDataPoint>(
       // Update immediately if enough time has passed
       updateData(data);
     }
-
-    // Cleanup timeout on unmount
-    return () => {
-      mountedRef.current = false;
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-        timeoutRef.current = null;
-      }
-    };
   }, [data, delay, updateData]); // Removed isStable from dependency array
 
   return {

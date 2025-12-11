@@ -20,3 +20,9 @@ entrypoint = "./functions/test-function/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/test-function/*.html" ]
+
+[functions.ai-verification]
+enabled = true
+verify_jwt = true
+import_map = "./functions/ai-verification/deno.json"
+entrypoint = "./functions/ai-verification/index.ts"

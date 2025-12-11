@@ -19,7 +19,6 @@ import {
 } from 'recharts';
 import { Droplet, Users, DollarSign, Award, TrendingUp, BarChart3, Calendar } from '@/utils/iconImports';
 import { useWindowResize } from '@/hooks/useWindowResize';
-import { usePerformanceMonitor } from '@/hooks/usePerformanceMonitor';
 
 interface OverviewViewProps {
   dailyTrends: any[];
@@ -181,12 +180,6 @@ const OverviewView: React.FC<OverviewViewProps> = ({
     }).format(amount);
   };
 
-  // Performance monitoring
-  const { measureOperation } = usePerformanceMonitor({ 
-    componentName: 'OverviewView',
-    enabled: process.env.NODE_ENV === 'development'
-  });
-
   // Use debounced window resize for chart optimization
   const windowSize = useWindowResize(200);
   const [chartKey, setChartKey] = useState(0);
@@ -199,12 +192,10 @@ const OverviewView: React.FC<OverviewViewProps> = ({
       Math.abs(windowSize.width - prevWindowSize.current.width) > 10 ||
       Math.abs(windowSize.height - prevWindowSize.current.height) > 10
     ) {
-      measureOperation('windowResize', () => {
-        setChartKey(prev => prev + 1);
-        prevWindowSize.current = { ...windowSize };
-      });
+      setChartKey(prev => prev + 1);
+      prevWindowSize.current = { ...windowSize };
     }
-  }, [windowSize, measureOperation]);
+  }, [windowSize]);
 
   // Memoized Key Metrics Cards
   const KeyMetricsCards = memo(() => (

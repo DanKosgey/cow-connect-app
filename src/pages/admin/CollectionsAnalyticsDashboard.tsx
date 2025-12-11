@@ -652,9 +652,10 @@ const CollectionsAnalyticsDashboard: React.FC = () => {
     return { dailyTrends, qualityDistribution: [], topFarmers, staffPerformance };
   }, [filteredCollections]);
 
-  const { data: stableDailyTrends, isStable: dailyTrendsStable } = useChartStabilizer(analytics.dailyTrends ?? [], 100);
-  const { data: stableTopFarmers, isStable: topFarmersStable } = useChartStabilizer(analytics.topFarmers ?? [], 100);
-  const { data: stableStaffPerformance, isStable: staffPerformanceStable } = useChartStabilizer(analytics.staffPerformance ?? [], 100);
+  // Add keys to stabilize the data for the charts
+  const { data: stableDailyTrends } = useChartStabilizer(analytics.dailyTrends ?? [], 100);
+  const { data: stableTopFarmers } = useChartStabilizer(analytics.topFarmers ?? [], 100);
+  const { data: stableStaffPerformance } = useChartStabilizer(analytics.staffPerformance ?? [], 100);
 
   // Export handler — works if exportToCSV is either a mutation object or a plain function
   const handleExportToCSV = useCallback(async () => {

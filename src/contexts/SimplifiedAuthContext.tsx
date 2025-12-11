@@ -429,8 +429,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       AdminDebugLogger.log('Checking session validity...');
       
-      // Use auth manager to validate session
-      const isValid = await authManager.validateAndRefreshSession();
+      // Add timeout to prevent hanging
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Session validity check timeout')), 5000)
+      );
+      
+      const validationPromise = authManager.validateAndRefreshSession();
+      const isValid = await Promise.race([validationPromise, timeoutPromise]) as boolean;
       
       if (!isValid) {
         AdminDebugLogger.log('Session is not valid');
@@ -474,6 +479,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         AdminDebugLogger.error('Fallback validation error:', fallbackError);
       }
       
+      // If all validation fails, clear state
+      setUser(null);
+      setSession(null);
+      setUserRole(null);
       return false;
     }
   }, []);
@@ -489,23 +498,41 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const initAuth = async () => {
       try {
-        // Get current session
-        const { data: { session } } = await supabase.auth.getSession();
+        // Add timeout to prevent hanging during initialization
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Auth initialization timeout')), 10000)
+        );
+        
+        const initPromise = (async () => {
+          // Get current session
+          const { data: { session } } = await supabase.auth.getSession();
 
-        if (session?.user) {
-          AdminDebugLogger.log('Found existing session');
-          
-          setUser(session.user);
-          setSession(session);
+          if (session?.user) {
+            AdminDebugLogger.log('Found existing session');
+            
+            setUser(session.user);
+            setSession(session);
 
-          // Get user role
-          const role = await getUserRole(session.user.id);
-          setUserRole(role);
-        } else {
-          AdminDebugLogger.log('No existing session');
-        }
+            // Get user role with timeout
+            const roleTimeoutPromise = new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Role fetch timeout')), 5000)
+            );
+            
+            const rolePromise = getUserRole(session.user.id);
+            const role = await Promise.race([rolePromise, roleTimeoutPromise]) as UserRole | null;
+            setUserRole(role);
+          } else {
+            AdminDebugLogger.log('No existing session');
+          }
+        })();
+        
+        await Promise.race([initPromise, timeoutPromise]);
       } catch (error) {
         AdminDebugLogger.error('Auth initialization error:', error);
+        // Clear any partial state on error
+        setUser(null);
+        setSession(null);
+        setUserRole(null);
       } finally {
         if (mounted.current) {
           setLoading(false);
@@ -525,8 +552,19 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           setUser(session.user);
           setSession(session);
           
-          const role = await getUserRole(session.user.id);
-          setUserRole(role);
+          // Add timeout for role fetching
+          try {
+            const roleTimeoutPromise = new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Role fetch timeout')), 5000)
+            );
+            
+            const rolePromise = getUserRole(session.user.id);
+            const role = await Promise.race([rolePromise, roleTimeoutPromise]) as UserRole | null;
+            setUserRole(role);
+          } catch (roleError) {
+            AdminDebugLogger.error('Error fetching user role:', roleError);
+            setUserRole(null);
+          }
         } 
         else if (event === 'SIGNED_OUT') {
           setUser(null);

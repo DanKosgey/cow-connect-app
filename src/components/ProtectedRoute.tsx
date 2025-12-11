@@ -2,7 +2,7 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/SimplifiedAuthContext';
 import { UserRole } from '@/types/auth.types';
 import { PageLoader } from '@/components/PageLoader';
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import AdminDebugLogger from '@/utils/adminDebugLogger';
 import { authManager } from '@/utils/authManager';
 
@@ -17,6 +17,8 @@ export const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) 
   const [showLoader, setShowLoader] = useState(false);
   const [loadingTimeout, setLoadingTimeout] = useState(false);
   const [sessionChecked, setSessionChecked] = useState(false);
+  const checkSessionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const hasPerformedRedirect = useRef(false);
   
   AdminDebugLogger.log('Rendering ProtectedRoute component', { 
     requiredRole, 
@@ -30,57 +32,58 @@ export const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) 
   // Check session validity when component mounts and when loading state changes
   useEffect(() => {
     const checkSession = async () => {
+      // Prevent multiple simultaneous checks
+      if (sessionChecked || hasPerformedRedirect.current) {
+        return;
+      }
+      
       // ✅ CHECK ON EVERY LOAD, NOT JUST ONCE
       if (loading) {
         AdminDebugLogger.log('Checking session validity...');
         
         try {
-          // Remove timeout wrapper and call validation directly
-          const isValid = await authManager.validateAndRefreshSession();
+          // Add timeout to prevent hanging
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Session check timeout')), 5000)
+          );
+          
+          const validationPromise = authManager.validateAndRefreshSession();
+          const isValid = await Promise.race([validationPromise, timeoutPromise]) as boolean;
+          
+          setSessionChecked(true);
           
           if (!isValid) {
             AdminDebugLogger.error('Session is not valid');
             await authManager.signOut();
-            // Force redirect
-            window.location.href = loginRoutes[requiredRole];
+            // Force redirect only if we haven't already redirected
+            if (!hasPerformedRedirect.current) {
+              hasPerformedRedirect.current = true;
+              window.location.href = loginRoutes[requiredRole];
+            }
           } else {
             AdminDebugLogger.log('Session is valid');
           }
         } catch (error) {
           AdminDebugLogger.error('Error during session check:', error);
-          // On any error, sign out
-          await authManager.signOut();
-          window.location.href = loginRoutes[requiredRole];
+          // On any error, sign out but ensure we don't get in a redirect loop
+          if (!hasPerformedRedirect.current) {
+            await authManager.signOut();
+            hasPerformedRedirect.current = true;
+            window.location.href = loginRoutes[requiredRole];
+          }
         }
       }
     };
     
     checkSession();
-  }, [loading, requiredRole]); // ✅ Check on every loading change
-
-  // Remove the hard timeout effect that was causing issues
-  /*
-  useEffect(() => {
-    AdminDebugLogger.log('Setting up loading timeout effect', { loading });
-    if (loading) {
-      const timeout = setTimeout(async () => {
-        AdminDebugLogger.error('⚠️ HARD TIMEOUT: Loading took too long');
-        
-        // ✅ FORCE SIGN OUT AND REDIRECT
-        try {
-          await authManager.signOut();
-        } catch (e) {
-          AdminDebugLogger.error('Error during timeout signout:', e);
-        }
-        
-        // Force redirect to login
-        window.location.href = loginRoutes[requiredRole];
-      }, 10000); // 10 second hard timeout
-      
-      return () => clearTimeout(timeout);
-    }
-  }, [loading, requiredRole]);
-  */
+    
+    // Cleanup timeout on unmount
+    return () => {
+      if (checkSessionTimeoutRef.current) {
+        clearTimeout(checkSessionTimeoutRef.current);
+      }
+    };
+  }, [loading, requiredRole, sessionChecked]); // ✅ Check on every loading change
 
   const getCachedRoleInfo = () => {
     try {

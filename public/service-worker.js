@@ -52,7 +52,13 @@ const EXCLUDE_FROM_CACHE = [
   '/auth/',
   '/login',
   '/logout',
-  '/api/auth'
+  '/api/auth',
+  // Explicitly exclude all auth-related requests
+  'auth',
+  'login',
+  'logout',
+  'session',
+  'token'
 ];
 
 // Install event - cache static assets
@@ -136,7 +142,8 @@ self.addEventListener('fetch', (event) => {
   }
   
   // Skip caching for auth requests
-  if (url.pathname.startsWith('/auth/') || url.pathname.includes('login') || url.pathname.includes('logout')) {
+  if (url.pathname.startsWith('/auth/') || url.pathname.includes('login') || url.pathname.includes('logout') ||
+      url.pathname.includes('session') || url.pathname.includes('token')) {
     return;
   }
 

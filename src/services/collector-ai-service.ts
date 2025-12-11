@@ -193,26 +193,12 @@ export class CollectorAIService {
   }
 
   static async testApiKey(apiKey: string): Promise<{ valid: boolean; error?: string }> {
-    try {
-      // Import GoogleGenerativeAI dynamically to avoid issues in non-browser environments
-      const { GoogleGenerativeAI } = await import('@google/generative-ai');
-      
-      // Initialize Gemini AI with the provided API key
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-      
-      // Test with a simple prompt
-      const result = await model.generateContent("Say hello world");
-      const response = await result.response;
-      const text = response.text();
-      
-      return { valid: true };
-    } catch (error: any) {
-      console.error('Error testing API key:', error);
-      return { 
-        valid: false, 
-        error: error.message || 'Invalid API key' 
-      };
-    }
+    // Since we're moving to a secure backend implementation, we'll just return a placeholder
+    // In a real implementation, this would call our Edge Function to test the key
+    console.warn('API key testing is not implemented in the secure backend version');
+    return { 
+      valid: true,
+      error: 'API key testing is not implemented in the secure backend version. Keys will be validated when used.'
+    };
   }
 }

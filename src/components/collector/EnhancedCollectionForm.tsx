@@ -240,9 +240,13 @@ const EnhancedCollectionForm = () => {
           else if (verificationError.message && 
               (verificationError.message.includes('API key') || 
                verificationError.message.includes('invalid') || 
-               verificationError.message.includes('No valid API keys available'))) {
+               verificationError.message.includes('No valid API keys available') ||
+               verificationError.message.includes('leaked') ||
+               verificationError.message.includes('blocked') ||
+               verificationError.message.includes('forbidden') ||
+               verificationError.message.includes('403'))) {
             toast.error('AI Verification Error', 
-              'AI verification failed due to invalid API keys. Please check your API keys in the AI settings panel and try again.');
+              'AI verification failed due to API key issues. Please check your API keys in the AI settings panel and try again.');
             // Stop the submission process
             setSubmitting(false);
             return;

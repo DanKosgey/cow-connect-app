@@ -7,6 +7,12 @@ export const imageUrlToBase64 = async (imageUrl: string): Promise<string> => {
   try {
     // Fetch the image
     const response = await fetch(imageUrl);
+    
+    // Check if the response is ok
+    if (!response.ok) {
+      throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+    }
+    
     const blob = await response.blob();
     
     // Convert blob to base64
@@ -26,6 +32,6 @@ export const imageUrlToBase64 = async (imageUrl: string): Promise<string> => {
     });
   } catch (error) {
     console.error('Error converting image to base64:', error);
-    throw new Error('Failed to convert image to base64');
+    throw new Error(`Failed to convert image to base64: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 };

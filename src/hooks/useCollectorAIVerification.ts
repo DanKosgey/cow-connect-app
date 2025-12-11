@@ -38,6 +38,8 @@ export const useCollectorAIVerification = () => {
         throw new Error('No valid API keys available. Please add your Gemini API keys in the AI settings panel.');
       } else if (errorMessage.includes('429') || errorMessage.includes('quota')) {
         throw new Error('API quota exceeded. Please add more API keys or wait for quota to reset.');
+      } else if (errorMessage.includes('leaked') || errorMessage.includes('forbidden') || errorMessage.includes('403')) {
+        throw new Error('API key has been blocked due to security concerns. Please add a new API key in the AI settings panel.');
       } else if (errorMessage.includes('API key')) {
         // Generic API key error
         throw new Error('AI service configuration error. Please check your API keys in the AI settings panel.');

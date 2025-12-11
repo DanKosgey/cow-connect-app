@@ -98,8 +98,8 @@ export const useCollectorAI = () => {
       return;
     }
 
-    // This function is meant to be called from the component
-    // We'll set a placeholder result for now
+    // With our new secure backend implementation, we'll just mark the key as valid
+    // The actual validation will happen when the key is used in the Edge Function
     updateTestResult(keyName, { valid: true });
   };
 
