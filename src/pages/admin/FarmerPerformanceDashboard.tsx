@@ -380,7 +380,6 @@ const FarmerPerformanceDashboard = () => {
                         <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Risk Level</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Primary Issue</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Volume Change</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Quality</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Last Collection</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Action Status</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Actions</th>
@@ -423,12 +422,6 @@ const FarmerPerformanceDashboard = () => {
                             <div className="flex items-center gap-1">
                               <TrendingDown className="w-4 h-4 text-red-500" />
                               <span className="text-sm font-semibold text-red-600">{farmer.volume}%</span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-4">
-                            <div className="flex items-center gap-2">
-                              <div className="text-sm font-semibold">{farmer.quality}</div>
-                              <div className="text-xs text-muted-foreground">/10</div>
                             </div>
                           </td>
                           <td className="px-4 py-4">
@@ -511,7 +504,7 @@ const FarmerPerformanceDashboard = () => {
                           </div>
                           <div className="flex items-center justify-between text-sm">
                             <span className="text-muted-foreground">Quality Score:</span>
-                            <span className="font-semibold">{farmer.quality}/10</span>
+                            <span className="font-semibold">N/A</span>
                           </div>
                           <div className="flex items-center justify-between text-sm">
                             <span className="text-muted-foreground">Assigned Staff:</span>
@@ -588,7 +581,7 @@ const FarmerPerformanceDashboard = () => {
                           </div>
                           <div className="flex items-center justify-between p-2 bg-muted rounded-lg">
                             <span className="text-sm text-muted-foreground">Quality Score</span>
-                            <span className="font-bold text-green-600">{farmer.quality}/10</span>
+                            <span className="font-bold text-green-600">N/A</span>
                           </div>
                           <div className="flex items-center justify-between p-2 bg-muted rounded-lg">
                             <span className="text-sm text-muted-foreground">Collections</span>

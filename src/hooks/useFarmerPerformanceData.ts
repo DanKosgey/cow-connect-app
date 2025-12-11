@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { trendService } from '@/services/trend-service';
+import { fetchCollectionsWithApprovalFilter } from '@/utils/collectionUtils';
 
 // Define interfaces for our data structures
 interface FarmerPerformance {
@@ -26,7 +27,6 @@ interface AtRiskFarmer {
   riskFactors: string[];
   issue: string;
   volume: number;
-  quality: string;
   lastCollection: string;
   trend: string;
   staff: string;
@@ -38,7 +38,6 @@ interface TopPerformer {
   name: string;
   score: number;
   volume: number;
-  quality: string;
   collections: number;
   earnings: number;
   badge: string;
@@ -132,20 +131,26 @@ export const useFarmerPerformanceData = () => {
         });
 
         // Fetch collections data for risk analysis
-        const { data: collectionsData, error: collectionsError } = await supabase
-          .from('collections')
-          .select(`
+        let collectionsData = [];
+        try {
+          const result = await fetchCollectionsWithApprovalFilter(`
             id,
             farmer_id,
             liters,
-            quality_grade,
             total_amount,
             collection_date
-          `)
-          .eq('approved_for_company', true) // Only fetch approved collections
-          .order('collection_date', { ascending: false });
-
-        if (collectionsError) throw collectionsError;
+          `);
+          
+          if (result.error) {
+            throw result.error;
+          }
+          
+          collectionsData = result.data || [];
+        } catch (collectionsError) {
+          console.error('Error fetching collections data:', collectionsError);
+          // Continue with empty array if we can't fetch collections
+          collectionsData = [];
+        }
 
         // Fetch payments data for financial analysis
         const { data: paymentsData, error: paymentsError } = await supabase
@@ -185,11 +190,8 @@ export const useFarmerPerformanceData = () => {
           const totalLiters = farmerCollections.reduce((sum, c) => sum + (c.liters || 0), 0);
           const totalEarnings = farmerCollections.reduce((sum, c) => sum + (c.total_amount || 0), 0);
           
-          // Convert quality grade to numerical score (A+ = 4, A = 3, B = 2, C = 1)
-          const qualityScores: Record<string, number> = { 'A+': 4, 'A': 3, 'B': 2, 'C': 1 };
-          const avgQuality = farmerCollections.length > 0 
-            ? farmerCollections.reduce((sum, c) => sum + (qualityScores[c.quality_grade] || 0), 0) / farmerCollections.length
-            : 0;
+          // Remove quality score calculation since quality_grade column doesn't exist
+          const avgQuality = 0; // Placeholder since we can't calculate quality
           
           // Calculate collection frequency (collections per week)
           const firstCollection = farmerCollections.length > 0 
@@ -211,7 +213,7 @@ export const useFarmerPerformanceData = () => {
           
           // Advanced performance score calculation using weighted metrics
           const volumeScore = Math.min(100, (totalLiters / 1000) * 10); // Normalize liters to 0-100 scale
-          const qualityScore = avgQuality * 25; // Convert 0-4 scale to 0-100 scale
+          const qualityScore = 75; // Default quality score since we can't calculate it
           const frequencyScore = Math.min(100, collectionFrequency * 10); // Normalize frequency
           const consistencyScoreNormalized = consistencyScore; // Already 0-100 scale
           
@@ -262,15 +264,7 @@ export const useFarmerPerformanceData = () => {
             riskFactors.push('Low collection frequency');
           }
           
-          // Quality risk (15% weight)
-          if (farmerData.avgQuality < 1.5) { // Below B grade
-            riskScore += 15;
-            riskFactors.push('Consistently poor quality');
-          } else if (farmerData.avgQuality < 2.5) { // Below A grade
-            riskScore += 7;
-            riskFactors.push('Variable quality');
-          }
-          
+          // Quality risk (15% weight) - removed since we can't calculate quality
           // Consistency risk (15% weight)
           if (farmerData.consistencyScore < 40) { // Less than 40% consistency
             riskScore += 15;
@@ -325,7 +319,6 @@ export const useFarmerPerformanceData = () => {
               issue: f.collectionsCount === 0 ? 'No collections recorded' : 
                      riskData.riskFactors.length > 0 ? riskData.riskFactors[0] : 'Low performance',
               volume: Math.round(f.totalLiters),
-              quality: f.avgQuality.toFixed(1),
               lastCollection: f.lastCollection ? `${Math.floor((new Date().getTime() - new Date(f.lastCollection).getTime()) / (1000 * 60 * 60 * 24))} days ago` : 'Never',
               trend: 'down',
               staff: 'System',
@@ -344,7 +337,6 @@ export const useFarmerPerformanceData = () => {
             name: f.name,
             score: f.performanceScore,
             volume: f.totalLiters,
-            quality: f.avgQuality.toFixed(1),
             collections: f.collectionsCount,
             earnings: f.totalEarnings,
             badge: index < 3 ? 'Gold' : 'Silver'

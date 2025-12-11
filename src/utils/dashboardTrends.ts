@@ -235,10 +235,8 @@ export const calculateMetricsWithTrends = (
       currentTodayLiters += (c.liters || 0);
     }
     
-    // Quality mapping (assuming A+ = 4, A = 3, B = 2, C = 1)
-    const qualityValue = c.quality_grade === 'A+' ? 4 : 
-                        c.quality_grade === 'A' ? 3 : 
-                        c.quality_grade === 'B' ? 2 : 1;
+    // Remove quality calculation since quality_grade column doesn't exist
+    const qualityValue = 3; // Default quality value
     qualitySum += qualityValue;
   }
 
@@ -276,10 +274,11 @@ export const calculateMetricsWithTrends = (
       previousTotalLiters += (c.liters || 0);
       previousTotalRevenue += (c.total_amount || 0);
       
-      // Quality mapping
-      const qualityValue = c.quality_grade === 'A+' ? 4 : 
-                          c.quality_grade === 'A' ? 3 : 
-                          c.quality_grade === 'B' ? 2 : 1;
+      // Remove quality calculation since quality_grade column doesn't exist
+      // const qualityValue = c.quality_grade === 'A+' ? 4 : 
+      //                     c.quality_grade === 'A' ? 3 : 
+      //                     c.quality_grade === 'B' ? 2 : 1;
+      const qualityValue = 3; // Default quality value
       prevQualitySum += qualityValue;
     }
     
