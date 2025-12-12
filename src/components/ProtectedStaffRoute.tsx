@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { useAuth } from '@/contexts/SimplifiedAuthContext';
+import { useAuth } from '@/hooks/useAuth';
 import { LoadingSkeleton } from '@/components/LoadingSkeleton';
 import { UserRole } from '@/types/auth.types';
 import { logger } from '@/utils/logger';

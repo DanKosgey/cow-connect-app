@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/contexts/SimplifiedAuthContext';
+import { useAuth } from '@/hooks/useAuth';
 
 // Define interfaces for our data structures
 interface ForumPost {

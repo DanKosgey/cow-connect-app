@@ -4,12 +4,12 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { UserRole } from "@/types/auth.types";
-import { useAuth } from "@/contexts/SimplifiedAuthContext";
+import { useAuth } from "@/hooks/useAuth"; // Updated import
 import { useEffect } from "react";
 
 const Login = () => {
   const navigate = useNavigate();
-  const { user, userRole, loading, resetAuthState } = useAuth();
+  const { isAuthenticated, userRole, isLoading } = useAuth(); // Updated destructuring
   const roleOptions = [
     { value: UserRole.FARMER, label: 'Farmer', icon: <Users className="h-4 w-4" /> },
     { value: UserRole.COLLECTOR, label: 'Field Collector', icon: <UserCog className="h-4 w-4" /> },
@@ -20,7 +20,7 @@ const Login = () => {
 
   // Check if user is already logged in and redirect appropriately
   useEffect(() => {
-    if (!loading && user) {
+    if (!isLoading && isAuthenticated) {
       // User is already logged in, redirect to their dashboard
       const dashboardRoutes = {
         [UserRole.ADMIN]: '/admin/dashboard',
@@ -34,10 +34,8 @@ const Login = () => {
         const targetRoute = dashboardRoutes[userRole] || '/admin/dashboard';
         navigate(targetRoute, { replace: true });
       }
-      // If we don't have a user role yet but have a user, wait for role to load
-      // This can happen during token refresh
     }
-  }, [user, userRole, loading, navigate]);
+  }, [isAuthenticated, userRole, isLoading, navigate]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background to-secondary/10 flex items-center justify-center p-4">
@@ -116,24 +114,6 @@ const Login = () => {
           >
             Back to Home
           </Button>
-          
-          {/* Add a button to reset auth state for troubleshooting */}
-          <div className="pt-4">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={async () => {
-                await resetAuthState();
-                window.location.reload();
-              }}
-              className="text-destructive hover:text-destructive-foreground"
-            >
-              Reset Auth State
-            </Button>
-            <p className="text-xs text-muted-foreground mt-1">
-              Use this if you're experiencing login issues
-            </p>
-          </div>
           
           {/* Add a link to the auth test page for debugging */}
           <div className="pt-2">

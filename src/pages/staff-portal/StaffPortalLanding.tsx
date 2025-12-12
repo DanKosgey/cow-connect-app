@@ -18,7 +18,7 @@ import {
   Award,
   CheckCircle
 } from 'lucide-react';
-import { useAuth } from '@/contexts/SimplifiedAuthContext';
+import { useAuth } from '@/hooks/useAuth';
 import RefreshButton from '@/components/ui/RefreshButton';
 import { useStaffPortalData } from '@/hooks/useStaffPortalData';
 

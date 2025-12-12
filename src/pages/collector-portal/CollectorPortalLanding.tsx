@@ -13,7 +13,7 @@ import {
   Wallet,
   BarChart3
 } from 'lucide-react';
-import { useAuth } from '@/contexts/SimplifiedAuthContext';
+import { useAuth } from '@/hooks/useAuth';
 import RefreshButton from '@/components/ui/RefreshButton';
 
 export default function CollectorPortalLanding() {

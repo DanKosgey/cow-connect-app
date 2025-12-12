@@ -23,7 +23,7 @@ import { usePerformanceMonitor } from '@/hooks/usePerformanceMonitor';
 import { milkRateService } from '@/services/milk-rate-service';
 import { collectorRateService } from '@/services/collector-rate-service';
 import { useSessionRefresh } from '@/hooks/useSessionRefresh';
-import { useAuth } from '@/contexts/SimplifiedAuthContext';
+import { useAuth } from '@/hooks/useAuth';
 import { formatCurrency } from '@/utils/formatters';
 import { deductionService } from '@/services/deduction-service';
 import RefreshButton from '@/components/ui/RefreshButton';
@@ -178,18 +178,18 @@ const PaymentSystemSimple = () => {
   const [farmerDeductions, setFarmerDeductions] = useState<Record<string, number>>({});
 
   // Auto-refresh state
-  const [isAutoRefreshEnabled, setIsAutoRefreshEnabled] = useState(true);
+  const [isAutoRefreshEnabled, setIsAutoRefreshEnabled] = useState(false); // Default to false to reduce initial load
   const autoRefreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Use React Query hook for data fetching
+  // Use React Query hook for data fetching with manual control
   const { data: paymentData, isLoading, isError, error, refetch } = usePaymentSystemData(timeFrame, customDateRange);
   
-  // Set up auto-refresh every 10 seconds
+  // Set up auto-refresh only when explicitly enabled
   useEffect(() => {
     if (isAutoRefreshEnabled) {
       autoRefreshIntervalRef.current = setInterval(() => {
         refetch();
-      }, 10000); // 10 seconds
+      }, 30000); // 30 seconds instead of 10 for less frequent refreshes
     }
 
     // Clean up interval on unmount or when auto-refresh is disabled
@@ -294,7 +294,7 @@ const PaymentSystemSimple = () => {
     };
   }, [farmerPaymentSummaries]);
 
-  // Fetch current milk rate and collector rate on component mount
+  // Fetch current milk rate and collector rate on component mount - but defer to reduce initial load
   useEffect(() => {
     const fetchRates = async () => {
       try {
@@ -317,10 +317,15 @@ const PaymentSystemSimple = () => {
       }
     };
 
-    fetchRates();
+    // Defer rate fetching to reduce initial load
+    const timer = setTimeout(() => {
+      fetchRates();
+    }, 500);
+
+    return () => clearTimeout(timer);
   }, [toast]);
 
-  // Fetch farmer deductions (memoized to prevent unnecessary re-fetches)
+  // Fetch farmer deductions - but defer to reduce initial load
   useEffect(() => {
     const fetchFarmerDeductions = async () => {
       try {
@@ -336,7 +341,12 @@ const PaymentSystemSimple = () => {
       }
     };
 
-    fetchFarmerDeductions();
+    // Defer deduction fetching to reduce initial load
+    const timer = setTimeout(() => {
+      fetchFarmerDeductions();
+    }, 1000);
+
+    return () => clearTimeout(timer);
   }, [toast]);
 
   // Initialize performance monitoring
@@ -345,12 +355,34 @@ const PaymentSystemSimple = () => {
     enabled: process.env.NODE_ENV === 'development'
   });
 
-  const { refreshSession } = useSessionRefresh({ refreshInterval: 10 * 60 * 1000 });
+  // Simplified session refresh - don't auto-refresh on mount
+  const { refreshSession } = useSessionRefresh({ 
+    enabled: false, // Disable automatic session refresh to prevent interference
+    refreshInterval: 30 * 60 * 1000 
+  });
 
   // Fetch all data with retry logic (memoized)
   const fetchAllData = useCallback(async () => {
-    await refetch();
-  }, [refetch]);
+    try {
+      await refetch();
+    } catch (error) {
+      console.error('Error fetching payment data:', error);
+      toast.error('Error', 'Failed to fetch payment data. Please try again.');
+    }
+  }, [refetch, toast]);
+
+  // Manual refresh function that handles session refresh more carefully
+  const manualRefresh = useCallback(async () => {
+    try {
+      // Only refresh session when explicitly requested
+      await refreshSession();
+      await refetch();
+      toast.success('Success', 'Data refreshed successfully');
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+      toast.error('Error', 'Failed to refresh data. Please try again.');
+    }
+  }, [refreshSession, refetch, toast]);
 
   // Memoized callbacks for rate updates
   const updateMilkRate = useCallback(async () => {
@@ -415,10 +447,15 @@ const PaymentSystemSimple = () => {
           return;
         }
 
-        // Refresh session before performing critical operation
-        await refreshSession().catch(error => {
-          console.warn('Session refresh failed before marking payment as paid', error);
-        });
+        // Refresh session before performing critical operation with better error handling
+        try {
+          await refreshSession().catch(error => {
+            console.warn('Session refresh failed before marking payment as paid', error);
+            // Continue with operation even if refresh fails
+          });
+        } catch (sessionError) {
+          console.warn('Session refresh error, continuing with operation', sessionError);
+        }
 
         // Find the collection object from collections array
         const collection = collections.find(c => c.id === collectionId);
@@ -483,10 +520,15 @@ const PaymentSystemSimple = () => {
           return;
         }
         
-        // Refresh session before performing critical operation
-        await refreshSession().catch(error => {
-          console.warn('Session refresh failed before marking all payments as paid', error);
-        });
+        // Refresh session before performing critical operation with better error handling
+        try {
+          await refreshSession().catch(error => {
+            console.warn('Session refresh failed before marking all payments as paid', error);
+            // Continue with operation even if refresh fails
+          });
+        } catch (sessionError) {
+          console.warn('Session refresh error, continuing with operation', sessionError);
+        }
         
         const result = await PaymentService.markAllFarmerPaymentsAsPaid(farmerId, pendingCollections);
       
@@ -524,10 +566,15 @@ const PaymentSystemSimple = () => {
           return;
         }
 
-        // Refresh session before performing critical operation
-        await refreshSession().catch(error => {
-          console.warn('Session refresh failed before approving collections for payment', error);
-        });
+        // Refresh session before performing critical operation with better error handling
+        try {
+          await refreshSession().catch(error => {
+            console.warn('Session refresh failed before approving collections for payment', error);
+            // Continue with operation even if refresh fails
+          });
+        } catch (sessionError) {
+          console.warn('Session refresh error, continuing with operation', sessionError);
+        }
 
         // Get the total amount for these collections
         const farmerCollections = collections.filter(c => 
@@ -711,6 +758,12 @@ const PaymentSystemSimple = () => {
               <p className="text-sm text-red-700">
                 Error loading payment data: {error?.message || 'Unknown error'}
               </p>
+              <button 
+                onClick={fetchAllData}
+                className="mt-2 inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+              >
+                Retry
+              </button>
             </div>
           </div>
         </div>
@@ -790,7 +843,7 @@ const PaymentSystemSimple = () => {
                   >
                     {isAutoRefreshEnabled ? "Auto Refresh: ON" : "Auto Refresh: OFF"}
                   </Button>
-                  <RefreshButton onRefresh={fetchAllData} />
+                  <RefreshButton onRefresh={manualRefresh} /> {/* Use manual refresh */}
                 </div>
               </div>
               

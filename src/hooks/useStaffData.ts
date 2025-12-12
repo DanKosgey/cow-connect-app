@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '@/contexts/SimplifiedAuthContext';
+import { useAuth } from '@/hooks/useAuth';
 import { createStaffDataService } from '@/services/staff-data-service';
 import { supabase } from '@/integrations/supabase/client';
 import { format, subDays } from 'date-fns';

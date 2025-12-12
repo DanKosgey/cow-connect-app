@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '@/contexts/SimplifiedAuthContext';
+import { useAuth } from '@/hooks/useAuth';
 import useToastNotifications from '@/hooks/useToastNotifications';
 import { format } from 'date-fns';
 

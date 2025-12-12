@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import useToastNotifications from './useToastNotifications';
 import { notificationService, Notification } from '@/services/notification-service';
-import { useAuth } from '@/contexts/SimplifiedAuthContext';
+import { useAuth } from '@/hooks/useAuth';
 
 interface UseNotificationSystemProps {
   initialPage?: number;

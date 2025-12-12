@@ -428,48 +428,89 @@ export const usePaymentSystemData = (timeFrame: string = 'all', customDateRange:
   return useQuery<PaymentSystemData>({
     queryKey: [CACHE_KEYS.ADMIN_PAYMENTS, timeFrame, customDateRange],
     queryFn: async () => {
-      // Fetch collections with farmer data that are approved for company (milk approval)
-      const { data: collectionsData, error: collectionsError } = await supabase
-        .from('collections')
-        .select(`
-          *,
-          approved_for_payment,
-          farmers (
-            id,
-            user_id,
-            bank_account_name,
-            bank_account_number,
-            bank_name,
-            profiles!user_id (
-              full_name,
-              phone
+      try {
+        // Fetch collections with farmer data that are approved for company (milk approval)
+        // Limit initial fetch to reduce load
+        const { data: collectionsData, error: collectionsError } = await supabase
+          .from('collections')
+          .select(`
+            *,
+            approved_for_payment,
+            farmers (
+              id,
+              user_id,
+              bank_account_name,
+              bank_account_number,
+              bank_name,
+              profiles!user_id (
+                full_name,
+                phone
+              )
+            ),
+            collection_payments!collection_payments_collection_id_fkey (
+              credit_used,
+              collector_fee
             )
-          ),
-          collection_payments!collection_payments_collection_id_fkey (
-            credit_used,
-            collector_fee
-          )
-        `)
-        .eq('approved_for_company', true) // Only fetch collections approved for company (milk approval)
-        .order('collection_date', { ascending: false });
+          `)
+          .eq('approved_for_company', true) // Only fetch collections approved for company (milk approval)
+          .order('collection_date', { ascending: false })
+          .limit(1000); // Limit to 1000 records to prevent overload
 
-      if (collectionsError) {
-        throw collectionsError;
+        if (collectionsError) {
+          console.error('Error fetching collections data:', collectionsError);
+          throw new Error(`Failed to fetch collections: ${collectionsError.message}`);
+        }
+
+        const collections = collectionsData || [];
+        
+        // Calculate analytics and farmer summaries with better error handling
+        let analytics;
+        let farmerPaymentSummaries;
+        
+        try {
+          analytics = await calculateAnalytics(collections, timeFrame, customDateRange);
+        } catch (error) {
+          console.error('Error calculating analytics:', error);
+          // Provide fallback analytics
+          analytics = {
+            total_pending: 0,
+            total_paid: 0,
+            total_farmers: 0,
+            avg_payment: 0,
+            daily_trend: [],
+            farmer_distribution: [],
+            total_credit_used: 0,
+            total_deductions: 0,
+            total_net_payment: 0,
+            total_amount: 0
+          };
+        }
+        
+        try {
+          farmerPaymentSummaries = await calculateFarmerSummaries(collections, timeFrame, customDateRange);
+        } catch (error) {
+          console.error('Error calculating farmer summaries:', error);
+          // Provide empty array as fallback
+          farmerPaymentSummaries = [];
+        }
+
+        return {
+          collections,
+          farmerPaymentSummaries,
+          analytics
+        };
+      } catch (error) {
+        console.error('Error in usePaymentSystemData:', error);
+        throw error;
       }
-
-      const collections = collectionsData || [];
-      
-      // Calculate analytics and farmer summaries
-      const analytics = await calculateAnalytics(collections, timeFrame, customDateRange);
-      const farmerPaymentSummaries = await calculateFarmerSummaries(collections, timeFrame, customDateRange);
-
-      return {
-        collections,
-        farmerPaymentSummaries,
-        analytics
-      };
     },
     staleTime: 1000 * 60 * 5, // 5 minutes
     gcTime: 1000 * 60 * 15, // 15 minutes
+    retry: 1, // Reduce retries to prevent hanging
+    retryDelay: (attemptIndex) => {
+      return Math.min(1000 * 2 ** attemptIndex, 10000); // Exponential backoff up to 10 seconds
+    },
+    refetchOnWindowFocus: false, // Disable automatic refetch on window focus to reduce load
+    refetchOnReconnect: false, // Disable automatic refetch on reconnect
   });
 };

@@ -44,14 +44,16 @@ export function useSessionRefresh(options: UseSessionRefreshOptions = {}) {
       const maxAttempts = 3;
       if (refreshAttemptCountRef.current >= maxAttempts) {
         logger.warn('Skipping session refresh - max attempts reached', { attempts: refreshAttemptCountRef.current });
+        // Reset counter to allow future attempts
+        refreshAttemptCountRef.current = 0;
         return { success: false, session: null, error: new Error('Max refresh attempts reached') };
       }
 
       logger.debug('Attempting session refresh', { attempt: refreshAttemptCountRef.current + 1 });
 
-      // Timeout for refresh operation
+      // Timeout for refresh operation - increased to 60 seconds for better reliability
       const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('Session refresh timeout after 30 seconds')), 30000);
+        setTimeout(() => reject(new Error('Session refresh timeout after 60 seconds')), 60000);
       });
 
       // Perform refresh
@@ -88,6 +90,7 @@ export function useSessionRefresh(options: UseSessionRefreshOptions = {}) {
       }
       if (isTransient) {
         logger.warn('Transient error detected - will retry later');
+        // Reduce attempt count for transient errors to allow more retries
         refreshAttemptCountRef.current = Math.max(0, refreshAttemptCountRef.current - 1);
       }
 

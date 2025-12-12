@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '@/contexts/SimplifiedAuthContext';
+import { useAuth } from '@/hooks/useAuth';
 import { MilkApprovalService } from '@/services/milk-approval-service';
 import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";

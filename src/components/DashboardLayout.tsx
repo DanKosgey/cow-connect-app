@@ -1,7 +1,7 @@
 // DashboardLayout.tsx - Enhanced version with proper auth handling and reduced layout shifts
 import { ReactNode, useMemo, useEffect, useCallback } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { useAuth } from '@/contexts/SimplifiedAuthContext';
+import { useAuth } from '@/hooks/useAuth'; // Updated import
 import { Button } from '@/components/ui/button';
 import { 
   LayoutDashboard, 

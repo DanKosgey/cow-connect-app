@@ -1,7 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from "react-router-dom";
 import { UserRole } from "@/types/auth.types";
-import { ProtectedRoute } from "../components/ProtectedRoute";
+import { ProtectedRoute } from "../components/auth/ProtectedRoute";
 import { LoadingSkeleton } from '@/components/LoadingSkeleton';
 import { StaffPortalLayout } from '@/components/staff/StaffPortalLayout';
 

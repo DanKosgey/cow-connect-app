@@ -10,7 +10,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { invitationService } from '@/services/invitation-service';
 import { OtpService } from '@/services/otp-service';
 import useToastNotifications from '@/hooks/useToastNotifications';
-import { useAuth } from '@/contexts/SimplifiedAuthContext';
+import { useAuth } from '@/hooks/useAuth';
 import { UserRole } from '@/types/auth.types';
 
 interface InvitationData {

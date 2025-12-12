@@ -1,5 +1,5 @@
 import { Navigate, useLocation } from 'react-router-dom';
-import { useAuth } from '@/contexts/SimplifiedAuthContext';
+import { useAuth } from '@/hooks/useAuth';
 import { UserRole } from '@/types/auth.types';
 import { PageLoader } from '@/components/PageLoader';
 import { useEffect, useState, useMemo, useRef } from 'react';

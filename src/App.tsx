@@ -4,12 +4,12 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { SkipLink } from '@/components/ui/SkipLink';
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { AuthProvider } from "@/contexts/SimplifiedAuthContext";
+import { AuthProvider } from "@/contexts/AuthContext"; // Updated import
 import { NotificationProvider } from '@/contexts/NotificationContext';
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { lazy, Suspense, useEffect } from 'react';
 import { PageLoader } from '@/components/PageLoader';
-import { authManager } from '@/utils/authManager';
+// Removed authManager import as it's no longer needed
 
 // Ensure React is properly imported
 if (typeof React === 'undefined') {
@@ -50,47 +50,11 @@ const queryClient = new QueryClient({
 });
 
 const App = () => {
-  // Clear authentication cache on app startup to prevent stale session issues
+  // Simplified auth state management
   useEffect(() => {
     // Only minimal logging in development mode
     if (import.meta.env.DEV) {
       console.log('App starting');
-    }
-
-    // Clear expired cache items
-    const cacheTimestamp = localStorage.getItem('auth_cache_timestamp');
-    if (cacheTimestamp) {
-      const cacheAge = Date.now() - parseInt(cacheTimestamp);
-      // If cache is older than 10 minutes, clear it
-      if (cacheAge > 10 * 60 * 1000) {
-        localStorage.removeItem('cached_user');
-        localStorage.removeItem('cached_role');
-        localStorage.removeItem('auth_cache_timestamp');
-        if (import.meta.env.DEV) {
-          console.log('Cleared expired auth cache');
-        }
-      }
-    }
-
-    // Also clear any potentially corrupted auth data
-    const lastClearTime = localStorage.getItem('last_auth_clear_time');
-    if (lastClearTime) {
-      const timeSinceLastClear = Date.now() - parseInt(lastClearTime);
-      // If it's been more than 1 hour since last clear, do a full clear
-      if (timeSinceLastClear > 60 * 60 * 1000) {
-        authManager.clearAuthData();
-        if (import.meta.env.DEV) {
-          console.log('Cleared old auth data');
-        }
-      }
-    }
-
-    // Minimal auth state logging for debugging
-    if (import.meta.env.DEV) {
-      const hasCachedData = localStorage.getItem('cached_user') || localStorage.getItem('cached_role');
-      if (hasCachedData) {
-        console.log('Auth cache present');
-      }
     }
     
     // Add event listener for storage changes to handle cross-tab logout
@@ -109,8 +73,6 @@ const App = () => {
     // Cleanup
     return () => {
       window.removeEventListener('storage', handleStorageChange);
-      // Cleanup auth manager
-      authManager.cleanup();
     };
   }, []);
 
@@ -124,7 +86,7 @@ const App = () => {
             v7_relativeSplatPath: true
           }}>
             <NotificationProvider>
-              <AuthProvider>
+              <AuthProvider> // Updated to use new AuthProvider
                 <main id="main-content">
                   <Suspense fallback={<PageLoader type="dashboard" />}>
                     <Routes>

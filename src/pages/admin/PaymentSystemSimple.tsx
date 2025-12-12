@@ -22,7 +22,7 @@ import { usePerformanceMonitor } from '@/hooks/usePerformanceMonitor';
 import { milkRateService } from '@/services/milk-rate-service';
 import { collectorRateService } from '@/services/collector-rate-service';
 import { useSessionRefresh } from '@/hooks/useSessionRefresh';
-import { useAuth } from '@/contexts/SimplifiedAuthContext';
+import { useAuth } from '@/hooks/useAuth';
 import { formatCurrency } from '@/utils/formatters';
 import { deductionService } from '@/services/deduction-service';
 import RefreshButton from '@/components/ui/RefreshButton';
