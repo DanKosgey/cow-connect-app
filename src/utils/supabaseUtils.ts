@@ -1,97 +1,104 @@
 /**
- * Utility functions for handling Supabase operations with better timeout and error handling
+ * Utility functions for handling Supabase operations with improved timeout, retry, and error handling.
+ * These functions provide robust wrappers for Supabase operations, including logging and fallback support.
  */
 
+import { devLog } from './client'; // Assuming devLog from previous supabase client code
+
 /**
- * Execute a Supabase operation with timeout
- * @param operation The Supabase operation promise
- * @param timeoutMs Timeout in milliseconds (default: 30000ms)
- * @returns The result of the operation or throws an error
+ * Execute a promise with a timeout.
+ * @param operation The promise to execute.
+ * @param timeoutMs Timeout in milliseconds (default: 30000ms).
+ * @returns The result of the operation.
+ * @throws Error if the operation times out or fails.
  */
 export async function executeWithTimeout<T>(
   operation: Promise<T>,
   timeoutMs: number = 30000
 ): Promise<T> {
-  // Create timeout promise
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => {
-      reject(new Error(`Operation timed out after ${timeoutMs}ms`));
-    }, timeoutMs);
-  });
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error(`Operation timed out after ${timeoutMs}ms`)), timeoutMs)
+  );
 
-  // Race the operation against the timeout
   return Promise.race([operation, timeoutPromise]);
 }
 
 /**
- * Execute a Supabase operation with retry logic
- * @param operation The Supabase operation function
- * @param maxRetries Maximum number of retries (default: 3)
- * @param timeoutMs Timeout for each attempt (default: 30000ms)
- * @param retryDelayMs Delay between retries in milliseconds (default: 1000ms)
- * @returns The result of the operation or throws an error
+ * Execute an operation with retry logic and exponential backoff.
+ * @param operation The function that returns a promise to execute.
+ * @param maxRetries Maximum number of retries (default: 3). Total attempts = maxRetries + 1.
+ * @param timeoutMs Timeout for each attempt (default: 30000ms).
+ * @param baseRetryDelayMs Base delay between retries in milliseconds (default: 1000ms).
+ * @returns The result of the operation.
+ * @throws Error if the operation fails after all attempts.
  */
 export async function executeWithRetry<T>(
   operation: () => Promise<T>,
   maxRetries: number = 3,
   timeoutMs: number = 30000,
-  retryDelayMs: number = 1000
+  baseRetryDelayMs: number = 1000
 ): Promise<T> {
-  let lastError: any;
+  let lastError: unknown;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      // Execute the operation with timeout
-      const result = await executeWithTimeout(operation(), timeoutMs);
-      return result;
+      return await executeWithTimeout(operation(), timeoutMs);
     } catch (error) {
       lastError = error;
-      
-      // If this was the last attempt, throw the error
+      devLog(`Operation failed on attempt ${attempt + 1}/${maxRetries + 1}`, { error });
+
       if (attempt === maxRetries) {
-        throw new Error(`Operation failed after ${maxRetries + 1} attempts: ${lastError.message}`);
+        throw new Error(
+          `Operation failed after ${maxRetries + 1} attempts: ${
+            error instanceof Error ? error.message : 'Unknown error'
+          }`
+        );
       }
-      
-      // Wait before retrying
-      await new Promise(resolve => setTimeout(resolve, retryDelayMs * Math.pow(2, attempt)));
+
+      // Exponential backoff with jitter
+      const delay = Math.min(baseRetryDelayMs * Math.pow(2, attempt), 8000);
+      const jitter = Math.random() * 500;
+      await new Promise(resolve => setTimeout(resolve, delay + jitter));
     }
   }
-  
-  throw new Error(`Operation failed: ${lastError.message}`);
+
+  // Unreachable, but for type safety
+  throw new Error(`Operation failed: ${lastError instanceof Error ? lastError.message : 'Unknown error'}`);
 }
 
 /**
- * Execute a Supabase RPC call with proper error handling
- * @param rpcFunction The RPC function to call
- * @param params Parameters for the RPC call
- * @param options Additional options
- * @returns The result of the RPC call
+ * Execute a Supabase RPC call with retry, timeout, and fallback support.
+ * @param rpcFunction The RPC function to call.
+ * @param options Configuration options for the execution.
+ * @returns The result of the RPC call or fallback value if provided.
+ * @throws Error if the operation fails and no fallback is provided.
  */
 export async function executeRpcCall<T>(
   rpcFunction: () => Promise<T>,
   options: {
     timeoutMs?: number;
     maxRetries?: number;
-    retryDelayMs?: number;
+    baseRetryDelayMs?: number;
     fallbackValue?: T;
   } = {}
 ): Promise<T> {
   const {
     timeoutMs = 30000,
     maxRetries = 2,
-    retryDelayMs = 1000,
-    fallbackValue = undefined
+    baseRetryDelayMs = 1000,
+    fallbackValue,
   } = options;
 
   try {
-    return await executeWithRetry(rpcFunction, maxRetries, timeoutMs, retryDelayMs);
+    return await executeWithRetry(rpcFunction, maxRetries, timeoutMs, baseRetryDelayMs);
   } catch (error) {
-    console.warn('RPC call failed, using fallback if available:', error);
-    
+    devLog('RPC call failed', { error });
+
     if (fallbackValue !== undefined) {
+      devLog('Using fallback value');
       return fallbackValue;
     }
-    
+
     throw error;
   }
 }

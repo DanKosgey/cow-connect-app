@@ -1,0 +1,3591 @@
+import React, { useState, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { DashboardLayout } from '@/components/DashboardLayout';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { 
+  DollarSign, 
+  TrendingUp, 
+  Users, 
+  Calendar, 
+  Download, 
+  Filter, 
+  Search, 
+  AlertCircle, 
+  CheckCircle, 
+  Clock,
+  BarChart3,
+  PieChart
+} from 'lucide-react';
+import useToastNotifications from '@/hooks/useToastNotifications';
+import { trendService } from '@/services/trend-service';
+import { PaymentService } from '@/services/payment-service';
+import { usePerformanceMonitor } from '@/hooks/usePerformanceMonitor';
+import { milkRateService } from '@/services/milk-rate-service';
+import { collectorRateService } from '@/services/collector-rate-service';
+import { useSessionRefresh } from '@/hooks/useSessionRefresh';
+import { useAuth } from '@/contexts/SimplifiedAuthContext';
+import { formatCurrency } from '@/utils/formatters';
+import { deductionService } from '@/services/deduction-service';
+import {
+  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, 
+  Tooltip, Legend, ResponsiveContainer, AreaChart, Area
+} from 'recharts';
+
+import PaymentOverviewChart from '@/components/admin/PaymentOverviewChart';
+import RefreshButton from '@/components/ui/RefreshButton';
+import { usePaymentSystemData } from '@/hooks/usePaymentSystemData';
+import CollectorPaymentsSection from '@/components/admin/CollectorPaymentsSection';
+import FarmerPaymentSummary from '@/components/admin/payments/FarmerPaymentSummary';
+import PendingPaymentsTab from '@/components/admin/payments/PendingPaymentsTab';
+import PaidPaymentsTab from '@/components/admin/payments/PaidPaymentsTab';
+import SettingsTab from '@/components/admin/payments/SettingsTab';
+import AnalyticsTab from '@/components/admin/payments/AnalyticsTab';
+
+interface Collection {
+  id: string;
+  farmer_id: string;
+  collection_id: string;
+  collection_date: string;
+  liters: number;
+  rate_per_liter: number;
+  total_amount: number;
+  status: string;
+  approved_for_payment?: boolean;
+  approved_at?: string;
+  approved_by?: string;
+  staff_id?: string;
+  created_at: string;
+  updated_at: string;
+  credit_used?: number;
+  collection_payments?: {
+    credit_used?: number;
+  }[];
+  farmers: {
+    id: string;
+    user_id: string;
+    bank_account_name: string;
+    bank_account_number: string;
+    bank_name: string;
+    profiles: {
+      full_name: string;
+      phone: string;
+    };
+  };
+}
+
+interface FarmerPaymentSummary {
+  farmer_id: string;
+  farmer_name: string;
+  farmer_phone: string;
+  total_collections: number;
+  total_liters: number;
+  pending_payments: number;
+  paid_amount: number;
+  total_deductions: number;
+  credit_used: number;
+  net_payment: number;
+  total_amount: number;
+  bank_info: string;
+}
+
+interface PaymentAnalytics {
+  total_pending: number;
+  total_paid: number;
+  total_farmers: number;
+  avg_payment: number;
+  daily_trend: { date: string; collections: number; paidAmount: number; pendingAmount: number; creditUsed: number }[];
+  farmer_distribution: { name: string; value: number }[];
+  total_credit_used: number;
+  total_deductions: number;
+  total_net_payment: number;
+  total_amount: number;
+}
+
+const PaymentSystem = () => {
+  const toast = useToastNotifications();
+  const { user, userRole } = useAuth();
+  const [activeTab, setActiveTab] = useState('overview');
+  const [activeAnalyticsTab, setActiveAnalyticsTab] = useState('credit');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [viewMode, setViewMode] = useState('list');
+
+  // Time frame filter state
+  const [timeFrame, setTimeFrame] = useState('all');
+  const [customDateRange, setCustomDateRange] = useState({
+    from: '',
+    to: ''
+  });
+
+  // Farmer deductions state
+  const [farmerDeductions, setFarmerDeductions] = useState<Record<string, number>>({});
+
+  // Use React Query hook for data fetching
+  const { data: paymentData, isLoading, isError, error, refetch } = usePaymentSystemData(timeFrame, customDateRange);
+  
+  const collections = paymentData?.collections || [];
+  const farmerPaymentSummaries = paymentData?.farmerPaymentSummaries || [];
+  const analytics = paymentData?.analytics || {
+    total_pending: 0,
+    total_paid: 0,
+    total_farmers: 0,
+    avg_payment: 0,
+    daily_trend: [],
+    farmer_distribution: [],
+    total_credit_used: 0,
+    total_net_payment: 0
+  };
+
+  const [filteredCollections, setFilteredCollections] = useState<Collection[]>([]);
+
+  // Rate configuration state
+  const [rateConfig, setRateConfig] = useState({
+    ratePerLiter: 0,
+    effectiveFrom: new Date().toISOString().split('T')[0]
+  });
+
+  // Collector rate configuration state
+  const [collectorRateConfig, setCollectorRateConfig] = useState({
+    ratePerLiter: 0,
+    effectiveFrom: new Date().toISOString().split('T')[0]
+  });
+
+  // Calculate credit analytics based on the correct model
+  const creditAnalytics = {
+    totalCreditUsed: farmerPaymentSummaries.reduce((sum, farmer) => 
+      sum + (farmer.credit_used || 0), 0
+    ),
+    creditImpact: farmerPaymentSummaries.length > 0 && 
+                  farmerPaymentSummaries.reduce((sum, farmer) => sum + farmer.total_amount, 0) > 0 ? 
+      (farmerPaymentSummaries.reduce((sum, farmer) => 
+        sum + (farmer.credit_used || 0), 0) / 
+       farmerPaymentSummaries.reduce((sum, farmer) => 
+        sum + farmer.total_amount, 0)) * 100 : 0,
+    creditDistribution: farmerPaymentSummaries
+      .filter(farmer => (farmer.credit_used || 0) > 0)
+      .map(farmer => ({
+        name: farmer.farmer_name,
+        totalAmount: farmer.total_amount,
+        creditUsed: farmer.credit_used || 0,
+        netPayment: farmer.net_payment || 0,
+        creditPercentage: farmer.total_amount > 0 ? 
+          ((farmer.credit_used || 0) / farmer.total_amount) * 100 : 0,
+        status: 'Active'
+      }))
+      .sort((a, b) => b.creditUsed - a.creditUsed),
+    totalPendingDeductions: farmerPaymentSummaries.reduce((sum, farmer) => 
+      sum + (farmer.credit_used || 0), 0
+    )
+  };
+
+  // Fetch current milk rate and collector rate on component mount
+  useEffect(() => {
+    const fetchRates = async () => {
+      try {
+        // Fetch milk rate
+        const currentRate = await milkRateService.getCurrentRate();
+        setRateConfig({
+          ratePerLiter: currentRate,
+          effectiveFrom: new Date().toISOString().split('T')[0]
+        });
+
+        // Fetch collector rate
+        const currentCollectorRate = await collectorRateService.getCurrentRate();
+        setCollectorRateConfig({
+          ratePerLiter: currentCollectorRate,
+          effectiveFrom: new Date().toISOString().split('T')[0]
+        });
+      } catch (error) {
+        console.error('Error fetching rates:', error);
+        toast.error('Error', 'Failed to fetch rates');
+      }
+    };
+
+    fetchRates();
+  }, []);
+
+  // Fetch farmer deductions
+  useEffect(() => {
+    const fetchFarmerDeductions = async () => {
+      try {
+        const deductionsData = await deductionService.getAllFarmersWithDeductions();
+        const deductionsMap: Record<string, number> = {};
+        deductionsData.forEach((farmer: any) => {
+          deductionsMap[farmer.id] = farmer.totalDeductions || 0;
+        });
+        setFarmerDeductions(deductionsMap);
+      } catch (error) {
+        console.error('Error fetching farmer deductions:', error);
+        toast.error('Error', 'Failed to fetch farmer deductions');
+      }
+    };
+
+    fetchFarmerDeductions();
+  }, []);
+
+  // Initialize performance monitoring
+  const { measureOperation } = usePerformanceMonitor({ 
+    componentName: 'PaymentSystemPage',
+    enabled: process.env.NODE_ENV === 'development'
+  });
+
+  const { refreshSession } = useSessionRefresh({ refreshInterval: 10 * 60 * 1000 });
+
+  // Fetch all data with retry logic
+  const fetchAllData = async () => {
+    await refetch();
+  };
+
+  const updateMilkRate = async () => {
+    await measureOperation('updateMilkRate', async () => {
+      try {
+        if (rateConfig.ratePerLiter <= 0) {
+          toast.error('Error', 'Rate per liter must be greater than zero');
+          return;
+        }
+        
+        if (!rateConfig.effectiveFrom) {
+          toast.error('Error', 'Effective date is required');
+          return;
+        }
+        
+        const success = await milkRateService.updateRate(rateConfig.ratePerLiter, rateConfig.effectiveFrom);
+        
+        if (success) {
+          toast.success('Success', 'Milk rate updated successfully!');
+        } else {
+          throw new Error('Failed to update milk rate');
+        }
+      } catch (error: any) {
+        console.error('Error updating rate:', error);
+        toast.error('Error', 'Failed to update rate: ' + (error.message || 'Unknown error'));
+      }
+    });
+  };
+
+  const updateCollectorRate = async () => {
+    await measureOperation('updateCollectorRate', async () => {
+      try {
+        if (collectorRateConfig.ratePerLiter <= 0) {
+          toast.error('Error', 'Rate per liter must be greater than zero');
+          return;
+        }
+        
+        if (!collectorRateConfig.effectiveFrom) {
+          toast.error('Error', 'Effective date is required');
+          return;
+        }
+        
+        const success = await collectorRateService.updateRate(collectorRateConfig.ratePerLiter, collectorRateConfig.effectiveFrom);
+        
+        if (success) {
+          toast.success('Success', 'Collector rate updated successfully!');
+        } else {
+          throw new Error('Failed to update collector rate');
+        }
+      } catch (error: any) {
+        console.error('Error updating collector rate:', error);
+        toast.error('Error', 'Failed to update collector rate: ' + (error.message || 'Unknown error'));
+      }
+    });
+  };
+
+  const markAsPaid = async (collectionId: string, farmerId: string) => {
+    await measureOperation('markAsPaid', async () => {
+      try {
+        if (userRole !== 'admin') {
+          toast.error('Access Denied', 'Only administrators can mark payments as paid');
+          return;
+        }
+
+        // Refresh session before performing critical operation
+        await refreshSession().catch(error => {
+          console.warn('Session refresh failed before marking payment as paid', error);
+        });
+
+        const result = await PaymentService.markCollectionAsPaid(collectionId, farmerId);
+        
+        if (!result.success) {
+          throw result.error || new Error('Unknown error occurred');
+        }
+
+        toast.success('Success', result.message || 'Payment marked as paid successfully!');
+        
+        // Refresh the data to ensure consistency
+        await fetchAllData();
+      } catch (error: any) {
+        console.error('Error marking payment as paid:', error);
+        toast.error('Error', 'Failed to mark payment as paid: ' + (error.message || 'Unknown error'));
+      }
+    });
+  };
+
+  const markAllFarmerPaymentsAsPaid = async (farmerId: string) => {
+    await measureOperation('markAllFarmerPaymentsAsPaid', async () => {
+      try {
+        if (userRole !== 'admin') {
+          toast.error('Access Denied', 'Only administrators can mark payments as paid');
+          return;
+        }
+
+        // Get all pending collections for this farmer
+        const pendingCollections = collections.filter(
+          c => c.farmer_id === farmerId && c.status !== 'Paid'
+        );
+        
+        if (pendingCollections.length === 0) {
+          toast.show({ title: 'Info', description: 'No pending payments for this farmer' });
+          return;
+        }
+        
+        // Check how many collections are approved for payment
+        const approvedCollections = pendingCollections.filter(c => c.approved_for_payment);
+        const unapprovedCount = pendingCollections.length - approvedCollections.length;
+        
+        if (unapprovedCount > 0) {
+          toast.show({ 
+            title: 'Notice', 
+            description: `${unapprovedCount} collections need approval before payment processing. Only ${approvedCollections.length} will be processed.` 
+          });
+        }
+        
+        if (approvedCollections.length === 0) {
+          toast.show({ 
+            title: 'Info', 
+            description: 'No approved collections to process for payment.' 
+          });
+          return;
+        }
+        
+        // Refresh session before performing critical operation
+        await refreshSession().catch(error => {
+          console.warn('Session refresh failed before marking all payments as paid', error);
+        });
+        
+        const result = await PaymentService.markAllFarmerPaymentsAsPaid(farmerId, pendingCollections);
+      
+        if (!result.success) {
+          throw result.error || new Error('Unknown error occurred');
+        }
+
+        toast.success('Success', result.message || `Processed ${approvedCollections.length} payments successfully!`);
+        
+        // Refresh the data to ensure consistency
+        await fetchAllData();
+      } catch (error: any) {
+        console.error('Error marking all farmer payments as paid:', error);
+        toast.error('Error', 'Failed to mark all payments as paid: ' + (error.message || 'Unknown error'));
+      }
+    });
+  };
+
+  // New function to approve collections for payment
+  const approveCollectionsForPayment = async (farmerId: string, collectionIds: string[]) => {
+    await measureOperation('approveCollectionsForPayment', async () => {
+      try {
+        if (userRole !== 'admin') {
+          toast.error('Access Denied', 'Only administrators can approve collections for payment');
+          return;
+        }
+
+        // Refresh session before performing critical operation
+        await refreshSession().catch(error => {
+          console.warn('Session refresh failed before approving collections for payment', error);
+        });
+
+        // Get the total amount for these collections
+        const farmerCollections = collections.filter(c => 
+          c.farmer_id === farmerId && collectionIds.includes(c.id)
+        );
+
+        const totalAmount = farmerCollections.reduce((sum, collection) => 
+          sum + (collection.total_amount || 0), 0
+        );
+
+        // Call the payment service to approve collections for payment
+        const result = await PaymentService.createPaymentForApproval(
+          farmerId,
+          collectionIds,
+          totalAmount,
+          'Approved for payment by admin',
+          user?.id
+        );
+
+        if (!result.success) {
+          throw result.error || new Error('Unknown error occurred');
+        }
+
+        toast.success('Success', `Approved ${collectionIds.length} collections for payment successfully!`);
+        
+        // Refresh the data to ensure consistency
+        await fetchAllData();
+      } catch (error: any) {
+        console.error('Error approving collections for payment:', error);
+        toast.error('Error', 'Failed to approve collections for payment: ' + (error.message || 'Unknown error'));
+      }
+    });
+  };
+
+  // Function to deduct collector fees from pending payments (individual processing)
+  const deductCollectorFees = async () => {
+    await measureOperation('deductCollectorFees', async () => {
+      try {
+        if (userRole !== 'admin') {
+          toast.error('Access Denied', 'Only administrators can deduct collector fees');
+          return;
+        }
+
+        // Get current collector rate
+        const collectorRate = await collectorRateService.getCurrentRate();
+        
+        if (collectorRate <= 0) {
+          toast.error('Error', 'Invalid collector rate. Please set a valid collector rate first.');
+          return;
+        }
+
+        // Get all pending collections that are approved for payment
+        const pendingCollections = filteredCollections.filter(
+          c => c.status !== 'Paid' && c.approved_for_payment
+        );
+        
+        if (pendingCollections.length === 0) {
+          toast.show({ title: 'Info', description: 'No approved pending payments to process.' });
+          return;
+        }
+        
+        // Process each collection to deduct collector fees
+        let successCount = 0;
+        let errorCount = 0;
+        
+        for (const collection of pendingCollections) {
+          try {
+            const result = await PaymentService.markCollectionAsPaid(
+              collection.id, 
+              collection.farmer_id, 
+              collection
+            );
+            
+            if (result.success) {
+              successCount++;
+            } else {
+              errorCount++;
+              console.error(`Failed to process collection ${collection.id}:`, result.error);
+            }
+          } catch (error) {
+            errorCount++;
+            console.error(`Error processing collection ${collection.id}:`, error);
+          }
+        }
+        
+        // Refresh the data to ensure consistency
+        await fetchAllData();
+        
+        if (errorCount === 0) {
+          toast.success('Success', `Successfully deducted collector fees from ${successCount} payments!`);
+        } else {
+          toast.show({ 
+            title: 'Partial Success', 
+            description: `Processed ${successCount} payments successfully. ${errorCount} payments failed.` 
+          });
+        }
+      } catch (error: any) {
+        console.error('Error deducting collector fees:', error);
+        toast.error('Error', 'Failed to deduct collector fees: ' + (error.message || 'Unknown error'));
+      }
+    });
+  };
+
+  // Function to handle time frame change
+  const handleTimeFrameChange = (newTimeFrame: string) => {
+    setTimeFrame(newTimeFrame);
+    
+    // If switching to custom, don't trigger data refresh yet
+    // Wait for user to input dates
+    if (newTimeFrame !== 'custom') {
+      // Reset custom date range when not using custom
+      setCustomDateRange({ from: '', to: '' });
+      // React Query will automatically refetch when timeFrame changes
+    }
+  };
+
+  // Function to handle custom date range change
+  const handleCustomDateChange = (field: 'from' | 'to', value: string) => {
+    setCustomDateRange(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  // Function to apply custom date range
+  const applyCustomDateRange = () => {
+    if (customDateRange.from && customDateRange.to) {
+      setTimeFrame('custom');
+    }
+  };
+
+  // Function to reset filters
+  const resetFilters = () => {
+    setTimeFrame('all');
+    setCustomDateRange({ from: '', to: '' });
+    setSearchTerm('');
+    setFilterStatus('all');
+  };
+
+  // Effect to filter collections based on search term and filter status
+  useEffect(() => {
+    let result = [...collections];
+    
+    // Apply search filter
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      result = result.filter(collection => 
+        collection.farmers?.profiles?.full_name?.toLowerCase().includes(term) ||
+        collection.collection_id?.toLowerCase().includes(term)
+      );
+    }
+    
+    // Apply status filter
+    if (filterStatus !== 'all') {
+      result = result.filter(collection => collection.status === filterStatus);
+    }
+    
+    setFilteredCollections(result);
+  }, [collections, searchTerm, filterStatus]);
+
+  if (isLoading) {
+    return (
+      <DashboardLayout>
+        <div className="flex justify-center items-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (isError) {
+    return (
+      <DashboardLayout>
+        <div className="bg-red-50 border-l-4 border-red-500 p-4">
+          <div className="flex">
+            <div className="flex-shrink-0">
+              <AlertCircle className="h-5 w-5 text-red-400" />
+            </div>
+            <div className="ml-3">
+              <p className="text-sm text-red-700">
+                Error loading payment data: {error?.message || 'Unknown error'}
+              </p>
+            </div>
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  return (
+    <DashboardLayout>
+      <div className="p-6">
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900">Payment Management</h1>
+          <p className="mt-2 text-gray-600">
+            Manage farmer payments, track collections, and monitor payment analytics
+          </p>
+        </div>
+
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Pending</CardTitle>
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {formatCurrency(analytics.total_pending)}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Pending payments
+              </p>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Paid</CardTitle>
+              <CheckCircle className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {formatCurrency(analytics.total_paid)}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Payments completed
+              </p>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Farmers</CardTitle>
+              <Users className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {analytics.total_farmers}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Active farmers
+              </p>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Avg Payment</CardTitle>
+              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {formatCurrency(analytics.avg_payment)}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Average per payment
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Tab Navigation */}
+        <div className="bg-white rounded-xl shadow-lg mb-6">
+          <div className="border-b border-gray-200">
+            <nav className="flex overflow-x-auto -mb-px">
+              {[
+                { id: 'overview', label: 'Overview', icon: BarChart3 },
+                { id: 'payments', label: 'Payments', icon: DollarSign },
+                { id: 'pending', label: 'Pending', icon: Clock },
+                { id: 'paid', label: 'Paid', icon: CheckCircle },
+                { id: 'analytics', label: 'Analytics', icon: PieChart },
+                { id: 'settings', label: 'Settings', icon: Calendar }
+              ].map((tab) => {
+                const Icon = tab.icon;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`flex items-center px-6 py-4 text-sm font-medium border-b-2 whitespace-nowrap ${
+                      activeTab === tab.id
+                        ? 'border-indigo-600 text-indigo-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4 mr-2" />
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
+        </div>
+
+        {/* Tab Content */}
+        <div>
+          {/* Overview Tab */}
+          {activeTab === 'overview' && (
+            <div className="space-y-6">
+              <div className="flex justify-between items-center">
+                <h2 className="text-2xl font-bold text-gray-900">Payment Overview</h2>
+                <RefreshButton onRefresh={fetchAllData} />
+              </div>
+              
+              <PaymentOverviewChart 
+                analytics={analytics} 
+                creditAnalytics={creditAnalytics}
+                formatCurrency={formatCurrency}
+              />
+              
+              <FarmerPaymentSummary 
+                farmerPaymentSummaries={farmerPaymentSummaries}
+                collections={collections}
+                viewMode={viewMode}
+                setViewMode={setViewMode}
+                approveCollectionsForPayment={approveCollectionsForPayment}
+                markAllFarmerPaymentsAsPaid={markAllFarmerPaymentsAsPaid}
+              />
+            </div>
+          )}
+
+          {/* Payments Tab */}
+          {activeTab === 'payments' && (
+            <FarmerPaymentSummary 
+              farmerPaymentSummaries={farmerPaymentSummaries}
+              collections={collections}
+              viewMode={viewMode}
+              setViewMode={setViewMode}
+              approveCollectionsForPayment={approveCollectionsForPayment}
+              markAllFarmerPaymentsAsPaid={markAllFarmerPaymentsAsPaid}
+            />
+          )}
+
+          {/* Pending Payments Tab */}
+          {activeTab === 'pending' && (
+            <PendingPaymentsTab
+              timeFrame={timeFrame}
+              customDateRange={customDateRange}
+              collections={collections}
+              handleTimeFrameChange={handleTimeFrameChange}
+              resetFilters={resetFilters}
+              handleCustomDateChange={handleCustomDateChange}
+              applyCustomDateRange={applyCustomDateRange}
+              markAsPaid={markAsPaid}
+              approveCollectionsForPayment={approveCollectionsForPayment}
+            />
+          )}
+
+          {/* Paid Payments Tab */}
+          {activeTab === 'paid' && (
+            <PaidPaymentsTab
+              timeFrame={timeFrame}
+              customDateRange={customDateRange}
+              collections={filteredCollections}
+              handleTimeFrameChange={handleTimeFrameChange}
+              resetFilters={resetFilters}
+              handleCustomDateChange={handleCustomDateChange}
+              applyCustomDateRange={applyCustomDateRange}
+            />
+          )}
+
+          {/* Analytics Tab */}
+          {activeTab === 'analytics' && (
+            <AnalyticsTab
+              activeAnalyticsTab={activeAnalyticsTab}
+              setActiveAnalyticsTab={setActiveAnalyticsTab}
+              analytics={analytics}
+              creditAnalytics={creditAnalytics}
+            />
+          )}
+
+          {/* Settings Tab */}
+          {activeTab === 'settings' && (
+            <SettingsTab
+              rateConfig={rateConfig}
+              collectorRateConfig={collectorRateConfig}
+              setRateConfig={setRateConfig}
+              setCollectorRateConfig={setCollectorRateConfig}
+              updateMilkRate={updateMilkRate}
+              updateCollectorRate={updateCollectorRate}
+            />
+          )}
+        </div>
+      </div>
+    </DashboardLayout>
+  );
+};
+
+export default PaymentSystem;
+
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    />
+                  </div>
+                  
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">To Date</label>
+                    <Input
+                      type="date"
+                      value={customDateRange.to}
+                      onChange={(e) => handleCustomDateChange('to', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    />
+                  </div>
+                  
+                  <Button
+                    onClick={applyCustomDateRange}
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                  >
+                    Apply Date Range
+                  </Button>
+                </div>
+                
+                {/* Current Filter Display */}
+                <div className="mt-4 text-sm text-gray-600">
+                  {timeFrame !== 'all' && (
+                    <p>
+                      Showing data for: 
+                      <span className="font-medium ml-1">
+                        {timeFrame === 'daily' && 'Today'}
+                        {timeFrame === 'weekly' && 'This Week'}
+                        {timeFrame === 'monthly' && 'This Month'}
+                        {timeFrame === 'lastMonth' && 'Last Month'}
+                        {timeFrame === 'custom' && `Custom Range: ${customDateRange.from} to ${customDateRange.to}`}
+                      </span>
+                    </p>
+                  )}
+                </div>
+              </div>
+
+
+
+              {/* New Payment Overview Chart */}
+              <PaymentOverviewChart 
+                data={analytics.daily_trend.map(item => ({
+                  date: item.date,
+                  collections: item.collections,
+                  pendingAmount: item.pendingAmount,
+                  paidAmount: item.paidAmount,
+                  creditUsed: item.creditUsed  // Add creditUsed to the mapping
+                }))}
+              />
+
+              {/* Farmer Payment Summary */}
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-2xl font-bold text-gray-900">Farmer Payment Summary</h2>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setViewMode('list')}
+                      className={viewMode === 'list' ? 'bg-indigo-100' : ''}
+                    >
+                      <List className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setViewMode('grid')}
+                      className={viewMode === 'grid' ? 'bg-indigo-100' : ''}
+                    >
+                      <Grid className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+                
+                {viewMode === 'list' ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Farmer</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Collections</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Liters</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pending</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Paid</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Deductions</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Credit Used</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Net Payment</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {farmerPaymentSummaries.map((farmer) => {
+                          const hasCredit = farmer.credit_used > 0;
+                          const totalDeductions = farmer.total_deductions || 0;
+                          return (
+                            <tr key={farmer.farmer_id} className="hover:bg-gray-50">
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm font-medium text-gray-900">{farmer.farmer_name}</div>
+                                <div className="text-sm text-gray-500">{farmer.farmer_phone}</div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {farmer.total_collections}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {farmer.total_liters.toFixed(2)}L
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {formatCurrency(farmer.pending_payments)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {formatCurrency(farmer.paid_amount)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600 font-medium">
+                                {formatCurrency(farmer.total_deductions)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className={`text-sm font-medium ${farmer.credit_used > 0 ? 'text-purple-600' : 'text-gray-500'}`}>
+                                  {formatCurrency(farmer.credit_used)}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className="text-sm font-medium text-green-600">
+                                  {formatCurrency(farmer.net_payment)}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                {formatCurrency(farmer.total_amount)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                <div className="flex gap-2">
+                                  {/* Check if there are any unapproved collections for this farmer */}
+                                  {collections.filter(c => c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid').length > 0 ? (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => {
+                                        const unapprovedCollections = collections.filter(c => 
+                                          c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid'
+                                        );
+                                        const collectionIds = unapprovedCollections.map(c => c.id);
+                                        approveCollectionsForPayment(farmer.farmer_id, collectionIds);
+                                      }}
+                                      className="mr-2"
+                                    >
+                                      Approve All
+                                    </Button>
+                                  ) : null}
+                                  <Button
+                                    size="sm"
+                                    onClick={() => markAllFarmerPaymentsAsPaid(farmer.farmer_id)}
+                                    disabled={farmer.pending_payments <= 0}
+                                  >
+                                    Mark Paid
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  // Grid view
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {farmerPaymentSummaries.map((farmer) => (
+                      <Card key={farmer.farmer_id} className="hover:shadow-lg transition-shadow">
+                        <CardHeader>
+                          <CardTitle className="text-lg">{farmer.farmer_name}</CardTitle>
+                          <p className="text-sm text-gray-500">{farmer.farmer_phone}</p>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-3">
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Collections:</span>
+                              <span className="text-sm font-medium">{farmer.total_collections}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Total Liters:</span>
+                              <span className="text-sm font-medium">{farmer.total_liters.toFixed(2)}L</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Pending:</span>
+                              <span className="text-sm font-medium text-yellow-600">
+                                {formatCurrency(farmer.pending_payments)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Paid:</span>
+                              <span className="text-sm font-medium text-green-600">
+                                {formatCurrency(farmer.paid_amount)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Credit Used:</span>
+                              <span className="text-sm font-medium text-purple-600">
+                                {formatCurrency(farmer.credit_used)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Deductions:</span>
+                              <span className="text-sm font-medium text-red-600">
+                                {formatCurrency(farmer.total_deductions || 0)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Net Payment:</span>
+                              <span className="text-sm font-medium text-blue-600">
+                                {formatCurrency(farmer.net_payment || 0)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between pt-2 border-t">
+                              <span className="text-sm font-medium">Total:</span>
+                              <span className="text-sm font-bold">
+                                {formatCurrency(farmer.total_amount)}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="mt-4">
+                            <div className="flex gap-2 mb-2">
+                              {/* Check if there are any unapproved collections for this farmer */}
+                              {collections.filter(c => c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid').length > 0 ? (
+                                <Button
+                                  size="sm"
+                                  onClick={() => {
+                                    const unapprovedCollections = collections.filter(c => 
+                                      c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid'
+                                    );
+                                    const collectionIds = unapprovedCollections.map(c => c.id);
+                                    approveCollectionsForPayment(farmer.farmer_id, collectionIds);
+                                  }}
+                                  className="flex-1"
+                                >
+                                  Approve All
+                                </Button>
+                              ) : null}
+                            </div>
+                            <Button
+                              className="w-full"
+                              onClick={() => markAllFarmerPaymentsAsPaid(farmer.farmer_id)}
+                              disabled={farmer.pending_payments <= 0}
+                            >
+                              Mark Paid
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+                
+                {farmerPaymentSummaries.length === 0 && (
+                  <div className="text-center py-8 text-gray-500">
+                    <Users className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                    <p>No farmer payment data available</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Payments Tab */}
+          {activeTab === 'payments' && (
+            <div className="space-y-6">
+              {/* Farmer Payment Summary */}
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-2xl font-bold text-gray-900">Farmer Payment Summary</h2>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setViewMode('list')}
+                      className={viewMode === 'list' ? 'bg-indigo-100' : ''}
+                    >
+                      <List className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setViewMode('grid')}
+                      className={viewMode === 'grid' ? 'bg-indigo-100' : ''}
+                    >
+                      <Grid className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+                
+                {viewMode === 'list' ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Farmer</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Collections</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Liters</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pending</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Paid</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Deductions</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Credit Used</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Net Payment</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {farmerPaymentSummaries.map((farmer) => {
+                          const hasCredit = farmer.credit_used > 0;
+                          const totalDeductions = farmer.total_deductions || 0;
+                          return (
+                            <tr key={farmer.farmer_id} className="hover:bg-gray-50">
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm font-medium text-gray-900">{farmer.farmer_name}</div>
+                                <div className="text-sm text-gray-500">{farmer.farmer_phone}</div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {farmer.total_collections}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {farmer.total_liters.toFixed(2)}L
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {formatCurrency(farmer.pending_payments)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {formatCurrency(farmer.paid_amount)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600 font-medium">
+                                {formatCurrency(totalDeductions)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className={`text-sm font-medium ${hasCredit ? 'text-purple-600' : 'text-gray-500'}`}>
+                                  {formatCurrency(farmer.credit_used)}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className="text-sm font-medium text-green-600">
+                                  {formatCurrency(farmer.net_payment || 0)}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                {formatCurrency(farmer.total_amount)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                <div className="flex gap-2">
+                                  {/* Check if there are any unapproved collections for this farmer */}
+                                  {collections.filter(c => c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid').length > 0 ? (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => {
+                                        const unapprovedCollections = collections.filter(c => 
+                                          c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid'
+                                        );
+                                        const collectionIds = unapprovedCollections.map(c => c.id);
+                                        approveCollectionsForPayment(farmer.farmer_id, collectionIds);
+                                      }}
+                                      className="mr-2"
+                                    >
+                                      Approve All
+                                    </Button>
+                                  ) : null}
+                                  <Button
+                                    size="sm"
+                                    onClick={() => markAllFarmerPaymentsAsPaid(farmer.farmer_id)}
+                                    disabled={farmer.pending_payments <= 0}
+                                  >
+                                    Mark Paid
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  // Grid view
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {farmerPaymentSummaries.map((farmer) => (
+                      <Card key={farmer.farmer_id} className="hover:shadow-lg transition-shadow">
+                        <CardHeader>
+                          <CardTitle className="text-lg">{farmer.farmer_name}</CardTitle>
+                          <p className="text-sm text-gray-500">{farmer.farmer_phone}</p>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-3">
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Collections:</span>
+                              <span className="text-sm font-medium">{farmer.total_collections}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Total Liters:</span>
+                              <span className="text-sm font-medium">{farmer.total_liters.toFixed(2)}L</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Pending:</span>
+                              <span className="text-sm font-medium text-yellow-600">
+                                {formatCurrency(farmer.pending_payments)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Paid:</span>
+                              <span className="text-sm font-medium text-green-600">
+                                {formatCurrency(farmer.paid_amount)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Credit Used:</span>
+                              <span className="text-sm font-medium text-purple-600">
+                                {formatCurrency(farmer.credit_used)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Deductions:</span>
+                              <span className="text-sm font-medium text-red-600">
+                                {formatCurrency(farmer.total_deductions || 0)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Net Payment:</span>
+                              <span className="text-sm font-medium text-blue-600">
+                                {formatCurrency(farmer.net_payment || 0)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between pt-2 border-t">
+                              <span className="text-sm font-medium">Total:</span>
+                              <span className="text-sm font-bold">
+                                {formatCurrency(farmer.total_amount)}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="mt-4">
+                            <div className="flex gap-2 mb-2">
+                              {/* Check if there are any unapproved collections for this farmer */}
+                              {collections.filter(c => c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid').length > 0 ? (
+                                <Button
+                                  size="sm"
+                                  onClick={() => {
+                                    const unapprovedCollections = collections.filter(c => 
+                                      c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid'
+                                    );
+                                    const collectionIds = unapprovedCollections.map(c => c.id);
+                                    approveCollectionsForPayment(farmer.farmer_id, collectionIds);
+                                  }}
+                                  className="flex-1"
+                                >
+                                  Approve All
+                                </Button>
+                              ) : null}
+                            </div>
+                            <Button
+                              className="w-full"
+                              onClick={() => markAllFarmerPaymentsAsPaid(farmer.farmer_id)}
+                              disabled={farmer.pending_payments <= 0}
+                            >
+                              Mark Paid
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+                
+                {farmerPaymentSummaries.length === 0 && (
+                  <div className="text-center py-8 text-gray-500">
+                    <Users className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                    <p>No farmer payment data available</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Payments Tab */}
+          {activeTab === 'payments' && (
+            <div className="space-y-6">
+              {/* Farmer Payment Summary */}
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-2xl font-bold text-gray-900">Farmer Payment Summary</h2>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setViewMode('list')}
+                      className={viewMode === 'list' ? 'bg-indigo-100' : ''}
+                    >
+                      <List className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setViewMode('grid')}
+                      className={viewMode === 'grid' ? 'bg-indigo-100' : ''}
+                    >
+                      <Grid className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+                
+                {viewMode === 'list' ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Farmer</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Collections</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Liters</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pending</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Paid</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Deductions</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Credit Used</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Net Payment</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {farmerPaymentSummaries.map((farmer) => {
+                          const hasCredit = farmer.credit_used > 0;
+                          const totalDeductions = farmer.total_deductions || 0;
+                          return (
+                            <tr key={farmer.farmer_id} className="hover:bg-gray-50">
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm font-medium text-gray-900">{farmer.farmer_name}</div>
+                                <div className="text-sm text-gray-500">{farmer.farmer_phone}</div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {farmer.total_collections}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {farmer.total_liters.toFixed(2)}L
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {formatCurrency(farmer.pending_payments)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {formatCurrency(farmer.paid_amount)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600 font-medium">
+                                {formatCurrency(totalDeductions)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className={`text-sm font-medium ${hasCredit ? 'text-purple-600' : 'text-gray-500'}`}>
+                                  {formatCurrency(farmer.credit_used)}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className="text-sm font-medium text-green-600">
+                                  {formatCurrency(farmer.net_payment || 0)}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                {formatCurrency(farmer.total_amount)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                <div className="flex gap-2">
+                                  {/* Check if there are any unapproved collections for this farmer */}
+                                  {collections.filter(c => c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid').length > 0 ? (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => {
+                                        const unapprovedCollections = collections.filter(c => 
+                                          c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid'
+                                        );
+                                        const collectionIds = unapprovedCollections.map(c => c.id);
+                                        approveCollectionsForPayment(farmer.farmer_id, collectionIds);
+                                      }}
+                                      className="mr-2"
+                                    >
+                                      Approve All
+                                    </Button>
+                                  ) : null}
+                                  <Button
+                                    size="sm"
+                                    onClick={() => markAllFarmerPaymentsAsPaid(farmer.farmer_id)}
+                                    disabled={farmer.pending_payments <= 0}
+                                  >
+                                    Mark Paid
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  // Grid view
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {farmerPaymentSummaries.map((farmer) => (
+                      <Card key={farmer.farmer_id} className="hover:shadow-lg transition-shadow">
+                        <CardHeader>
+                          <CardTitle className="text-lg">{farmer.farmer_name}</CardTitle>
+                          <p className="text-sm text-gray-500">{farmer.farmer_phone}</p>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-3">
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Collections:</span>
+                              <span className="text-sm font-medium">{farmer.total_collections}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Total Liters:</span>
+                              <span className="text-sm font-medium">{farmer.total_liters.toFixed(2)}L</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Pending:</span>
+                              <span className="text-sm font-medium text-yellow-600">
+                                {formatCurrency(farmer.pending_payments)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Paid:</span>
+                              <span className="text-sm font-medium text-green-600">
+                                {formatCurrency(farmer.paid_amount)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Credit Used:</span>
+                              <span className="text-sm font-medium text-purple-600">
+                                {formatCurrency(farmer.credit_used)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Deductions:</span>
+                              <span className="text-sm font-medium text-red-600">
+                                {formatCurrency(farmer.total_deductions || 0)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Net Payment:</span>
+                              <span className="text-sm font-medium text-blue-600">
+                                {formatCurrency(farmer.net_payment || 0)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between pt-2 border-t">
+                              <span className="text-sm font-medium">Total:</span>
+                              <span className="text-sm font-bold">
+                                {formatCurrency(farmer.total_amount)}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="mt-4">
+                            <div className="flex gap-2 mb-2">
+                              {/* Check if there are any unapproved collections for this farmer */}
+                              {collections.filter(c => c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid').length > 0 ? (
+                                <Button
+                                  size="sm"
+                                  onClick={() => {
+                                    const unapprovedCollections = collections.filter(c => 
+                                      c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid'
+                                    );
+                                    const collectionIds = unapprovedCollections.map(c => c.id);
+                                    approveCollectionsForPayment(farmer.farmer_id, collectionIds);
+                                  }}
+                                  className="flex-1"
+                                >
+                                  Approve All
+                                </Button>
+                              ) : null}
+                            </div>
+                            <Button
+                              className="w-full"
+                              onClick={() => markAllFarmerPaymentsAsPaid(farmer.farmer_id)}
+                              disabled={farmer.pending_payments <= 0}
+                            >
+                              Mark Paid
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+                
+                {farmerPaymentSummaries.length === 0 && (
+                  <div className="text-center py-8 text-gray-500">
+                    <Users className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                    <p>No farmer payment data available</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Pending Payments Tab */}
+          {activeTab === 'pending' && (
+            <div className="space-y-6">
+              {/* Time Frame Filters */}
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                  <h3 className="text-lg font-semibold text-gray-900">Filter by Time Period</h3>
+                  
+                  <div className="flex flex-wrap gap-2">
+                    {['all', 'daily', 'weekly', 'monthly', 'lastMonth'].map((period) => (
+                      <button
+                        key={period}
+                        onClick={() => handleTimeFrameChange(period)}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                          timeFrame === period
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        {period === 'all' && 'All Time'}
+                        {period === 'daily' && 'Today'}
+                        {period === 'weekly' && 'This Week'}
+                        {period === 'monthly' && 'This Month'}
+                        {period === 'lastMonth' && 'Last Month'}
+                      </button>
+                    ))}
+                    
+                    <button
+                      onClick={resetFilters}
+                      className="px-4 py-2 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
+                    >
+                      Reset Filters
+                    </button>
+                  </div>
+                </div>
+                
+                {/* Custom Date Range */}
+                <div className="mt-4 flex flex-col sm:flex-row gap-4 items-end">
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">From Date</label>
+                    <Input
+                      type="date"
+                      value={customDateRange.from}
+                      onChange={(e) => handleCustomDateChange('from', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    />
+                  </div>
+                  
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">To Date</label>
+                    <Input
+                      type="date"
+                      value={customDateRange.to}
+                      onChange={(e) => handleCustomDateChange('to', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    />
+                  </div>
+                  
+                  <Button
+                    onClick={applyCustomDateRange}
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                  >
+                    Apply Date Range
+                  </Button>
+                </div>
+                
+                {/* Current Filter Display */}
+                <div className="mt-4 text-sm text-gray-600">
+                  {timeFrame !== 'all' && (
+                    <p>
+                      Showing data for: 
+                      <span className="font-medium ml-1">
+                        {timeFrame === 'daily' && 'Today'}
+                        {timeFrame === 'weekly' && 'This Week'}
+                        {timeFrame === 'monthly' && 'This Month'}
+                        {timeFrame === 'lastMonth' && 'Last Month'}
+                        {timeFrame === 'custom' && `Custom Range: ${customDateRange.from} to ${customDateRange.to}`}
+                      </span>
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <CollectorPaymentsSection 
+                collections={collections} 
+                markAsPaid={markAsPaid} 
+                approveCollectionsForPayment={approveCollectionsForPayment}
+              />
+
+            </div>
+          )}
+
+          {/* Paid Payments Tab */}
+          {activeTab === 'paid' && (
+            <div className="space-y-6">
+              {/* Time Frame Filters */}
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                  <h3 className="text-lg font-semibold text-gray-900">Filter by Time Period</h3>
+                  
+                  <div className="flex flex-wrap gap-2">
+                    {['all', 'daily', 'weekly', 'monthly', 'lastMonth'].map((period) => (
+                      <button
+                        key={period}
+                        onClick={() => handleTimeFrameChange(period)}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                          timeFrame === period
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
+                      >
+                        {period === 'all' && 'All Time'}
+                        {period === 'daily' && 'Today'}
+                        {period === 'weekly' && 'This Week'}
+                        {period === 'monthly' && 'This Month'}
+                        {period === 'lastMonth' && 'Last Month'}
+                      </button>
+                    ))}
+                    
+                    <button
+                      onClick={resetFilters}
+                      className="px-4 py-2 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
+                    >
+                      Reset Filters
+                    </button>
+                  </div>
+                </div>
+                
+                {/* Custom Date Range */}
+                <div className="mt-4 flex flex-col sm:flex-row gap-4 items-end">
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">From Date</label>
+                    <Input
+                      type="date"
+                      value={customDateRange.from}
+                      onChange={(e) => handleCustomDateChange('from', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    />
+                  </div>
+                  
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">To Date</label>
+                    <Input
+                      type="date"
+                      value={customDateRange.to}
+                      onChange={(e) => handleCustomDateChange('to', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    />
+                  </div>
+                  
+                  <Button
+                    onClick={applyCustomDateRange}
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                  >
+                    Apply Date Range
+                  </Button>
+                </div>
+                
+                {/* Current Filter Display */}
+                <div className="mt-4 text-sm text-gray-600">
+                  {timeFrame !== 'all' && (
+                    <p>
+                      Showing data for: 
+                      <span className="font-medium ml-1">
+                        {timeFrame === 'daily' && 'Today'}
+                        {timeFrame === 'weekly' && 'This Week'}
+                        {timeFrame === 'monthly' && 'This Month'}
+                        {timeFrame === 'lastMonth' && 'Last Month'}
+                        {timeFrame === 'custom' && `Custom Range: ${customDateRange.from} to ${customDateRange.to}`}
+                      </span>
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <CollectorPaymentsSection 
+                collections={collections} 
+                markAsPaid={markAsPaid} 
+                approveCollectionsForPayment={approveCollectionsForPayment}
+                paymentType="paid"
+              />
+
+            </div>
+          )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setViewMode('list')}
+                      className={viewMode === 'list' ? 'bg-indigo-100' : ''}
+                    >
+                      <List className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setViewMode('grid')}
+                      className={viewMode === 'grid' ? 'bg-indigo-100' : ''}
+                    >
+                      <Grid className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+                
+                {viewMode === 'list' ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Farmer</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Collections</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Liters</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pending</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Paid</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Deductions</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Credit Used</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Net Payment</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {farmerPaymentSummaries.map((farmer) => {
+                          const hasCredit = farmer.credit_used > 0;
+                          const totalDeductions = farmer.total_deductions || 0;
+                          return (
+                            <tr key={farmer.farmer_id} className="hover:bg-gray-50">
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm font-medium text-gray-900">{farmer.farmer_name}</div>
+                                <div className="text-sm text-gray-500">{farmer.farmer_phone}</div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {farmer.total_collections}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {farmer.total_liters.toFixed(2)}L
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {formatCurrency(farmer.pending_payments)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {formatCurrency(farmer.paid_amount)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600 font-medium">
+                                {formatCurrency(farmer.total_deductions)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className={`text-sm font-medium ${farmer.credit_used > 0 ? 'text-purple-600' : 'text-gray-500'}`}>
+                                  {formatCurrency(farmer.credit_used)}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className="text-sm font-medium text-green-600">
+                                  {formatCurrency(farmer.net_payment)}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                {formatCurrency(farmer.total_amount)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="flex gap-2">
+                                  {/* Check if there are any unapproved collections for this farmer */}
+                                  {collections.filter(c => c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid').length > 0 ? (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => {
+                                        const unapprovedCollections = collections.filter(c => 
+                                          c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid'
+                                        );
+                                        const collectionIds = unapprovedCollections.map(c => c.id);
+                                        approveCollectionsForPayment(farmer.farmer_id, collectionIds);
+                                      }}
+                                      className="mr-2"
+                                    >
+                                      Approve All
+                                    </Button>
+                                  ) : null}
+                                  <Button
+                                    size="sm"
+                                    onClick={() => markAllFarmerPaymentsAsPaid(farmer.farmer_id)}
+                                    disabled={farmer.pending_payments <= 0}
+                                  >
+                                    Mark Paid
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  // Grid view
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {farmerPaymentSummaries.map((farmer) => (
+                      <Card key={farmer.farmer_id} className="hover:shadow-lg transition-shadow">
+                        <CardHeader>
+                          <CardTitle className="text-lg">{farmer.farmer_name}</CardTitle>
+                          <p className="text-sm text-gray-500">{farmer.farmer_phone}</p>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-3">
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Collections:</span>
+                              <span className="text-sm font-medium">{farmer.total_collections}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Total Liters:</span>
+                              <span className="text-sm font-medium">{farmer.total_liters.toFixed(2)}L</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Pending:</span>
+                              <span className="text-sm font-medium text-yellow-600">
+                                {formatCurrency(farmer.pending_payments)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Paid:</span>
+                              <span className="text-sm font-medium text-green-600">
+                                {formatCurrency(farmer.paid_amount)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Credit Used:</span>
+                              <span className="text-sm font-medium text-purple-600">
+                                {formatCurrency(farmer.credit_used)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Deductions:</span>
+                              <span className="text-sm font-medium text-red-600">
+                                {formatCurrency(farmer.total_deductions || 0)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Net Payment:</span>
+                              <span className="text-sm font-medium text-blue-600">
+                                {formatCurrency(farmer.net_payment || 0)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between pt-2 border-t">
+                              <span className="text-sm font-medium">Total:</span>
+                              <span className="text-sm font-bold">
+                                {formatCurrency(farmer.total_amount)}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="mt-4">
+                            <div className="flex gap-2 mb-2">
+                              {/* Check if there are any unapproved collections for this farmer */}
+                              {collections.filter(c => c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid').length > 0 ? (
+                                <Button
+                                  size="sm"
+                                  onClick={() => {
+                                    const unapprovedCollections = collections.filter(c => 
+                                      c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid'
+                                    );
+                                    const collectionIds = unapprovedCollections.map(c => c.id);
+                                    approveCollectionsForPayment(farmer.farmer_id, collectionIds);
+                                  }}
+                                  className="flex-1"
+                                >
+                                  Approve All
+                                </Button>
+                              ) : null}
+                            </div>
+                            <Button
+                              className="w-full"
+                              onClick={() => markAllFarmerPaymentsAsPaid(farmer.farmer_id)}
+                              disabled={farmer.pending_payments <= 0}
+                            >
+                              Mark Paid
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+                
+                {farmerPaymentSummaries.length === 0 && (
+                  <div className="text-center py-8 text-gray-500">
+                    <Users className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                    <p>No farmer payment data available</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Payments Tab */}
+          {activeTab === 'payments' && (
+            <div className="space-y-6">
+              {/* Farmer Payment Summary */}
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-2xl font-bold text-gray-900">Farmer Payment Summary</h2>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setViewMode('list')}
+                      className={viewMode === 'list' ? 'bg-indigo-100' : ''}
+                    >
+                      <List className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setViewMode('grid')}
+                      className={viewMode === 'grid' ? 'bg-indigo-100' : ''}
+                    >
+                      <Grid className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+                
+                {viewMode === 'list' ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Farmer</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Collections</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Liters</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pending</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Paid</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Deductions</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Credit Used</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Net Payment</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {farmerPaymentSummaries.map((farmer) => {
+                          const hasCredit = farmer.credit_used > 0;
+                          const totalDeductions = farmer.total_deductions || 0;
+                          return (
+                            <tr key={farmer.farmer_id} className="hover:bg-gray-50">
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm font-medium text-gray-900">{farmer.farmer_name}</div>
+                                <div className="text-sm text-gray-500">{farmer.farmer_phone}</div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {farmer.total_collections}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {farmer.total_liters.toFixed(2)}L
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {formatCurrency(farmer.pending_payments)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {formatCurrency(farmer.paid_amount)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600 font-medium">
+                                {formatCurrency(totalDeductions)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className={`text-sm font-medium ${hasCredit ? 'text-purple-600' : 'text-gray-500'}`}>
+                                  {formatCurrency(farmer.credit_used)}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className="text-sm font-medium text-green-600">
+                                  {formatCurrency(farmer.net_payment || 0)}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                {formatCurrency(farmer.total_amount)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                <div className="flex gap-2">
+                                  {/* Check if there are any unapproved collections for this farmer */}
+                                  {collections.filter(c => c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid').length > 0 ? (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => {
+                                        const unapprovedCollections = collections.filter(c => 
+                                          c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid'
+                                        );
+                                        const collectionIds = unapprovedCollections.map(c => c.id);
+                                        approveCollectionsForPayment(farmer.farmer_id, collectionIds);
+                                      }}
+                                      className="mr-2"
+                                    >
+                                      Approve All
+                                    </Button>
+                                  ) : null}
+                                  <Button
+                                    size="sm"
+                                    onClick={() => markAllFarmerPaymentsAsPaid(farmer.farmer_id)}
+                                    disabled={farmer.pending_payments <= 0}
+                                  >
+                                    Mark Paid
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  // Grid view
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {farmerPaymentSummaries.map((farmer) => (
+                      <Card key={farmer.farmer_id} className="hover:shadow-lg transition-shadow">
+                        <CardHeader>
+                          <CardTitle className="text-lg">{farmer.farmer_name}</CardTitle>
+                          <p className="text-sm text-gray-500">{farmer.farmer_phone}</p>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-3">
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Collections:</span>
+                              <span className="text-sm font-medium">{farmer.total_collections}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Total Liters:</span>
+                              <span className="text-sm font-medium">{farmer.total_liters.toFixed(2)}L</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Pending:</span>
+                              <span className="text-sm font-medium text-yellow-600">
+                                {formatCurrency(farmer.pending_payments)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Paid:</span>
+                              <span className="text-sm font-medium text-green-600">
+                                {formatCurrency(farmer.paid_amount)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Credit Used:</span>
+                              <span className="text-sm font-medium text-purple-600">
+                                {formatCurrency(farmer.credit_used)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Deductions:</span>
+                              <span className="text-sm font-medium text-red-600">
+                                {formatCurrency(farmer.total_deductions || 0)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Net Payment:</span>
+                              <span className="text-sm font-medium text-blue-600">
+                                {formatCurrency(farmer.net_payment || 0)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between pt-2 border-t">
+                              <span className="text-sm font-medium">Total:</span>
+                              <span className="text-sm font-bold">
+                                {formatCurrency(farmer.total_amount)}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="mt-4">
+                            <div className="flex gap-2 mb-2">
+                              {/* Check if there are any unapproved collections for this farmer */}
+                              {collections.filter(c => c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid').length > 0 ? (
+                                <Button
+                                  size="sm"
+                                  onClick={() => {
+                                    const unapprovedCollections = collections.filter(c => 
+                                      c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid'
+                                    );
+                                    const collectionIds = unapprovedCollections.map(c => c.id);
+                                    approveCollectionsForPayment(farmer.farmer_id, collectionIds);
+                                  }}
+                                  className="flex-1"
+                                >
+                                  Approve All
+                                </Button>
+                              ) : null}
+                            </div>
+                            <Button
+                              className="w-full"
+                              onClick={() => markAllFarmerPaymentsAsPaid(farmer.farmer_id)}
+                              disabled={farmer.pending_payments <= 0}
+                            >
+                              Mark Paid
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+                
+                {farmerPaymentSummaries.length === 0 && (
+                  <div className="text-center py-8 text-gray-500">
+                    <Users className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                    <p>No farmer payment data available</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Payments Tab */}
+          {activeTab === 'payments' && (
+            <div className="space-y-6">
+              {/* Farmer Payment Summary */}
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-2xl font-bold text-gray-900">Farmer Payment Summary</h2>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setViewMode('list')}
+                      className={viewMode === 'list' ? 'bg-indigo-100' : ''}
+                    >
+                      <List className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setViewMode('grid')}
+                      className={viewMode === 'grid' ? 'bg-indigo-100' : ''}
+                    >
+                      <Grid className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+                
+                {viewMode === 'list' ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Farmer</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Collections</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Liters</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pending</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Paid</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Deductions</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Credit Used</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Net Payment</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {farmerPaymentSummaries.map((farmer) => {
+                          const hasCredit = farmer.credit_used > 0;
+                          const totalDeductions = farmer.total_deductions || 0;
+                          return (
+                            <tr key={farmer.farmer_id} className="hover:bg-gray-50">
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm font-medium text-gray-900">{farmer.farmer_name}</div>
+                                <div className="text-sm text-gray-500">{farmer.farmer_phone}</div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {farmer.total_collections}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {farmer.total_liters.toFixed(2)}L
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {formatCurrency(farmer.pending_payments)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {formatCurrency(farmer.paid_amount)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600 font-medium">
+                                {formatCurrency(totalDeductions)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className={`text-sm font-medium ${hasCredit ? 'text-purple-600' : 'text-gray-500'}`}>
+                                  {formatCurrency(farmer.credit_used)}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className="text-sm font-medium text-green-600">
+                                  {formatCurrency(farmer.net_payment || 0)}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                {formatCurrency(farmer.total_amount)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                <div className="flex gap-2">
+                                  {/* Check if there are any unapproved collections for this farmer */}
+                                  {collections.filter(c => c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid').length > 0 ? (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => {
+                                        const unapprovedCollections = collections.filter(c => 
+                                          c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid'
+                                        );
+                                        const collectionIds = unapprovedCollections.map(c => c.id);
+                                        approveCollectionsForPayment(farmer.farmer_id, collectionIds);
+                                      }}
+                                      className="mr-2"
+                                    >
+                                      Approve All
+                                    </Button>
+                                  ) : null}
+                                  <Button
+                                    size="sm"
+                                    onClick={() => markAllFarmerPaymentsAsPaid(farmer.farmer_id)}
+                                    disabled={farmer.pending_payments <= 0}
+                                  >
+                                    Mark Paid
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  // Grid view
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {farmerPaymentSummaries.map((farmer) => (
+                      <Card key={farmer.farmer_id} className="hover:shadow-lg transition-shadow">
+                        <CardHeader>
+                          <CardTitle className="text-lg">{farmer.farmer_name}</CardTitle>
+                          <p className="text-sm text-gray-500">{farmer.farmer_phone}</p>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-3">
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Collections:</span>
+                              <span className="text-sm font-medium">{farmer.total_collections}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Total Liters:</span>
+                              <span className="text-sm font-medium">{farmer.total_liters.toFixed(2)}L</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Pending:</span>
+                              <span className="text-sm font-medium text-yellow-600">
+                                {formatCurrency(farmer.pending_payments)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Paid:</span>
+                              <span className="text-sm font-medium text-green-600">
+                                {formatCurrency(farmer.paid_amount)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Credit Used:</span>
+                              <span className="text-sm font-medium text-purple-600">
+                                {formatCurrency(farmer.credit_used)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Deductions:</span>
+                              <span className="text-sm font-medium text-red-600">
+                                {formatCurrency(farmer.total_deductions || 0)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Net Payment:</span>
+                              <span className="text-sm font-medium text-blue-600">
+                                {formatCurrency(farmer.net_payment || 0)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between pt-2 border-t">
+                              <span className="text-sm font-medium">Total:</span>
+                              <span className="text-sm font-bold">
+                                {formatCurrency(farmer.total_amount)}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="mt-4">
+                            <div className="flex gap-2 mb-2">
+                              {/* Check if there are any unapproved collections for this farmer */}
+                              {collections.filter(c => c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid').length > 0 ? (
+                                <Button
+                                  size="sm"
+                                  onClick={() => {
+                                    const unapprovedCollections = collections.filter(c => 
+                                      c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid'
+                                    );
+                                    const collectionIds = unapprovedCollections.map(c => c.id);
+                                    approveCollectionsForPayment(farmer.farmer_id, collectionIds);
+                                  }}
+                                  className="flex-1"
+                                >
+                                  Approve All
+                                </Button>
+                              ) : null}
+                            </div>
+                            <Button
+                              className="w-full"
+                              onClick={() => markAllFarmerPaymentsAsPaid(farmer.farmer_id)}
+                              disabled={farmer.pending_payments <= 0}
+                            >
+                              Mark Paid
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+                
+                {farmerPaymentSummaries.length === 0 && (
+                  <div className="text-center py-8 text-gray-500">
+                    <Users className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                    <p>No farmer payment data available</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Payments Tab */}
+          {activeTab === 'payments' && (
+            <div className="space-y-6">
+              {/* Farmer Payment Summary */}
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-2xl font-bold text-gray-900">Farmer Payment Summary</h2>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setViewMode('list')}
+                      className={viewMode === 'list' ? 'bg-indigo-100' : ''}
+                    >
+                      <List className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setViewMode('grid')}
+                      className={viewMode === 'grid' ? 'bg-indigo-100' : ''}
+                    >
+                      <Grid className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+                
+                {viewMode === 'list' ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Farmer</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Collections</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Liters</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pending</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Paid</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Deductions</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Credit Used</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Net Payment</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {farmerPaymentSummaries.map((farmer) => {
+                          const hasCredit = farmer.credit_used > 0;
+                          const totalDeductions = farmer.total_deductions || 0;
+                          return (
+                            <tr key={farmer.farmer_id} className="hover:bg-gray-50">
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm font-medium text-gray-900">{farmer.farmer_name}</div>
+                                <div className="text-sm text-gray-500">{farmer.farmer_phone}</div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {farmer.total_collections}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {farmer.total_liters.toFixed(2)}L
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {formatCurrency(farmer.pending_payments)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {formatCurrency(farmer.paid_amount)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600 font-medium">
+                                {formatCurrency(totalDeductions)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className={`text-sm font-medium ${hasCredit ? 'text-purple-600' : 'text-gray-500'}`}>
+                                  {formatCurrency(farmer.credit_used)}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className="text-sm font-medium text-green-600">
+                                  {formatCurrency(farmer.net_payment || 0)}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                {formatCurrency(farmer.total_amount)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                <div className="flex gap-2">
+                                  {/* Check if there are any unapproved collections for this farmer */}
+                                  {collections.filter(c => c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid').length > 0 ? (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => {
+                                        const unapprovedCollections = collections.filter(c => 
+                                          c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid'
+                                        );
+                                        const collectionIds = unapprovedCollections.map(c => c.id);
+                                        approveCollectionsForPayment(farmer.farmer_id, collectionIds);
+                                      }}
+                                      className="mr-2"
+                                    >
+                                      Approve All
+                                    </Button>
+                                  ) : null}
+                                  <Button
+                                    size="sm"
+                                    onClick={() => markAllFarmerPaymentsAsPaid(farmer.farmer_id)}
+                                    disabled={farmer.pending_payments <= 0}
+                                  >
+                                    Mark Paid
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  // Grid view
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {farmerPaymentSummaries.map((farmer) => (
+                      <Card key={farmer.farmer_id} className="hover:shadow-lg transition-shadow">
+                        <CardHeader>
+                          <CardTitle className="text-lg">{farmer.farmer_name}</CardTitle>
+                          <p className="text-sm text-gray-500">{farmer.farmer_phone}</p>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-3">
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Collections:</span>
+                              <span className="text-sm font-medium">{farmer.total_collections}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Total Liters:</span>
+                              <span className="text-sm font-medium">{farmer.total_liters.toFixed(2)}L</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Pending:</span>
+                              <span className="text-sm font-medium text-yellow-600">
+                                {formatCurrency(farmer.pending_payments)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Paid:</span>
+                              <span className="text-sm font-medium text-green-600">
+                                {formatCurrency(farmer.paid_amount)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Credit Used:</span>
+                              <span className="text-sm font-medium text-purple-600">
+                                {formatCurrency(farmer.credit_used)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Deductions:</span>
+                              <span className="text-sm font-medium text-red-600">
+                                {formatCurrency(farmer.total_deductions || 0)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Net Payment:</span>
+                              <span className="text-sm font-medium text-blue-600">
+                                {formatCurrency(farmer.net_payment || 0)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between pt-2 border-t">
+                              <span className="text-sm font-medium">Total:</span>
+                              <span className="text-sm font-bold">
+                                {formatCurrency(farmer.total_amount)}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="mt-4">
+                            <div className="flex gap-2 mb-2">
+                              {/* Check if there are any unapproved collections for this farmer */}
+                              {collections.filter(c => c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid').length > 0 ? (
+                                <Button
+                                  size="sm"
+                                  onClick={() => {
+                                    const unapprovedCollections = collections.filter(c => 
+                                      c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid'
+                                    );
+                                    const collectionIds = unapprovedCollections.map(c => c.id);
+                                    approveCollectionsForPayment(farmer.farmer_id, collectionIds);
+                                  }}
+                                  className="flex-1"
+                                >
+                                  Approve All
+                                </Button>
+                              ) : null}
+                            </div>
+                            <Button
+                              className="w-full"
+                              onClick={() => markAllFarmerPaymentsAsPaid(farmer.farmer_id)}
+                              disabled={farmer.pending_payments <= 0}
+                            >
+                              Mark Paid
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+                
+                {farmerPaymentSummaries.length === 0 && (
+                  <div className="text-center py-8 text-gray-500">
+                    <Users className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                    <p>No farmer payment data available</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Payments Tab */}
+          {activeTab === 'payments' && (
+            <div className="space-y-6">
+              {/* Farmer Payment Summary */}
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-2xl font-bold text-gray-900">Farmer Payment Summary</h2>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setViewMode('list')}
+                      className={viewMode === 'list' ? 'bg-indigo-100' : ''}
+                    >
+                      <List className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setViewMode('grid')}
+                      className={viewMode === 'grid' ? 'bg-indigo-100' : ''}
+                    >
+                      <Grid className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+                
+                {viewMode === 'list' ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Farmer</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Collections</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Liters</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pending</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Paid</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Deductions</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Credit Used</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Net Payment</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {farmerPaymentSummaries.map((farmer) => {
+                          const hasCredit = farmer.credit_used > 0;
+                          const totalDeductions = farmer.total_deductions || 0;
+                          return (
+                            <tr key={farmer.farmer_id} className="hover:bg-gray-50">
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm font-medium text-gray-900">{farmer.farmer_name}</div>
+                                <div className="text-sm text-gray-500">{farmer.farmer_phone}</div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {farmer.total_collections}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {farmer.total_liters.toFixed(2)}L
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {formatCurrency(farmer.pending_payments)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {formatCurrency(farmer.paid_amount)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600 font-medium">
+                                {formatCurrency(totalDeductions)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className={`text-sm font-medium ${hasCredit ? 'text-purple-600' : 'text-gray-500'}`}>
+                                  {formatCurrency(farmer.credit_used)}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className="text-sm font-medium text-green-600">
+                                  {formatCurrency(farmer.net_payment || 0)}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                {formatCurrency(farmer.total_amount)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                <div className="flex gap-2">
+                                  {/* Check if there are any unapproved collections for this farmer */}
+                                  {collections.filter(c => c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid').length > 0 ? (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => {
+                                        const unapprovedCollections = collections.filter(c => 
+                                          c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid'
+                                        );
+                                        const collectionIds = unapprovedCollections.map(c => c.id);
+                                        approveCollectionsForPayment(farmer.farmer_id, collectionIds);
+                                      }}
+                                      className="mr-2"
+                                    >
+                                      Approve All
+                                    </Button>
+                                  ) : null}
+                                  <Button
+                                    size="sm"
+                                    onClick={() => markAllFarmerPaymentsAsPaid(farmer.farmer_id)}
+                                    disabled={farmer.pending_payments <= 0}
+                                  >
+                                    Mark Paid
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  // Grid view
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {farmerPaymentSummaries.map((farmer) => (
+                      <Card key={farmer.farmer_id} className="hover:shadow-lg transition-shadow">
+                        <CardHeader>
+                          <CardTitle className="text-lg">{farmer.farmer_name}</CardTitle>
+                          <p className="text-sm text-gray-500">{farmer.farmer_phone}</p>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-3">
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Collections:</span>
+                              <span className="text-sm font-medium">{farmer.total_collections}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Total Liters:</span>
+                              <span className="text-sm font-medium">{farmer.total_liters.toFixed(2)}L</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Pending:</span>
+                              <span className="text-sm font-medium text-yellow-600">
+                                {formatCurrency(farmer.pending_payments)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Paid:</span>
+                              <span className="text-sm font-medium text-green-600">
+                                {formatCurrency(farmer.paid_amount)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Credit Used:</span>
+                              <span className="text-sm font-medium text-purple-600">
+                                {formatCurrency(farmer.credit_used)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Deductions:</span>
+                              <span className="text-sm font-medium text-red-600">
+                                {formatCurrency(farmer.total_deductions || 0)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Net Payment:</span>
+                              <span className="text-sm font-medium text-blue-600">
+                                {formatCurrency(farmer.net_payment || 0)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between pt-2 border-t">
+                              <span className="text-sm font-medium">Total:</span>
+                              <span className="text-sm font-bold">
+                                {formatCurrency(farmer.total_amount)}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="mt-4">
+                            <div className="flex gap-2 mb-2">
+                              {/* Check if there are any unapproved collections for this farmer */}
+                              {collections.filter(c => c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid').length > 0 ? (
+                                <Button
+                                  size="sm"
+                                  onClick={() => {
+                                    const unapprovedCollections = collections.filter(c => 
+                                      c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid'
+                                    );
+                                    const collectionIds = unapprovedCollections.map(c => c.id);
+                                    approveCollectionsForPayment(farmer.farmer_id, collectionIds);
+                                  }}
+                                  className="flex-1"
+                                >
+                                  Approve All
+                                </Button>
+                              ) : null}
+                            </div>
+                            <Button
+                              className="w-full"
+                              onClick={() => markAllFarmerPaymentsAsPaid(farmer.farmer_id)}
+                              disabled={farmer.pending_payments <= 0}
+                            >
+                              Mark Paid
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+                
+                {farmerPaymentSummaries.length === 0 && (
+                  <div className="text-center py-8 text-gray-500">
+                    <Users className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                    <p>No farmer payment data available</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Payments Tab */}
+          {activeTab === 'payments' && (
+            <div className="space-y-6">
+              {/* Farmer Payment Summary */}
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-2xl font-bold text-gray-900">Farmer Payment Summary</h2>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setViewMode('list')}
+                      className={viewMode === 'list' ? 'bg-indigo-100' : ''}
+                    >
+                      <List className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setViewMode('grid')}
+                      className={viewMode === 'grid' ? 'bg-indigo-100' : ''}
+                    >
+                      <Grid className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+                
+                {viewMode === 'list' ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Farmer</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Collections</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Liters</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pending</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Paid</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Deductions</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Credit Used</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Net Payment</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {farmerPaymentSummaries.map((farmer) => {
+                          const hasCredit = farmer.credit_used > 0;
+                          const totalDeductions = farmer.total_deductions || 0;
+                          return (
+                            <tr key={farmer.farmer_id} className="hover:bg-gray-50">
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm font-medium text-gray-900">{farmer.farmer_name}</div>
+                                <div className="text-sm text-gray-500">{farmer.farmer_phone}</div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {farmer.total_collections}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {farmer.total_liters.toFixed(2)}L
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {formatCurrency(farmer.pending_payments)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {formatCurrency(farmer.paid_amount)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600 font-medium">
+                                {formatCurrency(totalDeductions)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className={`text-sm font-medium ${hasCredit ? 'text-purple-600' : 'text-gray-500'}`}>
+                                  {formatCurrency(farmer.credit_used)}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className="text-sm font-medium text-green-600">
+                                  {formatCurrency(farmer.net_payment || 0)}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                {formatCurrency(farmer.total_amount)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                <div className="flex gap-2">
+                                  {/* Check if there are any unapproved collections for this farmer */}
+                                  {collections.filter(c => c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid').length > 0 ? (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => {
+                                        const unapprovedCollections = collections.filter(c => 
+                                          c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid'
+                                        );
+                                        const collectionIds = unapprovedCollections.map(c => c.id);
+                                        approveCollectionsForPayment(farmer.farmer_id, collectionIds);
+                                      }}
+                                      className="mr-2"
+                                    >
+                                      Approve All
+                                    </Button>
+                                  ) : null}
+                                  <Button
+                                    size="sm"
+                                    onClick={() => markAllFarmerPaymentsAsPaid(farmer.farmer_id)}
+                                    disabled={farmer.pending_payments <= 0}
+                                  >
+                                    Mark Paid
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  // Grid view
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {farmerPaymentSummaries.map((farmer) => (
+                      <Card key={farmer.farmer_id} className="hover:shadow-lg transition-shadow">
+                        <CardHeader>
+                          <CardTitle className="text-lg">{farmer.farmer_name}</CardTitle>
+                          <p className="text-sm text-gray-500">{farmer.farmer_phone}</p>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-3">
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Collections:</span>
+                              <span className="text-sm font-medium">{farmer.total_collections}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Total Liters:</span>
+                              <span className="text-sm font-medium">{farmer.total_liters.toFixed(2)}L</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Pending:</span>
+                              <span className="text-sm font-medium text-yellow-600">
+                                {formatCurrency(farmer.pending_payments)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Paid:</span>
+                              <span className="text-sm font-medium text-green-600">
+                                {formatCurrency(farmer.paid_amount)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Credit Used:</span>
+                              <span className="text-sm font-medium text-purple-600">
+                                {formatCurrency(farmer.credit_used)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Deductions:</span>
+                              <span className="text-sm font-medium text-red-600">
+                                {formatCurrency(farmer.total_deductions || 0)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-sm text-gray-600">Net Payment:</span>
+                              <span className="text-sm font-medium text-blue-600">
+                                {formatCurrency(farmer.net_payment || 0)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between pt-2 border-t">
+                              <span className="text-sm font-medium">Total:</span>
+                              <span className="text-sm font-bold">
+                                {formatCurrency(farmer.total_amount)}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="mt-4">
+                            <div className="flex gap-2 mb-2">
+                              {/* Check if there are any unapproved collections for this farmer */}
+                              {collections.filter(c => c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid').length > 0 ? (
+                                <Button
+                                  size="sm"
+                                  onClick={() => {
+                                    const unapprovedCollections = collections.filter(c => 
+                                      c.farmer_id === farmer.farmer_id && !c.approved_for_payment && c.status !== 'Paid'
+                                    );
+                                    const collectionIds = unapprovedCollections.map(c => c.id);
+                                    approveCollectionsForPayment(farmer.farmer_id, collectionIds);
+                                  }}
+                                  className="flex-1"
+                                >
+                                  Approve All
+                                </Button>
+                              ) : null}
+                            </div>
+                            <Button
+                              className="w-full"
+                              onClick={() => markAllFarmerPaymentsAsPaid(farmer.farmer_id)}
+                              disabled={farmer.pending_payments <= 0}
+                            >
+                              Mark Paid
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+                
+                {farmerPaymentSummaries.length === 0 && (
+                  <div className="text-center py-8 text-gray-500">
+                    <Users className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                    <p>No farmer payment data available</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Credit Analytics Section */}
+          {activeTab === 'analytics' && (
+            <div className="space-y-6">
+              {/* Mini tab navigation */}
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <div className="flex border-b border-gray-200 mb-6">
+                  <button
+                    className={`px-4 py-2 font-medium text-sm rounded-t-lg ${
+                      activeAnalyticsTab === 'credit' 
+                        ? 'border-b-2 border-indigo-600 text-indigo-600' 
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                    onClick={() => setActiveAnalyticsTab('credit')}
+                  >
+                    Credit Analytics
+                  </button>
+                  <button
+                    className={`px-4 py-2 font-medium text-sm rounded-t-lg ${
+                      activeAnalyticsTab === 'farmers-payments' 
+                        ? 'border-b-2 border-indigo-600 text-indigo-600' 
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                    onClick={() => setActiveAnalyticsTab('farmers-payments')}
+                  >
+                    Farmers Payments
+                  </button>
+                </div>
+
+                {/* Credit Analytics Content */}
+                {activeAnalyticsTab === 'credit' && (
+                  <div className="space-y-6">
+                    {/* Credit Utilization Overview */}
+                    <div className="bg-white rounded-xl shadow-lg p-6">
+                      <h3 className="text-xl font-bold text-gray-900 mb-6">Credit Utilization</h3>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {/* Credit Distribution Pie Chart */}
+                        <div className="md:col-span-2">
+                          <h4 className="font-semibold text-gray-800 mb-4">Credit Distribution</h4>
+                          <div className="h-64">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <RechartsPieChart>
+                                <Pie
+                                  data={creditAnalytics.creditDistribution.slice(0, 5)}
+                                  cx="50%"
+                                  cy="50%"
+                                  labelLine={false}
+                                  outerRadius={80}
+                                  fill="#8884d8"
+                                  dataKey="creditUsed"
+                                  nameKey="name"
+                                  label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                                >
+                                  {creditAnalytics.creditDistribution.slice(0, 5).map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                  ))}
+                                </Pie>
+                                <Tooltip formatter={(value) => formatCurrency(Number(value))} />
+                                <Legend />
+                              </RechartsPieChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
+                        
+                        {/* Credit Metrics */}
+                        <div className="space-y-4">
+                          <div className="bg-purple-50 p-4 rounded-lg">
+                            <p className="text-sm text-purple-700">Total Credit Used</p>
+                            <p className="text-2xl font-bold text-purple-900">{formatCurrency(creditAnalytics.totalCreditUsed)}</p>
+                            <p className="text-xs text-purple-600">Pending deductions from payments</p>
+                          </div>
+                          
+                          <div className="bg-indigo-50 p-4 rounded-lg">
+                            <p className="text-sm text-indigo-700">Credit Impact</p>
+                            <p className="text-2xl font-bold text-indigo-900">{creditAnalytics.creditImpact.toFixed(1)}%</p>
+                            <p className="text-xs text-indigo-600">Of total payments</p>
+                          </div>
+                          
+                          <div className="bg-blue-50 p-4 rounded-lg">
+                            <p className="text-sm text-blue-700">Active Credit Users</p>
+                            <p className="text-2xl font-bold text-blue-900">{creditAnalytics.creditDistribution.length}</p>
+                            <p className="text-xs text-blue-600">Farmers using credit</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Credit Impact Analysis */}
+                    <div className="bg-white rounded-xl shadow-lg p-6">
+                      <h3 className="text-xl font-bold text-gray-900 mb-6">Credit Impact Analysis</h3>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                        <div className="bg-green-50 p-4 rounded-lg">
+                          <p className="text-sm text-green-700">Gross Payments</p>
+                          <p className="text-xl font-bold text-green-900">{formatCurrency(analytics.total_pending + analytics.total_paid)}</p>
+                        </div>
+                        
+                        <div className="bg-purple-50 p-4 rounded-lg">
+                          <p className="text-sm text-purple-700">Credit Deductions</p>
+                          <p className="text-xl font-bold text-purple-900">{formatCurrency(analytics.total_credit_used)}</p>
+                          <p className="text-xs text-purple-600">Pending deductions from payments</p>
+                        </div>
+                        
+                        <div className="bg-indigo-50 p-4 rounded-lg">
+                          <p className="text-sm text-indigo-700">Net Payments</p>
+                          <p className="text-xl font-bold text-indigo-900">{formatCurrency(analytics.total_net_payment)}</p>
+                        </div>
+                      </div>
+                      
+                      {/* Credit Analytics by Farmer */}
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Farmer</th>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Amount</th>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Credit Used</th>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Net Payment</th>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Credit %</th>
+                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody className="bg-white divide-y divide-gray-200">
+                            {creditAnalytics.creditDistribution.map((farmer, index) => (
+                              <tr key={index}>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{farmer.name}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{formatCurrency(farmer.totalAmount)}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{formatCurrency(farmer.creditUsed)}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{formatCurrency(farmer.netPayment)}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                    farmer.creditPercentage > 20 ? 'bg-red-100 text-red-800' : 
+                                    farmer.creditPercentage > 10 ? 'bg-yellow-100 text-yellow-800' : 
+                                    'bg-green-100 text-green-800'
+                                  }`}>
+                                    {farmer.creditPercentage.toFixed(1)}%
+                                  </span>
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                    {farmer.status}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                            {creditAnalytics.creditDistribution.length === 0 && (
+                              <tr>
+                                <td colSpan={6} className="px-6 py-4 text-center text-sm text-gray-500">
+                                  No credit usage data available
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Farmers Payments Content */}
+                {activeAnalyticsTab === 'farmers-payments' && (
+                  <div className="space-y-6">
+                    {/* Collections and Payments Trend Chart */}
+                    <div className="bg-white rounded-xl shadow-lg p-6">
+                      <CardHeader className="p-0 mb-4">
+                        <CardTitle className="flex items-center gap-2 text-xl">
+                          <BarChart3 className="w-5 h-5 text-primary" />
+                          Collections and Payments Trend
+                        </CardTitle>
+                        <p className="text-sm text-gray-500 mt-1">Daily overview of collections and payment amounts</p>
+                      </CardHeader>
+                      <CardContent className="p-0">
+                        <div className="h-96">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <ComposedChart
+                              data={analytics.daily_trend.map(item => ({
+                                date: item.date,
+                                paid: item.paidAmount,
+                                pending: item.pendingAmount,
+                                credit: item.creditUsed
+                              }))}
+                              margin={{ top: 20, right: 30, left: 20, bottom: 30 }}
+                            >
+                              <defs>
+                                <linearGradient id="paidGradient" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                                  <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                                </linearGradient>
+                                <linearGradient id="pendingGradient" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.3}/>
+                                  <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
+                                </linearGradient>
+                                <linearGradient id="creditGradient" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/>
+                                  <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
+                                </linearGradient>
+                              </defs>
+                              
+                              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                              
+                              <XAxis 
+                                dataKey="date" 
+                                tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                stroke="#666"
+                                fontSize={12}
+                              >
+                                <Label value="Days" offset={-10} position="insideBottom" />
+                              </XAxis>
+                              
+                              <YAxis 
+                                tickFormatter={(value) => `KSh${(value / 1000).toFixed(0)}k`} 
+                                stroke="#666"
+                                fontSize={12}
+                                tickMargin={10}
+                              >
+                                <Label value="Amount (KES)" angle={-90} position="insideLeft" offset={10} />
+                              </YAxis>
+                              
+                              <Tooltip 
+                                formatter={(value, name) => {
+                                  const formattedValue = formatCurrency(Number(value));
+                                  switch(name) {
+                                    case 'paid': return [formattedValue, 'Paid Amounts'];
+                                    case 'pending': return [formattedValue, 'Pending Amounts'];
+                                    case 'credit': return [formattedValue, 'Credit Used'];
+                                    default: return [formattedValue, name];
+                                  }
+                                }}
+                                labelFormatter={(label) => `Date: ${new Date(label).toLocaleDateString()}`}
+                                contentStyle={{ 
+                                  backgroundColor: 'white', 
+                                  border: '1px solid #e5e7eb', 
+                                  borderRadius: '0.5rem',
+                                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
+                                }}
+                                itemStyle={{ color: '#333' }}
+                                labelStyle={{ fontWeight: 'bold', color: '#333' }}
+                              />
+                              
+                              <Legend 
+                                verticalAlign="top" 
+                                height={40}
+                                wrapperStyle={{ paddingBottom: '10px' }}
+                              />
+                              
+                              <ReferenceLine y={0} stroke="#000" strokeWidth={0.5} />
+                              
+                              {/* Area charts for better visualization */}
+                              <Area 
+                                type="monotone" 
+                                dataKey="paid" 
+                                fill="url(#paidGradient)" 
+                                stroke="none"
+                                name="Paid Amounts"
+                              />
+                              <Area 
+                                type="monotone" 
+                                dataKey="pending" 
+                                fill="url(#pendingGradient)" 
+                                stroke="none"
+                                name="Pending Amounts"
+                              />
+                              <Area 
+                                type="monotone" 
+                                dataKey="credit" 
+                                fill="url(#creditGradient)" 
+                                stroke="none"
+                                name="Credit Used"
+                              />
+                              
+                              {/* Line charts for clear trends */}
+                              <Line 
+                                type="monotone" 
+                                dataKey="paid" 
+                                stroke="#10b981" 
+                                strokeWidth={2} 
+                                dot={{ r: 4, strokeWidth: 2, fill: '#fff', stroke: '#10b981' }} 
+                                activeDot={{ r: 6, strokeWidth: 2, fill: '#fff', stroke: '#10b981' }} 
+                                name="Paid Amounts" 
+                                animationDuration={500}
+                              />
+                              <Line 
+                                type="monotone" 
+                                dataKey="pending" 
+                                stroke="#f59e0b" 
+                                strokeWidth={2} 
+                                dot={{ r: 4, strokeWidth: 2, fill: '#fff', stroke: '#f59e0b' }} 
+                                activeDot={{ r: 6, strokeWidth: 2, fill: '#fff', stroke: '#f59e0b' }} 
+                                name="Pending Amounts" 
+                                animationDuration={500}
+                              />
+                              <Line 
+                                type="monotone" 
+                                dataKey="credit" 
+                                stroke="#8b5cf6" 
+                                strokeWidth={2} 
+                                dot={{ r: 4, strokeWidth: 2, fill: '#fff', stroke: '#8b5cf6' }} 
+                                activeDot={{ r: 6, strokeWidth: 2, fill: '#fff', stroke: '#8b5cf6' }} 
+                                name="Credit Used" 
+                                animationDuration={500}
+                              />
+                            </ComposedChart>
+                          </ResponsiveContainer>
+                        </div>
+                        
+                        {/* Enhanced insights section */}
+                        <div className="mt-6 p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border border-blue-100">
+                          <div className="flex items-start gap-3">
+                            <div className="p-2 bg-blue-100 rounded-lg">
+                              <BarChart3 className="w-4 h-4 text-blue-600" />
+                            </div>
+                            <div>
+                              <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                                <span className="inline-flex items-center px-2 py-1 rounded-full bg-green-100 text-green-800">
+                                  <div className="w-2 h-2 rounded-full bg-green-500 mr-1"></div>
+                                  Solid line = Actual values
+                                </span>
+                                <span className="inline-flex items-center px-2 py-1 rounded-full bg-blue-100 text-blue-800">
+                                  <div className="w-2 h-2 rounded-full bg-blue-500 mr-1"></div>
+                                  Shaded area = Trend visualization
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Pending Tab */}
+          {activeTab === 'pending' && (
+            <div className="space-y-6">
+              {/* Search and Filter */}
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
+                      <Input
+                        type="text"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        placeholder="Search by farmer name or collection ID"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                      <select
+                        value={filterStatus}
+                        onChange={(e) => setFilterStatus(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      >
+                        <option value="all">All</option>
+                        <option value="Pending">Pending</option>
+                        <option value="Approved">Approved</option>
+                        <option value="Paid">Paid</option>
+                      </select>
+                    </div>
+                  </div>
+                  
+                  <Button
+                    onClick={deductCollectorFees}
+                    className="bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                  >
+                    Deduct Collector Fees
+                  </Button>
+                </div>
+              </div>
+              
+              {/* Pending Payment Collections */}
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <h3 className="text-xl font-bold text-gray-900 mb-6">Pending Payment Collections</h3>
+                
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Farmer</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Collection ID</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Amount</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Liters</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Approved</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredCollections.map((collection) => (
+                        <tr key={collection.id} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm font-medium text-gray-900">
+                              {collection.farmers?.profiles?.full_name}
+                            </div>
+                            <div className="text-sm text-gray-500">
+                              {collection.farmers?.profiles?.phone}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {collection.collection_id}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {formatCurrency(collection.total_amount)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {collection.liters.toFixed(2)}L
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {new Date(collection.collection_date).toLocaleDateString()}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {collection.status}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {collection.approved_for_payment ? 'Yes' : 'No'}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                onClick={() => approveCollectionsForPayment(collection.farmer_id, [collection.id])}
+                                disabled={collection.approved_for_payment}
+                              >
+                                Approve
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() => markAsPaid(collection.id, collection.farmer_id)}
+                                disabled={collection.status === 'Paid'}
+                              >
+                                Mark Paid
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                      {filteredCollections.length === 0 && (
+                        <tr>
+                          <td colSpan={8} className="px-6 py-4 text-center text-sm text-gray-500">
+                            No pending payment collections found
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Paid Payments Tab */}
+          {activeTab === 'paid' && (
+            <div className="space-y-6">
+              {/* Search and Filter */}
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
+                      <Input
+                        type="text"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        placeholder="Search by farmer name or collection ID"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                      <select
+                        value={filterStatus}
+                        onChange={(e) => setFilterStatus(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      >
+                        <option value="all">All</option>
+                        <option value="Pending">Pending</option>
+                        <option value="Approved">Approved</option>
+                        <option value="Paid">Paid</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Paid Payment Collections */}
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <h3 className="text-xl font-bold text-gray-900 mb-6">Paid Payment Collections</h3>
+                
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Farmer</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Collection ID</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Amount</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Liters</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredCollections.map((collection) => (
+                        <tr key={collection.id} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm font-medium text-gray-900">
+                              {collection.farmers?.profiles?.full_name}
+                            </div>
+                            <div className="text-sm text-gray-500">
+                              {collection.farmers?.profiles?.phone}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {collection.collection_id}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {formatCurrency(collection.total_amount)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {collection.liters.toFixed(2)}L
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {new Date(collection.collection_date).toLocaleDateString()}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {collection.status}
+                          </td>
+                        </tr>
+                      ))}
+                      {filteredCollections.length === 0 && (
+                        <tr>
+                          <td colSpan={6} className="px-6 py-4 text-center text-sm text-gray-500">
+                            No paid payment collections found
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Settings Tab */}
+          {activeTab === 'settings' && (
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Settings className="w-5 h-5 text-gray-600" />
+                    Milk Rate Configuration
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Current Rate per Liter (KES)
+                      </label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={rateConfig.ratePerLiter}
+                        onChange={(e) => setRateConfig({
+                          ...rateConfig,
+                          ratePerLiter: parseFloat(e.target.value) || 0
+                        })}
+                        className="w-full"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Effective From
+                      </label>
+                      <Input
+                        type="date"
+                        value={rateConfig.effectiveFrom}
+                        onChange={(e) => setRateConfig({
+                          ...rateConfig,
+                          effectiveFrom: e.target.value
+                        })}
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-6">
+                    <Button onClick={updateMilkRate}>
+                      Update Milk Rate
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Settings className="w-5 h-5 text-gray-600" />
+                    Collector Rate Configuration
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Collector Rate per Liter (KES)
+                      </label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={collectorRateConfig.ratePerLiter}
+                        onChange={(e) => setCollectorRateConfig({
+                          ...collectorRateConfig,
+                          ratePerLiter: parseFloat(e.target.value) || 0
+                        })}
+                        className="w-full"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Effective From
+                      </label>
+                      <Input
+                        type="date"
+                        value={collectorRateConfig.effectiveFrom}
+                        onChange={(e) => setCollectorRateConfig({
+                          ...collectorRateConfig,
+                          effectiveFrom: e.target.value
+                        })}
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-6">
+                    <Button onClick={updateCollectorRate}>
+                      Update Collector Rate
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </div>
+      </div>
+    </DashboardLayout>
+  );
+};
+
+export default PaymentSystem;

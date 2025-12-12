@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS public.agrovet_staff (
 
 -- Create agrovet products table
 CREATE TABLE IF NOT EXISTS public.agrovet_products (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
     description TEXT,
     unit TEXT NOT NULL,
@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS public.agrovet_products (
 
 -- Create credit requests table integrated with existing credit system
 CREATE TABLE IF NOT EXISTS public.agrovet_credit_requests (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     farmer_id UUID REFERENCES public.farmers(id),
     product_id UUID REFERENCES public.agrovet_products(id),
     quantity INTEGER NOT NULL,
@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS public.agrovet_credit_requests (
 
 -- Create credit disbursements table integrated with main credit system
 CREATE TABLE IF NOT EXISTS public.agrovet_disbursements (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     credit_request_id UUID REFERENCES public.agrovet_credit_requests(id),
     farmer_id UUID REFERENCES public.farmers(id),
     disbursed_by UUID REFERENCES public.agrovet_staff(id),

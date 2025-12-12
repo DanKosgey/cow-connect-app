@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Lock, Milk, Eye, EyeOff } from "lucide-react";
+import { Lock, Milk, Eye, EyeOff, RefreshCw, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,14 +9,18 @@ import useToastNotifications from "@/hooks/useToastNotifications";
 import { useAuth } from "@/contexts/SimplifiedAuthContext";
 import { UserRole } from "@/types/auth.types";
 import AdminDebugLogger from "@/utils/adminDebugLogger";
+import { completeAuthReset } from '@/utils/forceClearAuth';
 
 const AdminLogin = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const toast = useToastNotifications();
-  const { login, user, userRole, clearAuthCache } = useAuth();
+  const { login, user, userRole, clearAuthCache, refreshSession, refreshUserRole } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [forceClearing, setForceClearing] = useState(false);
+  const forceClearAttempted = useRef(false); // Track if we've attempted force clear
   const [loginData, setLoginData] = useState({
     email: "",
     password: ""
@@ -40,21 +44,89 @@ const AdminLogin = () => {
       // Redirect immediately to dashboard
       navigate(from, { replace: true });
     }
-  }, [user, userRole, navigate, from]);
-
-  // Only clear auth data if there's a specific reason (e.g., coming from logout)
-  useEffect(() => {
-    const shouldClearAuth = (location.state as any)?.clearAuth;
-    AdminDebugLogger.log('Clear auth effect triggered', { shouldClearAuth, locationState: location.state });
-    if (shouldClearAuth) {
-      AdminDebugLogger.log('Clearing auth cache due to location state');
-      const clearAuth = async () => {
-        await clearAuthCache();
-        AdminDebugLogger.success('Auth cache cleared');
+    // If user exists but role is null, try to fetch the role
+    else if (user && userRole === null) {
+      AdminDebugLogger.log('User exists but role is null, attempting to refresh role');
+      
+      // Prevent infinite loop of force clearing
+      if (forceClearAttempted.current) {
+        AdminDebugLogger.warn('Force clear already attempted, not trying again');
+        return;
+      }
+      
+      // Try to refresh the session and role
+      const refreshRole = async () => {
+        try {
+          AdminDebugLogger.log('Attempting to refresh user role...');
+          if (user.id) {
+            // Try to get role directly using the context method
+            const role = await refreshUserRole(user.id);
+            AdminDebugLogger.log('Direct role fetch result:', role);
+            if (role === UserRole.ADMIN) {
+              // Redirect to dashboard
+              navigate(from, { replace: true });
+            } else if (!role && !forceClearAttempted.current) {
+              // If role fetch failed and we haven't tried force clear yet, try it
+              AdminDebugLogger.log('Role fetch failed, attempting force clear');
+              forceClearAttempted.current = true;
+              setTimeout(() => {
+                handleForceClear();
+              }, 1000);
+            }
+          }
+        } catch (error) {
+          AdminDebugLogger.error('Error refreshing role:', error);
+        }
       };
-      clearAuth();
+      
+      // Try to refresh role immediately
+      refreshRole();
+      
+      // Also try after a short delay
+      const retryTimer = setTimeout(() => {
+        refreshRole();
+      }, 3000);
+      
+      // Clean up timer
+      return () => clearTimeout(retryTimer);
     }
-  }, [clearAuthCache, location.state]);
+  }, [user, userRole, navigate, from, refreshUserRole]);
+
+  const handleRefreshSession = async () => {
+    AdminDebugLogger.log('Manual session refresh requested');
+    setRefreshing(true);
+    try {
+      const result = await refreshSession();
+      AdminDebugLogger.log('Session refresh result:', result);
+      if (result.success) {
+        toast.success('Session Refreshed', 'Your session has been refreshed successfully.');
+      } else {
+        toast.error('Refresh Failed', result.error?.message || 'Failed to refresh session.');
+      }
+    } catch (error) {
+      AdminDebugLogger.error('Session refresh error:', error);
+      toast.error('Refresh Error', error instanceof Error ? error.message : 'Failed to refresh session.');
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const handleForceClear = async () => {
+    AdminDebugLogger.log('Force clear requested');
+    setForceClearing(true);
+    try {
+      toast.success('Clearing Session', 'Clearing all authentication data...');
+      // Prevent multiple clicks
+      const result = await completeAuthReset('/admin/login');
+    } catch (error) {
+      AdminDebugLogger.error('Force clear error:', error);
+      toast.error('Clear Error', error instanceof Error ? error.message : 'Failed to clear session.');
+      // Re-enable the button if there was an error
+      setTimeout(() => {
+        setForceClearing(false);
+      }, 3000);
+    }
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -131,6 +203,49 @@ const AdminLogin = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {user && !userRole && (
+              <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-yellow-800 font-medium">
+                      Session detected but role not verified
+                    </p>
+                    <p className="text-xs text-yellow-600 mt-1">
+                      Click refresh to try again or force clear to reset completely
+                    </p>
+                  </div>
+                  <div className="flex space-x-2">
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      onClick={handleRefreshSession}
+                      disabled={refreshing}
+                    >
+                      {refreshing ? (
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="w-4 h-4" />
+                      )}
+                      <span className="ml-1">Refresh</span>
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      variant="destructive" 
+                      onClick={handleForceClear}
+                      disabled={forceClearing}
+                    >
+                      {forceClearing ? (
+                        <RotateCcw className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <RotateCcw className="w-4 h-4" />
+                      )}
+                      <span className="ml-1">Force Clear</span>
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+            
             <form onSubmit={handleLogin} className="space-y-6">
               <div className="space-y-2">
                 <Label htmlFor="email">Admin Email</Label>

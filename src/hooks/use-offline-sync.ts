@@ -28,7 +28,7 @@ export function useOfflineSync() {
   const addCollection = useCallback((data: CollectionFormData) => {
     const newCollection: OfflineCollection = {
       ...data,
-      id: crypto.randomUUID(),
+      id: Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15),
       sync_status: 'pending',
       created_at: new Date().toISOString(),
     };

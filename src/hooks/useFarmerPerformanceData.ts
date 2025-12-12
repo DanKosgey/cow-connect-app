@@ -77,6 +77,53 @@ export const FARMER_PERFORMANCE_CACHE_KEYS = {
 export const useFarmerPerformanceData = () => {
   const queryClient = useQueryClient();
 
+  // New scoring functions for collection-based performance
+  const calculateVolumeScore = (totalLiters) => {
+    if (totalLiters === 0) return 0;
+    if (totalLiters <= 500) return Math.round((totalLiters / 500) * 20);
+    if (totalLiters <= 1500) return Math.round(20 + ((totalLiters - 500) / 1000) * 20);
+    if (totalLiters <= 3000) return Math.round(40 + ((totalLiters - 1500) / 1500) * 30);
+    return Math.min(100, Math.round(70 + ((totalLiters - 3000) / 2000) * 30));
+  };
+
+  const calculateFrequencyScore = (collectionsPerWeek) => {
+    if (collectionsPerWeek === 0) return 0;
+    if (collectionsPerWeek <= 0.5) return Math.round((collectionsPerWeek / 0.5) * 25);
+    if (collectionsPerWeek <= 1.5) return Math.round(25 + ((collectionsPerWeek - 0.5) / 1) * 25);
+    if (collectionsPerWeek <= 3) return Math.round(50 + ((collectionsPerWeek - 1.5) / 1.5) * 25);
+    return Math.min(100, Math.round(75 + ((collectionsPerWeek - 3) / 2) * 25));
+  };
+
+  const calculateConsistencyScore = (consistencyPercentage) => {
+    if (consistencyPercentage === 0) return 0;
+    if (consistencyPercentage <= 25) return Math.round((consistencyPercentage / 25) * 20);
+    if (consistencyPercentage <= 50) return Math.round(20 + ((consistencyPercentage - 25) / 25) * 20);
+    if (consistencyPercentage <= 75) return Math.round(40 + ((consistencyPercentage - 50) / 25) * 25);
+    return Math.min(100, Math.round(65 + ((consistencyPercentage - 75) / 25) * 35));
+  };
+
+  const calculatePerformanceScore = (volumeScore, frequencyScore, consistencyScore) => {
+    // If no collections at all, performance score is 0
+    if (volumeScore === 0 && frequencyScore === 0 && consistencyScore === 0) {
+      return 0;
+    }
+    
+    // Weighted calculation: Volume (40%), Frequency (35%), Consistency (25%)
+    return Math.round(
+      (volumeScore * 0.4) + 
+      (frequencyScore * 0.35) + 
+      (consistencyScore * 0.25)
+    );
+  };
+
+  const getPerformanceCategory = (score) => {
+    if (score === 0) return 'No Activity';
+    if (score <= 30) return 'Poor';
+    if (score <= 60) return 'Fair';
+    if (score <= 85) return 'Good';
+    return 'Excellent';
+  };
+
   // Get farmer performance dashboard data
   const useFarmerPerformanceDashboard = () => {
     return useQuery<{
@@ -190,9 +237,6 @@ export const useFarmerPerformanceData = () => {
           const totalLiters = farmerCollections.reduce((sum, c) => sum + (c.liters || 0), 0);
           const totalEarnings = farmerCollections.reduce((sum, c) => sum + (c.total_amount || 0), 0);
           
-          // Remove quality score calculation since quality_grade column doesn't exist
-          const avgQuality = 0; // Placeholder since we can't calculate quality
-          
           // Calculate collection frequency (collections per week)
           const firstCollection = farmerCollections.length > 0 
             ? new Date(farmerCollections[farmerCollections.length - 1].collection_date) 
@@ -211,20 +255,13 @@ export const useFarmerPerformanceData = () => {
           ).size;
           const consistencyScore = weeksActive > 0 ? (weeksWithCollections / weeksActive) * 100 : 0;
           
-          // Advanced performance score calculation using weighted metrics
-          const volumeScore = Math.min(100, (totalLiters / 1000) * 10); // Normalize liters to 0-100 scale
-          const qualityScore = 75; // Default quality score since we can't calculate it
-          const frequencyScore = Math.min(100, collectionFrequency * 10); // Normalize frequency
-          const consistencyScoreNormalized = consistencyScore; // Already 0-100 scale
+          // NEW: Collection-based performance scoring (removed quality metrics)
+          const volumeScore = calculateVolumeScore(totalLiters);
+          const frequencyScore = calculateFrequencyScore(collectionFrequency);
+          const consistencyScoreNormalized = calculateConsistencyScore(consistencyScore);
           
-          // Weighted performance score
-          // Volume (30%), Quality (30%), Frequency (20%), Consistency (20%)
-          const performanceScore = Math.round(
-            (volumeScore * 0.3) + 
-            (qualityScore * 0.3) + 
-            (frequencyScore * 0.2) + 
-            (consistencyScoreNormalized * 0.2)
-          );
+          // NEW: Calculate performance score based on collections only
+          const performanceScore = calculatePerformanceScore(volumeScore, frequencyScore, consistencyScoreNormalized);
           
           return {
             id: farmer.id,
@@ -233,48 +270,56 @@ export const useFarmerPerformanceData = () => {
             performanceScore,
             totalLiters,
             totalEarnings,
-            avgQuality,
+            avgQuality: 0, // Removed quality metrics
             collectionsCount: farmerCollections.length,
             collectionFrequency,
-            consistencyScore,
+            consistencyScore: consistencyScoreNormalized,
             lastCollection: farmerCollections[0]?.collection_date || null
           };
         });
 
-        // Advanced risk detection algorithm
+        // Advanced risk detection algorithm based on new scoring
         const calculateRiskFactors = (farmerData: any) => {
           const riskFactors = [];
           let riskScore = 0;
           
-          // Performance score risk (30% weight)
-          if (farmerData.performanceScore < 50) {
-            riskScore += 30;
+          // Performance score risk (40% weight)
+          if (farmerData.performanceScore === 0) {
+            riskScore += 40;
+            riskFactors.push('No collections recorded');
+          } else if (farmerData.performanceScore < 30) {
+            riskScore += 40;
             riskFactors.push('Poor overall performance');
-          } else if (farmerData.performanceScore < 70) {
-            riskScore += 15;
+          } else if (farmerData.performanceScore < 50) {
+            riskScore += 20;
             riskFactors.push('Below average performance');
           }
           
-          // Collection frequency risk (20% weight)
-          if (farmerData.collectionFrequency < 0.5) { // Less than 0.5 collections per week
-            riskScore += 20;
+          // Collection frequency risk (30% weight)
+          if (farmerData.collectionFrequency === 0) {
+            riskScore += 30;
+            riskFactors.push('No collections recorded');
+          } else if (farmerData.collectionFrequency < 0.5) { // Less than 0.5 collections per week
+            riskScore += 30;
             riskFactors.push('Infrequent collections');
           } else if (farmerData.collectionFrequency < 1) { // Less than 1 collection per week
-            riskScore += 10;
+            riskScore += 15;
             riskFactors.push('Low collection frequency');
           }
           
-          // Quality risk (15% weight) - removed since we can't calculate quality
-          // Consistency risk (15% weight)
-          if (farmerData.consistencyScore < 40) { // Less than 40% consistency
-            riskScore += 15;
+          // Consistency risk (30% weight)
+          if (farmerData.consistencyScore === 0) {
+            riskScore += 30;
+            riskFactors.push('No collections recorded');
+          } else if (farmerData.consistencyScore < 25) { // Less than 25% consistency
+            riskScore += 30;
             riskFactors.push('Irregular collection pattern');
-          } else if (farmerData.consistencyScore < 70) { // Less than 70% consistency
-            riskScore += 7;
+          } else if (farmerData.consistencyScore < 50) { // Less than 50% consistency
+            riskScore += 15;
             riskFactors.push('Moderate consistency issues');
           }
           
-          // Inactivity risk (20% weight)
+          // Inactivity risk (bonus weight for long inactivity)
           const daysSinceLastCollection = farmerData.lastCollection ? 
             Math.floor((new Date().getTime() - new Date(farmerData.lastCollection).getTime()) / (1000 * 60 * 60 * 24)) : 30;
           
@@ -287,12 +332,12 @@ export const useFarmerPerformanceData = () => {
           }
           
           // Determine risk level based on total risk score
-          let riskLevel = 'low';
-          if (riskScore >= 50) {
+          let riskLevel = 'stable';
+          if (riskScore >= 60) {
             riskLevel = 'critical';
-          } else if (riskScore >= 30) {
+          } else if (riskScore >= 40) {
             riskLevel = 'high';
-          } else if (riskScore >= 15) {
+          } else if (riskScore >= 20) {
             riskLevel = 'medium';
           }
           
@@ -305,7 +350,7 @@ export const useFarmerPerformanceData = () => {
 
         // Identify at-risk farmers based on advanced risk detection
         const atRiskFarmers = farmerPerformanceData
-          .filter(f => f.performanceScore < 80) // Filter for farmers with below-average performance
+          .filter(f => f.performanceScore < 85) // Filter for farmers with below-good performance
           .map(f => {
             const riskData = calculateRiskFactors(f);
             
@@ -320,7 +365,7 @@ export const useFarmerPerformanceData = () => {
                      riskData.riskFactors.length > 0 ? riskData.riskFactors[0] : 'Low performance',
               volume: Math.round(f.totalLiters),
               lastCollection: f.lastCollection ? `${Math.floor((new Date().getTime() - new Date(f.lastCollection).getTime()) / (1000 * 60 * 60 * 24))} days ago` : 'Never',
-              trend: 'down',
+              trend: f.performanceScore > 50 ? 'up' : 'down',
               staff: 'System',
               action: 'pending'
             };
@@ -330,6 +375,7 @@ export const useFarmerPerformanceData = () => {
 
         // Identify top performers based on real data
         const topPerformers = farmerPerformanceData
+          .filter(f => f.performanceScore > 0) // Only farmers with collections
           .sort((a, b) => b.performanceScore - a.performanceScore)
           .slice(0, 5)
           .map((f, index) => ({
@@ -391,7 +437,7 @@ export const useFarmerPerformanceData = () => {
           collectionsTrend: trends.collectionsTrend,
           litersTrend: trends.litersTrend,
           revenueTrend: trends.revenueTrend,
-          qualityTrend: trends.qualityTrend
+          qualityTrend: { value: 0, isPositive: true } // Removed quality metrics
         };
 
         return {

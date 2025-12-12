@@ -24,6 +24,7 @@ import {
 import { collectorEarningsService } from '@/services/collector-earnings-service';
 import { collectorRateService } from '@/services/collector-rate-service';
 import useToastNotifications from '@/hooks/useToastNotifications';
+import { markPaymentAsPaid } from '@/services/collector-earnings-service-fix';
 
 interface CollectorPayment {
   id: string;
@@ -207,7 +208,7 @@ const CollectorPaymentsSection = () => {
 
   const handleMarkAsPaid = async (paymentId: string) => {
     try {
-      const success = await collectorEarningsService.markPaymentAsPaid(paymentId);
+      const success = await markPaymentAsPaid(paymentId);
       
       if (success) {
         // Update the payment status in the list
@@ -218,7 +219,7 @@ const CollectorPaymentsSection = () => {
               : payment
           )
         );
-        
+      
         toast.success('Success', 'Payment marked as paid');
       } else {
         throw new Error('Failed to mark payment as paid');

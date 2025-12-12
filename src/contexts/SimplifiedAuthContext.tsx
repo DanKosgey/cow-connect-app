@@ -33,6 +33,7 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   refreshSession: () => Promise<{ success: boolean; error?: any }>;
   clearAuthCache: () => void;
+  refreshUserRole: (userId: string) => Promise<UserRole | null>; // Add this new method
 }
 
 // ============================================
@@ -125,13 +126,45 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return cached;
       }
 
-      // Get user role directly without timeout
-      const role = await authManager.getUserRole(userId);
+      // Get user role with retry mechanism
+      let attempts = 0;
+      const maxAttempts = 3;
+      let lastError: any = null;
       
-      if (role) {
-        // Cache the role
-        setCachedRole(userId, role);
-        return role;
+      while (attempts < maxAttempts) {
+        try {
+          const role = await authManager.getUserRole(userId);
+          
+          if (role) {
+            // Cache the role
+            setCachedRole(userId, role);
+            return role;
+          } else {
+            attempts++;
+            if (attempts < maxAttempts) {
+              // Wait before retrying
+              await new Promise(resolve => setTimeout(resolve, 1000 * attempts));
+              continue;
+            }
+            return null;
+          }
+        } catch (error: any) {
+          AdminDebugLogger.error(`Attempt ${attempts + 1}: Exception getting user role`, error);
+          lastError = error;
+          attempts++;
+          if (attempts < maxAttempts) {
+            // Wait before retrying
+            await new Promise(resolve => setTimeout(resolve, 1000 * attempts));
+            continue;
+          }
+        }
+      }
+      
+      // For any errors, try fallback to cache
+      const cachedFallback = getCachedRole(userId);
+      if (cachedFallback) {
+        AdminDebugLogger.log('Using cached role as fallback:', cachedFallback);
+        return cachedFallback;
       }
       
       return null;
@@ -141,7 +174,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // For any errors, try fallback to cache
       const cached = getCachedRole(userId);
       if (cached) {
-        AdminDebugLogger.log('Using cached role as fallback:', cached);
+        AdminDebugLogger.log('Using cached role as final fallback:', cached);
         return cached;
       }
       
@@ -186,12 +219,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       if (error) {
         AdminDebugLogger.error('Supabase auth error:', error);
-        throw error;
+        return { error };
       }
 
       if (!data.user || !data.session) {
         AdminDebugLogger.error('Login failed - no user or session returned', { data });
-        throw new Error('Login failed - no user or session returned');
+        return { error: new Error('Login failed - no user or session returned') };
       }
 
       AdminDebugLogger.success('Auth successful, user data:', { 
@@ -201,29 +234,35 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       });
 
       // Small delay to ensure session is fully established
-      AdminDebugLogger.log('Waiting 500ms for session to establish...');
-      await new Promise(resolve => setTimeout(resolve, 500));
+      AdminDebugLogger.log('Waiting 1000ms for session to establish...');
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Increased from 500ms to 1000ms
 
-      // Get user role without timeout
+      // Get user role with retry mechanism
       let userRole: UserRole | null = null;
       let attempts = 0;
-      const maxAttempts = 3; // Reduced attempts
+      const maxAttempts = 5; // Increased attempts
+      const retryDelay = 2000; // 2 seconds between retries
       
       while (attempts < maxAttempts && !userRole) {
         attempts++;
         AdminDebugLogger.log(`Role verification attempt ${attempts}/${maxAttempts}`);
         
-        userRole = await getUserRole(data.user.id);
+        try {
+          userRole = await getUserRole(data.user.id);
+        } catch (roleError) {
+          AdminDebugLogger.error(`Role verification attempt ${attempts} failed:`, roleError);
+        }
         
         if (!userRole && attempts < maxAttempts) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          AdminDebugLogger.log(`Waiting ${retryDelay}ms before retry...`);
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
         }
       }
 
       if (!userRole) {
         AdminDebugLogger.error(`Failed to get user role after ${maxAttempts} attempts`);
         await supabase.auth.signOut();
-        throw new Error('Unable to verify user role. Please contact support.');
+        return { error: new Error('Unable to verify user role. Please contact support.') };
       }
 
       AdminDebugLogger.success('User role verified:', userRole);
@@ -239,9 +278,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           [UserRole.COLLECTOR]: 'Collector',
           [UserRole.CREDITOR]: 'Creditor'
         };
-        throw new Error(
-          `Invalid credentials. This account is registered as ${roleNames[userRole as UserRole] || userRole}, not ${roleNames[role] || role}.`
-        );
+        return { 
+          error: new Error(
+            `Invalid credentials. This account is registered as ${roleNames[userRole as UserRole] || userRole}, not ${roleNames[role] || role}.`
+          ) 
+        };
       }
 
       // Update state
@@ -249,31 +290,26 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setUser(data.user);
       setSession(data.session);
       setUserRole(userRole);
+      
+      // Cache the role
+      setCachedRole(data.user.id, userRole);
 
-      AdminDebugLogger.success('Login successful! Final state:', { 
-        userId: data.user.id, 
-        userEmail: data.user.email,
-        userRole: userRole,
-        sessionToken: data.session.access_token ? 'present' : 'missing'
-      });
-      
-      // ✅ RETURN THE FETCHED ROLE so the login page can check it
+      AdminDebugLogger.success('Login completed successfully');
       return { error: null, userRole };
-      
     } catch (error: any) {
-      AdminDebugLogger.error('Login failed:', error);
-      AdminDebugLogger.error('Login failed - stack:', error.stack);
+      AdminDebugLogger.error('Login process error:', error);
       
-      // Ensure we're signed out on error
+      // Ensure we're logged out on any login failure
       try {
-        AdminDebugLogger.log('Signing out due to error...');
         await supabase.auth.signOut();
-        AdminDebugLogger.success('Signed out successfully');
+        setUser(null);
+        setSession(null);
+        setUserRole(null);
       } catch (signOutError) {
-        AdminDebugLogger.error('Error signing out after login failure:', signOutError);
+        AdminDebugLogger.error('Error during sign out after login failure:', signOutError);
       }
       
-      return { error, userRole: null };
+      return { error };
     }
   }, [getUserRole]);
 
@@ -423,6 +459,39 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [getUserRole, signOut]);
 
   // ============================================
+  // REFRESH USER ROLE
+  // ============================================
+  const refreshUserRole = useCallback(async (userId: string): Promise<UserRole | null> => {
+    try {
+      AdminDebugLogger.log('Manually refreshing user role for user:', userId);
+      
+      // Clear cache first
+      try {
+        localStorage.removeItem(`${ROLE_CACHE_KEY}_${userId}`);
+      } catch (error) {
+        AdminDebugLogger.error('Failed to clear role cache:', error);
+      }
+      
+      // Get fresh role
+      const role = await getUserRole(userId);
+      
+      if (role) {
+        setUserRole(role);
+        // Also cache it
+        setCachedRole(userId, role);
+        AdminDebugLogger.success('User role refreshed successfully:', role);
+      } else {
+        AdminDebugLogger.warn('No role found for user:', userId);
+      }
+      
+      return role;
+    } catch (error) {
+      AdminDebugLogger.error('Error refreshing user role:', error);
+      return null;
+    }
+  }, [getUserRole]);
+
+  // ============================================
   // SESSION VALIDITY CHECK
   // ============================================
   const checkSessionValidity = useCallback(async () => {
@@ -500,7 +569,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       try {
         // Add timeout to prevent hanging during initialization
         const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Auth initialization timeout')), 10000)
+          setTimeout(() => reject(new Error('Auth initialization timeout')), 30000) // Increased from 10s to 30s
         );
         
         const initPromise = (async () => {
@@ -513,14 +582,41 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             setUser(session.user);
             setSession(session);
 
-            // Get user role with timeout
-            const roleTimeoutPromise = new Promise((_, reject) => 
-              setTimeout(() => reject(new Error('Role fetch timeout')), 5000)
-            );
-            
-            const rolePromise = getUserRole(session.user.id);
-            const role = await Promise.race([rolePromise, roleTimeoutPromise]) as UserRole | null;
-            setUserRole(role);
+            // Get user role with increased timeout and better error handling
+            try {
+              const roleTimeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Role fetch timeout')), 30000) // Keep at 30s
+              );
+              
+              const rolePromise = getUserRole(session.user.id);
+              const role = await Promise.race([rolePromise, roleTimeoutPromise]) as UserRole | null;
+              setUserRole(role);
+              
+              // If role fetch failed, try again with more patience
+              if (!role) {
+                AdminDebugLogger.warn('First role fetch failed, trying again with longer timeout...');
+                await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+                const retryRole = await getUserRole(session.user.id);
+                setUserRole(retryRole);
+                if (retryRole) {
+                  AdminDebugLogger.success('Role fetch succeeded on retry');
+                }
+              }
+            } catch (roleError) {
+              AdminDebugLogger.error('Error fetching user role during initialization:', roleError);
+              // Try without timeout as fallback
+              try {
+                await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds
+                const role = await getUserRole(session.user.id);
+                setUserRole(role);
+                if (role) {
+                  AdminDebugLogger.success('Role fetch succeeded on fallback');
+                }
+              } catch (fallbackError) {
+                AdminDebugLogger.error('Fallback role fetch also failed:', fallbackError);
+                setUserRole(null);
+              }
+            }
           } else {
             AdminDebugLogger.log('No existing session');
           }
@@ -552,18 +648,34 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           setUser(session.user);
           setSession(session);
           
-          // Add timeout for role fetching
+          // Add increased timeout for role fetching and better error handling
           try {
             const roleTimeoutPromise = new Promise((_, reject) => 
-              setTimeout(() => reject(new Error('Role fetch timeout')), 5000)
+              setTimeout(() => reject(new Error('Role fetch timeout')), 30000)
             );
             
             const rolePromise = getUserRole(session.user.id);
             const role = await Promise.race([rolePromise, roleTimeoutPromise]) as UserRole | null;
             setUserRole(role);
+            
+            // If role fetch failed, try again
+            if (!role) {
+              AdminDebugLogger.warn('First role fetch failed on auth state change, trying again...');
+              await new Promise(resolve => setTimeout(resolve, 2000));
+              const retryRole = await getUserRole(session.user.id);
+              setUserRole(retryRole);
+            }
           } catch (roleError) {
             AdminDebugLogger.error('Error fetching user role:', roleError);
-            setUserRole(null);
+            // Try without timeout as fallback
+            try {
+              await new Promise(resolve => setTimeout(resolve, 3000));
+              const role = await getUserRole(session.user.id);
+              setUserRole(role);
+            } catch (fallbackError) {
+              AdminDebugLogger.error('Fallback role fetch also failed:', fallbackError);
+              setUserRole(null);
+            }
           }
         } 
         else if (event === 'SIGNED_OUT') {
@@ -604,9 +716,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       signUp,
       signOut,
       refreshSession,
-      clearAuthCache
+      clearAuthCache,
+      refreshUserRole // Add the new method
     }),
-    [user, session, userRole, loading, login, signUp, signOut, refreshSession, clearAuthCache]
+    [user, session, userRole, loading, login, signUp, signOut, refreshSession, clearAuthCache, refreshUserRole]
   );
 
   return (

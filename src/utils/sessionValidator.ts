@@ -1,46 +1,60 @@
-import { supabase } from '@/integrations/supabase/client';
 import { logger } from '@/utils/logger';
 import { authManager } from '@/utils/authManager';
 
 /**
- * Utility functions for session validation and management
+ * Utility functions for session validation and management.
+ * These functions provide a consistent interface for session operations,
+ * with built-in error handling and logging.
  */
 
 /**
- * Check if the current session is valid
- * @returns {Promise<boolean>} True if session is valid, false otherwise
+ * Check if the current session is valid.
+ * @returns {Promise<boolean>} True if session is valid, false otherwise.
  */
 export const isSessionValid = async (): Promise<boolean> => {
-  return await authManager.isSessionValid();
+  try {
+    return await authManager.isSessionValid();
+  } catch (error) {
+    logger.error('Failed to check session validity', { error });
+    return false;
+  }
 };
 
 /**
- * Validate and refresh session if needed
- * @returns {Promise<boolean>} True if session is valid or successfully refreshed, false otherwise
+ * Validate the current session and refresh if necessary.
+ * @returns {Promise<boolean>} True if session is valid or successfully refreshed, false otherwise.
  */
 export const validateAndRefreshSession = async (): Promise<boolean> => {
-  return await authManager.validateAndRefreshSession();
+  try {
+    return await authManager.validateAndRefreshSession();
+  } catch (error) {
+    logger.error('Failed to validate and refresh session', { error });
+    return false;
+  }
 };
 
 /**
- * Force session refresh
- * @returns {Promise<boolean>} True if refresh was successful, false otherwise
+ * Force a session refresh.
+ * @returns {Promise<boolean>} True if refresh was successful, false otherwise.
  */
 export const forceSessionRefresh = async (): Promise<boolean> => {
-  return await authManager.refreshSession();
+  try {
+    return await authManager.refreshSession();
+  } catch (error) {
+    logger.error('Failed to force session refresh', { error });
+    return false;
+  }
 };
 
 /**
- * Clear all session data and sign out
+ * Clear all session data and sign out.
  * @returns {Promise<void>}
  */
 export const clearSessionAndSignOut = async (): Promise<void> => {
-  return await authManager.signOut();
-};
-
-export default {
-  isSessionValid,
-  validateAndRefreshSession,
-  forceSessionRefresh,
-  clearSessionAndSignOut
+  try {
+    await authManager.signOut();
+  } catch (error) {
+    logger.error('Failed to clear session and sign out', { error });
+    throw error; // Rethrow to allow caller handling
+  }
 };

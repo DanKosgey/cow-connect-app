@@ -57,7 +57,7 @@ export const useChartStabilizer = <T extends ChartDataPoint>(
     };
   }, []);
 
-  // Using useCallback to prevent recreation of functions
+  // Using useCallback with proper dependency array to prevent recreation
   const updateData = useCallback((newData: T[]) => {
     if (!mountedRef.current) return;
     
@@ -114,7 +114,7 @@ export const useChartStabilizer = <T extends ChartDataPoint>(
       // Update immediately if enough time has passed
       updateData(data);
     }
-  }, [data, delay, updateData]); // Removed isStable from dependency array
+  }, [data, delay, isStable, updateData]);
 
   return {
     data: stabilizedData,

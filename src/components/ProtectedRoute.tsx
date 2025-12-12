@@ -37,14 +37,15 @@ export const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) 
         return;
       }
       
-      // ✅ CHECK ON EVERY LOAD, NOT JUST ONCE
-      if (loading) {
+      // ✅ Only check session validity if we don't have a user yet
+      // Don't aggressively check if user is already authenticated
+      if (loading && !user) {
         AdminDebugLogger.log('Checking session validity...');
         
         try {
           // Add timeout to prevent hanging
           const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Session check timeout')), 5000)
+            setTimeout(() => reject(new Error('Session check timeout')), 30000) // Keep at 30s
           );
           
           const validationPromise = authManager.validateAndRefreshSession();
@@ -54,22 +55,43 @@ export const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) 
           
           if (!isValid) {
             AdminDebugLogger.error('Session is not valid');
-            await authManager.signOut();
-            // Force redirect only if we haven't already redirected
-            if (!hasPerformedRedirect.current) {
-              hasPerformedRedirect.current = true;
-              window.location.href = loginRoutes[requiredRole];
+            // Try to refresh session one more time before signing out
+            const refreshSuccess = await authManager.refreshSession();
+            if (!refreshSuccess) {
+              await authManager.signOut();
+              // Force redirect only if we haven't already redirected
+              if (!hasPerformedRedirect.current) {
+                hasPerformedRedirect.current = true;
+                window.location.href = loginRoutes[requiredRole];
+              }
+            } else {
+              AdminDebugLogger.log('Session successfully refreshed');
             }
           } else {
             AdminDebugLogger.log('Session is valid');
           }
         } catch (error) {
           AdminDebugLogger.error('Error during session check:', error);
-          // On any error, sign out but ensure we don't get in a redirect loop
-          if (!hasPerformedRedirect.current) {
-            await authManager.signOut();
-            hasPerformedRedirect.current = true;
-            window.location.href = loginRoutes[requiredRole];
+          // Try to refresh session as fallback before signing out
+          try {
+            const refreshSuccess = await authManager.refreshSession();
+            if (!refreshSuccess) {
+              // On any error, sign out but ensure we don't get in a redirect loop
+              if (!hasPerformedRedirect.current) {
+                await authManager.signOut();
+                hasPerformedRedirect.current = true;
+                window.location.href = loginRoutes[requiredRole];
+              }
+            } else {
+              AdminDebugLogger.log('Session successfully refreshed on fallback');
+            }
+          } catch (refreshError) {
+            AdminDebugLogger.error('Error during session refresh fallback:', refreshError);
+            if (!hasPerformedRedirect.current) {
+              await authManager.signOut();
+              hasPerformedRedirect.current = true;
+              window.location.href = loginRoutes[requiredRole];
+            }
           }
         }
       }
@@ -83,7 +105,7 @@ export const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) 
         clearTimeout(checkSessionTimeoutRef.current);
       }
     };
-  }, [loading, requiredRole, sessionChecked]); // ✅ Check on every loading change
+  }, [loading, user, requiredRole, sessionChecked]); // ✅ Also depend on user state
 
   const getCachedRoleInfo = () => {
     try {

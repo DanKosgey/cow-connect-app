@@ -223,7 +223,7 @@ const FarmerPerformanceDashboard = () => {
                     style={{ width: `${stats.avgPerformanceScore}%` }}
                   ></div>
                 </div>
-                <p className="text-xs text-muted-foreground mt-2">Target: 80+</p>
+                <p className="text-xs text-muted-foreground mt-2">Target: 85+</p>
               </div>
             </CardContent>
           </Card>
@@ -379,7 +379,7 @@ const FarmerPerformanceDashboard = () => {
                         <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Score</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Risk Level</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Primary Issue</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Volume Change</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Volume</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Last Collection</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Action Status</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase">Actions</th>
@@ -420,8 +420,8 @@ const FarmerPerformanceDashboard = () => {
                           </td>
                           <td className="px-4 py-4">
                             <div className="flex items-center gap-1">
-                              <TrendingDown className="w-4 h-4 text-red-500" />
-                              <span className="text-sm font-semibold text-red-600">{farmer.volume}%</span>
+                              <Activity className="w-4 h-4 text-blue-500" />
+                              <span className="text-sm font-semibold text-blue-600">{farmer.volume}L</span>
                             </div>
                           </td>
                           <td className="px-4 py-4">
@@ -488,8 +488,8 @@ const FarmerPerformanceDashboard = () => {
                             <p className="text-2xl font-bold">{farmer.score}</p>
                           </div>
                           <div className="bg-muted rounded-lg p-3">
-                            <p className="text-xs text-muted-foreground mb-1">Volume Change</p>
-                            <p className="text-2xl font-bold text-destructive">{farmer.volume}%</p>
+                            <p className="text-xs text-muted-foreground mb-1">Total Volume</p>
+                            <p className="text-2xl font-bold text-blue-600">{farmer.volume}L</p>
                           </div>
                         </div>
 
@@ -501,10 +501,6 @@ const FarmerPerformanceDashboard = () => {
                           <div className="flex items-center justify-between text-sm">
                             <span className="text-muted-foreground">Last Collection:</span>
                             <span className="font-semibold">{farmer.lastCollection}</span>
-                          </div>
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-muted-foreground">Quality Score:</span>
-                            <span className="font-semibold">N/A</span>
                           </div>
                           <div className="flex items-center justify-between text-sm">
                             <span className="text-muted-foreground">Assigned Staff:</span>
@@ -537,7 +533,7 @@ const FarmerPerformanceDashboard = () => {
                     <div>
                       <h3 className="text-lg font-bold text-foreground mb-2">Star Performers</h3>
                       <p className="text-muted-foreground">
-                        These farmers are excelling in performance, quality, and consistency. Consider them for mentorship programs.
+                        These farmers are excelling in collection volume, frequency, and consistency.
                       </p>
                     </div>
                   </div>
@@ -576,12 +572,8 @@ const FarmerPerformanceDashboard = () => {
                             <span className="font-bold text-foreground">{farmer.score}/100</span>
                           </div>
                           <div className="flex items-center justify-between p-2 bg-muted rounded-lg">
-                            <span className="text-sm text-muted-foreground">Monthly Volume</span>
+                            <span className="text-sm text-muted-foreground">Total Volume</span>
                             <span className="font-bold text-primary">{farmer.volume}L</span>
-                          </div>
-                          <div className="flex items-center justify-between p-2 bg-muted rounded-lg">
-                            <span className="text-sm text-muted-foreground">Quality Score</span>
-                            <span className="font-bold text-green-600">N/A</span>
                           </div>
                           <div className="flex items-center justify-between p-2 bg-muted rounded-lg">
                             <span className="text-sm text-muted-foreground">Collections</span>

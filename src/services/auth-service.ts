@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { logger } from '@/utils/logger'; // Assuming a logger utility from previous context
 
 const OTP_ATTEMPTS_KEY = 'otp_attempts_v2';
 const OTP_ATTEMPT_LIMIT = 3;
@@ -9,7 +10,8 @@ export class AuthService {
     try {
       const raw = localStorage.getItem(OTP_ATTEMPTS_KEY);
       return raw ? JSON.parse(raw) : {};
-    } catch {
+    } catch (error) {
+      logger.error('Failed to get OTP attempts map', { error });
       return {};
     }
   }
@@ -17,8 +19,8 @@ export class AuthService {
   private static saveAttemptsMap(map: Record<string, number[]>) {
     try {
       localStorage.setItem(OTP_ATTEMPTS_KEY, JSON.stringify(map));
-    } catch (e) {
-      console.error('Failed to save OTP attempts map:', e);
+    } catch (error) {
+      logger.error('Failed to save OTP attempts map', { error });
     }
   }
 
@@ -44,11 +46,16 @@ export class AuthService {
   }
 
   static async sendOtp(email: string, userData?: Record<string, any>) {
+    if (!email) {
+      throw new Error('Email is required');
+    }
     email = email.trim().toLowerCase();
     
     // Check client-side rate limit
     if (this.hasReachedLimit(email)) {
-      const oldestAttempt = Math.min(...this.getAttemptsMap()[email]);
+      const map = this.getAttemptsMap();
+      const list = map[email] || [];
+      const oldestAttempt = Math.min(...list);
       const waitMs = (oldestAttempt + OTP_ATTEMPT_WINDOW_MS) - Date.now();
       throw new Error(`Too many attempts. Please wait ${Math.ceil(waitMs / 60000)} minutes before trying again.`);
     }
@@ -64,29 +71,30 @@ export class AuthService {
       });
 
       if (error) {
-        // Log the error but throw a user-friendly message
-        console.error('OTP send error:', error);
+        logger.error('OTP send error', { error, email });
         
         // Handle rate limiting explicitly
         if (error.status === 429 || /too many/i.test(error.message)) {
           throw new Error('Too many attempts. Please wait 5 minutes before trying again.');
         }
         
-        throw new Error(error.message);
+        throw new Error(error.message || 'Failed to send OTP');
       }
 
-      // Record the attempt locally
+      // Record the attempt locally after successful send
       this.recordAttempt(email);
 
       return data;
     } catch (error: any) {
-      // Add request context to error
-      console.error('Failed to send OTP:', { email, error });
-      throw error;
+      logger.error('Failed to send OTP', { email, error });
+      throw new Error(error.message || 'An unexpected error occurred while sending OTP');
     }
   }
 
   static async verifyOtp(email: string, token: string): Promise<{ session: any; user: any }> {
+    if (!email || !token) {
+      throw new Error('Email and token are required');
+    }
     email = email.trim().toLowerCase();
     token = token.trim();
 
@@ -98,45 +106,61 @@ export class AuthService {
       });
 
       if (error) {
-        console.error('OTP verification error:', error);
+        logger.error('OTP verification error', { error, email });
         
         // Handle rate limiting
         if (error.status === 429 || /too many/i.test(error.message)) {
           throw new Error('Too many verification attempts. Please wait 5 minutes before trying again.');
         }
         
-        throw new Error(error.message);
+        throw new Error(error.message || 'Failed to verify OTP');
       }
 
       if (!data?.user || !data?.session) {
         throw new Error('Verification succeeded but no session was created');
       }
 
+      // Clear attempts after successful verification
+      const map = this.getAttemptsMap();
+      delete map[email];
+      this.saveAttemptsMap(map);
+
       return {
         session: data.session,
         user: data.user
       };
     } catch (error: any) {
-      // Add context to error
-      console.error('Failed to verify OTP:', { email, error });
-      throw error;
+      logger.error('Failed to verify OTP', { email, error });
+      throw new Error(error.message || 'An unexpected error occurred while verifying OTP');
     }
   }
 
   static async getCurrentSession() {
-    const { data: { session }, error } = await supabase.auth.getSession();
-    if (error) {
-      console.error('Session fetch error:', error);
-      throw error;
+    try {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error) {
+        throw error;
+      }
+      return session;
+    } catch (error: any) {
+      logger.error('Session fetch error', { error });
+      throw new Error(error.message || 'Failed to fetch current session');
     }
-    return session;
   }
 
   static async signOut() {
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      console.error('Sign out error:', error);
-      throw error;
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        throw error;
+      }
+      // Clear local storage attempts on sign out
+      try {
+        localStorage.removeItem(OTP_ATTEMPTS_KEY);
+      } catch {}
+    } catch (error: any) {
+      logger.error('Sign out error', { error });
+      throw new Error(error.message || 'Failed to sign out');
     }
   }
 }

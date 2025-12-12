@@ -26,10 +26,11 @@ class AuthManager {
   private storageHandler: ((e: StorageEvent) => void) | null = null;
   private broadcastChannel: BroadcastChannel | null = null;
   private lastSessionCheck: number = 0;
-  private readonly sessionCheckCooldown: number = 30000; // 30 seconds
-  private readonly sessionRefreshBuffer: number = 30 * 60 * 1000; // 30 minutes
-  private readonly periodicCheckInterval: number = 30 * 60 * 1000; // 30 minutes
+  private readonly sessionCheckCooldown: number = 120000; // Increased from 60s to 120s (2 minutes)
+  private readonly sessionRefreshBuffer: number = 60 * 60 * 1000; // Increased from 45min to 60min (1 hour)
+  private readonly periodicCheckInterval: number = 60 * 60 * 1000; // Increased from 45min to 60min (1 hour)
   private isRefreshing: boolean = false;
+  private isSigningOut: boolean = false; // Add this new flag
   private refreshPromise: Promise<boolean> | null = null;
 
   private constructor() {
@@ -168,7 +169,14 @@ class AuthManager {
       
       if (!result.isValid && !result.needsRefresh) {
         logger.info('Session is invalid and cannot be refreshed');
-        return false;
+        // Try one more time with a fresh check
+        const retryResult = await this.checkSession();
+        if (!retryResult.isValid && !retryResult.needsRefresh) {
+          return false;
+        } else if (retryResult.needsRefresh) {
+          return await this.refreshSession();
+        }
+        return retryResult.isValid;
       }
       
       if (result.needsRefresh) {
@@ -180,6 +188,16 @@ class AuthManager {
       return true;
     } catch (error) {
       logger.errorWithContext('Session validation and refresh error', error);
+      // Try fallback approach
+      try {
+        const fallbackValid = await this.checkFallbackSession();
+        if (fallbackValid) {
+          logger.info('Fallback session validation succeeded');
+          return true;
+        }
+      } catch (fallbackError) {
+        logger.errorWithContext('Fallback session validation also failed', fallbackError);
+      }
       return false;
     }
   }
@@ -207,21 +225,66 @@ class AuthManager {
   }
 
   /**
-   * Perform the actual session refresh
+   * Perform the actual session refresh with enhanced timeout handling
    */
   private async performRefresh(): Promise<boolean> {
     try {
       logger.info('Refreshing session');
-      const { data, error } = await supabase.auth.refreshSession();
+      
+      // Create a timeout wrapper for the refresh operation
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          reject(new Error('Session refresh timeout after 90 seconds'));
+        }, 90000); // 90 seconds timeout
+      });
+      
+      // Perform the refresh with timeout
+      const refreshPromise = supabase.auth.refreshSession();
+      const { data, error } = await Promise.race([refreshPromise, timeoutPromise]);
       
       if (error) {
         logger.errorWithContext('Session refresh failed', error);
         
-        // If it's an auth error, sign out
+        // If it's an auth error, try one more time
         if (this.isAuthError(error)) {
-          logger.info('Session invalid during refresh, signing out...');
-          await this.signOut();
-          return false;
+          logger.info('Session invalid during refresh, trying one more time...');
+          // Wait a bit and try again
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          // Create timeout wrapper for retry
+          const retryTimeoutPromise = new Promise<never>((_, reject) => {
+            setTimeout(() => {
+              reject(new Error('Session refresh retry timeout after 90 seconds'));
+            }, 90000); // 90 seconds timeout
+          });
+          
+          const retryPromise = supabase.auth.refreshSession();
+          const { data: retryData, error: retryError } = await Promise.race([retryPromise, retryTimeoutPromise]);
+          
+          if (retryError) {
+            logger.errorWithContext('Session refresh retry also failed', retryError);
+            logger.info('Session invalid during refresh, signing out...');
+            await this.signOut();
+            return false;
+          }
+          
+          if (!retryData.session) {
+            logger.warn('No session returned from refresh retry');
+            return false;
+          }
+          
+          logger.info('Session successfully refreshed on retry');
+          
+          // Notify other tabs
+          if (this.broadcastChannel) {
+            try {
+              this.broadcastChannel.postMessage({ type: 'SESSION_REFRESH' });
+            } catch (error) {
+              logger.errorWithContext('Failed to broadcast session refresh', error);
+            }
+          }
+          
+          return true;
         }
         
         return false;
@@ -246,6 +309,11 @@ class AuthManager {
       return true;
     } catch (error) {
       logger.errorWithContext('Session refresh exception', error);
+      
+      // Handle timeout specifically
+      if (error instanceof Error && error.message.includes('timeout')) {
+        logger.error('Session refresh timed out - network connectivity issue suspected');
+      }
       
       // Try to get current session as fallback
       const fallbackValid = await this.checkFallbackSession();
@@ -306,6 +374,14 @@ class AuthManager {
     try {
       logger.info('Signing out user and clearing session data');
       
+      // Add guard to prevent multiple concurrent sign outs
+      if (this.isSigningOut) {
+        logger.warn('Sign out already in progress, skipping...');
+        return;
+      }
+      
+      this.isSigningOut = true;
+      
       // Notify other tabs before signing out
       if (this.broadcastChannel) {
         try {
@@ -329,6 +405,11 @@ class AuthManager {
       logger.errorWithContext('Error during sign out', error);
       // Still clear auth data even if signout fails
       this.clearAuthData();
+    } finally {
+      // Reset the guard
+      setTimeout(() => {
+        this.isSigningOut = false;
+      }, 1000);
     }
   }
 
@@ -490,29 +571,64 @@ class AuthManager {
     try {
       logger.debug('Fetching user role for user:', userId);
       
-      // Use the secure function that bypasses RLS
-      const { data, error } = await supabase.rpc('get_user_role_secure', { 
-        user_id_param: userId 
-      });
-
-      if (error) {
-        logger.errorWithContext('Error calling secure function to get user role', error);
-        return null;
-      }
-
-      if (!data) {
-        logger.warn('No active role found for user:', userId);
-        return null;
-      }
-
-      // Parse and validate role
-      const role = this.parseUserRole(data as string);
+      // Retry mechanism for getUserRole
+      let attempts = 0;
+      const maxAttempts = 3;
+      let lastError: any = null;
       
-      if (role) {
-        logger.debug('User role fetched successfully:', role);
+      while (attempts < maxAttempts) {
+        try {
+          // Use the secure function that bypasses RLS
+          const { data, error } = await supabase.rpc('get_user_role_secure', { 
+            user_id_param: userId 
+          });
+
+          if (error) {
+            logger.errorWithContext(`Attempt ${attempts + 1}: Error calling secure function to get user role`, error);
+            lastError = error;
+            attempts++;
+            if (attempts < maxAttempts) {
+              // Wait before retrying
+              await new Promise(resolve => setTimeout(resolve, 1000 * attempts));
+              continue;
+            }
+            return null;
+          }
+
+          if (!data) {
+            logger.warn(`Attempt ${attempts + 1}: No active role found for user:`, userId);
+            attempts++;
+            if (attempts < maxAttempts) {
+              // Wait before retrying
+              await new Promise(resolve => setTimeout(resolve, 1000 * attempts));
+              continue;
+            }
+            return null;
+          }
+
+          // Parse and validate role
+          const role = this.parseUserRole(data as string);
+          
+          if (role) {
+            logger.debug('User role fetched successfully:', role);
+          }
+          
+          return role;
+        } catch (error) {
+          logger.errorWithContext(`Attempt ${attempts + 1}: Exception getting user role`, error);
+          lastError = error;
+          attempts++;
+          if (attempts < maxAttempts) {
+            // Wait before retrying
+            await new Promise(resolve => setTimeout(resolve, 1000 * attempts));
+            continue;
+          }
+        }
       }
       
-      return role;
+      // If we get here, all attempts failed
+      logger.errorWithContext('All attempts to get user role failed', lastError);
+      return null;
     } catch (error) {
       logger.errorWithContext('Exception getting user role', error);
       return null;
