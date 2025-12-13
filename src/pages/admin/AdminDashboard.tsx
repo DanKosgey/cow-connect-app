@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -139,14 +139,23 @@ interface Collection {
   status: string;
   notes: string;
   farmers?: {
-    full_name: string;
+    id: string;
+    user_id: string;
+    profiles: {
+      full_name: string;
+      phone: string;
+    };
   };
   staff?: {
+    id: string;
+    user_id: string;
     profiles: {
       full_name: string;
     };
   };
   approved_by?: {
+    id: string;
+    user_id: string;
     profiles: {
       full_name: string;
     };
@@ -231,6 +240,14 @@ const CHART_TYPES = [
   { id: 'composed', label: 'Composed', icon: BarChartIcon },
 ];
 
+// Define DASHBOARD_TABS constant
+const DASHBOARD_TABS = [
+  { id: 'overview', label: 'Overview', icon: BarChart3 },
+  { id: 'collections', label: 'Collections', icon: Droplets },
+  { id: 'alerts', label: 'Alerts', icon: AlertCircle },
+  { id: 'settings', label: 'Settings', icon: Settings }
+] as const;
+
 // Color palette for charts
 const CHART_COLORS = {
   primary: '#3b82f6',     // Blue
@@ -246,8 +263,11 @@ const CHART_COLORS = {
 };
 
 const AdminDashboard = () => {
+  console.log('📊 [AdminDashboard] Component rendered at:', new Date().toISOString());
+  
   const toast = useToastNotifications();
   const queryClient = useQueryClient();
+  const { refreshSession } = useSessionRefresh({ enabled: true, refreshInterval: 25 * 60 * 1000 }); // Refresh every 25 minutes
   
   // State management
   const [collections, setCollections] = useState<Collection[]>([]);
@@ -255,6 +275,7 @@ const AdminDashboard = () => {
   const [staff, setStaff] = useState<Staff[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [loading, setLoading] = useState(true);
+  const [dataLoading, setDataLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<any[]>([]);
   const [timeRange, setTimeRange] = useState('week');
@@ -288,19 +309,50 @@ const AdminDashboard = () => {
   // State for loading settings
   const [settingsLoading, setSettingsLoading] = useState(true);
   
+  // Timeout ref to prevent infinite loading
+  const loadingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
   // Monitor dashboard targets changes
   useEffect(() => {
     console.log('Dashboard targets updated:', dashboardTargets);
   }, [dashboardTargets]);
   
+  // Set up timeout to prevent infinite loading
+  useEffect(() => {
+    // Clear existing timeout
+    if (loadingTimeoutRef.current) {
+      clearTimeout(loadingTimeoutRef.current);
+    }
+    
+    // Set timeout to force loading to complete after 30 seconds
+    loadingTimeoutRef.current = setTimeout(() => {
+      if (loading || initialLoad) {
+        console.warn('Dashboard loading timeout reached, forcing load completion');
+        setLoading(false);
+        setInitialLoad(false);
+        setSettingsLoading(false); // Also ensure settings loading is false
+        setDataLoading(false); // Also ensure data loading is false
+        toast.error('Dashboard data is taking longer than expected to load. Showing available data.');
+      }
+    }, 30000); // 30 seconds timeout
+    
+    // Cleanup timeout on unmount or when loading states change
+    return () => {
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current);
+      }
+    };
+  }, [loading, initialLoad, toast.error]);
+
   // Load targets from database on component mount
   useEffect(() => {
+    console.log('📊 [AdminDashboard] Starting data load at:', new Date().toISOString());
     let isMounted = true;
     
     const loadDashboardSettings = async () => {
       try {
-        setSettingsLoading(true);
-        console.log('Loading dashboard settings from database...');
+        if (isMounted) setSettingsLoading(true);
+        console.log('📊 [AdminDashboard] Loading dashboard settings from database...');
         
         const { data, error } = await supabase
           .from('dashboard_settings')
@@ -332,7 +384,7 @@ const AdminDashboard = () => {
         } else {
           console.log('Raw data from database:', data);
           // Transform database settings to target format
-          const targets = data.map(setting => {
+          const targets = data.map((setting: any) => {
             let targetValue = setting.setting_value;
             if (setting.setting_type === 'number') {
               targetValue = Number(setting.setting_value);
@@ -407,11 +459,16 @@ const AdminDashboard = () => {
           { id: 'paymentTimeliness', label: 'Payment Timeliness', target: 95, format: 'percent' },
         ];
         console.log('Using fallback default targets:', defaultTargets);
-        setDashboardTargets(defaultTargets);
+        if (isMounted) setDashboardTargets(defaultTargets);
       } finally {
         if (isMounted) {
           setSettingsLoading(false);
           console.log('Finished loading dashboard settings');
+          // Set main loading state to false as well if this is the initial load
+          if (initialLoad) {
+            setLoading(false);
+            setInitialLoad(false);
+          }
         }
       }
     };
@@ -442,15 +499,169 @@ const AdminDashboard = () => {
       console.log('Cleaning up dashboard settings subscription');
       isMounted = false;
       supabase.removeChannel(settingsChannel);
+      // Ensure loading states are cleared when component unmounts
+      setLoading(false);
+      setInitialLoad(false);
+      setSettingsLoading(false);
+      setDataLoading(false);
     };
-  }, []);
-  
-  const DASHBOARD_TABS = [
-    { id: 'overview', label: 'Overview', icon: Home },
-    { id: 'settings', label: 'Settings', icon: Settings },
-  ];
+  }, [initialLoad]); // Removed unnecessary dependencies
 
-  
+  // React Query for dashboard data
+  const { data: dashboardData, isLoading: isDashboardLoading, error: dashboardError, refetch } = useQuery({
+    queryKey: [CACHE_KEYS.ADMIN_DASHBOARD, timeRange, quickFilters, dashboardTargets],
+    queryFn: async () => {
+      setDataLoading(true);
+      try {
+        const { startDate, endDate } = getCurrentPeriodFilter(timeRange);
+        
+        // Fetch multiple data sources in parallel
+        const [collectionsRes, farmersRes, staffRes, pendingRes] = await Promise.all([
+          supabase
+            .from('collections')
+            .select(`
+              id,
+              collection_id,
+              farmer_id,
+              staff_id,
+              approved_by,
+              liters,
+              rate_per_liter,
+              total_amount,
+              collection_date,
+              status,
+              notes,
+              farmers (
+                id,
+                user_id,
+                profiles!user_id (full_name, phone)
+              ),
+              staff!collections_staff_id_fkey (
+                id,
+                user_id,
+                profiles!user_id (full_name)
+              )
+            `)
+            .eq('approved_for_company', true) // Add this filter to match Collections page
+            .gte('collection_date', startDate)
+            .lte('collection_date', endDate)
+            .order('collection_date', { ascending: false })
+            .limit(500),
+          
+          supabase
+            .from('farmers')
+            .select(`
+              id,
+              user_id,
+              registration_number,
+              kyc_status,
+              created_at,
+              profiles:user_id (full_name, email)
+            `)
+            .order('created_at', { ascending: false })
+            .limit(200),
+          
+          supabase
+            .from('staff')
+            .select(`
+              id,
+              user_id,
+              employee_id,
+              status,
+              created_at,
+              profiles:user_id (full_name, email)
+            `)
+            .limit(100),
+          
+          supabase
+            .from('pending_farmers')
+            .select('id, full_name, email, phone_number, status, created_at, rejection_count')
+            .in('status', ['pending_verification', 'email_verified'])
+            .limit(10)
+        ]);
+
+        // Check for errors in any of the responses
+        if (collectionsRes.error) throw new Error(`Collections error: ${collectionsRes.error.message}`);
+        if (farmersRes.error) throw new Error(`Farmers error: ${farmersRes.error.message}`);
+        if (staffRes.error) throw new Error(`Staff error: ${staffRes.error.message}`);
+        if (pendingRes.error) throw new Error(`Pending farmers error: ${pendingRes.error.message}`);
+
+        const collections = collectionsRes.data || [];
+        const farmers = farmersRes.data || [];
+        const staff = staffRes.data || [];
+        const pendingFarmers = pendingRes.data || [];
+
+        // Process dual-axis data
+        const dualAxisData = processDualAxisData(collections);
+        
+        // Calculate enhanced metrics
+        const enhancedMetrics = calculateEnhancedMetrics({ collections, farmers, staff });
+        
+        // Process KPI data
+        const kpiData = processKPIData({ collections, farmers, staff });
+
+        // Generate alerts
+        const alerts = generateEnhancedAlerts(collections, farmers, pendingFarmers);
+
+        // Calculate KYC stats
+        const kycStats = {
+          pending: pendingFarmers.filter((f: any) => f.status === 'email_verified').length,
+          approved: farmers.filter((f: any) => f.kyc_status === 'approved').length,
+          rejected: farmers.filter((f: any) => f.kyc_status === 'rejected').length,
+          resubmissions: pendingFarmers.filter((f: any) => f.rejection_count > 0).length
+        };
+
+        return {
+          collections,
+          farmers,
+          staff,
+          pendingFarmers,
+          dualAxisData,
+          enhancedMetrics,
+          kpiData,
+          alerts,
+          kycStats
+        };
+      } finally {
+        setDataLoading(false);
+      }
+    },
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: true,
+  });
+
+  // Update state when query data changes
+  useEffect(() => {
+    if (dashboardData) {
+      setCollections(dashboardData.collections);
+      setFarmers(dashboardData.farmers);
+      setStaff(dashboardData.staff);
+      setPendingFarmers(dashboardData.pendingFarmers);
+      setCollectionTrends(dashboardData.dualAxisData);
+      setRevenueTrends(dashboardData.dualAxisData);
+      setMetrics(dashboardData.enhancedMetrics);
+      setAlerts(dashboardData.alerts);
+      setKycStats(dashboardData.kycStats);
+      console.log('📊 [AdminDashboard] Data loading completed successfully at:', new Date().toISOString());
+      setLoading(false);
+      setInitialLoad(false);
+      setDataLoading(false);
+    }
+  }, [dashboardData, dashboardTargets]);
+
+  // Handle dashboard error
+  useEffect(() => {
+    if (dashboardError) {
+      console.error('📊 [AdminDashboard] Dashboard data fetch error:', dashboardError);
+      toast.error('Failed to load dashboard data. Please try refreshing the page.');
+      setLoading(false);
+      setInitialLoad(false);
+      setDataLoading(false);
+    }
+  }, [dashboardError, toast.error]);
+
   // Enhanced metrics calculation
   const calculateEnhancedMetrics = useCallback((data: any) => {
     const totalLiters = data.collections?.reduce((sum: number, c: any) => sum + (c.liters || 0), 0) || 0;
@@ -625,127 +836,6 @@ const AdminDashboard = () => {
     ];
   }, [dashboardTargets]);
 
-  // React Query for dashboard data
-  const { data: dashboardData, isLoading: isDashboardLoading, error: dashboardError, refetch } = useQuery({
-    queryKey: [CACHE_KEYS.ADMIN_DASHBOARD, timeRange, quickFilters, dashboardTargets],
-    queryFn: async () => {
-      const { startDate, endDate } = getCurrentPeriodFilter(timeRange);
-      
-      // Fetch multiple data sources in parallel
-      const [collectionsRes, farmersRes, staffRes, pendingRes] = await Promise.all([
-        supabase
-          .from('collections')
-          .select(`
-            id,
-            collection_id,
-            farmer_id,
-            staff_id,
-            approved_by,
-            liters,
-            rate_per_liter,
-            total_amount,
-            collection_date,
-            status,
-            notes,
-            farmers!inner(full_name)
-          `)
-          .gte('collection_date', startDate)
-          .lte('collection_date', endDate)
-          .order('collection_date', { ascending: false })
-          .limit(500),
-        
-        supabase
-          .from('farmers')
-          .select(`
-            id,
-            user_id,
-            registration_number,
-            kyc_status,
-            created_at,
-            profiles:user_id (full_name, email)
-          `)
-          .order('created_at', { ascending: false })
-          .limit(200),
-        
-        supabase
-          .from('staff')
-          .select(`
-            id,
-            user_id,
-            employee_id,
-            status,
-            created_at,
-            profiles:user_id (full_name, email)
-          `)
-          .limit(100),
-        
-        supabase
-          .from('pending_farmers')
-          .select('id, full_name, email, phone_number, status, created_at, rejection_count')
-          .in('status', ['pending_verification', 'email_verified'])
-          .limit(10)
-      ]);
-
-      const collections = collectionsRes.data || [];
-      const farmers = farmersRes.data || [];
-      const staff = staffRes.data || [];
-      const pendingFarmers = pendingRes.data || [];
-
-      // Process dual-axis data
-      const dualAxisData = processDualAxisData(collections);
-      
-      // Calculate enhanced metrics
-      const enhancedMetrics = calculateEnhancedMetrics({ collections, farmers, staff });
-      
-      // Process KPI data
-      const kpiData = processKPIData({ collections, farmers, staff });
-
-      // Generate alerts
-      const alerts = generateEnhancedAlerts(collections, farmers, pendingFarmers);
-
-      // Calculate KYC stats
-      const kycStats = {
-        pending: pendingFarmers.filter(f => f.status === 'email_verified').length,
-        approved: farmers.filter(f => f.kyc_status === 'approved').length,
-        rejected: farmers.filter(f => f.kyc_status === 'rejected').length,
-        resubmissions: pendingFarmers.filter(f => f.rejection_count > 0).length
-      };
-
-      return {
-        collections,
-        farmers,
-        staff,
-        pendingFarmers,
-        dualAxisData,
-        enhancedMetrics,
-        kpiData,
-        alerts,
-        kycStats
-      };
-    },
-    staleTime: 5 * 60 * 1000,
-    gcTime: 10 * 60 * 1000,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: true,
-  });
-
-  // Update state when query data changes
-  useEffect(() => {
-    if (dashboardData) {
-      setCollections(dashboardData.collections);
-      setFarmers(dashboardData.farmers);
-      setStaff(dashboardData.staff);
-      setPendingFarmers(dashboardData.pendingFarmers);
-      setCollectionTrends(dashboardData.dualAxisData);
-      setRevenueTrends(dashboardData.dualAxisData);
-      setMetrics(dashboardData.enhancedMetrics);
-      setAlerts(dashboardData.alerts);
-      setKycStats(dashboardData.kycStats);
-      setLoading(false);
-      setInitialLoad(false);
-    }
-  }, [dashboardData, dashboardTargets]);
-
   // Generate enhanced alerts
   const generateEnhancedAlerts = useCallback((collections: Collection[], farmers: Farmer[], pendingFarmers: PendingFarmer[]) => {
     const alerts: Alert[] = [];
@@ -757,7 +847,7 @@ const AdminDashboard = () => {
       .forEach(c => {
         alerts.push({
           type: 'high_value',
-          message: `High-value collection: ${formatCurrency(c.total_amount)} from ${c.farmers?.full_name || 'Unknown'}`,
+          message: `High-value collection: ${formatCurrency(c.total_amount)} from ${c.farmers?.profiles?.full_name || 'Unknown'}`,
           severity: 'success',
           time: format(new Date(c.collection_date), 'HH:mm'),
           icon: Award
@@ -1090,7 +1180,7 @@ const AdminDashboard = () => {
                 <TableCell className="font-medium">
                   {format(new Date(collection.collection_date), 'MMM dd')}
                 </TableCell>
-                <TableCell>{collection.farmers?.full_name || 'Unknown'}</TableCell>
+                <TableCell>{collection.farmers?.profiles?.full_name || 'Unknown'}</TableCell>
                 <TableCell>{formatNumber(collection.liters)}</TableCell>
                 <TableCell>{formatCurrency(collection.rate_per_liter)}</TableCell>
                 <TableCell className="font-medium">
@@ -1116,56 +1206,6 @@ const AdminDashboard = () => {
     );
   };
 
-  // Function to update a target value in the database
-  const updateTarget = async (id: string, newTarget: number) => {
-    try {
-      // Map target IDs to setting keys
-      const keyMap: Record<string, string> = {
-        'revenue': 'target_revenue',
-        'liters': 'target_liters',
-        'farmers': 'target_farmers',
-        'collections': 'target_collections',
-        'avgRate': 'target_avg_rate',
-        'efficiency': 'target_efficiency',
-        'targetAchievement': 'target_achievement',
-        'farmerSatisfaction': 'target_farmer_satisfaction',
-        'paymentTimeliness': 'target_payment_timeliness'
-      };
-      
-      const settingKey = keyMap[id];
-      if (!settingKey) {
-        console.error('Invalid target ID:', id);
-        return;
-      }
-      
-      const { error } = await supabase
-        .from('dashboard_settings')
-        .update({ 
-          setting_value: newTarget.toString(),
-          updated_at: new Date().toISOString()
-        })
-        .eq('setting_key', settingKey);
-      
-      if (error) {
-        console.error('Error updating target:', error);
-        toast.error('Failed to update target value');
-        return;
-      }
-      
-      // Update local state
-      setDashboardTargets(prevTargets => 
-        prevTargets.map(target => 
-          target.id === id ? { ...target, target: newTarget } : target
-        )
-      );
-      
-      toast.success('Target updated successfully');
-    } catch (error) {
-      console.error('Error updating target:', error);
-      toast.error('Failed to update target value');
-    }
-  };
-  
   // Function to reset targets to default values in the database
   const resetTargets = async () => {
     try {
@@ -1219,13 +1259,138 @@ const AdminDashboard = () => {
     }
   };
 
-  // Loading State
-  if (loading || isDashboardLoading) {
+  // Function to calculate collection efficiency based on collections and farmers data
+  const calculateCollectionEfficiency = useCallback((collectionsData: Collection[], farmersData: Farmer[]) => {
+    if (!collectionsData || !farmersData || collectionsData.length === 0) {
+      return '0%';
+    }
+
+    // Calculate efficiency based on:
+    // 1. Ratio of approved collections to total collections
+    // 2. Consistency of farmer participation
+    // 3. Timeliness of collections
+    
+    const approvedCollections = collectionsData.filter(c => c.status === 'Approved').length;
+    const totalCollections = collectionsData.length;
+    
+    // Base efficiency from approval rate
+    const approvalRate = totalCollections > 0 ? (approvedCollections / totalCollections) * 100 : 0;
+    
+    // Calculate farmer participation rate (unique farmers who have collections)
+    const uniqueFarmersWithCollections = new Set(collectionsData.map(c => c.farmer_id)).size;
+    const totalActiveFarmers = farmersData.filter(f => f.kyc_status === 'approved').length;
+    const participationRate = totalActiveFarmers > 0 ? (uniqueFarmersWithCollections / totalActiveFarmers) * 100 : 0;
+    
+    // Weighted efficiency calculation
+    // 60% approval rate, 40% participation rate
+    const efficiency = (approvalRate * 0.6) + (participationRate * 0.4);
+    
+    return `${Math.round(efficiency)}%`;
+  }, []);
+
+  // Function to update a target value in the database
+  const updateTarget = async (id: string, newTarget: number) => {
+    try {
+      // Map target IDs to setting keys
+      const keyMap: Record<string, string> = {
+        'revenue': 'target_revenue',
+        'liters': 'target_liters',
+        'farmers': 'target_farmers',
+        'collections': 'target_collections',
+        'avgRate': 'target_avg_rate',
+        'efficiency': 'target_efficiency',
+        'targetAchievement': 'target_achievement',
+        'farmerSatisfaction': 'target_farmer_satisfaction',
+        'paymentTimeliness': 'target_payment_timeliness'
+      };
+      
+      const settingKey = keyMap[id];
+      if (!settingKey) {
+        console.error('Invalid target ID:', id);
+        return;
+      }
+      
+      const { error } = await supabase
+        .from('dashboard_settings')
+        .update({ 
+          setting_value: newTarget.toString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('setting_key', settingKey);
+      
+      if (error) {
+        console.error('Error updating target:', error);
+        toast.error('Failed to update target value');
+        return;
+      }
+      
+      // Update local state
+      setDashboardTargets(prevTargets => 
+        prevTargets.map(target => 
+          target.id === id ? { ...target, target: newTarget } : target
+        )
+      );
+      
+      toast.success('Target updated successfully');
+    } catch (error) {
+      console.error('Error updating target:', error);
+      toast.error('Failed to update target value');
+    }
+  };
+  
+  // Loading State - Simplified to prevent deadlocks
+  if ((loading || isDashboardLoading || settingsLoading || dataLoading) && initialLoad) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <RefreshCw className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
           <p className="text-gray-600 dark:text-gray-400">Loading dashboard data...</p>
+          <p className="text-sm text-gray-500 mt-2">
+            {(isDashboardLoading || dataLoading) && 'Fetching collections, farmers, and staff data...'}
+          </p>
+          <Button 
+            variant="outline" 
+            className="mt-4"
+            onClick={() => {
+              // Force load completion
+              setLoading(false);
+              setSettingsLoading(false);
+              setDataLoading(false);
+              toast.success('Dashboard loading forced', 'Some data may be incomplete.');
+            }}
+          >
+            Skip Loading
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // Error State
+  if (dashboardError) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center max-w-md p-6">
+          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">Error Loading Dashboard</h3>
+          <p className="text-gray-600 dark:text-gray-400 mb-4">
+            There was an error loading the dashboard data. Please try refreshing the page.
+          </p>
+          <div className="flex flex-col gap-2">
+            <Button onClick={() => refetch()} variant="default">
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Retry
+            </Button>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setLoading(false);
+                setInitialLoad(false);
+              }}
+            >
+              Continue Anyway
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -1233,6 +1398,9 @@ const AdminDashboard = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      {/* Test component for debugging */}
+      {/* <TestDashboardSettings /> */}
+      
       {/* Header */}
       <header className="sticky top-0 z-40 border-b bg-white dark:bg-gray-800">
         <div className="px-6 py-4">
@@ -1294,6 +1462,21 @@ const AdminDashboard = () => {
                 disabled={isDashboardLoading}
               >
                 <RefreshCw className={`h-4 w-4 ${isDashboardLoading ? 'animate-spin' : ''}`} />
+              </Button>
+              
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={async () => {
+                  const result = await refreshSession();
+                  if (result.success) {
+                    toast.success('Session refreshed successfully');
+                  } else {
+                    toast.error('Failed to refresh session');
+                  }
+                }}
+              >
+                <Coffee className="h-4 w-4" />
               </Button>
               
               <Button>
@@ -1369,7 +1552,7 @@ const AdminDashboard = () => {
                   <div>
                     <p className="text-sm font-medium text-purple-700 dark:text-purple-300">Efficiency Score</p>
                     <p className="text-2xl font-bold text-purple-900 dark:text-purple-100">
-                      {collections.length > 0 ? Math.round((collections.filter(c => c.status === 'Approved').length / collections.length) * 100) : 0}%
+                      {calculateCollectionEfficiency(collections, farmers)}
                     </p>
                   </div>
                   <Target className="h-8 w-8 text-purple-500" />
@@ -1474,7 +1657,7 @@ const AdminDashboard = () => {
                         {dashboardTargets.length === 0 ? (
                           <tr>
                             <td colSpan={3} className="py-4 px-4 text-center text-gray-500">
-                              {settingsLoading ? 'Loading targets...' : 'No targets configured'}
+                              {settingsLoading && 'Loading dashboard settings...'}
                             </td>
                           </tr>
                         ) : (

@@ -10,7 +10,7 @@ const TestDashboardSettings = () => {
     const fetchSettings = async () => {
       try {
         setLoading(true);
-        console.log('Fetching dashboard settings...');
+        console.log('Attempting to fetch dashboard settings...');
         
         const { data, error } = await supabase
           .from('dashboard_settings')
@@ -19,14 +19,15 @@ const TestDashboardSettings = () => {
           .eq('category', 'targets');
 
         if (error) {
-          console.error('Error fetching settings:', error);
+          console.error('Error fetching dashboard settings:', error);
           setError(error.message);
-        } else {
-          console.log('Fetched settings:', data);
-          setSettings(data);
+          return;
         }
+
+        console.log('Successfully fetched dashboard settings:', data);
+        setSettings(data || []);
       } catch (err) {
-        console.error('Unexpected error:', err);
+        console.error('Exception fetching dashboard settings:', err);
         setError(err instanceof Error ? err.message : 'Unknown error');
       } finally {
         setLoading(false);
@@ -36,13 +37,18 @@ const TestDashboardSettings = () => {
     fetchSettings();
   }, []);
 
-  if (loading) return <div>Loading...</div>;
-  if (error) return <div>Error: {error}</div>;
+  if (loading) {
+    return <div>Loading dashboard settings test...</div>;
+  }
+
+  if (error) {
+    return <div>Error: {error}</div>;
+  }
 
   return (
     <div>
       <h2>Dashboard Settings Test</h2>
-      <p>Found {settings.length} settings</p>
+      <p>Found {settings.length} active target settings</p>
       <ul>
         {settings.map((setting) => (
           <li key={setting.id}>

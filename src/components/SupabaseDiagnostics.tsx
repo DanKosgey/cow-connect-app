@@ -8,7 +8,7 @@ const SupabaseDiagnostics: React.FC = () => {
     // Check environment variables
     const vars = {
       VITE_SUPABASE_URL: import.meta.env.VITE_SUPABASE_URL || 'NOT SET',
-      VITE_SUPABASE_PUBLISHABLE_KEY: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || 'NOT SET',
+      VITE_SUPABASE_ANON_KEY: import.meta.env.VITE_SUPABASE_ANON_KEY || 'NOT SET',
       NODE_ENV: import.meta.env.MODE || 'unknown',
       PROD: import.meta.env.PROD ? 'true' : 'false',
       DEV: import.meta.env.DEV ? 'true' : 'false'
@@ -44,9 +44,9 @@ const SupabaseDiagnostics: React.FC = () => {
         </div>
       )}
       
-      {envVars.VITE_SUPABASE_PUBLISHABLE_KEY === 'NOT SET' && (
+      {envVars.VITE_SUPABASE_ANON_KEY === 'NOT SET' && (
         <div className="mt-3 p-2 bg-red-100 border border-red-300 rounded">
-          <strong className="text-red-800">ERROR:</strong> VITE_SUPABASE_PUBLISHABLE_KEY is not set! 
+          <strong className="text-red-800">ERROR:</strong> VITE_SUPABASE_ANON_KEY is not set! 
           This will cause the app to fail connecting to Supabase.
         </div>
       )}

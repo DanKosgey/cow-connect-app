@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from 'react';
-import { Routes, Route, useLocation } from "react-router-dom";
+import { Routes, Route, useLocation, Navigate } from "react-router-dom";
 import { LoadingSkeleton } from '@/components/LoadingSkeleton';
 import { PageTransition } from '@/components/PageTransition';
 import { preloadRouteWhenIdle } from '@/utils/routePreloader';
@@ -43,6 +43,7 @@ export default function PublicRoutes() {
             <Login />
           </PageTransition>
         } />
+        <Route path="/auth/login" element={<Navigate to="/login" replace />} />
         <Route path="/auth-test" element={
           <PageTransition>
             <NotFound />

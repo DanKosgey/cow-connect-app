@@ -9,7 +9,7 @@ import { supabase } from '@/integrations/supabase/client';
 
 const AuthCallback = () => {
   const navigate = useNavigate();
-  const { user, userRole, loading } = useAuth();
+  const { user, userRole, isLoading } = useAuth();
   const toast = useToastNotifications();
   const [processing, setProcessing] = useState(false);
   const [timeoutReached, setTimeoutReached] = useState(false);
@@ -367,13 +367,13 @@ const AuthCallback = () => {
     };
 
     // Only run the callback if we're not still loading the auth state
-    if (!loading && !processing && !timeoutReached && !hasNavigated.current) {
+    if (!isLoading && !processing && !timeoutReached && !hasNavigated.current) {
       console.log('AuthCallback: Auth state loaded, running callback');
       handleCallback();
     } else {
-      console.log('AuthCallback: Waiting for auth state to load', { loading, processing, timeoutReached });
+      console.log('AuthCallback: Waiting for auth state to load', { isLoading, processing, timeoutReached });
     }
-  }, [user, userRole, loading, navigate, toast, processing, timeoutReached]);
+  }, [user, userRole, isLoading, navigate, toast, processing, timeoutReached]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background to-secondary/10">

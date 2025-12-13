@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { UserRole } from "@/types/auth.types";
 import { useAuth } from "@/hooks/useAuth";
 import { LoginForm } from "@/components/auth/LoginForm";
+import { UserCog } from "@/utils/iconImports";
 
 const CollectorOnlyLogin = () => {
   const navigate = useNavigate();

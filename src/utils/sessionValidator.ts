@@ -1,5 +1,5 @@
 import { logger } from '@/utils/logger';
-import { authManager } from '@/utils/authManager';
+import { authService } from '@/lib/supabase/auth-service';
 
 /**
  * Utility functions for session validation and management.
@@ -13,7 +13,8 @@ import { authManager } from '@/utils/authManager';
  */
 export const isSessionValid = async (): Promise<boolean> => {
   try {
-    return await authManager.isSessionValid();
+    const session = await authService.getCurrentSession();
+    return !!session;
   } catch (error) {
     logger.error('Failed to check session validity', { error });
     return false;
@@ -26,7 +27,8 @@ export const isSessionValid = async (): Promise<boolean> => {
  */
 export const validateAndRefreshSession = async (): Promise<boolean> => {
   try {
-    return await authManager.validateAndRefreshSession();
+    const result = await authService.refreshSession();
+    return !!result.session && !result.error;
   } catch (error) {
     logger.error('Failed to validate and refresh session', { error });
     return false;
@@ -39,7 +41,8 @@ export const validateAndRefreshSession = async (): Promise<boolean> => {
  */
 export const forceSessionRefresh = async (): Promise<boolean> => {
   try {
-    return await authManager.refreshSession();
+    const result = await authService.refreshSession();
+    return !!result.session && !result.error;
   } catch (error) {
     logger.error('Failed to force session refresh', { error });
     return false;
@@ -52,7 +55,7 @@ export const forceSessionRefresh = async (): Promise<boolean> => {
  */
 export const clearSessionAndSignOut = async (): Promise<void> => {
   try {
-    await authManager.signOut();
+    await authService.signOut();
   } catch (error) {
     logger.error('Failed to clear session and sign out', { error });
     throw error; // Rethrow to allow caller handling

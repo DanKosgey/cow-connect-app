@@ -47,8 +47,8 @@ export const testSupabaseConnection = async () => {
         const response = await fetch(`${supabaseUrl}/rest/v1/`, {
           method: 'GET',
           headers: {
-            'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ? '[REDACTED]' : undefined,
-            'Authorization': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ? `Bearer [REDACTED]` : undefined,
+            'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY ? '[REDACTED]' : undefined,
+            'Authorization': import.meta.env.VITE_SUPABASE_ANON_KEY ? `Bearer [REDACTED]` : undefined,
             'Content-Type': 'application/json'
           }
         });

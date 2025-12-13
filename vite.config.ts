@@ -6,166 +6,201 @@ import { componentTagger } from "lovable-tagger";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
-  // Set base path for deployment
-  base: '/',
+  base: "/",
+  
   server: {
     host: "::",
     port: 5173,
+    strictPort: false,
+    open: false,
   },
+  
   plugins: [
-    react(), 
+    react(),
     mode === "development" && componentTagger(),
   ].filter(Boolean),
+  
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "@/lib": path.resolve(__dirname, "./src/lib"),
+      "@/integrations": path.resolve(__dirname, "./src/integrations"),
+      "@/components": path.resolve(__dirname, "./src/components"),
+      "@/pages": path.resolve(__dirname, "./src/pages"),
+      "@/services": path.resolve(__dirname, "./src/services"),
+      "@/contexts": path.resolve(__dirname, "./src/contexts"),
+      "@/hooks": path.resolve(__dirname, "./src/hooks"),
+      "@/types": path.resolve(__dirname, "./src/types"),
+      "@/assets": path.resolve(__dirname, "./src/assets"),
+      "@/utils": path.resolve(__dirname, "./src/utils"),
+      "@/routes": path.resolve(__dirname, "./src/routes"),
+      "@/schemas": path.resolve(__dirname, "./src/schemas"),
+      "@/styles": path.resolve(__dirname, "./src/styles"),
+      "@/config": path.resolve(__dirname, "./src/config"),
     },
-    // Dedupe React to prevent multiple instances
-    dedupe: ['react', 'react-dom']
+    dedupe: ["react", "react-dom"],
   },
-  // Build optimizations
+  
+  optimizeDeps: {
+    include: [
+      "react",
+      "react-dom",
+      "react-router-dom",
+      "@tanstack/react-query",
+      "@supabase/supabase-js",
+    ],
+    exclude: ["lovable-tagger"],
+  },
+  
   build: {
-    // Reduce bundle size
-    target: 'es2015',
-    // Enable CSS code splitting
+    target: "es2020",
     cssCodeSplit: true,
-    // Generate manifest for service worker
     manifest: true,
-    // Reduce chunk size warnings
-    chunkSizeWarningLimit: 500,
-    // Enable tree shaking
-    rollupOptions: {
-      // External dependencies that shouldn't be bundled
-      external: [],
-      output: {
-        // Ensure proper loading order by putting React first
-        manualChunks: {
-          // React core must be loaded first
-          'react': ['react'],
-          'react-dom': ['react-dom'],
-          // React Router (often needed early)
-          'react-router': ['react-router', 'react-router-dom'],
-          // Critical UI libraries
-          'radix-ui': [
-            '@radix-ui/react-dialog',
-            '@radix-ui/react-dropdown-menu',
-            '@radix-ui/react-select',
-            '@radix-ui/react-tooltip',
-            '@radix-ui/react-popover',
-            '@radix-ui/react-slot'
-          ],
-          // Data management
-          'data': [
-            '@tanstack/react-query',
-            '@supabase/supabase-js'
-          ],
-          // Charts and visualization
-          'charts': ['recharts'],
-          // Form handling
-          'forms': [
-            'react-hook-form',
-            '@hookform/resolvers',
-            'zod'
-          ],
-          // Utilities
-          'utils': [
-            'date-fns',
-            'lucide-react',
-            'clsx',
-            'tailwind-merge',
-            'class-variance-authority'
-          ],
-          // UI components
-          'ui': [
-            'sonner',
-            'cmdk',
-            'input-otp',
-            'react-day-picker',
-            'react-resizable-panels',
-            'embla-carousel-react'
-          ],
-          // File handling
-          'files': ['xlsx', 'exceljs']
-        },
-        
-        // Optimize chunk naming and loading order
-        chunkFileNames: 'assets/[name]-[hash].js',
-        entryFileNames: 'assets/[name]-[hash].js',
-        assetFileNames: 'assets/[name]-[hash].[ext]',
-        
-        // Ensure proper loading order
-        hoistTransitiveImports: false
-      }
+    chunkSizeWarningLimit: 1000,
+    sourcemap: mode === "production" ? false : true,
+    minify: "terser",
+    terserOptions: {
+      compress: {
+        drop_console: mode === "production",
+        drop_debugger: mode === "production",
+      },
     },
     
-    // Optimize dependencies with explicit inclusion
-    optimizeDeps: {
-      include: [
-        'react',
-        'react-dom',
-        'react-router-dom',
-        '@radix-ui/react-dialog',
-        '@radix-ui/react-dropdown-menu',
-        '@radix-ui/react-select',
-        '@radix-ui/react-tooltip',
-        '@radix-ui/react-popover',
-        '@radix-ui/react-slot',
-        '@tanstack/react-query',
-        '@supabase/supabase-js',
-        'recharts',
-        'date-fns',
-        'lucide-react',
-        'clsx',
-        'tailwind-merge',
-        'class-variance-authority',
-        'react-hook-form',
-        '@hookform/resolvers',
-        'zod',
-        'sonner',
-        'cmdk',
-        'input-otp',
-        'react-day-picker',
-        'react-resizable-panels',
-        'embla-carousel-react',
-        'xlsx',
-        'exceljs'
-      ]
-    }
+    rollupOptions: {
+      output: {
+        manualChunks: (id) => {
+          // React core - highest priority
+          if (id.includes("node_modules/react/") || id.includes("node_modules/react-dom/")) {
+            return "react-vendor";
+          }
+          
+          // Router
+          if (id.includes("react-router")) {
+            return "router";
+          }
+          
+          // Radix UI components
+          if (id.includes("@radix-ui")) {
+            return "radix-ui";
+          }
+          
+          // Data layer
+          if (id.includes("@tanstack/react-query") || id.includes("@supabase")) {
+            return "data-layer";
+          }
+          
+          // Charts
+          if (id.includes("recharts")) {
+            return "charts";
+          }
+          
+          // Forms
+          if (id.includes("react-hook-form") || id.includes("@hookform") || id.includes("zod")) {
+            return "forms";
+          }
+          
+          // Excel/File handling
+          if (id.includes("xlsx") || id.includes("exceljs")) {
+            return "excel";
+          }
+          
+          // UI libraries
+          if (
+            id.includes("sonner") ||
+            id.includes("cmdk") ||
+            id.includes("input-otp") ||
+            id.includes("react-day-picker") ||
+            id.includes("react-resizable-panels") ||
+            id.includes("embla-carousel")
+          ) {
+            return "ui-components";
+          }
+          
+          // Utilities
+          if (
+            id.includes("date-fns") ||
+            id.includes("lucide-react") ||
+            id.includes("clsx") ||
+            id.includes("tailwind-merge") ||
+            id.includes("class-variance-authority")
+          ) {
+            return "utilities";
+          }
+          
+          // All other node_modules
+          if (id.includes("node_modules")) {
+            return "vendor";
+          }
+        },
+        
+        chunkFileNames: (chunkInfo) => {
+          const facadeModuleId = chunkInfo.facadeModuleId ? chunkInfo.facadeModuleId.split("/").pop() : "chunk";
+          return `assets/js/[name]-[hash].js`;
+        },
+        entryFileNames: "assets/js/[name]-[hash].js",
+        assetFileNames: (assetInfo) => {
+          const info = assetInfo.name.split(".");
+          const ext = info[info.length - 1];
+          if (/png|jpe?g|svg|gif|tiff|bmp|ico/i.test(ext)) {
+            return `assets/images/[name]-[hash][extname]`;
+          } else if (/woff|woff2|eot|ttf|otf/i.test(ext)) {
+            return `assets/fonts/[name]-[hash][extname]`;
+          }
+          return `assets/[ext]/[name]-[hash][extname]`;
+        },
+        
+        hoistTransitiveImports: false,
+      },
+    },
   },
   
-  // Enable CSS optimization
   css: {
-    postcss: './postcss.config.js',
+    postcss: "./postcss.config.js",
+    devSourcemap: mode === "development",
   },
   
-  // Add cache headers for static assets
   preview: {
+    port: 4173,
+    strictPort: false,
+    host: true,
     headers: {
-      'Cache-Control': 'public, max-age=31536000, immutable'
-    }
+      "Cache-Control": "public, max-age=31536000, immutable",
+    },
   },
   
   test: {
     globals: true,
-    environment: 'jsdom',
-    setupFiles: ['./src/test/setup.ts'],
+    environment: "jsdom",
+    setupFiles: ["./src/test/setup.ts"],
+    css: true,
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "json", "html"],
+      exclude: [
+        "node_modules/",
+        "src/test/",
+        "**/*.d.ts",
+        "**/*.config.*",
+        "**/mockData",
+      ],
+    },
     alias: {
-      '@': path.resolve(__dirname, './src'),
-      '@/lib': path.resolve(__dirname, './src/lib'),
-      '@/integrations': path.resolve(__dirname, './src/integrations'),
-      '@/components': path.resolve(__dirname, './src/components'),
-      '@/pages': path.resolve(__dirname, './src/pages'),
-      '@/services': path.resolve(__dirname, './src/services'),
-      '@/contexts': path.resolve(__dirname, './src/contexts'),
-      '@/hooks': path.resolve(__dirname, './src/hooks'),
-      '@/types': path.resolve(__dirname, './src/types'),
-      '@/assets': path.resolve(__dirname, './src/assets'),
-      '@/utils': path.resolve(__dirname, './src/utils'),
-      '@/test': path.resolve(__dirname, './src/test'),
-      '@/routes': path.resolve(__dirname, './src/routes'),
-      '@/schemas': path.resolve(__dirname, './src/schemas'),
-      '@/styles': path.resolve(__dirname, './src/styles'),
-      '@/config': path.resolve(__dirname, './src/config')
-    }
+      "@": path.resolve(__dirname, "./src"),
+      "@/lib": path.resolve(__dirname, "./src/lib"),
+      "@/integrations": path.resolve(__dirname, "./src/integrations"),
+      "@/components": path.resolve(__dirname, "./src/components"),
+      "@/pages": path.resolve(__dirname, "./src/pages"),
+      "@/services": path.resolve(__dirname, "./src/services"),
+      "@/contexts": path.resolve(__dirname, "./src/contexts"),
+      "@/hooks": path.resolve(__dirname, "./src/hooks"),
+      "@/types": path.resolve(__dirname, "./src/types"),
+      "@/assets": path.resolve(__dirname, "./src/assets"),
+      "@/utils": path.resolve(__dirname, "./src/utils"),
+      "@/test": path.resolve(__dirname, "./src/test"),
+      "@/routes": path.resolve(__dirname, "./src/routes"),
+      "@/schemas": path.resolve(__dirname, "./src/schemas"),
+      "@/styles": path.resolve(__dirname, "./src/styles"),
+      "@/config": path.resolve(__dirname, "./src/config"),
+    },
   },
 }));

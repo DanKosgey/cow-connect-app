@@ -119,7 +119,7 @@ const ConnectionTestPage = () => {
                 <strong>VITE_SUPABASE_URL:</strong> {import.meta.env.VITE_SUPABASE_URL || 'Not found'}
               </div>
               <div>
-                <strong>VITE_SUPABASE_PUBLISHABLE_KEY:</strong> {import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ? 'Found (hidden for security)' : 'Not found'}
+                <strong>VITE_SUPABASE_ANON_KEY:</strong> {import.meta.env.VITE_SUPABASE_ANON_KEY ? 'Found (hidden for security)' : 'Not found'}
               </div>
             </div>
           </CardContent>
@@ -147,7 +147,7 @@ const ConnectionTestPage = () => {
           </CardHeader>
           <CardContent>
             <ol className="list-decimal list-inside space-y-2">
-              <li><strong>Check environment variables:</strong> Ensure VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY are correctly set in your .env file</li>
+              <li><strong>Check environment variables:</strong> Ensure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are correctly set in your .env file</li>
               <li><strong>Restart development server:</strong> After changing .env variables, restart your development server with `npm run dev`</li>
               <li><strong>Check network connectivity:</strong> Ensure you can access {import.meta.env.VITE_SUPABASE_URL || 'your Supabase URL'} in your browser</li>
               <li><strong>Verify Supabase project:</strong> Check that your Supabase project is active and not blocked by firewall/proxy</li>

@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import { useRealtimeForumPosts, useRealtimeForumComments } from "@/hooks/useRealtimeForum";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/contexts/SimplifiedAuthContext";
+import { useAuth } from "@/hooks/useAuth";
 import { PageHeader } from "@/components/PageHeader";
 import RefreshButton from "@/components/ui/RefreshButton";
 import { useCommunityForumData } from "@/hooks/useCommunityForumData";

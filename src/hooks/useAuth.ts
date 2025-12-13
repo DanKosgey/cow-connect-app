@@ -24,10 +24,11 @@ interface UseAuthReturn {
   userRole: UserRole | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  isSessionRefreshing: boolean;
   login: (data: LoginData) => Promise<{ error: Error | null }>;
   signUp: (data: SignUpData) => Promise<{ error: Error | null }>;
   logout: () => Promise<void>;
-  refreshSession: () => Promise<void>;
+  refreshSession: (maxRetries?: number) => Promise<{ success: boolean; error: Error | null }>;
   resetPassword: (email: string) => Promise<{ error: Error | null }>;
   updatePassword: (newPassword: string) => Promise<{ error: Error | null }>;
   hasRole: (role: UserRole) => boolean;

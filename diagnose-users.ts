@@ -13,13 +13,13 @@ dotenv.config({ path: resolve(__dirname, '.env') });
 
 // Get Supabase credentials from environment variables
 const supabaseUrl = process.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.error('Missing Supabase environment variables');
-  console.log('Expected VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY');
+  console.log('Expected VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY');
   console.log('VITE_SUPABASE_URL:', supabaseUrl ? '✓ Found' : '✗ Missing');
-  console.log('VITE_SUPABASE_PUBLISHABLE_KEY:', supabaseAnonKey ? '✓ Found' : '✗ Missing');
+  console.log('VITE_SUPABASE_ANON_KEY:', supabaseAnonKey ? '✓ Found' : '✗ Missing');
   process.exit(1);
 }
 

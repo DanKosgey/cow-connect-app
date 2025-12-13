@@ -114,7 +114,7 @@ export const useChartStabilizer = <T extends ChartDataPoint>(
       // Update immediately if enough time has passed
       updateData(data);
     }
-  }, [data, delay, isStable, updateData]);
+  }, [data, delay, isStable]); // Removed updateData from dependencies as it's stable due to useCallback
 
   return {
     data: stabilizedData,

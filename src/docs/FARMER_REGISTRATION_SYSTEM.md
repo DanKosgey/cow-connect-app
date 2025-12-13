@@ -278,7 +278,7 @@ All database functions are accessed via Supabase RPC calls:
 - System response times
 
 ### Log Structure
-```json
+```
 {
   "timestamp": "ISO_TIMESTAMP",
   "level": "INFO|WARN|ERROR",
@@ -299,8 +299,9 @@ All database functions are accessed via Supabase RPC calls:
 ## Deployment
 
 ### Environment Variables
-```env
+```
 VITE_SUPABASE_URL=your_supabase_url
+VITE_SUPABASE_ANON_KEY=your_anon_key
 VITE_SUPABASE_PUBLISHABLE_KEY=your_publishable_key
 ```
 

@@ -41,12 +41,9 @@ const SUPABASE_URL = (() => {
 })();
 
 const SUPABASE_KEY = (() => {
-  const key = stripQuotes(
-    import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
-    import.meta.env.VITE_SUPABASE_ANON_KEY
-  );
+  const key = stripQuotes(import.meta.env.VITE_SUPABASE_ANON_KEY);
   if (!key) {
-    throw new Error('Missing VITE_SUPABASE_PUBLISHABLE_KEY or VITE_SUPABASE_ANON_KEY');
+    throw new Error('Missing VITE_SUPABASE_ANON_KEY');
   }
   return key;
 })();
@@ -210,6 +207,50 @@ const client = createClient<Database>(clientUrl, clientKey, {
 });
 
 // ============================================
+// DEBUGGING ADDITIONS (DEV only)
+// ============================================
+
+// Immediate client initialization logging
+if (import.meta.env.DEV && typeof window !== 'undefined') {
+  devLog('Client initialized', {
+    url: clientUrl,
+    keyPreview: `${clientKey.slice(0, 4)}...${clientKey.slice(-4)}`,
+    storageAvailable: (() => {
+      try { return !!window.localStorage; } catch { return false; }
+    })()
+  });
+}
+
+// Enhanced auth state change logging
+client.auth.onAuthStateChange((event, session) => {
+  if (import.meta.env.DEV) {
+    console.debug('[Auth RAW]', event, session);
+    
+    // Additional detailed logging
+    devLog('Auth state changed', { 
+      event,
+      hasSession: !!session,
+      userId: session?.user?.id ? '[REDACTED]' : null,
+      expiresAt: session?.expires_at ? new Date(session.expires_at * 1000).toISOString() : null
+    });
+  }
+
+  // Handle visibility change for inactive tabs
+  if (typeof window !== 'undefined' && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
+    document.addEventListener('visibilitychange', async () => {
+      if (document.visibilityState === 'visible') {
+        try {
+          await refreshSession();
+          await scheduleRefresh();
+        } catch (error) {
+          devLog('Failed to refresh on visibility change', { error });
+        }
+      }
+    });
+  }
+});
+
+// ============================================
 // TYPE EXTENSIONS
 // ============================================
 
@@ -303,7 +344,9 @@ export const signOut = async () => {
     }
     // Clear any persisted data if needed
     if (typeof window !== 'undefined') {
-      window.localStorage.removeItem('supabase.auth.token');
+      // Clear the correct localStorage key used by Supabase
+      const localStorageKey = `sb-${new URL(clientUrl).hostname.split('.')[0]}-auth-token`;
+      window.localStorage.removeItem(localStorageKey);
     }
   } catch (error) {
     devLog('Exception signing out', {
@@ -348,49 +391,6 @@ const scheduleRefresh = async () => {
     }, refreshDelay);
   }
 };
-
-const initSessionHandling = () => {
-  if (typeof window === 'undefined') return;
-
-  // Handle visibility change for inactive tabs
-  document.addEventListener('visibilitychange', async () => {
-    if (document.visibilityState === 'visible') {
-      try {
-        await refreshSession();
-        await scheduleRefresh();
-      } catch (error) {
-        devLog('Failed to refresh on visibility change', { error });
-      }
-    }
-  });
-
-  // Auth state change handler
-  client.auth.onAuthStateChange(async (event, session) => {
-    if (import.meta.env.DEV) {
-      devLog('Auth state changed', { 
-        event,
-        hasSession: !!session,
-        userId: session?.user?.id ? '[REDACTED]' : null,
-        expiresAt: session?.expires_at ? new Date(session.expires_at * 1000).toISOString() : null
-      });
-    }
-
-    if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-      await scheduleRefresh();
-    } else if (event === 'SIGNED_OUT') {
-      if (refreshTimeout) {
-        clearTimeout(refreshTimeout);
-        refreshTimeout = null;
-      }
-    }
-  });
-
-  // Initial setup
-  scheduleRefresh();
-};
-
-// Initialize session handling
-initSessionHandling();
 
 // ============================================
 // EXPORTS

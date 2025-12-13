@@ -38,7 +38,7 @@ Object.defineProperty(global, 'import', {
       env: {
         DEV: true,
         VITE_SUPABASE_URL: 'https://test.supabase.co',
-        VITE_SUPABASE_PUBLISHABLE_KEY: 'test-key'
+        VITE_SUPABASE_ANON_KEY: 'test-key'
       }
     }
   },

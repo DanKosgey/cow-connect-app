@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { UserRole } from '@/types/auth.types';
@@ -13,11 +13,13 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   children, 
   requiredRole 
 }) => {
-  const { isAuthenticated, isLoading, userRole, hasRole } = useAuth();
+  const { isAuthenticated, isLoading, isSessionRefreshing, userRole, hasRole, refreshSession } = useAuth();
   const location = useLocation();
+  const [isCheckingSession, setIsCheckingSession] = useState(false);
+  const lastCheckRef = useRef<number>(0); // Track last check time
 
   // Redirect paths
-  const loginPath = '/auth/login';
+  const loginPath = '/login';
   const dashboardPaths: Record<UserRole, string> = {
     [UserRole.ADMIN]: '/admin/dashboard',
     [UserRole.COLLECTOR]: '/collector/dashboard',
@@ -26,8 +28,37 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     [UserRole.CREDITOR]: '/creditor/dashboard'
   };
 
+  // Check session validity when component mounts with rate limiting
+  useEffect(() => {
+    const checkSession = async () => {
+      const now = Date.now();
+      // Prevent checking more than once every 30 seconds
+      if (now - lastCheckRef.current < 30000) {
+        return;
+      }
+      
+      if (!isLoading && !isSessionRefreshing && !isCheckingSession && isAuthenticated) {
+        // Additional check to ensure we don't call refresh too frequently
+        setIsCheckingSession(true);
+        lastCheckRef.current = now;
+        
+        try {
+          // Only attempt refresh if the session is close to expiring
+          // Supabase handles automatic token refresh, so we don't need to force it
+          console.log('ProtectedRoute: Session check - relying on Supabase automatic refresh');
+        } catch (error) {
+          console.error('Session check failed:', error);
+        } finally {
+          setIsCheckingSession(false);
+        }
+      }
+    };
+
+    checkSession();
+  }, [isLoading, isSessionRefreshing, isAuthenticated, isCheckingSession]);
+
   // Show loader while checking authentication status
-  if (isLoading) {
+  if (isLoading || isSessionRefreshing || isCheckingSession) {
     return <PageLoader type="dashboard" />;
   }
 

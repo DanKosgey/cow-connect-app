@@ -154,10 +154,10 @@ const headerStyle = {
 };
 
 export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
-  const { userRole, signOut, user } = useAuth();
+  const { userRole, logout, user } = useAuth(); // Changed signOut to logout
   const location = useLocation();
   const navigate = useNavigate();
-  const [sidebarOpen, setSidebarOpen] = useState(true); // Start open on all screen sizes
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
   
   // Memoize the handleLogout function to prevent unnecessary re-renders
@@ -171,7 +171,7 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
         path: location.pathname
       });
       
-      await signOut();
+      await logout(); // Changed signOut() to logout()
       console.log('[DashboardLayout] Logout completed successfully');
       console.log('[PortalAccess] User logout completed', {
         userRole,
@@ -239,7 +239,7 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
         navigate('/', { state: { clearAuth: true } });
       }
     }
-  }, [userRole, user, location.pathname, navigate, signOut]);
+  }, [userRole, user, location.pathname, navigate, logout]); // Changed signOut to logout
 
   // Minimal component mount/unmount logging
   useEffect(() => {

@@ -98,6 +98,13 @@ export const adminRoutes = [
 export default function AdminRoutes() {
   const location = useLocation();
   
+  console.log('🏢 [AdminRoutes] Component rendering:', {
+    pathname: location.pathname,
+    search: location.search,
+    hash: location.hash,
+    timestamp: new Date().toISOString()
+  });
+  
   AdminDebugLogger.route('AdminRoutes component rendering', { 
     pathname: location.pathname,
     search: location.search,
@@ -106,9 +113,11 @@ export default function AdminRoutes() {
   
   // Preload commonly accessed routes when on the dashboard
   useEffect(() => {
+    console.log('🏢 [AdminRoutes] Preload effect triggered for:', location.pathname);
     AdminDebugLogger.route('Preload effect triggered', { pathname: location.pathname });
     
     if (location.pathname.includes('dashboard')) {
+      console.log('🏢 [AdminRoutes] On dashboard, preloading pages');
       AdminDebugLogger.route('On dashboard, preloading Farmers and Staff pages');
       // Reduced preloading to only the most essential pages
       preloadRouteWhenIdle(() => import("../pages/admin/Farmers"));
@@ -117,6 +126,7 @@ export default function AdminRoutes() {
     
     // Preload the dashboard when on other pages
     if (!location.pathname.includes('dashboard')) {
+      console.log('🏢 [AdminRoutes] Not on dashboard, preloading AdminDashboard');
       AdminDebugLogger.route('Not on dashboard, preloading AdminDashboard');
       preloadRouteWhenIdle(() => import("../pages/admin/AdminDashboard"));
     }

@@ -52,7 +52,7 @@ export const PasswordResetRequest: React.FC = () => {
             If an account exists for {email}, you will receive password reset instructions shortly.
           </p>
           <Button 
-            onClick={() => navigate('/auth/login')}
+            onClick={() => navigate('/login')}
             className="w-full"
           >
             Back to Login
@@ -123,7 +123,7 @@ export const PasswordResetRequest: React.FC = () => {
           <Button
             variant="link"
             className="p-0 h-auto text-muted-foreground"
-            onClick={() => navigate('/auth/login')}
+            onClick={() => navigate('/login')}
           >
             Sign in
           </Button>
@@ -191,7 +191,7 @@ export const PasswordResetForm: React.FC = () => {
             You can now sign in with your new password.
           </p>
           <Button 
-            onClick={() => navigate('/auth/login')}
+            onClick={() => navigate('/login')}
             className="w-full"
           >
             Go to Login

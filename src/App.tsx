@@ -4,7 +4,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { SkipLink } from '@/components/ui/SkipLink';
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { AuthProvider } from "@/contexts/AuthContext"; // Updated import
+import { AuthProvider } from "@/contexts/AuthContext";
+import { AuthFlowManager } from "@/components/auth/AuthFlowManager";
 import { NotificationProvider } from '@/contexts/NotificationContext';
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { lazy, Suspense, useEffect } from 'react';
@@ -86,9 +87,10 @@ const App = () => {
             v7_relativeSplatPath: true
           }}>
             <NotificationProvider>
-              <AuthProvider> // Updated to use new AuthProvider
-                <main id="main-content">
-                  <Suspense fallback={<PageLoader type="dashboard" />}>
+              <AuthProvider>
+                <AuthFlowManager>
+                  <main id="main-content">
+                    <Suspense fallback={<PageLoader type="dashboard" />}>
                     <Routes>
                       {/* Public routes including unified login */}
                       <Route path="/*" element={<PublicRoutes />} />
@@ -109,7 +111,8 @@ const App = () => {
                     </Routes>
                   </Suspense>
                 </main>
-              </AuthProvider>
+              </AuthFlowManager>
+            </AuthProvider>
             </NotificationProvider>
           </BrowserRouter>
         </TooltipProvider>

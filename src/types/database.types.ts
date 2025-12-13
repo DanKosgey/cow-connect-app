@@ -125,21 +125,21 @@ export interface Database {
         Row: {
           id: number;
           user_id: string;
-          role: 'admin' | 'staff' | 'farmer';
+          role: 'admin' | 'staff' | 'farmer' | 'collector' | 'creditor';
           active: boolean;
           created_at: string;
         };
         Insert: {
           id?: number;
           user_id: string;
-          role: 'admin' | 'staff' | 'farmer';
+          role: 'admin' | 'staff' | 'farmer' | 'collector' | 'creditor';
           active?: boolean;
           created_at?: string;
         };
         Update: {
           id?: number;
           user_id?: string;
-          role?: 'admin' | 'staff' | 'farmer';
+          role?: 'admin' | 'staff' | 'farmer' | 'collector' | 'creditor';
           active?: boolean;
           created_at?: string;
         };
@@ -633,21 +633,21 @@ export interface Database {
         Row: {
           id: number;
           user_id: string;
-          role: 'admin' | 'staff' | 'farmer';
+          role: 'admin' | 'staff' | 'farmer' | 'collector' | 'creditor';
           active: boolean;
           created_at: string;
         };
         Insert: {
           id?: number;
           user_id: string;
-          role: 'admin' | 'staff' | 'farmer';
+          role: 'admin' | 'staff' | 'farmer' | 'collector' | 'creditor';
           active?: boolean;
           created_at?: string;
         };
         Update: {
           id?: number;
           user_id?: string;
-          role?: 'admin' | 'staff' | 'farmer';
+          role?: 'admin' | 'staff' | 'farmer' | 'collector' | 'creditor';
           active?: boolean;
           created_at?: string;
         };

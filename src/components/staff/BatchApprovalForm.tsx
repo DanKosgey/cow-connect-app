@@ -391,8 +391,9 @@ const BatchApprovalForm = () => {
       } else if (errorMessage.includes('Session expired') || errorMessage.includes('JWT expired')) {
         // Handle session expiration specifically
         errorMessage = 'Your session has expired. Please log in again.';
-        // Optionally trigger a session refresh
-        refreshSession();
+        // Instead of immediately calling refreshSession, redirect to login
+        // refreshSession() calls can cause loops
+        window.location.href = '/login';
       }
       
       showError('Error', errorMessage);

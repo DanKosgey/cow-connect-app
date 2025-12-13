@@ -15,9 +15,20 @@ const AdminLogin = () => {
 
   // Check if user is already logged in with correct role
   useEffect(() => {
+    console.log('🔐 [AdminLogin] Auth state check:', {
+      isLoading,
+      isAuthenticated,
+      userRole,
+      from,
+      shouldRedirect: !isLoading && isAuthenticated && userRole === UserRole.ADMIN
+    });
+    
     if (!isLoading && isAuthenticated && userRole === UserRole.ADMIN) {
+      console.log('🔐 [AdminLogin] Redirecting to dashboard:', from);
       // Redirect immediately to dashboard
       navigate(from, { replace: true });
+    } else {
+      console.log('🔐 [AdminLogin] Not redirecting yet - conditions not met');
     }
   }, [isAuthenticated, userRole, isLoading, navigate, from]);
 

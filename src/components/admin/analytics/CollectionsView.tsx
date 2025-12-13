@@ -88,14 +88,9 @@ export const CollectionsView = memo(({
       if (refreshData) {
         await refreshData();
       } else {
-        // Force a session refresh
-        const { data, error } = await supabase.auth.refreshSession();
-        if (error) {
-          console.error('Error refreshing session:', error);
-        } else {
-          // Reload the page to re-fetch data
-          window.location.reload();
-        }
+        // Use our AuthService instead of calling supabase.auth.refreshSession directly
+        // This will use our debounced refresh mechanism and prevent rate limiting
+        window.location.reload();
       }
     } catch (error) {
       console.error('Error during retry:', error);

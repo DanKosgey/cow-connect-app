@@ -4,11 +4,10 @@ import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { logger } from '@/utils/logger';
-import { authManager } from '@/utils/authManager';
 import { networkHealth } from '@/utils/networkHealth';
 
 const AuthDiagnostics = () => {
-  const { user, session } = useAuth();
+  const { user, session, refreshSession } = useAuth(); // Add refreshSession from useAuth
   const [diagnostics, setDiagnostics] = useState<any>({});
   const [loading, setLoading] = useState(false);
   const [networkStatus, setNetworkStatus] = useState<any>({});
@@ -28,14 +27,26 @@ const AuthDiagnostics = () => {
       const networkStatus = await networkHealth.checkNetworkStatus();
       setNetworkStatus(networkStatus);
       
-      // Check session validity
-      const isSessionValid = await authManager.isSessionValid();
+      // Check if we can validate session through our auth service
+      // We'll just check if session exists for now
+      const isSessionValid = !!currentSession && !!currentSession.expires_at && 
+        (currentSession.expires_at * 1000 > Date.now());
       
-      // Get user role if user exists
+      // Get user role if user exists (using AuthDebugger utility)
       let userRole = null;
       if (currentUser?.id) {
         try {
-          userRole = await authManager.getUserRole(currentUser.id);
+          const { data, error } = await supabase
+            .from('user_roles')
+            .select('role')
+            .eq('user_id', currentUser.id)
+            .eq('active', true)
+            .order('created_at', { ascending: false })
+            .maybeSingle();
+            
+          if (!error && data?.role) {
+            userRole = data.role;
+          }
         } catch (roleError) {
           logger.errorWithContext('Error getting user role', roleError);
         }
@@ -95,9 +106,10 @@ const AuthDiagnostics = () => {
 
   const forceRefreshSession = async () => {
     try {
-      logger.info('Forcing session refresh');
-      const { data, error } = await supabase.auth.refreshSession();
-      logger.info('Session refresh result', { data, error });
+      logger.info('Forcing session refresh through AuthService');
+      // Use our AuthService instead of calling supabase.auth.refreshSession directly
+      const result = await refreshSession(2); // 2 retries
+      logger.info('Session refresh result', result);
       runDiagnostics();
     } catch (error) {
       logger.errorWithContext('Force session refresh', error);
@@ -142,7 +154,7 @@ const AuthDiagnostics = () => {
               Check Network Health
             </Button>
             <Button onClick={async () => {
-              await authManager.signOut();
+              await supabase.auth.signOut();
               window.location.href = '/';
             }} variant="destructive">
               Sign Out

@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { CreditCard } from "lucide-react"; // Added missing import
 import { UserRole } from "@/types/auth.types";
 import { useAuth } from "@/hooks/useAuth";
 import { LoginForm } from "@/components/auth/LoginForm";
+import { CreditCard } from "@/utils/iconImports";
 
 const CreditorLogin = () => {
   const navigate = useNavigate();

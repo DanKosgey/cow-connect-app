@@ -96,7 +96,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({ role, onRoleChange }) =>
             Please check your email to verify your account before signing in.
           </p>
           <Button 
-            onClick={() => navigate('/auth/login')}
+            onClick={() => navigate('/login')}
             className="w-full"
           >
             Go to Login
@@ -234,7 +234,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({ role, onRoleChange }) =>
           <Button
             variant="link"
             className="p-0 h-auto text-muted-foreground"
-            onClick={() => navigate('/auth/login')}
+            onClick={() => navigate('/login')}
           >
             Sign in
           </Button>

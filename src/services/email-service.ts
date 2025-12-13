@@ -135,7 +135,7 @@ export class EmailService {
         headers: {
           'Content-Type': 'application/json',
           // Include the Supabase auth header if available
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
         },
         body: JSON.stringify(emailData)
       });
@@ -221,7 +221,7 @@ export class EmailService {
             <p>Or copy and paste this link into your browser:</p>
             <p style="word-break: break-all; color: #2563eb;">${this.escapeHtml(invitationLink)}</p>
             
-            <p style="color: #d97706; font-weight: 500;">This invitation will expire in 7 days.</p>
+            <<p style="color: #d97706; font-weight: 500;">This invitation will expire in 7 days.</p>
             
             <hr style="margin: 30px 0; border: 0; border-top: 1px solid #e5e7eb;">
             

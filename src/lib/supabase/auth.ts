@@ -1,6 +1,19 @@
 import { supabase } from '@/integrations/supabase/client';
 import { logger } from '@/utils/logger'; // Assuming a centralized logger from previous context
 
+// Constants
+const RPC_TIMEOUT = 5000; // 5 seconds
+
+// Utility: Create timeout promise
+const createTimeoutPromise = (ms: number, message: string): Promise<never> => 
+  new Promise((_, reject) => 
+    setTimeout(() => reject(new Error(message)), ms)
+  );
+
+// Utility: Exponential backoff delay
+const exponentialBackoff = (attempt: number, baseDelay: number = 1000): Promise<void> => 
+  new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * baseDelay + Math.random() * 100));
+
 // Custom error for authentication
 export class AuthError extends Error {
   constructor(message: string) {
@@ -34,22 +47,75 @@ export const getUserRole = async (userId: string) => {
   try {
     if (!userId) throw new Error('User ID is required');
 
-    const { data, error } = await supabase
-      .from('user_roles')
-      .select('role, active')
-      .eq('user_id', userId)
-      .eq('active', true)
-      .order('created_at', { ascending: false })
-      .maybeSingle();
-
-    if (error) throw error;
-    if (!data) return null;
-    if (!data.active) throw new AuthError('Account is inactive');
-    return data.role;
+    // Try the optimized RPC with timeout and retry logic
+    const role = await getUserRoleWithRetry(userId, RPC_TIMEOUT, 2);
+    return role;
   } catch (error) {
     logError('Error getting user role', error);
     return null;
   }
+};
+
+// Enhanced getUserRole with timeout and retry logic
+const getUserRoleWithRetry = async (
+  userId: string, 
+  timeout: number = RPC_TIMEOUT,
+  maxRetries: number = 2
+): Promise<string | null> => {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const rpcPromise = supabase.rpc('get_user_role_optimized', {
+        user_id_param: userId
+      });
+      
+      const timeoutPromise = createTimeoutPromise(timeout, `RPC timeout after ${timeout}ms`);
+      
+      const result = await Promise.race([
+        rpcPromise, 
+        timeoutPromise
+      ]);
+      
+      const { data, error } = result as any;
+      
+      if (error) {
+        logError('Optimized RPC error', error);
+        
+        // If it's a timeout and we have retries left, continue
+        if (error.message.includes('timeout') && attempt < maxRetries) {
+          await exponentialBackoff(attempt, 500);
+          continue;
+        }
+        
+        return null;
+      }
+
+      // Handle scalar or array response
+      if (typeof data === 'string') {
+        return data;
+      }
+      
+      if (Array.isArray(data) && data.length) {
+        // If function returns row(s), data could be [{ get_user_role_optimized: 'farmer' }] or [{ role: 'farmer' }]
+        const first = data[0];
+        return (first.role ?? first.get_user_role_optimized ?? Object.values(first)[0]) as string;
+      }
+      
+      return data || null;
+    } catch (error) {
+      // Timeout or other error
+      logError(`Optimized RPC failed on attempt ${attempt + 1}`, error);
+      
+      // If it's the last attempt, return null
+      if (attempt === maxRetries) {
+        return null;
+      }
+      
+      // Wait before retry with exponential backoff
+      await exponentialBackoff(attempt, 500);
+    }
+  }
+  
+  return null;
 };
 
 export const checkPermission = async (userId: string, permission: string) => {
