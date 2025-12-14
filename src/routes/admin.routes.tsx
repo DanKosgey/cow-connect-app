@@ -119,9 +119,10 @@ export default function AdminRoutes() {
     if (location.pathname.includes('dashboard')) {
       console.log('🏢 [AdminRoutes] On dashboard, preloading pages');
       AdminDebugLogger.route('On dashboard, preloading Farmers and Staff pages');
-      // Reduced preloading to only the most essential pages
+      // Preload the most commonly accessed pages including payments
       preloadRouteWhenIdle(() => import("../pages/admin/Farmers"));
       preloadRouteWhenIdle(() => import("../pages/admin/Staff"));
+      preloadRouteWhenIdle(() => import("../pages/admin/PaymentSystem"));
     }
     
     // Preload the dashboard when on other pages
@@ -129,6 +130,13 @@ export default function AdminRoutes() {
       console.log('🏢 [AdminRoutes] Not on dashboard, preloading AdminDashboard');
       AdminDebugLogger.route('Not on dashboard, preloading AdminDashboard');
       preloadRouteWhenIdle(() => import("../pages/admin/AdminDashboard"));
+    }
+    
+    // Preload payments page when on related pages
+    if (location.pathname.includes('collections') || location.pathname.includes('analytics')) {
+      console.log('🏢 [AdminRoutes] On related page, preloading PaymentSystem');
+      AdminDebugLogger.route('On related page, preloading PaymentSystem');
+      preloadRouteWhenIdle(() => import("../pages/admin/PaymentSystem"));
     }
   }, [location.pathname]);
   

@@ -168,11 +168,15 @@ const PaymentSystemSimple = () => {
   const [processingAllPayments, setProcessingAllPayments] = useState<Record<string, boolean>>({});
 
   // Time frame filter state
-  const [timeFrame, setTimeFrame] = useState('all');
+  const [timeFrame, setTimeFrame] = useState('week'); // Changed default to 'week' for better performance
   const [customDateRange, setCustomDateRange] = useState({
     from: '',
     to: ''
   });
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 50; // Reduced items per page for better performance
 
   // Farmer deductions state
   const [farmerDeductions, setFarmerDeductions] = useState<Record<string, number>>({});
@@ -247,6 +251,17 @@ const PaymentSystemSimple = () => {
     
     return result;
   }, [collections, searchTerm, filterStatus]);
+
+  // Paginate filtered collections
+  const paginatedCollections = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredCollections.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredCollections, currentPage, itemsPerPage]);
+
+  // Calculate total pages
+  const totalPages = useMemo(() => {
+    return Math.ceil(filteredCollections.length / itemsPerPage);
+  }, [filteredCollections.length, itemsPerPage]);
 
   // Rate configuration state
   const [rateConfig, setRateConfig] = useState({
