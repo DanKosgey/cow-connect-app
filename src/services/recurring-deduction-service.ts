@@ -5,6 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 class RecurringDeductionService {
   private static instance: RecurringDeductionService;
   private isRunning: boolean = false;
+  private isAuthenticated: boolean = false;
 
   private constructor() {}
 
@@ -16,11 +17,26 @@ class RecurringDeductionService {
   }
 
   /**
+   * Set authentication status
+   */
+  setAuthenticated(status: boolean) {
+    this.isAuthenticated = status;
+  }
+
+  /**
    * Apply all due recurring deductions
    */
   async applyDueRecurringDeductions(): Promise<{success: boolean, appliedCount: number, errors: string[]}> {
     try {
-      // Get current admin user (or system user)
+      // Check if we have an authenticated session
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError || !session) {
+        logger.warn('No authenticated session available for recurring deductions');
+        return { success: true, appliedCount: 0, errors: [] }; // Return success with no deductions applied
+      }
+      
+      // Get current user
       const { data: { user } } = await supabase.auth.getUser();
       
       // Apply due recurring deductions
@@ -57,16 +73,24 @@ class RecurringDeductionService {
     // Run every hour to check for due deductions
     setInterval(async () => {
       try {
-        await this.applyDueRecurringDeductions();
+        // Only run if we have an authenticated session
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          await this.applyDueRecurringDeductions();
+        }
       } catch (error) {
         logger.errorWithContext('RecurringDeductionService - scheduler error', error);
       }
     }, 60 * 60 * 1000); // Every hour
 
-    // Also run immediately on startup
+    // Also run immediately on startup (but only if authenticated)
     setTimeout(async () => {
       try {
-        await this.applyDueRecurringDeductions();
+        // Check if we have an authenticated session before running
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          await this.applyDueRecurringDeductions();
+        }
       } catch (error) {
         logger.errorWithContext('RecurringDeductionService - initial run error', error);
       }

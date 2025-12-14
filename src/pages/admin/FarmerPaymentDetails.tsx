@@ -69,7 +69,7 @@ const FarmerPaymentDetails = () => {
         .from('farmers')
         .select(`
           id,
-          profiles!user_id (
+          profiles (
             full_name,
             phone,
             email

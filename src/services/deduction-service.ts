@@ -35,7 +35,7 @@ export interface DeductionRecord {
 class DeductionService {
   private static instance: DeductionService;
 
-  private constructor() {}
+  private constructor() { }
 
   static getInstance(): DeductionService {
     if (!DeductionService.instance) {
@@ -49,19 +49,19 @@ class DeductionService {
    */
   private validateDeductionType(name: string, description: string): { isValid: boolean; errors: string[] } {
     const errors: string[] = [];
-    
+
     if (!name || name.trim().length === 0) {
       errors.push('Deduction type name is required');
     }
-    
+
     if (name && name.length > 100) {
       errors.push('Deduction type name must be less than 100 characters');
     }
-    
+
     if (description && description.length > 500) {
       errors.push('Description must be less than 500 characters');
     }
-    
+
     return {
       isValid: errors.length === 0,
       errors
@@ -72,38 +72,38 @@ class DeductionService {
    * Validate farmer deduction data
    */
   private validateFarmerDeduction(
-    farmer_id: string, 
-    deduction_type_id: string, 
+    farmer_id: string,
+    deduction_type_id: string,
     amount: number,
     frequency: 'daily' | 'weekly' | 'monthly' | 'yearly',
     next_apply_date: string
   ): { isValid: boolean; errors: string[] } {
     const errors: string[] = [];
-    
+
     if (!farmer_id) {
       errors.push('Farmer ID is required');
     }
-    
+
     if (!deduction_type_id) {
       errors.push('Deduction type ID is required');
     }
-    
+
     if (amount <= 0) {
       errors.push('Amount must be greater than zero');
     }
-    
+
     if (amount > 1000000) {
       errors.push('Amount cannot exceed 1,000,000');
     }
-    
+
     if (!['daily', 'weekly', 'monthly', 'yearly'].includes(frequency)) {
       errors.push('Invalid frequency. Must be daily, weekly, monthly, or yearly');
     }
-    
+
     if (!next_apply_date) {
       errors.push('Next apply date is required');
     }
-    
+
     return {
       isValid: errors.length === 0,
       errors
@@ -115,27 +115,27 @@ class DeductionService {
    */
   private validateImmediateDeduction(deduction_type_id: string, amount: number, reason: string): { isValid: boolean; errors: string[] } {
     const errors: string[] = [];
-    
+
     if (!deduction_type_id) {
       errors.push('Deduction type ID is required');
     }
-    
+
     if (amount <= 0) {
       errors.push('Amount must be greater than zero');
     }
-    
+
     if (amount > 1000000) {
       errors.push('Amount cannot exceed 1,000,000');
     }
-    
+
     if (!reason || reason.trim().length === 0) {
       errors.push('Reason is required');
     }
-    
+
     if (reason && reason.length > 500) {
       errors.push('Reason must be less than 500 characters');
     }
-    
+
     return {
       isValid: errors.length === 0,
       errors
@@ -200,12 +200,12 @@ class DeductionService {
         .single();
 
       if (error) throw error;
-      
+
       // Log the activity
       await this.logDeductionActivity('CREATE_DEDUCTION_TYPE', {
         newData: { name, description }
       }, userId);
-      
+
       return data;
     } catch (error) {
       logger.errorWithContext('DeductionService - createDeductionType', error);
@@ -235,7 +235,7 @@ class DeductionService {
         .select('*')
         .eq('id', id)
         .single();
-      
+
       const { data, error } = await supabase
         .from('deduction_types')
         .update({ name, description })
@@ -244,13 +244,13 @@ class DeductionService {
         .single();
 
       if (error) throw error;
-      
+
       // Log the activity
       await this.logDeductionActivity('UPDATE_DEDUCTION_TYPE', {
         oldData,
         newData: { id, name, description }
       }, userId);
-      
+
       return data;
     } catch (error) {
       logger.errorWithContext('DeductionService - updateDeductionType', error);
@@ -287,19 +287,19 @@ class DeductionService {
         .select('*')
         .eq('id', id)
         .single();
-      
+
       const { error } = await supabase
         .from('deduction_types')
         .delete()
         .eq('id', id);
 
       if (error) throw error;
-      
+
       // Log the activity
       await this.logDeductionActivity('DELETE_DEDUCTION_TYPE', {
         oldData
       }, userId);
-      
+
       return true;
     } catch (error) {
       logger.errorWithContext('DeductionService - deleteDeductionType', error);
@@ -322,28 +322,28 @@ class DeductionService {
         .from('farmer_deductions')
         .select(`
           *,
-          farmers!inner (full_name),
+          farmers!inner (profiles(full_name)),
           deduction_types!inner (name)
         `)
         .eq('id', id)
         .single();
-      
+
       const { error } = await supabase
         .from('farmer_deductions')
         .delete()
         .eq('id', id);
 
       if (error) throw error;
-      
+
       // Log the activity
       await this.logDeductionActivity('DELETE_FARMER_DEDUCTION', {
         oldData: {
-          farmer_name: oldData?.farmers?.full_name || 'Unknown Farmer',
+          farmer_name: oldData?.farmers?.profiles?.full_name || 'Unknown Farmer',
           deduction_type_name: oldData?.deduction_types?.name || 'Unknown Type',
           amount: oldData?.amount || 0
         }
       }, userId);
-      
+
       return true;
     } catch (error) {
       logger.errorWithContext('DeductionService - deleteFarmerDeduction', error);
@@ -360,16 +360,16 @@ class DeductionService {
         .from('farmer_deductions')
         .select(`
           *,
-          farmers!inner (full_name),
+          farmers!inner (profiles(full_name)),
           deduction_types!inner (name)
         `)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      
+
       return (data || []).map(item => ({
         ...item,
-        farmer_name: item.farmers?.full_name || 'Unknown Farmer',
+        farmer_name: item.farmers?.profiles?.full_name || 'Unknown Farmer',
         deduction_type_name: item.deduction_types?.name || 'Unknown Type'
       }));
     } catch (error) {
@@ -382,8 +382,8 @@ class DeductionService {
    * Save farmer deduction (create or update) with recurring support
    */
   async saveFarmerDeduction(
-    farmer_id: string, 
-    deduction_type_id: string, 
+    farmer_id: string,
+    deduction_type_id: string,
     amount: number,
     frequency: 'daily' | 'weekly' | 'monthly' | 'yearly',
     next_apply_date: string,
@@ -392,8 +392,8 @@ class DeductionService {
     try {
       // Validate input
       const validation = this.validateFarmerDeduction(
-        farmer_id, 
-        deduction_type_id, 
+        farmer_id,
+        deduction_type_id,
         amount,
         frequency,
         next_apply_date
@@ -431,7 +431,7 @@ class DeductionService {
         .eq('farmer_id', farmer_id)
         .eq('deduction_type_id', deduction_type_id)
         .single();
-      
+
       const { error } = await supabase
         .from('farmer_deductions')
         .upsert([{
@@ -446,14 +446,14 @@ class DeductionService {
         });
 
       if (error) throw error;
-      
+
       // Log the activity
       const action = existingData ? 'UPDATE_FARMER_DEDUCTION' : 'CREATE_FARMER_DEDUCTION';
       await this.logDeductionActivity(action, {
         oldData: existingData,
         newData: { farmer_id, deduction_type_id, amount, frequency, next_apply_date }
       }, userId);
-      
+
       return true;
     } catch (error) {
       logger.errorWithContext('DeductionService - saveFarmerDeduction', error);
@@ -470,17 +470,17 @@ class DeductionService {
         .from('deduction_records')
         .select(`
           *,
-          farmers!left (full_name),
+          farmers!left (profiles(full_name)),
           deduction_types!inner (name),
           profiles!inner (full_name)
         `)
         .order('applied_at', { ascending: false });
 
       if (error) throw error;
-      
+
       return (data || []).map(item => ({
         ...item,
-        farmer_name: item.farmers?.full_name || 'All Farmers',
+        farmer_name: item.farmers?.profiles?.full_name || 'All Farmers',
         deduction_type_name: item.deduction_types?.name || 'Unknown Type',
         applied_by_name: item.profiles?.full_name || 'Unknown User'
       }));
@@ -499,7 +499,7 @@ class DeductionService {
     frequency: 'daily' | 'weekly' | 'monthly' | 'yearly',
     start_date: string,
     applied_by: string
-  ): Promise<{success: boolean, createdCount: number, errors: string[]}> {
+  ): Promise<{ success: boolean, createdCount: number, errors: string[] }> {
     try {
       const errors: string[] = [];
       let createdCount = 0;
@@ -625,12 +625,12 @@ class DeductionService {
         }]);
 
       if (error) throw error;
-      
+
       // Log the activity
       await this.logDeductionActivity('APPLY_IMMEDIATE_DEDUCTION', {
         newData: { deduction_type_id, amount, reason, applied_by }
       }, applied_by);
-      
+
       return true;
     } catch (error) {
       logger.errorWithContext('DeductionService - applyImmediateDeduction', error);
@@ -704,8 +704,8 @@ class DeductionService {
       // Get all farmers
       const { data: farmers, error: farmersError } = await supabase
         .from('farmers')
-        .select('id, full_name')
-        .order('full_name');
+        .select('id, profiles(full_name)')
+        .order('created_at', { ascending: false }); // profiles(full_name) sorting is tricky, use basic sort for now
 
       if (farmersError) throw farmersError;
 
@@ -732,7 +732,7 @@ class DeductionService {
         const deductions = farmerDeductions?.filter(d => d.farmer_id === farmer.id) || [];
         const farmerSpecificDeductions = deductions.reduce((sum, d) => sum + d.amount, 0);
         const totalDeductions = farmerSpecificDeductions + systemWideDeductions;
-        
+
         return {
           ...farmer,
           deductions,
@@ -748,8 +748,16 @@ class DeductionService {
   /**
    * Apply recurring deductions that are due today
    */
-  async applyDueRecurringDeductions(applied_by: string): Promise<{success: boolean, appliedCount: number, errors: string[]}> {
+  async applyDueRecurringDeductions(applied_by: string): Promise<{ success: boolean, appliedCount: number, errors: string[] }> {
     try {
+      // Check if we have an authenticated session before proceeding
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+      if (sessionError || !session) {
+        logger.warn('No authenticated session available for applying recurring deductions');
+        return { success: true, appliedCount: 0, errors: [] };
+      }
+
       const today = new Date().toISOString().split('T')[0];
       const errors: string[] = [];
       let appliedCount = 0;
@@ -759,7 +767,7 @@ class DeductionService {
         .from('farmer_deductions')
         .select(`
           *,
-          farmers!inner (full_name),
+          farmers!inner (profiles(full_name)),
           deduction_types!inner (name)
         `)
         .eq('is_active', true)

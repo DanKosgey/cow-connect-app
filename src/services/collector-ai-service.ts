@@ -150,6 +150,13 @@ export class CollectorAIService {
   }
 
   static async getCurrentApiKey(staffId: string): Promise<string | null> {
+    // Check if we have an authenticated session before proceeding
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !session) {
+      console.warn('No authenticated session available for getting API key');
+      return null;
+    }
+
     const { data, error } = await supabase.rpc('get_current_api_key', {
       staff_uuid: staffId
     });
@@ -163,6 +170,13 @@ export class CollectorAIService {
   }
 
   static async rotateApiKey(staffId: string): Promise<boolean> {
+    // Check if we have an authenticated session before proceeding
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !session) {
+      console.warn('No authenticated session available for rotating API key');
+      return false;
+    }
+
     const { error } = await supabase.rpc('rotate_api_key', {
       staff_uuid: staffId
     });
@@ -177,6 +191,13 @@ export class CollectorAIService {
 
   static async deleteApiKeys(staffId: string): Promise<boolean> {
     console.log('Deleting collector API keys for staff ID:', staffId);
+    
+    // Check if we have an authenticated session before proceeding
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !session) {
+      console.warn('No authenticated session available for deleting API keys');
+      return false;
+    }
     
     const { error } = await supabase
       .from('collector_api_keys')

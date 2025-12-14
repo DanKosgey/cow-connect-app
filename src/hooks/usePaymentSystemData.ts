@@ -347,6 +347,13 @@ const calculateFarmerSummaries = async (
   }, {});
   
   // Get current collector rate
+  // Check if we have an authenticated session before proceeding
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError || !session) {
+    console.warn('No authenticated session available for getting collector rate');
+    return []; // Return empty array as fallback
+  }
+  
   const collectorRateResponse = await supabase.rpc('get_current_collector_rate');
   const collectorRate = collectorRateResponse.data || 0;
   
@@ -442,7 +449,7 @@ export const usePaymentSystemData = (timeFrame: string = 'all', customDateRange:
               bank_account_name,
               bank_account_number,
               bank_name,
-              profiles!user_id (
+              profiles (
                 full_name,
                 phone
               )

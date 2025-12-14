@@ -188,7 +188,7 @@ export class MilkApprovalService {
           approved_for_company,
           company_approval_id,
           created_at,
-          staff!collections_staff_id_fkey (
+          staff (
             id,
             user_id
           ),

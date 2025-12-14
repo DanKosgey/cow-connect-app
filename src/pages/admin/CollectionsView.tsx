@@ -189,7 +189,7 @@ const useCollectionsData = () => {
       // Fetch farmers for dropdown
       const { data: farmersData, error: farmersError } = await supabase
         .from('farmers')
-        .select('id, profiles!user_id(full_name)')
+        .select('id, profiles(full_name)')
         .eq('kyc_status', 'approved');
 
       if (farmersError) {
@@ -199,7 +199,7 @@ const useCollectionsData = () => {
       // Fetch staff for dropdown
       const { data: staffData, error: staffError } = await supabase
         .from('staff')
-        .select('id, profiles!user_id(full_name)');
+        .select('id, profiles(full_name)');
 
       if (staffError) {
         throw staffError;

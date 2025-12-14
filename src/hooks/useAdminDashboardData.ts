@@ -29,7 +29,11 @@ export const useAdminDashboardData = (options: UseAdminDashboardDataOptions) => 
         collection_date,
         status,
         notes,
-        farmers!inner(full_name)
+        farmers (
+          id,
+          user_id,
+          profiles (full_name)
+        )
       `)
       .gte('collection_date', startDate)
       .lte('collection_date', endDate)
@@ -45,7 +49,7 @@ export const useAdminDashboardData = (options: UseAdminDashboardDataOptions) => 
         registration_number,
         kyc_status,
         created_at,
-        profiles:user_id (full_name, email)
+        profiles (full_name, email)
       `)
       .order('created_at', { ascending: false })
       .limit(100);
@@ -59,7 +63,7 @@ export const useAdminDashboardData = (options: UseAdminDashboardDataOptions) => 
         employee_id,
         status,
         created_at,
-        profiles:user_id (full_name, email)
+        profiles (full_name, email)
       `)
       .order('created_at', { ascending: false })
       .limit(50);

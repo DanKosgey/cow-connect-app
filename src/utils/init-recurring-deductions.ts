@@ -1,4 +1,5 @@
 import { recurringDeductionService } from '@/services/recurring-deduction-service';
+import { logger } from '@/utils/logger';
 
 /**
  * Initialize the recurring deduction scheduler
@@ -6,7 +7,11 @@ import { recurringDeductionService } from '@/services/recurring-deduction-servic
  */
 export const initRecurringDeductions = () => {
   console.log('Initializing recurring deduction scheduler...');
-  recurringDeductionService.startScheduler();
+  try {
+    recurringDeductionService.startScheduler();
+  } catch (error) {
+    logger.errorWithContext('initRecurringDeductions', error);
+  }
 };
 
 export default initRecurringDeductions;

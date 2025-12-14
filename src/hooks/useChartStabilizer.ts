@@ -1,123 +1,50 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
-interface ChartDataPoint {
-  [key: string]: any;
-}
-
-// Deep equality function for comparing arrays of objects
-const deepEqual = (a: any, b: any): boolean => {
-  if (a === b) return true;
-  
-  if (a && b && typeof a === 'object' && typeof b === 'object') {
-    if (Array.isArray(a) && Array.isArray(b)) {
-      if (a.length !== b.length) return false;
-      for (let i = 0; i < a.length; i++) {
-        if (!deepEqual(a[i], b[i])) return false;
-      }
-      return true;
-    }
-    
-    const keysA = Object.keys(a);
-    const keysB = Object.keys(b);
-    
-    if (keysA.length !== keysB.length) return false;
-    
-    for (let key of keysA) {
-      if (!keysB.includes(key) || !deepEqual(a[key], b[key])) return false;
-    }
-    
-    return true;
+// Simple equality check using JSON.stringify for Chart data
+// This is sufficient for chart data which is usually JSON-serializable
+// and prevents infinite loops from deep equality bugs
+const isDeepEqual = (a: any, b: any): boolean => {
+  try {
+    return JSON.stringify(a) === JSON.stringify(b);
+  } catch (e) {
+    return a === b;
   }
-  
-  return false;
 };
 
-export const useChartStabilizer = <T extends ChartDataPoint>(
+export const useChartStabilizer = <T extends any>(
   data: T[],
   delay: number = 100
 ) => {
-  const [stabilizedData, setStabilizedData] = useState<T[]>([]);
-  const [isStable, setIsStable] = useState(false);
-  const prevDataRef = useRef<T[]>([]);
+  const [stabilizedData, setStabilizedData] = useState<T[]>(data);
+  const prevDataRef = useRef<T[]>(data);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const lastUpdateTimeRef = useRef<number>(0);
-  const mountedRef = useRef(true);
 
   useEffect(() => {
-    // Set mounted ref to true
-    mountedRef.current = true;
-    
-    // Cleanup timeout on unmount
-    return () => {
-      mountedRef.current = false;
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-        timeoutRef.current = null;
-      }
-    };
-  }, []);
+    // Check if data has actually changed
+    if (isDeepEqual(data, prevDataRef.current)) {
+      return;
+    }
 
-  // Using useCallback with proper dependency array to prevent recreation
-  const updateData = useCallback((newData: T[]) => {
-    if (!mountedRef.current) return;
-    
-    setStabilizedData(newData);
-    setIsStable(true);
-    prevDataRef.current = [...newData]; // Create a copy to avoid reference issues
-    lastUpdateTimeRef.current = Date.now();
-  }, []);
-
-  useEffect(() => {
-    // Clear any existing timeout
+    // Clear existing timeout
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
     }
 
-    // Check if data has actually changed using deep comparison
-    const hasChanged = !deepEqual(data, prevDataRef.current);
-    
-    // For immediate render on first load or empty data
-    if (prevDataRef.current.length === 0 || data.length === 0) {
-      updateData(data);
-      return;
-    }
+    // Debounce the update
+    timeoutRef.current = setTimeout(() => {
+      prevDataRef.current = data;
+      setStabilizedData(data);
+    }, delay);
 
-    if (!hasChanged && isStable) {
-      // Data hasn't changed, no need to update
-      return;
-    }
-
-    // For small datasets, stabilize immediately
-    if (data.length < 5) {
-      updateData(data);
-      return;
-    }
-
-    // Throttle updates to prevent too frequent re-renders
-    const now = Date.now();
-    const timeSinceLastUpdate = now - lastUpdateTimeRef.current;
-    
-    if (timeSinceLastUpdate < delay && hasChanged) {
-      // Set loading state while we wait for stabilization
-      if (mountedRef.current) {
-        setIsStable(false);
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
       }
-      
-      // Set timeout to stabilize data
-      timeoutRef.current = setTimeout(() => {
-        if (mountedRef.current) {
-          updateData(data);
-        }
-      }, delay - timeSinceLastUpdate);
-    } else if (hasChanged) {
-      // Update immediately if enough time has passed
-      updateData(data);
-    }
-  }, [data, delay, isStable]); // Removed updateData from dependencies as it's stable due to useCallback
+    };
+  }, [data, delay]);
 
   return {
     data: stabilizedData,
-    isStable
+    isStable: true
   };
 };

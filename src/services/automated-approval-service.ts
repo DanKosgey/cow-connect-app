@@ -333,6 +333,13 @@ export class AutomatedApprovalService {
           startDate = new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000));
       }
 
+      // Check if we have an authenticated session before proceeding
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session) {
+        logger.warn('No authenticated session available for getting approval statistics');
+        throw new Error('Authentication required to get approval statistics');
+      }
+
       // Get approval statistics
       const { data: statistics, error } = await supabase.rpc('get_approval_statistics', {
         start_date: startDate.toISOString(),

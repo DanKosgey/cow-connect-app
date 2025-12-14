@@ -18,6 +18,7 @@ import { usePerformanceMonitor } from '@/hooks/usePerformanceMonitor';
 import RefreshButton from '@/components/ui/RefreshButton';
 import { useStaffManagementData } from '@/hooks/useStaffManagementData';
 import { StaffEditDialog } from '@/components/admin/StaffEditDialog';
+import { StaffMember } from '@/types/staff.types';
 
 const Staff = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -37,18 +38,19 @@ const Staff = () => {
   
   const staff = staffData?.staff || [];
   const totalCount = staffData?.totalCount || 0;
-  const [filteredStaff, setFilteredStaff] = useState<any[]>(staff);
   const loading = isLoading;
 
-  useEffect(() => {
-    setFilteredStaff(staff);
-  }, [staff]);
+  // Removed the unnecessary filteredStaff state and useEffect that was causing infinite loop
+  // const [filteredStaff, setFilteredStaff] = useState<any[]>(staff);
+  // useEffect(() => {
+  //   setFilteredStaff(staff);
+  // }, [staff]);
 
   const totalPages = Math.ceil(totalCount / pageSize);
   
   // Use server-side pagination, so we don't need to paginate again on the client
   const paginatedData = {
-    data: filteredStaff,
+    data: staff,
     totalCount: totalCount,
     page: currentPage,
     pageSize: pageSize,
@@ -218,7 +220,13 @@ const Staff = () => {
                         </TableCell>
                         <TableCell>
                           <Badge variant={staffMember.activeRoles?.length > 0 ? "default" : "destructive"}>
-                            {staffMember.activeRoles?.length > 0 ? 'Active' : 'Inactive'}
+                            {staffMember.activeRoles?.length > 0 
+                              ? 'Active' 
+                              : staffMember.hasAnyRoles
+                                ? (staffMember.allRolesInactive 
+                                  ? 'Inactive (Role Inactive)' 
+                                  : 'Inactive (No Valid Role)')
+                                : 'Inactive (No Role Assigned)'}
                           </Badge>
                         </TableCell>
                         <TableCell>

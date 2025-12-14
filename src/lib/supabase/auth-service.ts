@@ -81,15 +81,11 @@ class AuthService {
   private isRefreshing = false;
   private refreshPromise: Promise<{ session: Session | null; error: Error | null }> | null = null;
   private lastValidationTime = 0;
-  private authStateUnsubscribe: (() => void) | null = null;
   private refreshTimeout: ReturnType<typeof setTimeout> | null = null;
   private isFetchingRole = false;
 
   private constructor() {
-    // Guard initialization for SSR
-    if (typeof window !== 'undefined') {
-      this.initializeAuthListener();
-    }
+    // No longer initialize auth listener here since it's handled in AuthContext
   }
 
   static getInstance(): AuthService {
@@ -97,57 +93,6 @@ class AuthService {
       AuthService.instance = new AuthService();
     }
     return AuthService.instance;
-  }
-
-  // Initialize auth state listener with proper cleanup
-  private initializeAuthListener(): void {
-    const listener = supabase.auth.onAuthStateChange((event, session) => {
-      console.log('Auth state changed:', event, session?.user?.id);
-      this.handleAuthStateChange(event, session);
-    });
-
-    // Defensive unsubscribe extraction
-    this.authStateUnsubscribe = () => {
-      try {
-        listener?.data?.subscription?.unsubscribe?.();
-      } catch (e) {
-        console.warn('[AuthService] Failed to unsubscribe auth listener', e);
-      }
-    };
-  }
-
-  private handleAuthStateChange(event: string, session: Session | null): void {
-    switch (event) {
-      case 'SIGNED_IN':
-      case 'INITIAL_SESSION':
-        this.currentUser = session?.user || null;
-        this.currentSession = session;
-        // Clear role cache on new sign-in
-        clearRoleCache();
-        break;
-        
-      case 'SIGNED_OUT':
-        this.clearAuthState();
-        // Clear role cache on sign out
-        clearRoleCache();
-        break;
-        
-      case 'TOKEN_REFRESHED':
-        // CRITICAL: Don't process TOKEN_REFRESHED if we're already refreshing
-        if (this.isRefreshing) {
-          console.log('[AuthService] Ignoring TOKEN_REFRESHED during active refresh');
-          return;
-        }
-        
-        this.currentSession = session;
-        this.currentUser = session?.user || null;
-        console.log('Token refreshed:', session?.user?.id);
-        break;
-        
-      case 'USER_UPDATED':
-        this.currentUser = session?.user || null;
-        break;
-    }
   }
 
   private clearAuthState(): void {
@@ -176,6 +121,12 @@ class AuthService {
       
       // Defensive destructuring
       const userRes = await supabase.auth.getUser();
+      console.log('🔐 [AuthService] getUser result:', {
+        hasUser: !!userRes.data?.user,
+        userId: userRes.data?.user?.id || null,
+        error: userRes.error?.message || null
+      });
+      
       if (userRes.error) throw userRes.error;
       const user = userRes.data?.user ?? null;
       
@@ -197,6 +148,13 @@ class AuthService {
     try {
       // Defensive destructuring
       const sessionRes = await supabase.auth.getSession();
+      console.log('🔐 [AuthService] validateSession result:', {
+        hasSession: !!sessionRes.data?.session,
+        hasAccessToken: !!sessionRes.data?.session?.access_token,
+        accessTokenLength: sessionRes.data?.session?.access_token?.length || 0,
+        error: sessionRes.error?.message || null
+      });
+      
       if (sessionRes.error) throw sessionRes.error;
       const session = sessionRes.data?.session ?? null;
       
@@ -236,6 +194,13 @@ class AuthService {
       
       // Defensive destructuring
       const sessionRes = await supabase.auth.getSession();
+      console.log('🔐 [AuthService] getSession result:', {
+        hasSession: !!sessionRes.data?.session,
+        hasAccessToken: !!sessionRes.data?.session?.access_token,
+        accessTokenLength: sessionRes.data?.session?.access_token?.length || 0,
+        error: sessionRes.error?.message || null
+      });
+      
       if (sessionRes.error) throw sessionRes.error;
       const session = sessionRes.data?.session ?? null;
       
@@ -617,6 +582,9 @@ class AuthService {
     }
     
     try {
+      // Add a small delay to ensure auth is fully initialized
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
       // Try RPC first with consistent timeout and retry logic
       const role = await this.fetchUserRoleFromRPC(userId, RPC_TIMEOUT, 2); // 5 second timeout with 2 retries
       
@@ -684,6 +652,20 @@ class AuthService {
       try {
         console.log(`🔐 [AuthService] Attempting RPC call (attempt ${attempt + 1}/${maxRetries + 1})`);
         
+        // Ensure we have a valid session before making the RPC call
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        console.log('🔐 [AuthService] Session check result:', {
+          hasSession: !!session,
+          hasAccessToken: !!session?.access_token,
+          accessTokenLength: session?.access_token?.length || 0,
+          sessionError: sessionError?.message || null
+        });
+        
+        if (sessionError || !session) {
+          console.warn('🔐 [AuthService] No valid session for RPC call');
+          return null;
+        }
+        
         const rpcPromise = supabase.rpc('get_user_role_optimized', {
           user_id_param: userId
         });
@@ -749,6 +731,20 @@ class AuthService {
 
   private async fetchUserRoleDirectly(userId: string): Promise<UserRole | null> {
     try {
+      // Ensure we have a valid session before making the query
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      console.log('🔐 [AuthService] Direct query session check:', {
+        hasSession: !!session,
+        hasAccessToken: !!session?.access_token,
+        accessTokenLength: session?.access_token?.length || 0,
+        sessionError: sessionError?.message || null
+      });
+      
+      if (sessionError || !session) {
+        console.warn('🔐 [AuthService] No valid session for direct query');
+        return null;
+      }
+      
       // Use the optimized view first
       const viewRes = await supabase
         .from('user_roles_view')
@@ -858,10 +854,6 @@ class AuthService {
 
   // Cleanup method
   destroy(): void {
-    if (this.authStateUnsubscribe) {
-      this.authStateUnsubscribe();
-      this.authStateUnsubscribe = null;
-    }
     // Clear any pending refresh timeouts
     if (this.refreshTimeout) {
       clearTimeout(this.refreshTimeout);

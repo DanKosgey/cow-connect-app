@@ -354,6 +354,13 @@ const AdminDashboard = () => {
         if (isMounted) setSettingsLoading(true);
         console.log('📊 [AdminDashboard] Loading dashboard settings from database...');
         
+        // Ensure we have a valid session before making queries
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError || !session) {
+          console.error('No valid session for dashboard settings query');
+          throw new Error('Authentication required');
+        }
+        
         const { data, error } = await supabase
           .from('dashboard_settings')
           .select('*')
@@ -498,6 +505,7 @@ const AdminDashboard = () => {
     return () => {
       console.log('Cleaning up dashboard settings subscription');
       isMounted = false;
+      // Properly unsubscribe from the channel
       supabase.removeChannel(settingsChannel);
       // Ensure loading states are cleared when component unmounts
       setLoading(false);
@@ -515,34 +523,18 @@ const AdminDashboard = () => {
       try {
         const { startDate, endDate } = getCurrentPeriodFilter(timeRange);
         
+        // Ensure we have a valid session before making queries
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError || !session) {
+          throw new Error('Authentication required');
+        }
+        
         // Fetch multiple data sources in parallel
         const [collectionsRes, farmersRes, staffRes, pendingRes] = await Promise.all([
           supabase
             .from('collections')
-            .select(`
-              id,
-              collection_id,
-              farmer_id,
-              staff_id,
-              approved_by,
-              liters,
-              rate_per_liter,
-              total_amount,
-              collection_date,
-              status,
-              notes,
-              farmers (
-                id,
-                user_id,
-                profiles!user_id (full_name, phone)
-              ),
-              staff!collections_staff_id_fkey (
-                id,
-                user_id,
-                profiles!user_id (full_name)
-              )
-            `)
-            .eq('approved_for_company', true) // Add this filter to match Collections page
+            .select('*')
+            .eq('approved_for_company', true)
             .gte('collection_date', startDate)
             .lte('collection_date', endDate)
             .order('collection_date', { ascending: false })
@@ -550,32 +542,18 @@ const AdminDashboard = () => {
           
           supabase
             .from('farmers')
-            .select(`
-              id,
-              user_id,
-              registration_number,
-              kyc_status,
-              created_at,
-              profiles:user_id (full_name, email)
-            `)
+            .select('*')
             .order('created_at', { ascending: false })
             .limit(200),
           
           supabase
             .from('staff')
-            .select(`
-              id,
-              user_id,
-              employee_id,
-              status,
-              created_at,
-              profiles:user_id (full_name, email)
-            `)
+            .select('*')
             .limit(100),
           
           supabase
             .from('pending_farmers')
-            .select('id, full_name, email, phone_number, status, created_at, rejection_count')
+            .select('*')
             .in('status', ['pending_verification', 'email_verified'])
             .limit(10)
         ]);

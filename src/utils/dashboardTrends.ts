@@ -1,6 +1,11 @@
 // Utility functions for calculating dashboard trends
 import { subDays, subWeeks, subMonths, subQuarters, subYears, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter, startOfYear, endOfYear } from 'date-fns';
 
+// Format date for Supabase API (ISO format without milliseconds)
+const formatForSupabase = (date: Date): string => {
+  return date.toISOString().split('.')[0] + 'Z';
+};
+
 // Get date filter for current period
 export const getCurrentPeriodFilter = (timeRange: string) => {
   const now = new Date();
@@ -70,8 +75,8 @@ export const getCurrentPeriodFilter = (timeRange: string) => {
   }
   
   return {
-    startDate: startDate.toISOString(),
-    endDate: endDate.toISOString()
+    startDate: formatForSupabase(startDate),
+    endDate: formatForSupabase(endDate)
   };
 };
 
@@ -159,8 +164,8 @@ export const getPreviousPeriodFilter = (timeRange: string) => {
   }
   
   return {
-    startDate: startDate.toISOString(),
-    endDate: endDate.toISOString()
+    startDate: formatForSupabase(startDate),
+    endDate: formatForSupabase(endDate)
   };
 };
 

@@ -933,7 +933,7 @@ export class CreditService {
         .from('farmer_credit_transactions')
         .select(`
           *,
-          farmers:farmer_id (profiles:profiles(full_name, phone))
+          farmers:farmer_id (profiles(full_name, phone))
         `)
         .eq('transaction_type', 'credit_used')
         .lt('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()) // 30 days ago

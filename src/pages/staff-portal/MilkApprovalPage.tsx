@@ -88,8 +88,33 @@ const MilkApprovalPage: React.FC = () => {
       if (result.success && result.data) {
         console.log('Fetched pending collections count:', result.data.length);
         
+        // Normalize collections data
+        const normalized = result.data.map((c: any) => {
+          // normalize farmer
+          const farmer = c.farmer || {
+            id: c.farmer_id || null,
+            fullName: c.farmer_full_name || c.farmerName || null,
+            phoneNumber: c.farmer_phone || null,
+            registrationNumber: c.farmer_registration_number || null
+          };
+          // normalize collector: prefer collector.fullName, else try staff.user.profile name fields
+          const collector = c.collector || (c.staff ? {
+            staffId: c.staff.id,
+            userId: c.staff.user_id,
+            fullName: c.staff.full_name || c.staff.name || null,
+            email: c.staff.email || null,
+            roles: c.staff.roles || []
+          } : null);
+          return {
+            ...c,
+            farmer,
+            collector,
+            collection_date: c.collection_date || c.created_at // fallback date
+          } as Collection;
+        });
+        
         // Log detailed information about the first few collections
-        result.data.slice(0, 2).forEach((collection: any, index: number) => {
+        normalized.slice(0, 2).forEach((collection: Collection, index: number) => {
           console.log(`Sample collection ${index}:`, {
             id: collection.id,
             collectorName: collection.collector?.fullName,
@@ -99,8 +124,8 @@ const MilkApprovalPage: React.FC = () => {
           });
         });
         
-        setPendingCollections(result.data);
-        groupCollections(result.data);
+        setPendingCollections(normalized);
+        groupCollections(normalized);
       }
     } catch (error) {
       console.error('Error fetching collections:', error);
@@ -134,7 +159,10 @@ const MilkApprovalPage: React.FC = () => {
         });
       }
 
-      const date = collection.collection_date.split('T')[0];
+      // Use safer date parsing
+      const date = formatDateSafely(collection.collection_date).includes('Invalid Date') 
+        ? 'Invalid Date' 
+        : collection.collection_date.split('T')[0];
       const key = `${collectorId}-${date}`;
 
       if (!groups[key]) {
@@ -176,10 +204,28 @@ const MilkApprovalPage: React.FC = () => {
     setGroupedCollections(finalGroups);
   };
 
-  const formatDateSafely = (dateString: string) => {
+  // Helper function to check if a string has text content
+  const hasText = (s?: string | null) => !!(s && s.toString().trim().length > 0);
+
+  const isCollectorAssigned = (collection: Collection): boolean => {
+    const collectorName = collection.collector?.fullName;
+    return hasText(collectorName) && collectorName !== 'Unknown Collector';
+  };
+
+  const isFarmerAssigned = (collection: Collection): boolean => {
+    const farmerName = collection.farmer?.fullName;
+    return hasText(farmerName) && farmerName !== 'Unknown Farmer';
+  };
+
+  const formatDateSafely = (dateString?: string) => {
+    if (!dateString) return 'Invalid Date';
+    // try Date parse; if fails, try extracting YYYY-MM-DD
     try {
-      return format(new Date(dateString), 'PPP');
-    } catch (e) {
+      const d = new Date(dateString);
+      if (!isNaN(d.getTime())) return format(d, 'PPP');
+      const maybeIso = dateString.split('T')[0];
+      return format(new Date(maybeIso), 'PPP');
+    } catch {
       return 'Invalid Date';
     }
   };
@@ -221,9 +267,10 @@ const MilkApprovalPage: React.FC = () => {
     }
     setIsSubmitting(true);
     try {
-      const totalExpected = batchGroup.collections.reduce((sum, col) => sum + col.liters, 0);
+      // Safer calculation with numeric conversion
+      const totalExpected = batchGroup.collections.reduce((sum, col) => sum + (Number(col.liters) || 0), 0);
       const promises = batchGroup.collections.map(async (col) => {
-        const factor = totalExpected > 0 ? col.liters / totalExpected : 0;
+        const factor = totalExpected > 0 ? (Number(col.liters) || 0) / totalExpected : 0;
         const receivedLiters = factor * received;
         return MilkApprovalService.approveMilkCollection({
           collectionId: col.id,
@@ -259,16 +306,6 @@ const MilkApprovalPage: React.FC = () => {
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  const isCollectorAssigned = (collection: Collection): boolean => {
-    const collectorName = collection.collector?.fullName;
-    return !!(collectorName && collectorName !== 'Unknown Collector');
-  };
-
-  const isFarmerAssigned = (collection: Collection): boolean => {
-    const farmerName = collection.farmer?.fullName;
-    return !!(farmerName && farmerName !== 'Unknown Farmer');
   };
 
   return (

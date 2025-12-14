@@ -47,6 +47,13 @@ export const getUserRole = async (userId: string) => {
   try {
     if (!userId) throw new Error('User ID is required');
 
+    // Check if we have an authenticated session before proceeding
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !session) {
+      logger.warn('No authenticated session available for getting user role');
+      return null;
+    }
+
     // Try the optimized RPC with timeout and retry logic
     const role = await getUserRoleWithRetry(userId, RPC_TIMEOUT, 2);
     return role;
@@ -64,6 +71,13 @@ const getUserRoleWithRetry = async (
 ): Promise<string | null> => {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
+      // Check if we have an authenticated session before proceeding
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session) {
+        logger.warn('No authenticated session available for RPC call');
+        return null;
+      }
+
       const rpcPromise = supabase.rpc('get_user_role_optimized', {
         user_id_param: userId
       });
@@ -121,6 +135,13 @@ const getUserRoleWithRetry = async (
 export const checkPermission = async (userId: string, permission: string) => {
   try {
     if (!userId || !permission) throw new Error('User ID and permission are required');
+
+    // Check if we have an authenticated session before proceeding
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !session) {
+      logger.warn('No authenticated session available for checking permission');
+      return false;
+    }
 
     const { data, error } = await supabase
       .rpc('check_permission', {
@@ -188,6 +209,13 @@ export const invalidateAllSessions = async (userId: string) => {
   try {
     if (!userId) throw new Error('User ID is required');
 
+    // Check if we have an authenticated session before proceeding
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !session) {
+      logger.warn('No authenticated session available for invalidating sessions');
+      return;
+    }
+
     const { error } = await supabase
       .from('user_sessions')
       .update({ is_valid: false })
@@ -202,6 +230,18 @@ export const invalidateAllSessions = async (userId: string) => {
 export const checkAccountLockout = async (email: string) => {
   try {
     if (!email) throw new Error('Email is required');
+
+    // Check if we have an authenticated session before proceeding
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !session) {
+      logger.warn('No authenticated session available for checking account lockout');
+      // In development mode, fail-open to avoid blocking
+      if (import.meta.env.DEV) {
+        return { isLocked: false, attemptsRemaining: null, lockedUntil: null };
+      }
+      // Fail-secure in production
+      return { isLocked: true, attemptsRemaining: 0, lockedUntil: null };
+    }
 
     const { data, error } = await supabase
       .rpc('check_account_lockout', {

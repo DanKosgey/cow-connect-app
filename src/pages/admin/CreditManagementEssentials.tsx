@@ -114,7 +114,7 @@ const CreditManagementEssentials = () => {
         .from('farmers')
         .select(`
           id,
-          profiles:user_id (full_name, phone)
+          profiles (full_name, phone)
         `);
 
       if (farmersError) throw farmersError;

@@ -64,7 +64,7 @@ const CreditRiskAssessment = () => {
           .from('farmers')
           .select(`
             id,
-            profiles:user_id (full_name, phone),
+            profiles (full_name, phone),
             farmer_credit_profiles(*)
           `);
 

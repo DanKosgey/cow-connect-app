@@ -269,7 +269,7 @@ const CreditReports = () => {
           .from('farmers')
           .select(`
             id,
-            profiles:user_id (full_name)
+            profiles (full_name)
           `)
           .in('id', farmerIds as string[]);
 

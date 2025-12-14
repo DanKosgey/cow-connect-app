@@ -214,7 +214,7 @@ export class CreditAnalyticsService {
         .from('farmers')
         .select(`
           id,
-          profiles:user_id (full_name, phone)
+          profiles (full_name, phone)
         `);
 
       if (farmersError) {

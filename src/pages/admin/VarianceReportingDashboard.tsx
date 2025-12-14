@@ -241,7 +241,7 @@ const VarianceReportingDashboard: React.FC = () => {
             liters,
             collection_date,
             staff_id,
-            staff!collections_staff_id_fkey (
+            staff (
               profiles (
                 full_name
               )

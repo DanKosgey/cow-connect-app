@@ -91,19 +91,15 @@ export const useCollectionAnalyticsData = () => {
     return useQuery<Collection[]>({
       queryKey: [COLLECTION_ANALYTICS_CACHE_KEYS.COLLECTIONS, dateFilter],
       queryFn: async () => {
-        const { data, error } = await supabase
+        // First get collections with farmers data
+        const { data: collectionsData, error: collectionsError } = await supabase
           .from('collections')
           .select(`
             *,
             farmers (
               id,
               user_id,
-              profiles!user_id (full_name, phone)
-            ),
-            staff!collections_staff_id_fkey (
-              id,
-              user_id,
-              profiles!user_id (full_name)
+              profiles (full_name, phone)
             )
           `)
           .eq('approved_for_company', true) // Only fetch approved collections
@@ -111,8 +107,74 @@ export const useCollectionAnalyticsData = () => {
           .order('collection_date', { ascending: false })
           .limit(1000);
 
-        if (error) throw error;
-        return data || [];
+        if (collectionsError) throw collectionsError;
+        
+        // If no collections, return early
+        if (!collectionsData || collectionsData.length === 0) return [];
+        
+        // Extract unique staff IDs
+        const staffIds = [...new Set(collectionsData
+          .map(c => c.staff_id)
+          .filter(Boolean))] as string[];
+        
+        // If no staff IDs, return collections with empty staff objects
+        if (staffIds.length === 0) {
+          return collectionsData.map(collection => ({
+            ...collection,
+            staff: {
+              id: '',
+              user_id: '',
+              profiles: {
+                full_name: 'N/A'
+              }
+            }
+          }));
+        }
+        
+        // Fetch staff data separately
+        const { data: staffData, error: staffError } = await supabase
+          .from('staff')
+          .select(`
+            id,
+            user_id,
+            profiles (full_name)
+          `)
+          .in('id', staffIds);
+        
+        if (staffError) {
+          console.warn('Failed to fetch staff data:', staffError);
+          // Return collections with placeholder staff data
+          return collectionsData.map(collection => ({
+            ...collection,
+            staff: {
+              id: collection.staff_id || '',
+              user_id: '',
+              profiles: {
+                full_name: collection.staff_id ? 'Unknown Staff' : 'N/A'
+              }
+            }
+          }));
+        }
+        
+        // Create a map of staff data for quick lookup
+        const staffMap = staffData?.reduce((acc, staff) => {
+          acc[staff.id] = staff;
+          return acc;
+        }, {} as Record<string, any>) || {};
+        
+        // Merge collections with staff data
+        return collectionsData.map(collection => ({
+          ...collection,
+          staff: collection.staff_id && staffMap[collection.staff_id] 
+            ? staffMap[collection.staff_id]
+            : {
+                id: collection.staff_id || '',
+                user_id: '',
+                profiles: {
+                  full_name: collection.staff_id ? 'Unknown Staff' : 'N/A'
+                }
+              }
+        }));
       },
       staleTime: 1000 * 60 * 5, // 5 minutes
       gcTime: 1000 * 60 * 15, // 15 minutes
@@ -157,6 +219,7 @@ export const useCollectionAnalyticsData = () => {
     return useQuery<Collection[]>({
       queryKey: [COLLECTION_ANALYTICS_CACHE_KEYS.FILTERED_COLLECTIONS, memoizedFilters],
       queryFn: async () => {
+        // First get collections with farmers data
         let query = supabase
           .from('collections')
           .select(`
@@ -164,12 +227,7 @@ export const useCollectionAnalyticsData = () => {
             farmers (
               id,
               user_id,
-              profiles!user_id (full_name, phone)
-            ),
-            staff!collections_staff_id_fkey (
-              id,
-              user_id,
-              profiles!user_id (full_name)
+              profiles (full_name, phone)
             )
           `)
           .eq('approved_for_company', true) // Only fetch approved collections
@@ -182,22 +240,86 @@ export const useCollectionAnalyticsData = () => {
           query = query.eq('status', memoizedFilters.status);
         }
 
-        const { data, error } = await query;
+        const { data: collectionsData, error: collectionsError } = await query;
 
-        if (error) throw error;
+        if (collectionsError) throw collectionsError;
 
-        // Apply search filter on client side (as in the original component)
-        let filtered = data || [];
+        // If no collections, return early
+        let filtered = collectionsData || [];
+        if (filtered.length === 0) return [];
+        
+        // Apply search filter on client side
         if (memoizedFilters.searchTerm) {
           const term = memoizedFilters.searchTerm.toLowerCase();
           filtered = filtered.filter(c => 
             c.farmers?.profiles?.full_name?.toLowerCase().includes(term) ||
-            c.collection_id?.toLowerCase().includes(term) ||
-            c.staff?.profiles?.full_name?.toLowerCase().includes(term)
+            c.collection_id?.toLowerCase().includes(term)
           );
         }
-
-        return filtered;
+        
+        // Extract unique staff IDs
+        const staffIds = [...new Set(filtered
+          .map(c => c.staff_id)
+          .filter(Boolean))] as string[];
+        
+        // If no staff IDs, return collections with empty staff objects
+        if (staffIds.length === 0) {
+          return filtered.map(collection => ({
+            ...collection,
+            staff: {
+              id: '',
+              user_id: '',
+              profiles: {
+                full_name: 'N/A'
+              }
+            }
+          }));
+        }
+        
+        // Fetch staff data separately
+        const { data: staffData, error: staffError } = await supabase
+          .from('staff')
+          .select(`
+            id,
+            user_id,
+            profiles (full_name)
+          `)
+          .in('id', staffIds);
+        
+        if (staffError) {
+          console.warn('Failed to fetch staff data:', staffError);
+          // Return collections with placeholder staff data
+          return filtered.map(collection => ({
+            ...collection,
+            staff: {
+              id: collection.staff_id || '',
+              user_id: '',
+              profiles: {
+                full_name: collection.staff_id ? 'Unknown Staff' : 'N/A'
+              }
+            }
+          }));
+        }
+        
+        // Create a map of staff data for quick lookup
+        const staffMap = staffData?.reduce((acc, staff) => {
+          acc[staff.id] = staff;
+          return acc;
+        }, {} as Record<string, any>) || {};
+        
+        // Merge collections with staff data
+        return filtered.map(collection => ({
+          ...collection,
+          staff: collection.staff_id && staffMap[collection.staff_id] 
+            ? staffMap[collection.staff_id]
+            : {
+                id: collection.staff_id || '',
+                user_id: '',
+                profiles: {
+                  full_name: collection.staff_id ? 'Unknown Staff' : 'N/A'
+                }
+              }
+        }));
       },
       staleTime: 1000 * 60 * 3, // 3 minutes
       gcTime: 1000 * 60 * 15, // 15 minutes

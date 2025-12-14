@@ -27,7 +27,7 @@ export const useGlobalSearch = () => {
       // Search farmers
       const { data: farmers, error: farmersError } = await supabase
         .from('farmers')
-        .select('id, profiles:user_id(full_name, phone)')
+        .select('id, profiles(full_name, phone)')
         .ilike('profiles.full_name', `%${query}%`)
         .limit(5);
 

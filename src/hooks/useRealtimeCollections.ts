@@ -70,14 +70,14 @@ export function useRealtimeCollections(farmerId?: string, staffId?: string) {
         farmers (
           id,
           user_id,
-          profiles!user_id (
+          profiles (
             full_name,
             phone
           )
         ),
-        staff!collections_staff_id_fkey (
+        staff (
           id,
-          profiles!user_id (
+          profiles (
             full_name
           )
         )
@@ -250,14 +250,14 @@ export function useRealtimeCollections(farmerId?: string, staffId?: string) {
                 farmers (
                   id,
                   user_id,
-                  profiles!user_id (
+                  profiles (
                     full_name,
                     phone
                   )
                 ),
-                staff!collections_staff_id_fkey (
+                staff (
                   id,
-                  profiles!user_id (
+                  profiles (
                     full_name
                   )
                 )

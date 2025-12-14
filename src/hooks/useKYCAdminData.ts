@@ -32,7 +32,7 @@ export const useKYCAdminData = (searchTerm: string, statusFilter: string) => {
         .from('farmers')
         .select(`
           *,
-          profiles:user_id(id, email, full_name, phone)
+          profiles(id, email, full_name, phone)
         `)
         .order('created_at', { ascending: false });
 

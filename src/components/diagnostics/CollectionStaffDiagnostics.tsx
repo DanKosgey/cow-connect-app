@@ -22,7 +22,7 @@ const CollectionStaffDiagnostics = () => {
           collection_id,
           collection_date,
           staff_id,
-          staff!collections_staff_id_fkey (
+          staff (
             id,
             user_id
           )

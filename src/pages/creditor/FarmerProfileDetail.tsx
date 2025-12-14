@@ -100,7 +100,7 @@ const FarmerProfileDetail = () => {
         .from('farmers')
         .select(`
           id,
-          profiles:user_id (full_name, phone, email)
+          profiles (full_name, phone, email)
         `)
         .eq('id', farmerId)
         .single();

@@ -85,12 +85,49 @@ const createEnhancedFetch = () => {
       const timeoutId = setTimeout(() => controller.abort(), TIMEOUT);
 
       try {
+        // Preserve all original headers including Authorization
+        const headers = {
+          ...(init?.headers || {}),
+          'Prefer': 'return=representation',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        };
+
+        // Log request details in development
+        if (import.meta.env.DEV) {
+          // Create a copy of headers for logging, redacting sensitive information
+          const headersForLog: Record<string, string> = {};
+          Object.entries(headers).forEach(([key, value]) => {
+            if (key.toLowerCase() === 'authorization') {
+              headersForLog[key] = 'Bearer [REDACTED]';
+            } else {
+              headersForLog[key] = value as string;
+            }
+          });
+          
+          console.log('[Supabase Client] Making request:', {
+            url: input,
+            headers: headersForLog,
+            method: init?.method || 'GET'
+          });
+        }
+
         const response = await fetch(input, {
           ...init,
+          headers,
           signal: controller.signal
         });
 
         clearTimeout(timeoutId);
+
+        // Log response details in development
+        if (import.meta.env.DEV) {
+          console.log('[Supabase Client] Response received:', {
+            url: input,
+            status: response.status,
+            statusText: response.statusText
+          });
+        }
 
         // Log errors in development
         if (import.meta.env.DEV && !response.ok) {
@@ -194,8 +231,9 @@ const client = createClient<Database>(clientUrl, clientKey, {
   global: {
     headers: {
       'X-Client-Info': 'supabase-js-web'
-    },
-    fetch: createEnhancedFetch()
+    }
+    // Temporarily disable enhanced fetch to test if it's causing the issue
+    // fetch: createEnhancedFetch()
   },
   realtime: {
     params: {
@@ -272,7 +310,7 @@ export const getCurrentUser = async () => {
     
     if (error) {
       devLog('Error fetching user', { error: error.message });
-      throw error; // Throw to allow callers to handle
+      throw error;
     }
     
     return user;

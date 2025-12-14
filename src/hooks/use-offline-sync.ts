@@ -50,6 +50,13 @@ export function useOfflineSync() {
     
     for (const collection of pendingCollections) {
       try {
+        // Check if we have an authenticated session before proceeding
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError || !session) {
+          console.warn('No authenticated session available for recording milk collection');
+          throw new Error('Authentication required to record milk collection');
+        }
+        
         const { data, error } = await supabase.rpc('record_milk_collection', {
           farmer_id: collection.farmer_id,
           staff_id: (await supabase.auth.getUser()).data.user?.id,

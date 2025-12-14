@@ -1,6 +1,7 @@
 import { Database } from './database.types';
 
-export type CollectionPoint = Database['public']['Tables']['collection_points']['Row'];
+// Comment out the problematic line since collection_points table doesn't exist
+// export type CollectionPoint = Database['public']['Tables']['collection_points']['Row'];
 export type Route = Database['public']['Tables']['routes']['Row'];
 export type StaffRoute = Database['public']['Tables']['staff_routes']['Row'];
 export type MilkCollection = Database['public']['Tables']['collections']['Row'];
@@ -67,4 +68,18 @@ export interface WeeklyStats extends DailyStats {
 export interface MonthlyStats extends WeeklyStats {
   bonus_achievement: number;
   performance_rating: number;
+}
+
+export interface StaffMember {
+  id: string;
+  employee_id: string;
+  user_id: string;
+  profiles: {
+    full_name: string;
+    email: string;
+  } | null;
+  roles: string[];
+  activeRoles: string[];
+  hasAnyRoles: boolean;
+  allRolesInactive: boolean;
 }

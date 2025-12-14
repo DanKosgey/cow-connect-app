@@ -188,6 +188,12 @@ class ExportService {
     options: ExportOptions
   ): Promise<string | Blob> {
     try {
+      // Check if we have an authenticated session before proceeding
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session) {
+        throw new Error('Authentication required to export data');
+      }
+
       let query = supabase.from(table).select('*');
 
       // Apply filters

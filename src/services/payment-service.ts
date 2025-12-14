@@ -616,6 +616,13 @@ export class PaymentService {
         // This is just a warning, not an error, as we might be reprocessing
       }
 
+      // Check if we have an authenticated session before proceeding
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session) {
+        logger.errorWithContext('PaymentService - no authenticated session', sessionError);
+        throw new Error('Authentication required to process payments');
+      }
+
       const farmerId = paymentData.farmer_id;
       const totalAmount = paymentData.total_amount;
 
@@ -835,9 +842,210 @@ export class PaymentService {
         return { success: true, data: [], message: 'No approved collections to process' };
       }
 
-      // Use batch processing for maximum efficiency
-      const result = await this.batchProcessFarmerPayments(farmerId, collections);
-      return result;
+      // Check if we have an authenticated session before proceeding
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session) {
+        logger.errorWithContext('PaymentService - no authenticated session for batch processing', sessionError);
+        throw new Error('Authentication required to process batch payments');
+      }
+
+      // Pre-fetch all shared data in parallel (with caching)
+      const [
+        collectorRateResult, 
+        farmerDeductionsResult, 
+        farmerCreditInfoResult, 
+        systemDeductionsResult, 
+        farmerSpecificDeductionsResult,
+        existingBatchResult
+      ] = await Promise.all([
+        this.getCachedCollectorRate(),
+        this.getCachedFarmerDeductions(farmerId),
+        this.getCachedFarmerCreditInfo(farmerId),
+        supabase.from('deduction_records').select('*').is('farmer_id', null),
+        supabase.from('farmer_deductions').select('*').eq('farmer_id', farmerId).eq('is_active', true),
+        supabase.from('payment_batches').select('batch_id').eq('status', 'Generated').limit(1).maybeSingle()
+      ]);
+
+      const collectorRate = collectorRateResult;
+      const totalDeductions = farmerDeductionsResult;
+      const creditInfo = farmerCreditInfoResult;
+      const systemDeductions = systemDeductionsResult.data || [];
+      const farmerDeductions = farmerSpecificDeductionsResult.data || [];
+      
+      // Handle batch creation/retrieval
+      let batchId: string | null = null;
+      if (!existingBatchResult.error && existingBatchResult.data) {
+        batchId = existingBatchResult.data.batch_id;
+      } else {
+        // Create a new payment batch
+        const batchName = `BATCH-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
+        const displayName = `Payment Batch ${new Date().toISOString().slice(0, 10)}`;
+        
+        const { data: batchData, error: createBatchError } = await supabase
+          .from('payment_batches')
+          .insert([{
+            batch_id: batchName.toString(),
+            batch_name: displayName,
+            period_start: new Date().toISOString().slice(0, 10),
+            period_end: new Date().toISOString().slice(0, 10),
+            status: 'Generated'
+          }])
+          .select()
+          .single();
+
+        if (!createBatchError && batchData) {
+          batchId = batchData.batch_id;
+        }
+      }
+
+      if (!batchId) {
+        throw new Error('Unable to obtain valid batch ID for payment processing');
+      }
+
+      // Get current admin user's ID
+      const { data: { user } } = await supabase.auth.getUser();
+      const appliedById = user?.id || null;
+
+      // Prepare all data for batch operations
+      const paymentRecords = [];
+      const collectionUpdates = [];
+      const creditTransactions = [];
+      const farmerPaymentUpdates = [];
+      
+      // Calculate all values in advance
+      const processedCollections = approvedCollections.map(collection => {
+        const { data: collectionData } = collection as any;
+        const creditUsed = Math.min(creditInfo.availableCredit, collection.total_amount);
+        const collectorFee = (collectionData?.liters || 0) * collectorRate;
+        const netPayment = collection.total_amount - creditUsed - totalDeductions - collectorFee;
+        
+        return {
+          collection,
+          collectionData,
+          creditUsed,
+          collectorFee,
+          netPayment
+        };
+      });
+
+      // Prepare batch data for all operations
+      for (const processed of processedCollections) {
+        const { collection, collectionData, creditUsed, collectorFee, netPayment } = processed;
+        
+        // Payment records
+        paymentRecords.push({
+          collection_id: collection.id,
+          amount: collection.total_amount,
+          rate_applied: collection.rate_per_liter,
+          batch_id: batchId,
+          credit_used: creditUsed,
+          net_payment: netPayment,
+          collector_fee: collectorFee
+        });
+        
+        // Collection updates
+        collectionUpdates.push({
+          id: collection.id,
+          status: 'Paid',
+          updated_at: new Date().toISOString()
+        });
+        
+        // Credit transactions (if credit was used)
+        if (creditUsed > 0) {
+          creditTransactions.push({
+            farmer_id: farmerId,
+            transaction_type: 'credit_repaid',
+            amount: creditUsed,
+            balance_before: creditInfo.availableCredit,
+            balance_after: Math.max(0, creditInfo.availableCredit - creditUsed),
+            reference_id: collection.id,
+            description: `Credit deduction from payment of KES ${collection.total_amount.toFixed(2)}`
+          });
+        }
+      }
+
+      // Execute all batch operations in parallel
+      const batchResults = await Promise.allSettled([
+        // Insert all payment records
+        supabase.from('collection_payments').insert(paymentRecords),
+        
+        // Update all collections
+        supabase.from('collections').upsert(collectionUpdates, { onConflict: 'id' }),
+        
+        // Insert all credit transactions (if any)
+        creditTransactions.length > 0 
+          ? supabase.from('credit_transactions').insert(creditTransactions)
+          : Promise.resolve({ data: [], error: null }),
+        
+        // Update credit requests settlement status
+        supabase.from('credit_requests')
+          .update({ 
+            settlement_status: 'processed',
+            updated_at: new Date().toISOString()
+          })
+          .eq('farmer_id', farmerId)
+          .eq('status', 'approved')
+          .eq('settlement_status', 'pending'),
+        
+        // Create system deduction records (if any)
+        systemDeductions.length > 0
+          ? supabase.from('deduction_records').insert(
+              systemDeductions.map(deduction => ({
+                deduction_type_id: deduction.deduction_type_id,
+                farmer_id: farmerId,
+                amount: deduction.amount,
+                reason: `System deduction applied to batch payment`,
+                applied_by: appliedById
+              }))
+            )
+          : Promise.resolve({ data: [], error: null }),
+          
+        // Create farmer-specific deduction records (if any)
+        farmerDeductions.length > 0
+          ? supabase.from('deduction_records').insert(
+              farmerDeductions.map(deduction => ({
+                deduction_type_id: deduction.deduction_type_id,
+                farmer_id: farmerId,
+                amount: deduction.amount,
+                reason: `Farmer deduction applied to batch payment`,
+                applied_by: appliedById
+              }))
+            )
+          : Promise.resolve({ data: [], error: null })
+      ]);
+
+      // Handle any errors from batch operations
+      const errors = batchResults
+        .map((result, index) => ({ result, index }))
+        .filter(({ result }) => result.status === 'fulfilled' && result.value.error)
+        .map(({ result, index }) => ({
+          operation: ['payment_records', 'collection_updates', 'credit_transactions', 'credit_requests', 'system_deductions', 'farmer_deductions'][index],
+          error: (result as PromiseFulfilledResult<any>).value.error
+        }));
+
+      if (errors.length > 0) {
+        logger.warn('Some batch operations failed', { errors });
+      }
+
+      // Send notifications in parallel
+      try {
+        await Promise.allSettled(
+          approvedCollections.map(collection => 
+            CollectionNotificationService.sendCollectionPaidNotification(
+              collection.id,
+              farmerId
+            )
+          )
+        );
+      } catch (notificationError) {
+        logger.warn('Warning: Some payment notifications failed', notificationError);
+      }
+
+      return { 
+        success: true, 
+        data: processedCollections,
+        message: `Processed ${approvedCollections.length} payments successfully`
+      };
     } catch (error) {
       logger.errorWithContext('PaymentService - markAllFarmerPaymentsAsPaid', error);
       return { success: false, error };
