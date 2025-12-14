@@ -48,6 +48,7 @@ export default defineConfig(({ mode }) => ({
       "react-router-dom",
       "@tanstack/react-query",
       "@supabase/supabase-js",
+      "react/jsx-runtime",
     ],
     exclude: ["lovable-tagger"],
   },
@@ -90,7 +91,7 @@ export default defineConfig(({ mode }) => ({
           }
           
           // Charts
-          if (id.includes("recharts")) {
+          if (id.includes("recharts") || id.includes("react-chartjs-2")) {
             return "charts";
           }
           
@@ -104,7 +105,7 @@ export default defineConfig(({ mode }) => ({
             return "excel";
           }
           
-          // UI libraries that depend on React
+          // UI libraries that depend on React (higher priority)
           if (
             id.includes("sonner") ||
             id.includes("cmdk") ||
@@ -116,15 +117,27 @@ export default defineConfig(({ mode }) => ({
             id.includes("react-transition-group") ||
             id.includes("react-window") ||
             id.includes("recharts") ||
-            id.includes("react-chartjs-2")
+            id.includes("react-chartjs-2") ||
+            id.includes("lucide-react")
           ) {
             return "react-ui";
+          }
+          
+          // Libraries that might use React hooks
+          if (
+            id.includes("usehooks-ts") ||
+            id.includes("@floating-ui") ||
+            id.includes("@headlessui") ||
+            id.includes("@heroicons") ||
+            id.includes("react-use") ||
+            id.includes("react-") && !id.includes("react-dom")
+          ) {
+            return "react-dependencies";
           }
           
           // Utilities
           if (
             id.includes("date-fns") ||
-            id.includes("lucide-react") ||
             id.includes("clsx") ||
             id.includes("tailwind-merge") ||
             id.includes("class-variance-authority")
@@ -134,15 +147,8 @@ export default defineConfig(({ mode }) => ({
           
           // All other node_modules that might depend on React
           if (id.includes("node_modules")) {
-            // Check if this module might depend on React
-            if (
-              id.includes("@heroicons") ||
-              id.includes("@headlessui") ||
-              id.includes("usehooks-ts") ||
-              id.includes("react-") ||
-              id.includes("@tanstack") ||
-              id.includes("@floating-ui")
-            ) {
+            // Additional check for modules that might depend on React
+            if (id.includes("use-") || id.includes("hook")) {
               return "react-dependencies";
             }
             return "vendor";
@@ -155,7 +161,8 @@ export default defineConfig(({ mode }) => ({
         },
         entryFileNames: "assets/js/[name]-[hash].js",
         assetFileNames: (assetInfo) => {
-          const info = assetInfo.name.split(".");
+          const name = assetInfo.name || "asset";
+          const info = name.split(".");
           const ext = info[info.length - 1];
           if (/png|jpe?g|svg|gif|tiff|bmp|ico/i.test(ext)) {
             return `assets/images/[name]-[hash][extname]`;
