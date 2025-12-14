@@ -19,6 +19,15 @@ if ('serviceWorker' in navigator) {
       registration.unregister();
     }
   });
+  
+  // Also clear all caches
+  if ('caches' in window) {
+    caches.keys().then(names => {
+      for (const name of names) {
+        caches.delete(name);
+      }
+    });
+  }
 }
 
 // Ensure the root element exists

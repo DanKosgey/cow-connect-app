@@ -104,16 +104,21 @@ export default defineConfig(({ mode }) => ({
             return "excel";
           }
           
-          // UI libraries
+          // UI libraries that depend on React
           if (
             id.includes("sonner") ||
             id.includes("cmdk") ||
             id.includes("input-otp") ||
             id.includes("react-day-picker") ||
             id.includes("react-resizable-panels") ||
-            id.includes("embla-carousel")
+            id.includes("embla-carousel") ||
+            id.includes("framer-motion") ||
+            id.includes("react-transition-group") ||
+            id.includes("react-window") ||
+            id.includes("recharts") ||
+            id.includes("react-chartjs-2")
           ) {
-            return "ui-components";
+            return "react-ui";
           }
           
           // Utilities
@@ -127,8 +132,19 @@ export default defineConfig(({ mode }) => ({
             return "utilities";
           }
           
-          // All other node_modules
+          // All other node_modules that might depend on React
           if (id.includes("node_modules")) {
+            // Check if this module might depend on React
+            if (
+              id.includes("@heroicons") ||
+              id.includes("@headlessui") ||
+              id.includes("usehooks-ts") ||
+              id.includes("react-") ||
+              id.includes("@tanstack") ||
+              id.includes("@floating-ui")
+            ) {
+              return "react-dependencies";
+            }
             return "vendor";
           }
         },

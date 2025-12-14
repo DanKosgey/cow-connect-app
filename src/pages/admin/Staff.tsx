@@ -17,12 +17,15 @@ import { PaginatedResponse, paginateArray } from '@/utils/paginationUtils';
 import { usePerformanceMonitor } from '@/hooks/usePerformanceMonitor';
 import RefreshButton from '@/components/ui/RefreshButton';
 import { useStaffManagementData } from '@/hooks/useStaffManagementData';
+import { StaffEditDialog } from '@/components/admin/StaffEditDialog';
 
 const Staff = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [editingStaffMember, setEditingStaffMember] = useState<any>(null);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   
   // Initialize performance monitoring
   const { measureOperation } = usePerformanceMonitor({ 
@@ -77,6 +80,16 @@ const Staff = () => {
     await refetch();
   };
 
+  const handleEditClick = (staffMember: any) => {
+    setEditingStaffMember(staffMember);
+    setIsEditDialogOpen(true);
+  };
+
+  const handleEditSave = async () => {
+    await refetch();
+    setEditingStaffMember(null);
+  };
+
   if (loading && staff.length === 0) {
     return (
       <div className="container mx-auto py-6">
@@ -87,151 +100,161 @@ const Staff = () => {
 
   return (
     <div className="container mx-auto py-6">
-        {/* Header */}
-        <PageHeader
-          title="Staff Management"
-          description="Manage staff profiles, roles, and permissions"
-          icon={<UserCog className="h-8 w-8" />}
-          actions={
-            <div className="flex items-center space-x-2">
-              <RefreshButton 
-                isRefreshing={loading} 
-                onRefresh={refetch} 
-                className="bg-white border-gray-300 hover:bg-gray-50 rounded-lg shadow-sm"
-              />
-              <StaffInviteDialog onInviteSent={handleInviteSent} />
-            </div>
-          }
+      {/* Header */}
+      <PageHeader
+        title="Staff Management"
+        description="Manage staff profiles, roles, and permissions"
+        icon={<UserCog className="h-8 w-8" />}
+        actions={
+          <div className="flex items-center space-x-2">
+            <RefreshButton 
+              isRefreshing={loading} 
+              onRefresh={refetch} 
+              className="bg-white border-gray-300 hover:bg-gray-50 rounded-lg shadow-sm"
+            />
+            <StaffInviteDialog onInviteSent={handleInviteSent} />
+          </div>
+        }
+      />
+
+      {/* Stats Overview */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <StatsCard
+          title="Total Staff"
+          value={stats.total}
+          icon={<UserCog className="h-6 w-6 text-blue-500" />}
+          color="border-l-blue-500"
         />
+        
+        <StatsCard
+          title="Admins"
+          value={stats.admins}
+          icon={<UserCog className="h-6 w-6 text-green-500" />}
+          color="border-l-green-500"
+        />
+        
+        <StatsCard
+          title="Staff"
+          value={stats.staff}
+          icon={<UserCog className="h-6 w-6 text-purple-500" />}
+          color="border-l-purple-500"
+        />
+        
+        <StatsCard
+          title="Active"
+          value={stats.active}
+          icon={<UserCog className="h-6 w-6 text-amber-500" />}
+          color="border-l-amber-500"
+        />
+      </div>
 
-        {/* Stats Overview */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <StatsCard
-            title="Total Staff"
-            value={stats.total}
-            icon={<UserCog className="h-6 w-6 text-blue-500" />}
-            color="border-l-blue-500"
-          />
-          
-          <StatsCard
-            title="Admins"
-            value={stats.admins}
-            icon={<UserCog className="h-6 w-6 text-green-500" />}
-            color="border-l-green-500"
-          />
-          
-          <StatsCard
-            title="Staff"
-            value={stats.staff}
-            icon={<UserCog className="h-6 w-6 text-purple-500" />}
-            color="border-l-purple-500"
-          />
-          
-          <StatsCard
-            title="Active"
-            value={stats.active}
-            icon={<UserCog className="h-6 w-6 text-amber-500" />}
-            color="border-l-amber-500"
-          />
-        </div>
-
-        {/* Filters and Search */}
-        <Card className="mb-6 border-t-4 border-t-blue-500">
-          <CardContent className="p-6">
-            <SearchAndFilter
-              searchTerm={searchTerm}
-              onSearchChange={setSearchTerm}
-              searchPlaceholder="Search staff by name, employee ID, or email..."
-              onClearFilters={() => { setSearchTerm(''); setRoleFilter('all'); }}
+      {/* Filters and Search */}
+      <Card className="mb-6 border-t-4 border-t-blue-500">
+        <CardContent className="p-6">
+          <SearchAndFilter
+            searchTerm={searchTerm}
+            onSearchChange={setSearchTerm}
+            searchPlaceholder="Search staff by name, employee ID, or email..."
+            onClearFilters={() => { setSearchTerm(''); setRoleFilter('all'); }}
+          >
+            <select
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value)}
+              className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <select
-                value={roleFilter}
-                onChange={(e) => setRoleFilter(e.target.value)}
-                className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="all">All Roles</option>
-                <option value="admin">Admin</option>
-                <option value="staff">Staff</option>
-              </select>
-            </SearchAndFilter>
-          </CardContent>
-        </Card>
+              <option value="all">All Roles</option>
+              <option value="admin">Admin</option>
+              <option value="staff">Staff</option>
+            </select>
+          </SearchAndFilter>
+        </CardContent>
+      </Card>
 
-        {/* Staff Table */}
-        <Card className="border-t-4 border-t-blue-500">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <UserCog className="h-5 w-5" />
-              Staff Members
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {paginatedData.data.length === 0 ? (
-              <div className="text-center py-12">
-                <UserCog className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-1">No staff members found</h3>
-                <p className="text-gray-500">Try adjusting your search or filter criteria</p>
-              </div>
-            ) : (
-              <>
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Name</TableHead>
-                        <TableHead>Employee ID</TableHead>
-                        <TableHead>Email</TableHead>
-                        <TableHead>Roles</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Actions</TableHead>
+      {/* Staff Table */}
+      <Card className="border-t-4 border-t-blue-500">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <UserCog className="h-5 w-5" />
+            Staff Members
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {paginatedData.data.length === 0 ? (
+            <div className="text-center py-12">
+              <UserCog className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-1">No staff members found</h3>
+              <p className="text-gray-500">Try adjusting your search or filter criteria</p>
+            </div>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Employee ID</TableHead>
+                      <TableHead>Email</TableHead>
+                      <TableHead>Roles</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {paginatedData.data.map((staffMember) => (
+                      <TableRow key={staffMember.id} className="hover:bg-gray-50">
+                        <TableCell className="font-medium">
+                          {staffMember.profiles?.full_name || 'N/A'}
+                        </TableCell>
+                        <TableCell>{staffMember.employee_id || 'N/A'}</TableCell>
+                        <TableCell>{staffMember.profiles?.email || 'N/A'}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1">
+                            {Array.isArray(staffMember.roles) && staffMember.roles.map((role: string) => (
+                              <Badge key={role} variant="secondary">
+                                {role}
+                              </Badge>
+                            ))}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={staffMember.activeRoles?.length > 0 ? "default" : "destructive"}>
+                            {staffMember.activeRoles?.length > 0 ? 'Active' : 'Inactive'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => handleEditClick(staffMember)}
+                          >
+                            Edit
+                          </Button>
+                        </TableCell>
                       </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {paginatedData.data.map((staffMember) => (
-                        <TableRow key={staffMember.id} className="hover:bg-gray-50">
-                          <TableCell className="font-medium">
-                            {staffMember.profiles?.full_name || 'N/A'}
-                          </TableCell>
-                          <TableCell>{staffMember.employee_id || 'N/A'}</TableCell>
-                          <TableCell>{staffMember.profiles?.email || 'N/A'}</TableCell>
-                          <TableCell>
-                            <div className="flex flex-wrap gap-1">
-                              {Array.isArray(staffMember.roles) && staffMember.roles.map((role: string) => (
-                                <Badge key={role} variant="secondary">
-                                  {role}
-                                </Badge>
-                              ))}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={staffMember.activeRoles?.length > 0 ? "default" : "destructive"}>
-                              {staffMember.activeRoles?.length > 0 ? 'Active' : 'Inactive'}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Button variant="outline" size="sm">
-                              Edit
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
 
-                {/* Pagination */}
-                <Pagination
-                  currentPage={currentPage}
-                  totalPages={totalPages}
-                  totalCount={totalCount}
-                  pageSize={pageSize}
-                  onPageChange={handlePageChange}
-                  onPageSizeChange={handlePageSizeChange}
-                />
-              </>
-            )}
-          </CardContent>
-        </Card>
+              {/* Pagination */}
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                totalCount={totalCount}
+                pageSize={pageSize}
+                onPageChange={handlePageChange}
+                onPageSizeChange={handlePageSizeChange}
+              />
+            </>
+          )}
+        </CardContent>
+      </Card>
+      <StaffEditDialog
+        open={isEditDialogOpen}
+        onOpenChange={setIsEditDialogOpen}
+        staffMember={editingStaffMember}
+        onSave={handleEditSave}
+      />
     </div>
   );
 };
