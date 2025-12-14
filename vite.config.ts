@@ -70,39 +70,39 @@ export default defineConfig(({ mode }) => ({
     rollupOptions: {
       output: {
         manualChunks: (id) => {
-          // React core - highest priority
+          // React core - highest priority (must load first)
           if (id.includes("node_modules/react/") || id.includes("node_modules/react-dom/")) {
-            return "react-vendor";
+            return "0-react-vendor";
+          }
+          
+          // Data layer (depends on React, must load after react-vendor)
+          if (id.includes("@tanstack/react-query") || id.includes("@supabase")) {
+            return "1-data-layer";
           }
           
           // Router
           if (id.includes("react-router")) {
-            return "router";
+            return "2-router";
           }
           
           // Radix UI components
           if (id.includes("@radix-ui")) {
-            return "radix-ui";
-          }
-          
-          // Data layer
-          if (id.includes("@tanstack/react-query") || id.includes("@supabase")) {
-            return "data-layer";
+            return "3-radix-ui";
           }
           
           // Charts
           if (id.includes("recharts") || id.includes("react-chartjs-2")) {
-            return "charts";
+            return "4-charts";
           }
           
           // Forms
           if (id.includes("react-hook-form") || id.includes("@hookform") || id.includes("zod")) {
-            return "forms";
+            return "5-forms";
           }
           
           // Excel/File handling
           if (id.includes("xlsx") || id.includes("exceljs")) {
-            return "excel";
+            return "6-excel";
           }
           
           // UI libraries that depend on React (higher priority)
@@ -120,7 +120,7 @@ export default defineConfig(({ mode }) => ({
             id.includes("react-chartjs-2") ||
             id.includes("lucide-react")
           ) {
-            return "react-ui";
+            return "7-react-ui";
           }
           
           // Libraries that might use React hooks
@@ -130,9 +130,9 @@ export default defineConfig(({ mode }) => ({
             id.includes("@headlessui") ||
             id.includes("@heroicons") ||
             id.includes("react-use") ||
-            id.includes("react-") && !id.includes("react-dom")
+            (id.includes("react-") && !id.includes("react-dom"))
           ) {
-            return "react-dependencies";
+            return "8-react-dependencies";
           }
           
           // Utilities
@@ -142,19 +142,20 @@ export default defineConfig(({ mode }) => ({
             id.includes("tailwind-merge") ||
             id.includes("class-variance-authority")
           ) {
-            return "utilities";
+            return "9-utilities";
           }
           
           // All other node_modules that might depend on React
           if (id.includes("node_modules")) {
             // Additional check for modules that might depend on React
-            if (id.includes("use-") || id.includes("hook")) {
-              return "react-dependencies";
+            if (id.includes("use-") || id.includes("hook") || id.includes("context")) {
+              return "8-react-dependencies";
             }
-            return "vendor";
+            return "a-vendor";
           }
         },
         
+        // Ensure correct order by naming chunks strategically
         chunkFileNames: (chunkInfo) => {
           const facadeModuleId = chunkInfo.facadeModuleId ? chunkInfo.facadeModuleId.split("/").pop() : "chunk";
           return `assets/js/[name]-[hash].js`;
