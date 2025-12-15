@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { DashboardLayout } from '@/components/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { 
@@ -398,131 +397,127 @@ const FarmerPaymentsPage = () => {
 
   // Function to reset filters (memoized)
   const resetFilters = () => {
-    setTimeFrame('all');
+    setSearchTerm('');
+    setFilterStatus('all');
+    setTimeFrame('week');
     setCustomDateRange({ from: '', to: '' });
   };
 
   if (isLoading) {
     return (
-      <DashboardLayout>
-        <div className="flex justify-center items-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
-        </div>
-      </DashboardLayout>
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+      </div>
     );
   }
 
   if (isError) {
     return (
-      <DashboardLayout>
-        <div className="bg-red-50 border-l-4 border-red-500 p-4">
-          <div className="flex">
-            <div className="flex-shrink-0">
-              <Calendar className="h-5 w-5 text-red-400" />
-            </div>
-            <div className="ml-3">
-              <p className="text-sm text-red-700">
-                Error loading payment data: {error?.message || 'Unknown error'}
-              </p>
-              <button 
-                onClick={fetchAllData}
-                className="mt-2 inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
-              >
-                Retry
-              </button>
-            </div>
+      <div className="bg-red-50 border-l-4 border-red-500 p-4">
+        <div className="flex">
+          <div className="flex-shrink-0">
+            <Calendar className="h-5 w-5 text-red-400" />
+          </div>
+          <div className="ml-3">
+            <p className="text-sm text-red-700">
+              Error loading payment data: {error?.message || 'Unknown error'}
+            </p>
+            <button 
+              onClick={fetchAllData}
+              className="mt-2 inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+            >
+              Retry
+            </button>
           </div>
         </div>
-      </DashboardLayout>
+      </div>
     );
   }
 
   return (
-    <DashboardLayout>
-      <div className="p-6">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Farmer Payments</h1>
-          <p className="mt-2 text-gray-600">
-            View and manage farmer payments, track collections, and monitor payment status
-          </p>
-        </div>
-
-        {/* Stats Cards - Memoized */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <StatsCard
-            title="Total Pending"
-            value={formatCurrency(analytics.total_pending)}
-            description="Pending payments"
-            icon={DollarSign}
-          />
-          <StatsCard
-            title="Total Paid"
-            value={formatCurrency(analytics.total_paid)}
-            description="Payments completed"
-            icon={DollarSign}
-          />
-          <StatsCard
-            title="Total Farmers"
-            value={analytics.total_farmers.toString()}
-            description="Active farmers"
-            icon={Users}
-          />
-          <StatsCard
-            title="Avg Payment"
-            value={formatCurrency(analytics.avg_payment)}
-            description="Average per payment"
-            icon={BarChart3}
-          />
-        </div>
-
-        {/* Time Frame Selector */}
-        <div className="mb-6 flex flex-wrap items-center gap-2">
-          <span className="text-sm font-medium text-gray-700">Time Frame:</span>
-          {['daily', 'weekly', 'monthly', 'all'].map((frame) => (
-            <button
-              key={frame}
-              onClick={() => handleTimeFrameChange(frame)}
-              className={`px-3 py-1 text-sm rounded-full ${
-                timeFrame === frame
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              {frame.charAt(0).toUpperCase() + frame.slice(1)}
-            </button>
-          ))}
-        </div>
-
-        {/* Farmer Payment Summary Section */}
-        <div className="space-y-6">
-          <div className="flex justify-between items-center">
-            <h2 className="text-2xl font-bold text-gray-900">Farmer Payment Summary</h2>
-            <div className="flex items-center space-x-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={toggleAutoRefresh}
-                className={isAutoRefreshEnabled ? "bg-green-100 border-green-300 text-green-800" : ""}
-              >
-                {isAutoRefreshEnabled ? "Auto Refresh: ON" : "Auto Refresh: OFF"}
-              </Button>
-              <RefreshButton onRefresh={manualRefresh} /> {/* Use manual refresh */}
-            </div>
-          </div>
-          
-          <FarmerPaymentSummary 
-            farmerPaymentSummaries={farmerPaymentSummaries}
-            collections={collections}
-            viewMode={viewMode}
-            setViewMode={setViewMode}
-            approveCollectionsForPayment={approveCollectionsForPayment}
-            markAllFarmerPaymentsAsPaid={markAllFarmerPaymentsAsPaid}
-            processingPayments={processingPayments}
-            processingAllPayments={processingAllPayments}
-          />
-        </div>
+    <div className="p-6">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-900">Farmer Payments</h1>
+        <p className="mt-2 text-gray-600">
+          View and manage farmer payments, track collections, and monitor payment status
+        </p>
       </div>
-    </DashboardLayout>
+
+      {/* Stats Cards - Memoized */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <StatsCard
+          title="Total Pending"
+          value={formatCurrency(analytics.total_pending)}
+          description="Pending payments"
+          icon={DollarSign}
+        />
+        <StatsCard
+          title="Total Paid"
+          value={formatCurrency(analytics.total_paid)}
+          description="Payments completed"
+          icon={DollarSign}
+        />
+        <StatsCard
+          title="Total Farmers"
+          value={analytics.total_farmers.toString()}
+          description="Active farmers"
+          icon={Users}
+        />
+        <StatsCard
+          title="Avg Payment"
+          value={formatCurrency(analytics.avg_payment)}
+          description="Average per payment"
+          icon={BarChart3}
+        />
+      </div>
+
+      {/* Time Frame Selector */}
+      <div className="mb-6 flex flex-wrap items-center gap-2">
+        <span className="text-sm font-medium text-gray-700">Time Frame:</span>
+        {['daily', 'weekly', 'monthly', 'all'].map((frame) => (
+          <button
+            key={frame}
+            onClick={() => handleTimeFrameChange(frame)}
+            className={`px-3 py-1 text-sm rounded-full ${
+              timeFrame === frame
+                ? 'bg-indigo-600 text-white'
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            }`}
+          >
+            {frame.charAt(0).toUpperCase() + frame.slice(1)}
+          </button>
+        ))}
+      </div>
+
+      {/* Farmer Payment Summary Section */}
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <h2 className="text-2xl font-bold text-gray-900">Farmer Payment Summary</h2>
+          <div className="flex items-center space-x-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={toggleAutoRefresh}
+              className={isAutoRefreshEnabled ? "bg-green-100 border-green-300 text-green-800" : ""}
+            >
+              {isAutoRefreshEnabled ? "Auto Refresh: ON" : "Auto Refresh: OFF"}
+            </Button>
+            <RefreshButton onRefresh={manualRefresh} /> {/* Use manual refresh */}
+          </div>
+        </div>
+        
+        <FarmerPaymentSummary 
+          farmerPaymentSummaries={farmerPaymentSummaries}
+          collections={collections}
+          viewMode={viewMode}
+          setViewMode={setViewMode}
+          approveCollectionsForPayment={approveCollectionsForPayment}
+          markAllFarmerPaymentsAsPaid={markAllFarmerPaymentsAsPaid}
+          processingPayments={processingPayments}
+          processingAllPayments={processingAllPayments}
+        />
+      </div>
+    </div>
   );
 };
 

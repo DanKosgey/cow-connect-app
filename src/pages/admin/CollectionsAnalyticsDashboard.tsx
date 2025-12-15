@@ -21,7 +21,6 @@ import {
 } from 'recharts';
 
 // UI Components
-import { DashboardLayout } from '@/components/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -759,22 +758,28 @@ const CollectionsAnalyticsDashboard: React.FC = () => {
 
   if (error) {
     return (
-        <DashboardLayout>
-            <div className="flex h-[50vh] flex-col items-center justify-center text-center">
-                <AlertTriangle className="h-12 w-12 text-red-500 mb-4" />
-                <h3 className="text-xl font-bold">Failed to load analytics</h3>
-                <p className="text-gray-500 mb-6">{error.message || "Unknown error occurred"}</p>
-                <Button onClick={() => window.location.reload()}>Retry</Button>
-            </div>
-        </DashboardLayout>
+      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900 p-4">
+        <div className="max-w-md text-center">
+          <AlertTriangle className="mx-auto h-12 w-12 text-red-500" />
+          <h2 className="mt-4 text-xl font-bold text-gray-900 dark:text-white">Error Loading Analytics</h2>
+          <p className="mt-2 text-gray-600 dark:text-gray-400">
+            {error.message || 'Failed to load analytics data. Please try again later.'}
+          </p>
+          <Button 
+            onClick={() => window.location.reload()} 
+            className="mt-4 bg-red-600 hover:bg-red-700 text-white"
+          >
+            Retry
+          </Button>
+        </div>
+      </div>
     );
   }
 
-  if (showLoading || !analyticsData) return <DashboardLayout><CollectionsSkeleton /></DashboardLayout>;
+  if (showLoading || !analyticsData) return <div className="p-6"><CollectionsSkeleton /></div>;
 
   return (
-    <DashboardLayout>
-      <div className="container mx-auto p-6 space-y-8 max-w-7xl">
+    <div className="container mx-auto p-6 space-y-8 max-w-7xl">
         
         {/* Header Section */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1034,7 +1039,6 @@ const CollectionsAnalyticsDashboard: React.FC = () => {
         </Tabs>
 
       </div>
-    </DashboardLayout>
   );
 };
 

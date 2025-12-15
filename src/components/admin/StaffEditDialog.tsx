@@ -31,7 +31,7 @@ export const StaffEditDialog: React.FC<StaffEditDialogProps> = ({ open, onOpenCh
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [employeeId, setEmployeeId] = useState('');
-  const [selectedRole, setSelectedRole] = useState<'staff' | 'admin' | 'none'>('none');
+  const [selectedRole, setSelectedRole] = useState<'staff' | 'admin' | 'collector' | 'creditor' | 'none'>('none');
   const [isActive, setIsActive] = useState(false);
   const [loading, setLoading] = useState(false);
   
@@ -46,11 +46,23 @@ export const StaffEditDialog: React.FC<StaffEditDialogProps> = ({ open, onOpenCh
       if (staffMember.activeRoles?.includes('admin')) {
         setSelectedRole('admin');
         setIsActive(true);
+      } else if (staffMember.activeRoles?.includes('collector')) {
+        setSelectedRole('collector');
+        setIsActive(true);
+      } else if (staffMember.activeRoles?.includes('creditor')) {
+        setSelectedRole('creditor');
+        setIsActive(true);
       } else if (staffMember.activeRoles?.includes('staff')) {
         setSelectedRole('staff');
         setIsActive(true);
       } else if (staffMember.roles?.includes('admin')) {
         setSelectedRole('admin');
+        setIsActive(false);
+      } else if (staffMember.roles?.includes('collector')) {
+        setSelectedRole('collector');
+        setIsActive(false);
+      } else if (staffMember.roles?.includes('creditor')) {
+        setSelectedRole('creditor');
         setIsActive(false);
       } else if (staffMember.roles?.includes('staff')) {
         setSelectedRole('staff');
@@ -90,21 +102,54 @@ export const StaffEditDialog: React.FC<StaffEditDialogProps> = ({ open, onOpenCh
       
       if (staffError) throw staffError;
       
-      // Handle role updates using a service role approach or inform user about limitation
+      // Handle role updates - properly manage all roles
       if (selectedRole !== 'none') {
-        // Try to update the role status
-        const { error: roleUpdateError } = await supabase
+        // First, deactivate all existing roles for this user
+        const { error: deactivateAllError } = await supabase
           .from('user_roles')
-          .update({ active: isActive })
-          .eq('user_id', staffMember.user_id)
-          .eq('role', selectedRole);
+          .update({ active: false })
+          .eq('user_id', staffMember.user_id);
         
-        // If we get a permission error, inform the user they need to contact support or use a different method
-        if (roleUpdateError && roleUpdateError.code === '42501') {
+        if (deactivateAllError && deactivateAllError.code === '42501') {
           // Permission denied - RLS policy violation
           showError('Permission Denied', 'You do not have permission to modify user roles. Please contact your system administrator or try assigning roles through the invitation process.');
-        } else if (roleUpdateError) {
-          throw roleUpdateError;
+          setLoading(false);
+          return;
+        } else if (deactivateAllError) {
+          throw deactivateAllError;
+        }
+        
+        // Then, activate the selected role
+        // Check if the user already has this role assigned
+        const { data: existingRole, error: checkRoleError } = await supabase
+          .from('user_roles')
+          .select('*')
+          .eq('user_id', staffMember.user_id)
+          .eq('role', selectedRole)
+          .maybeSingle();
+        
+        if (checkRoleError) throw checkRoleError;
+        
+        if (existingRole) {
+          // Update existing role
+          const { error: updateRoleError } = await supabase
+            .from('user_roles')
+            .update({ active: isActive })
+            .eq('user_id', staffMember.user_id)
+            .eq('role', selectedRole);
+          
+          if (updateRoleError) throw updateRoleError;
+        } else {
+          // Insert new role
+          const { error: insertRoleError } = await supabase
+            .from('user_roles')
+            .insert({
+              user_id: staffMember.user_id,
+              role: selectedRole,
+              active: isActive
+            });
+          
+          if (insertRoleError) throw insertRoleError;
         }
       } else {
         // Deactivate all roles if none selected
@@ -116,25 +161,23 @@ export const StaffEditDialog: React.FC<StaffEditDialogProps> = ({ open, onOpenCh
         if (deactivateAllError && deactivateAllError.code === '42501') {
           // Permission denied - RLS policy violation
           showError('Permission Denied', 'You do not have permission to modify user roles. Please contact your system administrator or try assigning roles through the invitation process.');
+          setLoading(false);
+          return;
         } else if (deactivateAllError) {
           throw deactivateAllError;
         }
       }
       
-      if (!loading) { // Only show success if we didn't encounter permission errors
-        show({ 
-          title: 'Success', 
-          description: 'Staff member updated successfully' 
-        });
-      }
+      show({ 
+        title: 'Success', 
+        description: 'Staff member updated successfully' 
+      });
       
       onSave();
       onOpenChange(false);
     } catch (err: any) {
       console.error('Error updating staff member:', err);
-      if (err.code !== '42501') { // Don't show error toast for permission errors as we already handled them
-        showError('Update Failed', err.message || 'Failed to update staff member.');
-      }
+      showError('Update Failed', err.message || 'Failed to update staff member.');
     } finally {
       setLoading(false);
     }
@@ -201,7 +244,7 @@ export const StaffEditDialog: React.FC<StaffEditDialogProps> = ({ open, onOpenCh
               <Label htmlFor="role">Role</Label>
               <Select 
                 value={selectedRole} 
-                onValueChange={(value: 'staff' | 'admin' | 'none') => setSelectedRole(value)}
+                onValueChange={(value: 'staff' | 'admin' | 'collector' | 'creditor' | 'none') => setSelectedRole(value)}
                 disabled={loading}
               >
                 <SelectTrigger>
@@ -210,7 +253,9 @@ export const StaffEditDialog: React.FC<StaffEditDialogProps> = ({ open, onOpenCh
                 <SelectContent>
                   <SelectItem value="none">No Role</SelectItem>
                   <SelectItem value="staff">Staff</SelectItem>
+                  <SelectItem value="collector">Collector</SelectItem>
                   <SelectItem value="admin">Administrator</SelectItem>
+                  <SelectItem value="creditor">Creditor</SelectItem>
                 </SelectContent>
               </Select>
             </div>

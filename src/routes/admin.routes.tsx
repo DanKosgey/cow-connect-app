@@ -52,7 +52,6 @@ const CreditManagementEssentials = lazy(() => import('@/pages/admin/CreditManage
 const CreditRiskAssessment = lazy(() => import('@/components/admin/CreditRiskAssessment'));
 const CreditSettings = lazy(() => import('@/components/admin/CreditSettings'));
 const PenaltyManagementPage = lazy(() => import('@/pages/admin/PenaltyManagementPage'));
-const ErrorReportingDashboard = lazy(() => import('@/pages/admin/ErrorReportingDashboard'));
 const VarianceReportingDashboard = lazy(() => import('@/components/admin/variance/ModularEnhancedVarianceReportingDashboard'));
 const VarianceInsightsDashboard = lazy(() => import('@/pages/admin/VarianceInsightsDashboard'));
 const CollectorsPage = lazy(() => import('@/pages/admin/CollectorsPage'));
@@ -87,7 +86,6 @@ export const adminRoutes = [
   // Removed credit-defaults, credit-audit, and credit-reports routes
   { path: '/admin/credit-risk-assessment', element: <CreditRiskAssessment /> },
   { path: '/admin/credit-settings', element: <CreditSettings /> },
-  { path: '/admin/error-reporting', element: <ErrorReportingDashboard /> },
   { path: '/admin/variance-reporting', element: <VarianceReportingDashboard /> },
   { path: '/admin/variance-insights', element: <VarianceInsightsDashboard /> },
   { path: '/admin/penalty-management', element: <PenaltyManagementPage /> },
@@ -205,7 +203,7 @@ export default function AdminRoutes() {
                   {/* Removed credit-defaults, credit-audit, and credit-reports routes */}
                   <Route path="credit-risk-assessment" element={<CreditRiskAssessment />} />
                   <Route path="credit-settings" element={<CreditSettings />} />
-                  <Route path="error-reporting" element={<ErrorReportingDashboard />} />
+                  {/* <Route path="error-reporting" element={<ErrorReportingDashboard />} /> */} {/* Removed as per user request */}
                   <Route path="variance-reporting" element={<VarianceReportingDashboard />} />
                   <Route path="variance-insights" element={<VarianceInsightsDashboard />} />
                   <Route path="penalty-management" element={<PenaltyManagementPage />} />
@@ -219,126 +217,7 @@ export default function AdminRoutes() {
               </AdminPortalLayout>
             </ProtectedRoute>
           } />
-          <Route path="staff" element={
-            <ProtectedRoute requiredRole={UserRole.ADMIN}>
-              <PageTransition>
-                <Staff />
-              </PageTransition>
-            </ProtectedRoute>
-          } />
-          <Route path="payments" element={
-            <ProtectedRoute requiredRole={UserRole.ADMIN}>
-              <PageTransition>
-                <PaymentSystem />
-              </PageTransition>
-            </ProtectedRoute>
-          } />
-          <Route path="payments/farmer/:farmerId" element={
-            <ProtectedRoute requiredRole={UserRole.ADMIN}>
-              <PageTransition>
-                <FarmerPaymentDetails />
-              </PageTransition>
-            </ProtectedRoute>
-          } />
-          <Route path="payments/batches" element={
-            <ProtectedRoute requiredRole={UserRole.ADMIN}>
-              <PageTransition>
-                <PaymentBatchManagement />
-              </PageTransition>
-            </ProtectedRoute>
-          } />
-          <Route path="payments/reports" element={
-            <ProtectedRoute requiredRole={UserRole.ADMIN}>
-              <PageTransition>
-                <PaymentReports />
-              </PageTransition>
-            </ProtectedRoute>
-          } />
-          <Route path="farmer-payments" element={
-            <ProtectedRoute requiredRole={UserRole.ADMIN}>
-              <PageTransition>
-                <FarmerPaymentsPage />
-              </PageTransition>
-            </ProtectedRoute>
-          } />
-          <Route path="collections" element={
-            <ProtectedRoute requiredRole={UserRole.ADMIN}>
-              <PageTransition>
-                <CollectionsAnalyticsDashboard />
-              </PageTransition>
-            </ProtectedRoute>
-          } />
-          <Route path="kyc" element={
-            <ProtectedRoute requiredRole={UserRole.ADMIN}>
-              <PageTransition>
-                <KYCAdminDashboard />
-              </PageTransition>
-            </ProtectedRoute>
-          } />
-          <Route path="kyc-pending-farmers" element={
-            <ProtectedRoute requiredRole={UserRole.ADMIN}>
-              <PageTransition>
-                <KYCPendingFarmersDashboard />
-              </PageTransition>
-            </ProtectedRoute>
-          } />
-          <Route path="kyc-pending-farmer/:id" element={
-            <ProtectedRoute requiredRole={UserRole.ADMIN}>
-              <PageTransition>
-                <KYCPendingFarmerDetails />
-              </PageTransition>
-            </ProtectedRoute>
-          } />
-          <Route path="settings" element={
-            <ProtectedRoute requiredRole={UserRole.ADMIN}>
-              <PageTransition>
-                <Settings />
-              </PageTransition>
-            </ProtectedRoute>
-          } />
-          <Route path="invite" element={
-            <ProtectedRoute requiredRole={UserRole.ADMIN}>
-              <PageTransition>
-                <AdminInvite />
-              </PageTransition>
-            </ProtectedRoute>
-          } />
-          <Route path="notifications" element={
-            <ProtectedRoute requiredRole={UserRole.ADMIN}>
-              <PageTransition>
-                <AdminNotifications />
-              </PageTransition>
-            </ProtectedRoute>
-          } />
-          <Route path="analytics" element={
-            <ProtectedRoute requiredRole={UserRole.ADMIN}>
-              <PageTransition>
-                <AnalyticsDashboard />
-              </PageTransition>
-            </ProtectedRoute>
-          } />
-          <Route path="credit-management" element={
-            <ProtectedRoute requiredRole={UserRole.ADMIN}>
-              <PageTransition>
-                <CreditManagementEssentials />
-              </PageTransition>
-            </ProtectedRoute>
-          } />
-          {/* Removed credit-defaults, credit-audit, and credit-reports routes */}
-          <Route path="credit-risk-assessment" element={
-            <ProtectedRoute requiredRole={UserRole.ADMIN}>
-              <PageTransition>
-                <CreditRiskAssessment />
-              </PageTransition>
-            </ProtectedRoute>
-          } />
-          <Route path="credit-settings" element={
-            <ProtectedRoute requiredRole={UserRole.ADMIN}>
-              <PageTransition>
-                <CreditSettings />
-              </PageTransition>
-            </ProtectedRoute>
-          } />
+          {/* Removed duplicate routes that were outside AdminPortalLayout */}
           <Route path="" element={<Navigate to="dashboard" replace />} />
         </Routes>
       </Suspense>

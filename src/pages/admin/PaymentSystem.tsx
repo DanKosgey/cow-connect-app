@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { DashboardLayout } from '@/components/DashboardLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -760,315 +759,285 @@ const PaymentSystemSimple = () => {
 
   if (isLoading) {
     return (
-      <DashboardLayout>
-        <div className="flex justify-center items-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
-        </div>
-      </DashboardLayout>
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+      </div>
     );
   }
 
   if (isError) {
     return (
-      <DashboardLayout>
-        <div className="bg-red-50 border-l-4 border-red-500 p-4">
-          <div className="flex">
-            <div className="flex-shrink-0">
-              <AlertCircle className="h-5 w-5 text-red-400" />
-            </div>
-            <div className="ml-3">
-              <p className="text-sm text-red-700">
-                Error loading payment data: {error?.message || 'Unknown error'}
-              </p>
-              <button 
-                onClick={fetchAllData}
-                className="mt-2 inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
-              >
-                Retry
-              </button>
-            </div>
+      <div className="bg-red-50 border-l-4 border-red-500 p-4">
+        <div className="flex">
+          <div className="flex-shrink-0">
+            <Calendar className="h-5 w-5 text-red-400" />
+          </div>
+          <div className="ml-3">
+            <p className="text-sm text-red-700">
+              Error loading payment data: {error?.message || 'Unknown error'}
+            </p>
+            <button 
+              onClick={fetchAllData}
+              className="mt-2 inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+            >
+              Retry
+            </button>
           </div>
         </div>
-      </DashboardLayout>
+      </div>
     );
   }
 
   return (
-    <DashboardLayout>
-      <div className="p-6">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Payment Management</h1>
-          <p className="mt-2 text-gray-600">
-            Manage farmer payments, track collections, and monitor payment analytics
-          </p>
-        </div>
+    <div className="p-6">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-900">Payment Management</h1>
+        <p className="mt-2 text-gray-600">
+          Manage farmer payments, track collections, and monitor payment analytics
+        </p>
+      </div>
 
-        {/* Stats Cards - Memoized */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <StatsCard
-            title="Total Pending"
-            value={formatCurrency(analytics.total_pending)}
-            description="Pending payments"
-            icon={DollarSign}
-          />
-          <StatsCard
-            title="Total Paid"
-            value={formatCurrency(analytics.total_paid)}
-            description="Payments completed"
-            icon={CheckCircle}
-          />
-          <StatsCard
-            title="Total Farmers"
-            value={analytics.total_farmers.toString()}
-            description="Active farmers"
-            icon={Users}
-          />
-          <StatsCard
-            title="Avg Payment"
-            value={formatCurrency(analytics.avg_payment)}
-            description="Average per payment"
-            icon={TrendingUp}
-          />
-        </div>
+      {/* Stats Cards - Memoized */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <StatsCard
+          title="Total Pending"
+          value={formatCurrency(analytics.total_pending)}
+          description="Pending payments"
+          icon={DollarSign}
+        />
+        <StatsCard
+          title="Total Paid"
+          value={formatCurrency(analytics.total_paid)}
+          description="Payments completed"
+          icon={CheckCircle}
+        />
+        <StatsCard
+          title="Total Farmers"
+          value={analytics.total_farmers.toString()}
+          description="Active farmers"
+          icon={Users}
+        />
+        <StatsCard
+          title="Avg Payment"
+          value={formatCurrency(analytics.avg_payment)}
+          description="Average per payment"
+          icon={TrendingUp}
+        />
+      </div>
 
-        {/* Tab Navigation - Memoized */}
-        <div className="bg-white rounded-xl shadow-lg mb-6">
-          <div className="border-b border-gray-200">
-            <nav className="flex overflow-x-auto -mb-px">
-              {tabs.map((tab) => (
-                <TabButton
-                  key={tab.id}
-                  id={tab.id}
-                  label={tab.label}
-                  icon={tab.icon}
-                  isActive={activeTab === tab.id}
-                  onClick={handleTabChange}
-                />
-              ))}
-            </nav>
-          </div>
-        </div>
-
-        {/* Time Frame Selector */}
-        <div className="mb-6 flex flex-wrap items-center gap-2">
-          <span className="text-sm font-medium text-gray-700">Time Frame:</span>
-          {['daily', 'weekly', 'monthly', 'all'].map((frame) => (
-            <button
-              key={frame}
-              onClick={() => handleTimeFrameChange(frame)}
-              className={`px-3 py-1 text-sm rounded-full ${
-                timeFrame === frame
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              {frame.charAt(0).toUpperCase() + frame.slice(1)}
-            </button>
-          ))}
-        </div>
-
-        {/* Tab Content with Lazy Loading */}
-        <div>
-          {/* Overview Tab */}
-          {activeTab === 'overview' && (
-            <div className="space-y-6">
-              <div className="flex justify-between items-center">
-                <h2 className="text-2xl font-bold text-gray-900">Payment Overview</h2>
-                <div className="flex items-center space-x-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={toggleAutoRefresh}
-                    className={isAutoRefreshEnabled ? "bg-green-100 border-green-300 text-green-800" : ""}
-                  >
-                    {isAutoRefreshEnabled ? "Auto Refresh: ON" : "Auto Refresh: OFF"}
-                  </Button>
-                  <RefreshButton onRefresh={manualRefresh} /> {/* Use manual refresh */}
-                </div>
-              </div>
-              
-              <PaymentOverviewChart 
-                data={analytics.daily_trend.map(item => ({
-                  date: item.date,
-                  collections: item.collections,
-                  pendingAmount: item.pendingAmount,
-                  paidAmount: item.paidAmount,
-                  creditUsed: item.creditUsed
-                }))}
+      {/* Tab Navigation - Memoized */}
+      <div className="bg-white rounded-xl shadow-lg mb-6">
+        <div className="border-b border-gray-200">
+          <nav className="flex overflow-x-auto -mb-px">
+            {tabs.map((tab) => (
+              <TabButton
+                key={tab.id}
+                id={tab.id}
+                label={tab.label}
+                icon={tab.icon}
+                isActive={activeTab === tab.id}
+                onClick={handleTabChange}
               />
-              
-              <FarmerPaymentSummary 
-                farmerPaymentSummaries={farmerPaymentSummaries}
-                collections={collections}
-                viewMode={viewMode}
-                setViewMode={setViewMode}
-                approveCollectionsForPayment={approveCollectionsForPayment}
-                markAllFarmerPaymentsAsPaid={markAllFarmerPaymentsAsPaid}
-                processingPayments={processingPayments}
-                processingAllPayments={processingAllPayments}
-              />
-            </div>
-          )}
-
-          {/* Payments Tab */}
-          {activeTab === 'payments' && (
-            <div className="space-y-6">
-              <FarmerPaymentSummary 
-                farmerPaymentSummaries={farmerPaymentSummaries}
-                collections={collections}
-                viewMode={viewMode}
-                setViewMode={setViewMode}
-                approveCollectionsForPayment={approveCollectionsForPayment}
-                markAllFarmerPaymentsAsPaid={markAllFarmerPaymentsAsPaid}
-                processingPayments={processingPayments}
-                processingAllPayments={processingAllPayments}
-              />
-              
-              {/* Pagination Controls */}
-              {totalPages > 1 && (
-                <div className="flex items-center justify-between border-t border-gray-200 bg-white px-4 py-3 sm:px-6">
-                  <div className="flex flex-1 justify-between sm:hidden">
-                    <button
-                      onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
-                      disabled={currentPage === 1}
-                      className="relative inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                    >
-                      Previous
-                    </button>
-                    <button
-                      onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
-                      disabled={currentPage === totalPages}
-                      className="relative ml-3 inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                    >
-                      Next
-                    </button>
-                  </div>
-                  <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
-                    <div>
-                      <p className="text-sm text-gray-700">
-                        Showing <span className="font-medium">{(currentPage - 1) * itemsPerPage + 1}</span> to{' '}
-                        <span className="font-medium">{Math.min(currentPage * itemsPerPage, filteredCollections.length)}</span> of{' '}
-                        <span className="font-medium">{filteredCollections.length}</span> results
-                      </p>
-                    </div>
-                    <div>
-                      <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
-                        <button
-                          onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
-                          disabled={currentPage === 1}
-                          className="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
-                        >
-                          <span className="sr-only">Previous</span>
-                          <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                            <path fillRule="evenodd" d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clipRule="evenodd" />
-                          </svg>
-                        </button>
-                        
-                        {/* Page numbers */}
-                        {[...Array(Math.min(5, totalPages))].map((_, i) => {
-                          let pageNum;
-                          if (totalPages <= 5) {
-                            pageNum = i + 1;
-                          } else if (currentPage <= 3) {
-                            pageNum = i + 1;
-                          } else if (currentPage >= totalPages - 2) {
-                            pageNum = totalPages - 4 + i;
-                          } else {
-                            pageNum = currentPage - 2 + i;
-                          }
-                          
-                          return (
-                            <button
-                              key={pageNum}
-                              onClick={() => handlePageChange(pageNum)}
-                              className={`relative inline-flex items-center px-4 py-2 text-sm font-semibold ${
-                                pageNum === currentPage
-                                  ? 'z-10 bg-indigo-600 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600'
-                                  : 'text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:outline-offset-0'
-                              }`}
-                            >
-                              {pageNum}
-                            </button>
-                          );
-                        })}
-                        
-                        <button
-                          onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
-                          disabled={currentPage === totalPages}
-                          className="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
-                        >
-                          <span className="sr-only">Next</span>
-                          <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                            <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
-                          </svg>
-                        </button>
-                      </nav>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Lazy Loaded Tabs */}
-          <React.Suspense fallback={
-            <div className="flex justify-center items-center h-64">
-              <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
-            </div>
-          }>
-            {/* Pending Payments Tab */}
-            {activeTab === 'pending' && (
-              <PendingPaymentsTab
-                timeFrame={timeFrame}
-                customDateRange={customDateRange}
-                collections={paginatedCollections}
-                handleTimeFrameChange={handleTimeFrameChange}
-                resetFilters={resetFilters}
-                handleCustomDateChange={handleCustomDateChange}
-                applyCustomDateRange={applyCustomDateRange}
-                markAsPaid={markAsPaid}
-                approveCollectionsForPayment={approveCollectionsForPayment}
-              />
-            )}
-
-            {/* Paid Payments Tab */}
-            {activeTab === 'paid' && (
-              <PaidPaymentsTab
-                timeFrame={timeFrame}
-                customDateRange={customDateRange}
-                collections={paginatedCollections}
-                handleTimeFrameChange={handleTimeFrameChange}
-                resetFilters={resetFilters}
-                handleCustomDateChange={handleCustomDateChange}
-                applyCustomDateRange={applyCustomDateRange}
-              />
-            )}
-
-            {/* Analytics Tab */}
-            {activeTab === 'analytics' && (
-              <AnalyticsTab
-                activeAnalyticsTab={activeAnalyticsTab}
-                setActiveAnalyticsTab={setActiveAnalyticsTab}
-                analytics={analytics}
-                creditAnalytics={creditAnalytics}
-              />
-            )}
-
-            {/* Settings Tab */}
-            {activeTab === 'settings' && (
-              <SettingsTab
-                rateConfig={rateConfig}
-                collectorRateConfig={collectorRateConfig}
-                setRateConfig={setRateConfig}
-                setCollectorRateConfig={setCollectorRateConfig}
-                updateMilkRate={updateMilkRate}
-                updateCollectorRate={updateCollectorRate}
-              />
-            )}
-          </React.Suspense>
+            ))}
+          </nav>
         </div>
       </div>
-    </DashboardLayout>
+
+      {/* Time Frame Selector */}
+      <div className="mb-6 flex flex-wrap items-center gap-2">
+        <span className="text-sm font-medium text-gray-700">Time Frame:</span>
+        {['daily', 'weekly', 'monthly', 'all'].map((frame) => (
+          <button
+            key={frame}
+            onClick={() => handleTimeFrameChange(frame)}
+            className={`px-3 py-1 text-sm rounded-full ${
+              timeFrame === frame
+                ? 'bg-indigo-600 text-white'
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            }`}
+          >
+            {frame.charAt(0).toUpperCase() + frame.slice(1)}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab Content with Lazy Loading */}
+      <div>
+        {/* Overview Tab */}
+        {activeTab === 'overview' && (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <h2 className="text-2xl font-bold text-gray-900">Payment Overview</h2>
+              <div className="flex items-center space-x-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={toggleAutoRefresh}
+                  className={isAutoRefreshEnabled ? "bg-green-100 border-green-300 text-green-800" : ""}
+                >
+                  {isAutoRefreshEnabled ? "Auto Refresh: ON" : "Auto Refresh: OFF"}
+                </Button>
+                <RefreshButton onRefresh={manualRefresh} /> {/* Use manual refresh */}
+              </div>
+            </div>
+            
+            <PaymentOverviewChart 
+              data={analytics.daily_trend.map(item => ({
+                date: item.date,
+                collections: item.collections,
+                pendingAmount: item.pendingAmount,
+                paidAmount: item.paidAmount,
+                creditUsed: item.creditUsed
+              }))}
+            />
+            
+            <FarmerPaymentSummary 
+              farmerPaymentSummaries={farmerPaymentSummaries}
+              collections={collections}
+              viewMode={viewMode}
+              setViewMode={setViewMode}
+              approveCollectionsForPayment={approveCollectionsForPayment}
+              markAllFarmerPaymentsAsPaid={markAllFarmerPaymentsAsPaid}
+              processingPayments={processingPayments}
+              processingAllPayments={processingAllPayments}
+            />
+          </div>
+        )}
+
+        {/* Payments Tab */}
+        {activeTab === 'payments' && (
+          <div className="space-y-6">
+            <FarmerPaymentSummary 
+              farmerPaymentSummaries={farmerPaymentSummaries}
+              collections={collections}
+              viewMode={viewMode}
+              setViewMode={setViewMode}
+              approveCollectionsForPayment={approveCollectionsForPayment}
+              markAllFarmerPaymentsAsPaid={markAllFarmerPaymentsAsPaid}
+              processingPayments={processingPayments}
+              processingAllPayments={processingAllPayments}
+            />
+            
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between border-t border-gray-200 bg-white px-4 py-3 sm:px-6">
+                <div className="flex flex-1 justify-between sm:hidden">
+                  <button
+                    onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
+                    disabled={currentPage === 1}
+                    className="relative inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
+                    disabled={currentPage === totalPages}
+                    className="relative ml-3 inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    Next
+                  </button>
+                </div>
+                <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm text-gray-700">
+                      Showing <span className="font-medium">{(currentPage - 1) * itemsPerPage + 1}</span> to{' '}
+                      <span className="font-medium">{Math.min(currentPage * itemsPerPage, filteredCollections.length)}</span> of{' '}
+                      <span className="font-medium">{filteredCollections.length}</span> results
+                    </p>
+                  </div>
+                  <div>
+                    <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
+                      <button
+                        onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
+                        disabled={currentPage === 1}
+                        className="relative inline-flex items-center rounded-l-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
+                      >
+                        <span className="sr-only">Previous</span>
+                        <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                          <path fillRule="evenodd" d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                      
+                      {/* Page numbers */}
+                      {[...Array(Math.min(5, totalPages))].map((_, i) => {
+                        let pageNum;
+                        if (totalPages <= 5) {
+                          pageNum = i + 1;
+                        } else if (currentPage <= 3) {
+                          pageNum = i + 1;
+                        } else if (currentPage >= totalPages - 2) {
+                          pageNum = totalPages - 4 + i;
+                        } else {
+                          pageNum = currentPage - 2 + i;
+                        }
+                        
+                        return (
+                          <button
+                            key={pageNum}
+                            onClick={() => handlePageChange(pageNum)}
+                            className={`relative inline-flex items-center px-4 py-2 text-sm font-semibold ${
+                              pageNum === currentPage
+                                ? 'z-10 bg-indigo-600 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600'
+                                : 'text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:outline-offset-0'
+                              }`}
+                          >
+                            {pageNum}
+                          </button>
+                        );
+                      })}
+                      
+                      <button
+                        onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
+                        disabled={currentPage === totalPages}
+                        className="relative inline-flex items-center rounded-r-md px-2 py-2 text-gray-400 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50"
+                      >
+                        <span className="sr-only">Next</span>
+                        <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                          <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                    </nav>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Settings Tab */}
+        {activeTab === 'settings' && (
+          <React.Suspense fallback={<div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin text-indigo-600" /></div>}>
+            <SettingsTab 
+              onMilkRateUpdate={handleMilkRateUpdate}
+              onCollectorRateUpdate={handleCollectorRateUpdate}
+              onDeductionCreate={handleDeductionCreate}
+              onDeductionUpdate={handleDeductionUpdate}
+              onDeductionDelete={handleDeductionDelete}
+            />
+          </React.Suspense>
+        )}
+
+        {/* Analytics Tab */}
+        {activeTab === 'analytics' && (
+          <React.Suspense fallback={<div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin text-indigo-600" /></div>}>
+            <AnalyticsTab 
+              activeTab={activeAnalyticsTab}
+              onTabChange={setActiveAnalyticsTab}
+              analyticsData={{
+                daily_trend: analytics.daily_trend,
+                farmer_distribution: analytics.farmer_distribution,
+                total_pending: analytics.total_pending,
+                total_paid: analytics.total_paid,
+                total_credit_used: analytics.total_credit_used,
+                total_deductions: analytics.total_deductions,
+                total_net_payment: analytics.total_net_payment,
+                total_amount: analytics.total_amount
+              }}
+            />
+          </React.Suspense>
+        )}
+      </div>
+    </div>
   );
 };
 

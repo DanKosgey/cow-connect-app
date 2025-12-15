@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { DashboardLayout } from '@/components/DashboardLayout';
+
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { 
@@ -967,29 +967,27 @@ const AnalyticsDashboard = () => {
 
   if (isLoading) {
     return (
-      <DashboardLayout>
+      <div className="p-6">
         <AnalyticsSkeleton />
-      </DashboardLayout>
+      </div>
     );
   }
 
   if (isError) {
     return (
-      <DashboardLayout>
-        <div className="container mx-auto py-6">
-          <div className="text-center py-12">
-            <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">Error Loading Data</h2>
-            <p className="text-gray-600">Failed to load analytics data. Please try again.</p>
-            <Button 
-              onClick={() => refetch()} 
-              className="mt-4"
-            >
-              Retry
-            </Button>
-          </div>
+      <div className="container mx-auto py-6">
+        <div className="text-center py-12">
+          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Error Loading Data</h2>
+          <p className="text-gray-600">Failed to load analytics data. Please try again.</p>
+          <Button 
+            onClick={() => refetch()} 
+            className="mt-4"
+          >
+            Retry
+          </Button>
         </div>
-      </DashboardLayout>
+      </div>
     );
   }
 
@@ -1025,123 +1023,121 @@ const AnalyticsDashboard = () => {
   };
 
   return (
-    <DashboardLayout>
-      <div className="container mx-auto py-6">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Business Analytics Dashboard</h1>
-            <p className="text-gray-600 mt-2">Comprehensive business intelligence and predictive analytics</p>
-          </div>
-          <div className="mt-4 md:mt-0 flex space-x-3">
-            <div className="flex items-center space-x-2">
-              <Calendar className="h-4 w-4 text-gray-500" />
-              <select 
-                value={dateRange}
-                onChange={(e) => {
-                  setDateRange(e.target.value);
-                }}
-                className="border border-gray-300 rounded-md px-3 py-1 text-sm focus:ring-2 focus:ring-primary focus:border-primary transition-all"
-              >
-                <option value="7days">Last 7 Days</option>
-                <option value="30days">Last 30 Days</option>
-                <option value="90days">Last 90 Days</option>
-                <option value="180days">Last 180 Days</option>
-                <option value="365days">Last Year</option>
-              </select>
-            </div>
-            <RefreshButton 
-              isRefreshing={isLoading} 
-              onRefresh={() => refetch()} 
-              className="bg-white border-gray-300 hover:bg-gray-50 rounded-md shadow-sm"
-            />
-            <Button variant="outline" className="flex items-center gap-2 hover:bg-primary hover:text-primary-foreground transition-colors" onClick={exportSimpleReport}>
-              <Download className="h-4 w-4" />
-              Export Report
-            </Button>
-          </div>
+    <div className="container mx-auto py-6">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-8">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Business Analytics Dashboard</h1>
+          <p className="text-gray-600 mt-2">Comprehensive business intelligence and predictive analytics</p>
         </div>
-
-        {/* Tab Navigation */}
-        <div className="mb-8">
-          <div className="border-b border-gray-200">
-            <nav className="-mb-px flex space-x-8">
-              <button
-                onClick={() => {
-                  setActiveTab('overview');
-                }}
-                className={`py-4 px-1 border-b-2 font-medium text-sm transition-all duration-300 ${
-                  activeTab === 'overview'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                <BarChart3 className="h-4 w-4 inline mr-2" />
-                Overview
-              </button>
-              <button
-                onClick={() => {
-                  setActiveTab('payments');
-                }}
-                className={`py-4 px-1 border-b-2 font-medium text-sm transition-all duration-300 ${
-                  activeTab === 'payments'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                <CreditCard className="h-4 w-4 inline mr-2" />
-                Payments
-              </button>
-              <button
-                onClick={() => {
-                  setActiveTab('financial');
-                }}
-                className={`py-4 px-1 border-b-2 font-medium text-sm transition-all duration-300 ${
-                  activeTab === 'financial'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                <DollarSign className="h-4 w-4 inline mr-2" />
-                Financial
-              </button>
-              <button
-                onClick={() => {
-                  setActiveTab('operational');
-                }}
-                className={`py-4 px-1 border-b-2 font-medium text-sm transition-all duration-300 ${
-                  activeTab === 'operational'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                <Activity className="h-4 w-4 inline mr-2" />
-                Operational
-              </button>
-            </nav>
+        <div className="mt-4 md:mt-0 flex space-x-3">
+          <div className="flex items-center space-x-2">
+            <Calendar className="h-4 w-4 text-gray-500" />
+            <select 
+              value={dateRange}
+              onChange={(e) => {
+                setDateRange(e.target.value);
+              }}
+              className="border border-gray-300 rounded-md px-3 py-1 text-sm focus:ring-2 focus:ring-primary focus:border-primary transition-all"
+            >
+              <option value="7days">Last 7 Days</option>
+              <option value="30days">Last 30 Days</option>
+              <option value="90days">Last 90 Days</option>
+              <option value="180days">Last 180 Days</option>
+              <option value="365days">Last Year</option>
+            </select>
           </div>
+          <RefreshButton 
+            isRefreshing={isLoading} 
+            onRefresh={() => refetch()} 
+            className="bg-white border-gray-300 hover:bg-gray-50 rounded-md shadow-sm"
+          />
+          <Button variant="outline" className="flex items-center gap-2 hover:bg-primary hover:text-primary-foreground transition-colors" onClick={exportSimpleReport}>
+            <Download className="h-4 w-4" />
+            Export Report
+          </Button>
         </div>
+      </div>
 
-        {/* Tab Content */}
-        <div className="mb-8 animate-fade-in">
-          {renderActiveTab()}
+      {/* Tab Navigation */}
+      <div className="mb-8">
+        <div className="border-b border-gray-200">
+          <nav className="-mb-px flex space-x-8">
+            <button
+              onClick={() => {
+                setActiveTab('overview');
+              }}
+              className={`py-4 px-1 border-b-2 font-medium text-sm transition-all duration-300 ${
+                activeTab === 'overview'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <BarChart3 className="h-4 w-4 inline mr-2" />
+              Overview
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab('payments');
+              }}
+              className={`py-4 px-1 border-b-2 font-medium text-sm transition-all duration-300 ${
+                activeTab === 'payments'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <CreditCard className="h-4 w-4 inline mr-2" />
+              Payments
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab('financial');
+              }}
+              className={`py-4 px-1 border-b-2 font-medium text-sm transition-all duration-300 ${
+                activeTab === 'financial'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <DollarSign className="h-4 w-4 inline mr-2" />
+              Financial
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab('operational');
+              }}
+              className={`py-4 px-1 border-b-2 font-medium text-sm transition-all duration-300 ${
+                activeTab === 'operational'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <Activity className="h-4 w-4 inline mr-2" />
+              Operational
+            </button>
+          </nav>
         </div>
+      </div>
 
-        {/* Business Intelligence Metrics */}
-        <div className="mb-8">
-          <BusinessIntelligenceMetrics timeRange={dateRange === '7days' ? 'week' : 
+      {/* Tab Content */}
+      <div className="mb-8 animate-fade-in">
+        {renderActiveTab()}
+      </div>
+
+      {/* Business Intelligence Metrics */}
+      <div className="mb-8">
+        <BusinessIntelligenceMetrics timeRange={dateRange === '7days' ? 'week' : 
                          dateRange === '30days' ? 'month' : 
                          dateRange === '90days' ? 'quarter' : 
                          dateRange === '180days' ? 'halfYear' : 
                          dateRange === '365days' ? 'year' : 'month'} />
-        </div>
-
-        {/* Detailed Business Insights */}
-        {/* Removed as per user request */}
-
-        {/* Report Generator */}
-        {/* Removed as per user request */}
       </div>
-    </DashboardLayout>
+
+      {/* Detailed Business Insights */}
+      {/* Removed as per user request */}
+
+      {/* Report Generator */}
+      {/* Removed as per user request */}
+    </div>
   );
 };
 
