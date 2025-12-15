@@ -63,6 +63,59 @@ class CollectorEarningsService {
   }
 
   /**
+   * Debug function to check milk approvals for a collector
+   * This is for troubleshooting purposes only
+   */
+  async debugMilkApprovalsForCollector(collectorId: string): Promise<void> {
+    try {
+      logger.info(`=== DEBUG: Checking milk approvals for collector ${collectorId} ===`);
+      
+      // First, get all milk approvals for this collector regardless of status
+      const { data: allApprovals, error: allError } = await supabase
+        .from('milk_approvals')
+        .select('*')
+        .eq('staff_id', collectorId);
+      
+      logger.info(`All milk approvals for collector ${collectorId}:`, { 
+        data: allApprovals, 
+        error: allError,
+        count: allApprovals?.length || 0
+      });
+      
+      // Then get only pending ones
+      const { data: pendingApprovals, error: pendingError } = await supabase
+        .from('milk_approvals')
+        .select('*')
+        .eq('staff_id', collectorId)
+        .eq('penalty_status', 'pending');
+        
+      logger.info(`Pending milk approvals for collector ${collectorId}:`, { 
+        data: pendingApprovals, 
+        error: pendingError,
+        count: pendingApprovals?.length || 0
+      });
+      
+      // Get pending with non-zero amounts
+      const { data: pendingNonZeroApprovals, error: pendingNonZeroError } = await supabase
+        .from('milk_approvals')
+        .select('*')
+        .eq('staff_id', collectorId)
+        .eq('penalty_status', 'pending')
+        .or('penalty_amount.neq.0,penalty_amount.neq."0"');
+        
+      logger.info(`Pending non-zero milk approvals for collector ${collectorId}:`, { 
+        data: pendingNonZeroApprovals, 
+        error: pendingNonZeroError,
+        count: pendingNonZeroApprovals?.length || 0
+      });
+      
+      logger.info(`=== END DEBUG: Milk approvals for collector ${collectorId} ===`);
+    } catch (error) {
+      logger.error(`Debug error for collector ${collectorId}:`, error);
+    }
+  }
+
+  /**
    * Calculate earnings for a collector within a specific period
    */
   async calculateEarnings(
@@ -188,6 +241,7 @@ class CollectorEarningsService {
   /**
    * Get all-time earnings for a collector
    * Includes all collections (both pending and paid) that are approved for payment
+   * Gross earnings = Sum of all collection fee amounts regardless of payment status
    */
   async getAllTimeEarnings(collectorId: string): Promise<CollectorEarnings> {
     try {
@@ -197,13 +251,14 @@ class CollectorEarningsService {
       }
       
       // Get all collections for this collector that are approved for payment
+      // This represents the GROSS earnings (all collections regardless of payment status)
       const { data, error } = await supabase
         .from('collections')
         .select('id, liters, collection_date')
         .eq('staff_id', collectorId)
         .eq('status', 'Collected')
         .eq('approved_for_payment', true)
-        // Include both pending and paid collections for total earnings calculation
+        // Include ALL collections (both pending and paid) for gross earnings calculation
         .order('collection_date', { ascending: true });
 
       if (error) {
@@ -246,9 +301,11 @@ class CollectorEarningsService {
         throw new CalculationError('Invalid total liters');
       }
       
+      // Calculate gross earnings as total liters * rate per liter
+      // This represents ALL collection fees regardless of payment status
       const totalEarnings = totalLiters * ratePerLiter;
       
-      logger.withContext('CollectorEarningsService - getAllTimeEarnings').info(`Total collections: ${totalCollections}, Total liters: ${totalLiters}, Total earnings: ${totalEarnings}`);
+      logger.withContext('CollectorEarningsService - getAllTimeEarnings').info(`Total collections: ${totalCollections}, Total liters: ${totalLiters}, Gross earnings: ${totalEarnings}`);
 
       // Get date range
       const firstCollectionDate = data[0].collection_date;
@@ -284,12 +341,46 @@ class CollectorEarningsService {
   /**
    * Mark collections as paid for a collector
    * Updates collection_fee_status from 'pending' to 'paid' directly in collections table
+   * Also updates penalty_status for related milk_approvals and collector_daily_summaries records
    */
   async markCollectionsAsPaid(collectorId: string, periodStart?: string, periodEnd?: string): Promise<boolean> {
     try {
       // Validate input
       if (!collectorId) {
         throw new ValidationError('Collector ID is required');
+      }
+
+      // First, get the collections that will be marked as paid
+      let collectionsQuery = supabase
+        .from('collections')
+        .select('id')
+        .eq('staff_id', collectorId)
+        .eq('approved_for_payment', true)
+        .eq('collection_fee_status', 'pending'); // Only get collections with pending fees
+
+      // Apply date filters if provided
+      if (periodStart) {
+        collectionsQuery = collectionsQuery.gte('collection_date', periodStart);
+      }
+      
+      if (periodEnd) {
+        collectionsQuery = collectionsQuery.lte('collection_date', periodEnd);
+      }
+
+      const { data: collectionsToBeUpdated, error: fetchError } = await collectionsQuery;
+
+      if (fetchError) {
+        logger.errorWithContext('CollectorEarningsService - markCollectionsAsPaid fetch collections', fetchError);
+        throw new DatabaseError('Failed to fetch collections to be updated', 'FETCH_COLLECTIONS_FOR_UPDATE', fetchError);
+      }
+
+      // Extract collection IDs
+      const collectionIds = collectionsToBeUpdated?.map(c => c.id) || [];
+
+      // If no collections to update, return early
+      if (collectionIds.length === 0) {
+        logger.withContext('CollectorEarningsService - markCollectionsAsPaid').info('No collections to update for collector', { collectorId });
+        return true;
       }
 
       // Build the query to update collections
@@ -309,11 +400,55 @@ class CollectorEarningsService {
         query = query.lte('collection_date', periodEnd);
       }
 
-      const { error } = await query;
+      const { error: updateCollectionsError } = await query;
 
-      if (error) {
-        logger.errorWithContext('CollectorEarningsService - markCollectionsAsPaid update collections', error);
-        throw new DatabaseError('Failed to mark collections as paid', 'UPDATE_COLLECTIONS_STATUS', error);
+      if (updateCollectionsError) {
+        logger.errorWithContext('CollectorEarningsService - markCollectionsAsPaid update collections', updateCollectionsError);
+        throw new DatabaseError('Failed to mark collections as paid', 'UPDATE_COLLECTIONS_STATUS', updateCollectionsError);
+      }
+
+      // Update penalty_status for related milk_approvals records
+      // Only update penalties for the collections we just marked as paid
+      if (collectionIds.length > 0) {
+        const { error: updateMilkApprovalsError } = await supabase
+          .from('milk_approvals')
+          .update({ penalty_status: 'paid' })
+          .in('collection_id', collectionIds)
+          .eq('penalty_status', 'pending'); // Only update penalties that are currently pending
+
+        if (updateMilkApprovalsError) {
+          logger.warn('Failed to update milk approvals penalty status:', updateMilkApprovalsError);
+          // Don't throw here as this is secondary to the main operation
+        } else {
+          logger.withContext('CollectorEarningsService - markCollectionsAsPaid').info(`Updated ${collectionIds.length} milk approvals penalty status to paid`);
+        }
+      }
+
+      // Update penalty_status for related collector_daily_summaries records
+      // For daily summaries, we need to update based on collector_id and date range
+      if (periodStart || periodEnd) {
+        let dailySummariesQuery = supabase
+          .from('collector_daily_summaries')
+          .update({ penalty_status: 'paid' })
+          .eq('collector_id', collectorId)
+          .eq('penalty_status', 'pending'); // Only update penalties that are currently pending
+
+        if (periodStart) {
+          dailySummariesQuery = dailySummariesQuery.gte('collection_date', periodStart);
+        }
+        
+        if (periodEnd) {
+          dailySummariesQuery = dailySummariesQuery.lte('collection_date', periodEnd);
+        }
+
+        const { error: updateDailySummariesError } = await dailySummariesQuery;
+
+        if (updateDailySummariesError) {
+          logger.warn('Failed to update collector daily summaries penalty status:', updateDailySummariesError);
+          // Don't throw here as this is secondary to the main operation
+        } else {
+          logger.withContext('CollectorEarningsService - markCollectionsAsPaid').info(`Updated collector daily summaries penalty status to paid for collector ${collectorId}`);
+        }
       }
 
       return true;
@@ -352,7 +487,7 @@ class CollectorEarningsService {
       }
 
       const collectorUserIds = userRolesData?.map(role => role.user_id) || [];
-      logger.withContext('CollectorEarningsService - getCollectorsWithEarnings').info(`Found ${collectorUserIds.length} collector user IDs`);
+      logger.withContext('CollectorEarningsService - getCollectorsWithEarnings').info(`Found ${collectorUserIds.length} collector user IDs`, { collectorUserIds });
       
       if (collectorUserIds.length === 0) {
         logger.withContext('CollectorEarningsService - getCollectorsWithEarnings').info('No collector user IDs found');
@@ -376,7 +511,7 @@ class CollectorEarningsService {
         throw new DatabaseError('Failed to fetch collectors', 'FETCH_COLLECTORS', collectorsError);
       }
       
-      logger.withContext('CollectorEarningsService - getCollectorsWithEarnings').info(`Found ${collectors?.length || 0} collector staff records`);
+      logger.withContext('CollectorEarningsService - getCollectorsWithEarnings').info(`Found ${collectors?.length || 0} collector staff records`, { collectors });
 
       // Get earnings data for each collector using the same approach as variance reporting
       // Use a date range that covers all collections (last 10 years to future)
@@ -402,6 +537,7 @@ class CollectorEarningsService {
       const collectorsWithEarnings = await Promise.all(
         collectors.map(async (collector: any) => {
           logger.withContext('CollectorEarningsService - getCollectorsWithEarnings').info(`Processing earnings for collector ${collector.id}`);
+          
           const earnings = await this.getAllTimeEarnings(collector.id);
           
           // Find performance data for this collector or calculate manually
@@ -527,6 +663,16 @@ class CollectorEarningsService {
           // Note: earnings.totalEarnings now includes ALL collections (pending + paid)
           // pendingAmount and paidAmount represent the monetary value of pending and paid collections respectively
 
+          // Determine overall penalty status based on whether there are pending penalties
+          // If all penalties have been paid, set penaltyStatus to 'paid', otherwise 'pending'
+          const totalPendingPenalties = await this.calculatePendingPenaltiesForCollector(collector.id);
+          const penaltyStatus = totalPendingPenalties > 0 ? 'pending' : 'paid';
+          
+          logger.withContext('CollectorEarningsService - getCollectorsWithEarnings').info(`Penalty status calculation for collector ${collector.id}:`, {
+            totalPendingPenalties,
+            penaltyStatus
+          });
+
           logger.withContext('CollectorEarningsService - getCollectorsWithEarnings').info(`Completed processing for collector ${collector.id}: Total liters: ${earnings.totalLiters}, Total earnings: ${earnings.totalEarnings}`);
           
           return {
@@ -544,6 +690,8 @@ class CollectorEarningsService {
             paidPayments: paidAmount,
             performanceScore: collectorPerformance.performance_score || 0,
             lastCollectionDate: collectorPerformance.last_collection_date || null,
+            penaltyStatus,
+            pendingPenalties: totalPendingPenalties,
             penaltyDetails: {
               positiveVariancePenalties: positiveVariancePenaltiesAmt,
               negativeVariancePenalties: negativeVariancePenaltiesAmt,
@@ -762,6 +910,11 @@ class CollectorEarningsService {
           // Note: earnings.totalEarnings now includes ALL collections (pending + paid)
           // pendingAmount and paidAmount represent the monetary value of pending and paid collections respectively
 
+          // Determine overall penalty status based on whether there are pending penalties
+          // If all penalties have been paid, set penaltyStatus to 'paid', otherwise 'pending'
+          const totalPendingPenalties = await this.calculatePendingPenaltiesForCollector(collector.id);
+          const penaltyStatus = totalPendingPenalties > 0 ? 'pending' : 'paid';
+
           return {
             id: collector.id,
             name: collector.profiles?.full_name || 'Unknown Collector',
@@ -777,6 +930,8 @@ class CollectorEarningsService {
             paidPayments: paidAmount,
             performanceScore: collectorPerformance.performance_score || 0,
             lastCollectionDate: collectorPerformance.last_collection_date || null,
+            penaltyStatus,
+            pendingPenalties: totalPendingPenalties,
             penaltyDetails: {
               positiveVariancePenalties: positiveVariancePenaltiesAmt,
               negativeVariancePenalties: negativeVariancePenaltiesAmt,
@@ -825,6 +980,135 @@ class CollectorEarningsService {
     } catch (error) {
       logger.errorWithContext('CollectorEarningsService - autoUpdateCollectionFeeStatuses exception', error);
       return false;
+    }
+  }
+
+  /**
+   * Calculate pending penalties for a collector
+   * This function looks at all penalties for this collector that have not been paid
+   */
+  async calculatePendingPenaltiesForCollector(collectorId: string): Promise<number> {
+    try {
+      logger.info(`Calculating pending penalties for collector: ${collectorId}`);
+      
+      let pendingPenalties = 0;
+      
+      // Approach 1: Try the standard query first
+      try {
+        const { data: milkApprovals, error: approvalsError } = await supabase
+          .from('milk_approvals')
+          .select('penalty_amount')
+          .eq('staff_id', collectorId)
+          .eq('penalty_status', 'pending')
+          .or('penalty_amount.gt.0,penalty_amount.gt."0"');
+        
+        if (approvalsError) {
+          logger.warn(`Standard milk approvals query failed for collector ${collectorId}:`, approvalsError);
+        } else if (milkApprovals && milkApprovals.length > 0) {
+          pendingPenalties += milkApprovals.reduce((sum, approval) => {
+            const amount = typeof approval.penalty_amount === 'string' 
+              ? parseFloat(approval.penalty_amount) 
+              : approval.penalty_amount;
+            return sum + (amount || 0);
+          }, 0);
+          logger.info(`Found ${milkApprovals.length} pending milk approvals for collector ${collectorId}: ${pendingPenalties}`);
+        } else {
+          logger.info(`No pending milk approvals found with standard query for collector ${collectorId}`);
+        }
+      } catch (queryError) {
+        logger.warn(`Exception in standard milk approvals query for collector ${collectorId}:`, queryError);
+      }
+      
+      // Approach 2: Try with collector_id instead of staff_id (in case of naming difference)
+      try {
+        const { data: milkApprovalsAlt, error: altError } = await supabase
+          .from('milk_approvals')
+          .select('penalty_amount')
+          .eq('collector_id', collectorId) // Try collector_id instead
+          .eq('penalty_status', 'pending')
+          .or('penalty_amount.gt.0,penalty_amount.gt."0"');
+        
+        if (!altError && milkApprovalsAlt && milkApprovalsAlt.length > 0) {
+          const altPenalties = milkApprovalsAlt.reduce((sum, approval) => {
+            const amount = typeof approval.penalty_amount === 'string' 
+              ? parseFloat(approval.penalty_amount) 
+              : approval.penalty_amount;
+            return sum + (amount || 0);
+          }, 0);
+          pendingPenalties += altPenalties;
+          logger.info(`Found ${milkApprovalsAlt.length} pending milk approvals with alternative query for collector ${collectorId}: ${altPenalties}`);
+        }
+      } catch (altQueryError) {
+        logger.warn(`Exception in alternative milk approvals query for collector ${collectorId}:`, altQueryError);
+      }
+      
+      // Approach 3: Try collector_daily_summaries with standard query
+      try {
+        const { data: dailySummaries, error: summariesError } = await supabase
+          .from('collector_daily_summaries')
+          .select('total_penalty_amount')
+          .eq('collector_id', collectorId)
+          .eq('penalty_status', 'pending')
+          .or('total_penalty_amount.gt.0,total_penalty_amount.gt."0"');
+          
+        if (summariesError) {
+          logger.warn(`Standard daily summaries query failed for collector ${collectorId}:`, summariesError);
+        } else if (dailySummaries && dailySummaries.length > 0) {
+          const dailyPenalties = dailySummaries.reduce((sum, summary) => {
+            const amount = typeof summary.total_penalty_amount === 'string' 
+              ? parseFloat(summary.total_penalty_amount) 
+              : summary.total_penalty_amount;
+            return sum + (amount || 0);
+          }, 0);
+          pendingPenalties += dailyPenalties;
+          logger.info(`Found ${dailySummaries.length} pending daily summaries for collector ${collectorId}: ${dailyPenalties}`);
+        } else {
+          logger.info(`No pending daily summaries found with standard query for collector ${collectorId}`);
+        }
+      } catch (summariesQueryError) {
+        logger.warn(`Exception in standard daily summaries query for collector ${collectorId}:`, summariesQueryError);
+      }
+      
+      // If we still have 0 penalties, do a broad search to debug
+      if (pendingPenalties === 0) {
+        logger.info(`No pending penalties found yet for collector ${collectorId}, doing broad search for debugging`);
+        
+        try {
+          // Get all milk approvals for this collector to see what we have
+          const { data: allMilkApprovals, error: allError } = await supabase
+            .from('milk_approvals')
+            .select('penalty_amount, penalty_status, staff_id, collector_id')
+            .or(`staff_id.eq.${collectorId},collector_id.eq.${collectorId}`);
+            
+          if (!allError && allMilkApprovals && allMilkApprovals.length > 0) {
+            logger.info(`Found ${allMilkApprovals.length} total milk approvals for collector ${collectorId}:`, allMilkApprovals);
+            
+            // Count how many are pending
+            const pendingCount = allMilkApprovals.filter(a => a.penalty_status === 'pending').length;
+            const paidCount = allMilkApprovals.filter(a => a.penalty_status === 'paid').length;
+            logger.info(`Of ${allMilkApprovals.length} approvals, ${pendingCount} are pending, ${paidCount} are paid`);
+            
+            // Count how many have non-zero penalties
+            const nonZeroCount = allMilkApprovals.filter(a => {
+              const amount = typeof a.penalty_amount === 'string' 
+                ? parseFloat(a.penalty_amount) 
+                : a.penalty_amount;
+              return amount && amount > 0;
+            }).length;
+            logger.info(`Of ${allMilkApprovals.length} approvals, ${nonZeroCount} have non-zero penalties`);
+          } else {
+            logger.info(`No milk approvals found at all for collector ${collectorId}`);
+          }
+        } catch (debugError) {
+          logger.warn(`Exception in debug query for collector ${collectorId}:`, debugError);
+        }
+      }
+      
+      logger.info(`Final total pending penalties for collector ${collectorId}: ${pendingPenalties}`);
+      return parseFloat(pendingPenalties.toFixed(2));
+    } catch (error) {
+      logger.errorWithContext('CollectorEarningsService - calculatePendingPenaltiesForCollector exception', error);
+      return 0;
     }
   }
 

@@ -206,11 +206,13 @@ class CollectorPenaltyService {
       let totalPenalties = 0;
       
       // Get all milk approvals and collections for this calculation
+      // Only include penalties with penalty_status != 'paid'
       console.log('Fetching all penalty data for collector...');
       const milkApprovalsResponse = await supabase
         .from('milk_approvals')
-        .select('id, collection_id, penalty_amount, approved_at')
-        .neq('penalty_amount', 0);
+        .select('id, collection_id, penalty_amount, approved_at, penalty_status')
+        .neq('penalty_amount', 0)
+        .neq('penalty_status', 'paid'); // Exclude paid penalties
       
       const collectionsResponse = await supabase
         .from('collections')
@@ -302,11 +304,13 @@ class CollectorPenaltyService {
       }
 
       // Get all milk approvals and collections for better performance
+      // Only include penalties with penalty_status != 'paid'
       console.log('Fetching all penalty data...');
       const allMilkApprovalsResponse = await supabase
         .from('milk_approvals')
-        .select('id, collection_id, staff_id, penalty_amount, approved_at')
+        .select('id, collection_id, staff_id, penalty_amount, approved_at, penalty_status')
         .neq('penalty_amount', 0)
+        .neq('penalty_status', 'paid') // Exclude paid penalties
         .order('approved_at', { ascending: false });
       
       const allCollectionsResponse = await supabase
@@ -528,10 +532,12 @@ class CollectorPenaltyService {
 
       // Get all penalty data upfront for better performance
       console.log('Fetching all penalty data...');
+      // Only include penalties with penalty_status != 'paid'
       const allMilkApprovalsResponse = await supabase
         .from('milk_approvals')
         .select('*')
         .neq('penalty_amount', 0)
+        .neq('penalty_status', 'paid') // Exclude paid penalties
         .order('approved_at', { ascending: false });
       
       const allCollectionsResponse = await supabase
@@ -539,10 +545,12 @@ class CollectorPenaltyService {
         .select('id, staff_id')
         .eq('approved_for_payment', true);
       
+      // Only include daily summaries with penalty_status != 'paid'
       const allDailySummariesResponse = await supabase
         .from('collector_daily_summaries')
         .select('*')
         .neq('total_penalty_amount', 0)
+        .neq('penalty_status', 'paid') // Exclude paid penalties
         .order('collection_date', { ascending: false });
       
       const allMilkApprovals = !allMilkApprovalsResponse.error ? allMilkApprovalsResponse.data : [];
@@ -743,21 +751,25 @@ class CollectorPenaltyService {
       let collectionToCollectorMap = new Map<string, string>();
       
       if (milkApprovals.length === 0 || dailySummaries.length === 0) {
+        // Only include penalties with penalty_status != 'paid'
         const milkApprovalsResponse = await supabase
           .from('milk_approvals')
-          .select('id, collection_id, penalty_amount, approved_at')
-          .neq('penalty_amount', 0);
+          .select('id, collection_id, penalty_amount, approved_at, penalty_status')
+          .neq('penalty_amount', 0)
+          .neq('penalty_status', 'paid'); // Exclude paid penalties
         
         const collectionsResponse = await supabase
           .from('collections')
           .select('id, staff_id')
           .eq('approved_for_payment', true);
         
+        // Only include daily summaries with penalty_status != 'paid'
         const dailySummariesResponse = await supabase
           .from('collector_daily_summaries')
-          .select('total_penalty_amount, collection_date')
+          .select('total_penalty_amount, collection_date, penalty_status')
           .eq('collector_id', collectorId)
-          .neq('total_penalty_amount', 0);
+          .neq('total_penalty_amount', 0)
+          .neq('penalty_status', 'paid'); // Exclude paid penalties
         
         milkApprovals = !milkApprovalsResponse.error ? milkApprovalsResponse.data : [];
         const collections = !collectionsResponse.error ? collectionsResponse.data : [];
