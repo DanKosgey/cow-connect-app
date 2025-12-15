@@ -95,13 +95,13 @@ class CollectorEarningsService {
         count: pendingApprovals?.length || 0
       });
       
-      // Get pending with non-zero amounts
+      // DEBUG: Check for pending non-zero milk approvals
       const { data: pendingNonZeroApprovals, error: pendingNonZeroError } = await supabase
         .from('milk_approvals')
         .select('*')
         .eq('staff_id', collectorId)
         .eq('penalty_status', 'pending')
-        .or('penalty_amount.neq.0,penalty_amount.neq."0"');
+        .neq('penalty_amount', 0);
         
       logger.info(`Pending non-zero milk approvals for collector ${collectorId}:`, { 
         data: pendingNonZeroApprovals, 
@@ -1000,7 +1000,7 @@ class CollectorEarningsService {
           .select('penalty_amount')
           .eq('staff_id', collectorId)
           .eq('penalty_status', 'pending')
-          .or('penalty_amount.gt.0,penalty_amount.gt."0"');
+          .gt('penalty_amount', 0);
         
         if (approvalsError) {
           logger.warn(`Standard milk approvals query failed for collector ${collectorId}:`, approvalsError);
@@ -1026,7 +1026,7 @@ class CollectorEarningsService {
           .select('penalty_amount')
           .eq('collector_id', collectorId) // Try collector_id instead
           .eq('penalty_status', 'pending')
-          .or('penalty_amount.gt.0,penalty_amount.gt."0"');
+          .gt('penalty_amount', 0);
         
         if (!altError && milkApprovalsAlt && milkApprovalsAlt.length > 0) {
           const altPenalties = milkApprovalsAlt.reduce((sum, approval) => {
@@ -1049,7 +1049,7 @@ class CollectorEarningsService {
           .select('total_penalty_amount')
           .eq('collector_id', collectorId)
           .eq('penalty_status', 'pending')
-          .or('total_penalty_amount.gt.0,total_penalty_amount.gt."0"');
+          .gt('total_penalty_amount', 0);
           
         if (summariesError) {
           logger.warn(`Standard daily summaries query failed for collector ${collectorId}:`, summariesError);
