@@ -53,8 +53,8 @@ export default function EnhancedErrorHandler() {
     loadErrorLogs();
     checkSystemStatus();
     
-    // Check system status every 5 minutes
-    const interval = setInterval(checkSystemStatus, 5 * 60 * 1000);
+    // Check system status every 10 minutes for better performance
+    const interval = setInterval(checkSystemStatus, 10 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
 

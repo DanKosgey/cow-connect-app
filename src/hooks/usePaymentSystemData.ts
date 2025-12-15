@@ -501,10 +501,10 @@ export const usePaymentSystemData = (timeFrame: string = 'week', customDateRange
           }
         }
 
-        // Order and limit for performance
+        // Order and increase limit for better performance with pagination
         const { data: collectionsData, error: collectionsError } = await query
           .order('collection_date', { ascending: false })
-          .limit(500); // Reduced limit for better performance
+          .limit(1000); // Increased limit to reduce frequent refetching
 
         if (collectionsError) {
           console.error('Error fetching collections data:', collectionsError);
@@ -554,11 +554,11 @@ export const usePaymentSystemData = (timeFrame: string = 'week', customDateRange
         throw error;
       }
     },
-    staleTime: 1000 * 60 * 3, // Reduced to 3 minutes for more frequent updates
-    gcTime: 1000 * 60 * 10, // Reduced to 10 minutes
-    retry: 1, // Reduce retries to prevent hanging
+    staleTime: 1000 * 60 * 5, // Increased to 5 minutes to reduce frequent updates
+    gcTime: 1000 * 60 * 15, // Increased to 15 minutes
+    retry: 2, // Allow 2 retries for better reliability
     retryDelay: (attemptIndex) => {
-      return Math.min(1000 * 2 ** attemptIndex, 10000); // Exponential backoff up to 10 seconds
+      return Math.min(1000 * 2 ** attemptIndex, 5000); // Exponential backoff up to 5 seconds
     },
     refetchOnWindowFocus: false, // Disable automatic refetch on window focus to reduce load
     refetchOnReconnect: false, // Disable automatic refetch on reconnect

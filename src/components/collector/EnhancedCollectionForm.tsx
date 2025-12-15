@@ -107,7 +107,7 @@ const EnhancedCollectionForm = () => {
       if (!staffInfo && user?.id) {
         fetchData();
       }
-    }, 5000); // Retry every 5 seconds
+    }, 15000); // Retry every 15 seconds for better performance
     
     // Clean up interval and subscription on component unmount
     return () => {

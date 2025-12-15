@@ -38,7 +38,7 @@ const FarmerPaymentSummary: React.FC<FarmerPaymentSummaryProps> = ({
   
   // Pagination state for farmer list
   const [currentPage, setCurrentPage] = useState(1);
-  const farmersPerPage = 20; // Show 20 farmers per page
+  const farmersPerPage = 50; // Show 50 farmers per page for better performance
   
   // Sort and paginate farmers
   const sortedAndPaginatedFarmers = useMemo(() => {
@@ -282,14 +282,14 @@ const FarmerPaymentSummary: React.FC<FarmerPaymentSummaryProps> = ({
                             <div className="mt-2">
                               <h4 className="font-medium mb-2">Recent Collections:</h4>
                               <ul className="list-disc pl-5 space-y-1">
-                                {farmerCollections.slice(0, 3).map(collection => (
+                                {farmerCollections.slice(0, 5).map(collection => (
                                   <li key={collection.id}>
                                     {collection.collection_date}: {collection.liters.toFixed(2)}L @ {formatCurrency(collection.rate_per_liter)}/L = {formatCurrency(collection.total_amount)}
                                     {collection.status === 'Paid' ? ' (Paid)' : collection.approved_for_payment ? ' (Approved)' : ' (Pending)'}
                                   </li>
                                 ))}
-                                {farmerCollections.length > 3 && (
-                                  <li>+ {farmerCollections.length - 3} more collections</li>
+                                {farmerCollections.length > 5 && (
+                                  <li>+ {farmerCollections.length - 5} more collections</li>
                                 )}
                               </ul>
                             </div>

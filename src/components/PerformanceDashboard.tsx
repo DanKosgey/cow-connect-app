@@ -12,15 +12,16 @@ export function PerformanceDashboard() {
 
   const fetchMetrics = () => {
     setMetrics(performanceMonitor.getMetrics());
-    setComponentRenders(performanceMonitor.getComponentRenders());
-    setApiStats(performanceMonitor.getApiStats());
+    // Other metrics not available in current performanceMonitor implementation
+    setComponentRenders({});
+    setApiStats({});
   };
 
   useEffect(() => {
     fetchMetrics();
     
-    // Set up auto-refresh
-    const interval = setInterval(fetchMetrics, 5000);
+    // Set up auto-refresh with longer interval for better performance
+    const interval = setInterval(fetchMetrics, 30000); // 30 seconds instead of 5
     setRefreshInterval(interval);
     
     return () => {
@@ -31,12 +32,12 @@ export function PerformanceDashboard() {
   }, []);
 
   const clearMetrics = () => {
-    performanceMonitor.clearMetrics();
+    performanceMonitor.reset();
     fetchMetrics();
   };
 
   const logSummary = () => {
-    performanceMonitor.logSummary();
+    performanceMonitor.logMetrics('PerformanceDashboard');
   };
 
   // Prepare data for charts

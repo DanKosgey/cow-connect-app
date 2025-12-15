@@ -175,7 +175,7 @@ const PaymentSystemSimple = () => {
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 50; // Reduced items per page for better performance
+  const itemsPerPage = 100; // Increased items per page for better performance
 
   // Farmer deductions state
   const [farmerDeductions, setFarmerDeductions] = useState<Record<string, number>>({});
@@ -192,7 +192,7 @@ const PaymentSystemSimple = () => {
     if (isAutoRefreshEnabled) {
       autoRefreshIntervalRef.current = setInterval(() => {
         refetch();
-      }, 30000); // 30 seconds instead of 10 for less frequent refreshes
+      }, 60000); // 60 seconds for less frequent refreshes
     }
 
     // Clean up interval on unmount or when auto-refresh is disabled
@@ -1008,11 +1008,12 @@ const PaymentSystemSimple = () => {
         {activeTab === 'settings' && (
           <React.Suspense fallback={<div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin text-indigo-600" /></div>}>
             <SettingsTab 
-              onMilkRateUpdate={handleMilkRateUpdate}
-              onCollectorRateUpdate={handleCollectorRateUpdate}
-              onDeductionCreate={handleDeductionCreate}
-              onDeductionUpdate={handleDeductionUpdate}
-              onDeductionDelete={handleDeductionDelete}
+              rateConfig={rateConfig}
+              collectorRateConfig={collectorRateConfig}
+              setRateConfig={setRateConfig}
+              setCollectorRateConfig={setCollectorRateConfig}
+              updateMilkRate={updateMilkRate}
+              updateCollectorRate={updateCollectorRate}
             />
           </React.Suspense>
         )}
@@ -1021,18 +1022,10 @@ const PaymentSystemSimple = () => {
         {activeTab === 'analytics' && (
           <React.Suspense fallback={<div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin text-indigo-600" /></div>}>
             <AnalyticsTab 
-              activeTab={activeAnalyticsTab}
-              onTabChange={setActiveAnalyticsTab}
-              analyticsData={{
-                daily_trend: analytics.daily_trend,
-                farmer_distribution: analytics.farmer_distribution,
-                total_pending: analytics.total_pending,
-                total_paid: analytics.total_paid,
-                total_credit_used: analytics.total_credit_used,
-                total_deductions: analytics.total_deductions,
-                total_net_payment: analytics.total_net_payment,
-                total_amount: analytics.total_amount
-              }}
+              activeAnalyticsTab={activeAnalyticsTab}
+              setActiveAnalyticsTab={setActiveAnalyticsTab}
+              analytics={analytics}
+              creditAnalytics={creditAnalytics}
             />
           </React.Suspense>
         )}
