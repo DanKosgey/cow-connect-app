@@ -29,6 +29,7 @@ const CreditorRoutes = lazy(() => import("./routes/creditor.routes"));
 const CreditDashboard = lazy(() => import("./pages/farmer-portal/CreditDashboard"));
 const ShopPage = lazy(() => import("./pages/farmer-portal/ShopPage"));
 const CommunityForumPage = lazy(() => import("./pages/farmer-portal/CommunityForumPage"));
+const NoRolePage = lazy(() => import("./pages/NoRolePage")); // Add this import
 
 // Configure React Query with performance optimizations
 const queryClient = new QueryClient({
@@ -103,6 +104,9 @@ const App = () => {
                       <Route path="/collector-only/*" element={<CollectorOnlyRoutes />} />
                       <Route path="/staff-only/*" element={<StaffOnlyRoutes />} />
                       <Route path="/creditor/*" element={<CreditorRoutes />} />
+
+                      {/* No role page */}
+                      <Route path="/no-role" element={<NoRolePage />} />
 
                       {/* Direct routes for farmer portal pages if needed, though they should be under /farmer/* */}
                       <Route path="/farmer-portal/credit" element={<CreditDashboard />} />

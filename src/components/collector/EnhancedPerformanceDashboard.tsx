@@ -200,11 +200,12 @@ export default function EnhancedPerformanceDashboard() {
   }
 
   // Prepare data for charts
-  const volumeDistribution = [
+  const totalCollections = stats?.weekly.collections || 0;
+  const volumeDistribution = totalCollections > 0 ? [
     { name: 'High Volume', value: stats?.daily.filter(d => d.liters >= 50).length || 0 },
     { name: 'Medium Volume', value: stats?.daily.filter(d => d.liters >= 25 && d.liters < 50).length || 0 },
     { name: 'Low Volume', value: stats?.daily.filter(d => d.liters < 25).length || 0 }
-  ];
+  ] : [];
 
   return (
     <div className="space-y-6 p-4">
@@ -314,17 +315,23 @@ export default function EnhancedPerformanceDashboard() {
           </CardHeader>
           <CardContent>
             <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={stats?.daily}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  <Bar dataKey="collections" fill="#3b82f6" name="Collections" />
-                  <Bar dataKey="liters" fill="#10b981" name="Liters" />
-                </BarChart>
-              </ResponsiveContainer>
+              {totalCollections > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={stats?.daily}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="date" />
+                    <YAxis />
+                    <Tooltip />
+                    <Legend />
+                    <Bar dataKey="collections" fill="#3b82f6" name="Collections" />
+                    <Bar dataKey="liters" fill="#10b981" name="Liters" />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-full">
+                  <p className="text-muted-foreground">No collection data available</p>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -339,27 +346,33 @@ export default function EnhancedPerformanceDashboard() {
           </CardHeader>
           <CardContent>
             <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={volumeDistribution}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="value"
-                    nameKey="name"
-                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                  >
-                    {volumeDistribution.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={['#10b981', '#3b82f6', '#f59e0b'][index % 3]} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
+              {totalCollections > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={volumeDistribution}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      outerRadius={80}
+                      fill="#8884d8"
+                      dataKey="value"
+                      nameKey="name"
+                      label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                    >
+                      {volumeDistribution.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={['#10b981', '#3b82f6', '#f59e0b'][index % 3]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex items-center justify-center h-full">
+                  <p className="text-muted-foreground">No volume distribution data available</p>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -374,54 +387,62 @@ export default function EnhancedPerformanceDashboard() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="text-center">
-              <div className="text-3xl font-bold text-blue-600">
-                {stats?.weekly.collections || 0}
+          {totalCollections > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="text-center">
+                <div className="text-3xl font-bold text-blue-600">
+                  {stats?.weekly.collections || 0}
+                </div>
+                <div className="text-sm text-muted-foreground mt-1">
+                  Total Collections
+                </div>
               </div>
-              <div className="text-sm text-muted-foreground mt-1">
-                Total Collections
+              <div className="text-center">
+                <div className="text-3xl font-bold text-green-600">
+                  {stats?.weekly.liters?.toFixed(1) || '0.0'}L
+                </div>
+                <div className="text-sm text-muted-foreground mt-1">
+                  Total Volume
+                </div>
+              </div>
+              <div className="text-center">
+                <div className="text-3xl font-bold text-purple-600">
+                  {stats?.weekly.farmers || 0}
+                </div>
+                <div className="text-sm text-muted-foreground mt-1">
+                  Farmers Visited
+                </div>
               </div>
             </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-green-600">
-                {stats?.weekly.liters?.toFixed(1) || '0.0'}L
-              </div>
-              <div className="text-sm text-muted-foreground mt-1">
-                Total Volume
-              </div>
+          ) : (
+            <div className="flex items-center justify-center py-8">
+              <p className="text-muted-foreground">No performance data available - no collections recorded this week</p>
             </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-purple-600">
-                {stats?.weekly.farmers || 0}
-              </div>
-              <div className="text-sm text-muted-foreground mt-1">
-                Farmers Visited
-              </div>
-            </div>
-          </div>
+          )}
           
           {/* Performance Rating */}
-          <div className="mt-6">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium">Performance Rating</span>
-              <span className="text-sm font-medium">
-                {stats?.monthly.performanceRating || 0}/5
-              </span>
+          {totalCollections > 0 && (
+            <div className="mt-6">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium">Performance Rating</span>
+                <span className="text-sm font-medium">
+                  {stats?.monthly.performanceRating || 0}/5
+                </span>
+              </div>
+              <div className="flex space-x-1">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <Star
+                    key={star}
+                    className={`h-5 w-5 ${
+                      star <= (stats?.monthly.performanceRating || 0)
+                        ? 'text-yellow-400 fill-current'
+                        : 'text-gray-300'
+                    }`}
+                  />
+                ))}
+              </div>
             </div>
-            <div className="flex space-x-1">
-              {[1, 2, 3, 4, 5].map((star) => (
-                <Star
-                  key={star}
-                  className={`h-5 w-5 ${
-                    star <= (stats?.monthly.performanceRating || 0)
-                      ? 'text-yellow-400 fill-current'
-                      : 'text-gray-300'
-                  }`}
-                />
-              ))}
-            </div>
-          </div>
+          )}
         </CardContent>
       </Card>
     </div>

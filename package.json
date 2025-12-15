@@ -18,6 +18,7 @@
     "test:backend-email": "npx ts-node scripts/test-backend-email.ts",
     "test:invitation-service": "npx ts-node scripts/test-invitation-service.ts",
     "test:assign-role": "npx ts-node scripts/test-assign-role.ts",
+    "assign-role": "npx ts-node scripts/assign-user-role.ts",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {

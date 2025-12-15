@@ -84,37 +84,16 @@ const MilkApprovalPage: React.FC = () => {
   const fetchPendingCollections = async () => {
     setIsLoading(true);
     try {
-      const result = await MilkApprovalService.getPendingCollections();
+      const result = await MilkApprovalService.getPendingCollections(user?.id);
       if (result.success && result.data) {
         console.log('Fetched pending collections count:', result.data.length);
         
-        // Normalize collections data
-        const normalized = result.data.map((c: any) => {
-          // normalize farmer
-          const farmer = c.farmer || {
-            id: c.farmer_id || null,
-            fullName: c.farmer_full_name || c.farmerName || null,
-            phoneNumber: c.farmer_phone || null,
-            registrationNumber: c.farmer_registration_number || null
-          };
-          // normalize collector: prefer collector.fullName, else try staff.user.profile name fields
-          const collector = c.collector || (c.staff ? {
-            staffId: c.staff.id,
-            userId: c.staff.user_id,
-            fullName: c.staff.full_name || c.staff.name || null,
-            email: c.staff.email || null,
-            roles: c.staff.roles || []
-          } : null);
-          return {
-            ...c,
-            farmer,
-            collector,
-            collection_date: c.collection_date || c.created_at // fallback date
-          } as Collection;
-        });
+        // Use the enriched data directly without additional normalization
+        // The MilkApprovalService now returns properly enriched collections
+        const enrichedCollections = result.data;
         
         // Log detailed information about the first few collections
-        normalized.slice(0, 2).forEach((collection: Collection, index: number) => {
+        enrichedCollections.slice(0, 2).forEach((collection: Collection, index: number) => {
           console.log(`Sample collection ${index}:`, {
             id: collection.id,
             collectorName: collection.collector?.fullName,
@@ -124,8 +103,8 @@ const MilkApprovalPage: React.FC = () => {
           });
         });
         
-        setPendingCollections(normalized);
-        groupCollections(normalized);
+        setPendingCollections(enrichedCollections);
+        groupCollections(enrichedCollections);
       }
     } catch (error) {
       console.error('Error fetching collections:', error);
@@ -179,25 +158,6 @@ const MilkApprovalPage: React.FC = () => {
     });
 
     console.log('Initial groups created:', Object.keys(groups).length);
-
-    // Second pass: Improve collector names by finding the best name for each group
-    Object.values(groups).forEach(group => {
-      // Only try to improve names for groups that have a valid collector ID and are currently showing "Unknown Collector"
-      if (group.collectorId !== 'unassigned' && group.collectorName === 'Unknown Collector') {
-        // Look for a collection in this group with a valid collector name
-        const collectionWithValidName = group.collections.find(
-          collection => {
-            const name = collection.collector?.fullName;
-            return name && name !== 'Unknown Collector';
-          }
-        );
-        
-        if (collectionWithValidName) {
-          const betterName = collectionWithValidName.collector?.fullName || 'Unknown Collector';
-          group.collectorName = betterName;
-        }
-      }
-    });
 
     const finalGroups = Object.values(groups);
     console.log('Final grouped collections count:', finalGroups.length);

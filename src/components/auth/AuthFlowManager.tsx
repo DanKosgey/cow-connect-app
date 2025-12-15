@@ -74,7 +74,7 @@ export const AuthFlowManager: React.FC<AuthFlowManagerProps> = ({
    * Determine redirect path based on user role
    */
   const getRedirectPath = useCallback((role: string | null): string => {
-    if (!role) return redirectPath;
+    if (!role) return '/no-role'; // Redirect to no-role page instead of generic dashboard
     
     // Role-based dashboard paths
     const rolePaths: Record<string, string> = {
@@ -85,8 +85,8 @@ export const AuthFlowManager: React.FC<AuthFlowManagerProps> = ({
       creditor: '/creditor/dashboard'
     };
     
-    return rolePaths[role] || redirectPath;
-  }, [redirectPath]);
+    return rolePaths[role] || '/no-role'; // Redirect to no-role page for unknown roles
+  }, []);
 
   /**
    * Check if current path is a login/auth page
@@ -94,6 +94,13 @@ export const AuthFlowManager: React.FC<AuthFlowManagerProps> = ({
   const isAuthPage = useCallback((pathname: string): boolean => {
     const authPages = ['/login', '/signup', '/auth', '/reset-password'];
     return authPages.some(page => pathname.includes(page));
+  }, []);
+
+  /**
+   * Check if current path is the no-role page
+   */
+  const isNoRolePage = useCallback((pathname: string): boolean => {
+    return pathname === '/no-role';
   }, []);
 
   /**
@@ -114,7 +121,8 @@ export const AuthFlowManager: React.FC<AuthFlowManagerProps> = ({
       userRole,
       pathname,
       from,
-      isAuthPage: isAuthPage(pathname)
+      isAuthPage: isAuthPage(pathname),
+      isNoRolePage: isNoRolePage(pathname)
     });
 
     // Case 1: User is authenticated and came from a specific page
@@ -136,8 +144,27 @@ export const AuthFlowManager: React.FC<AuthFlowManagerProps> = ({
       return;
     }
 
+    // Case 3: User is authenticated but has no role
+    if (isAuthenticated && !userRole) {
+      console.log('🚀 [AuthFlowManager] User authenticated but no role, redirecting to no-role page');
+      hasRedirected.current = true;
+      navigate('/no-role', { replace: true });
+      return;
+    }
+
+    // Case 4: User is authenticated, has a role, but is on the no-role page
+    // This handles the case where a user was previously on no-role page but now has a role assigned
+    if (isAuthenticated && userRole && isNoRolePage(pathname)) {
+      const targetPath = getRedirectPath(userRole);
+      console.log('🚀 [AuthFlowManager] User now has role, redirecting from no-role page to:', targetPath);
+      logger.debug('Redirecting user with newly assigned role', { targetPath, userRole });
+      hasRedirected.current = true;
+      navigate(targetPath, { replace: true });
+      return;
+    }
+
     console.log('🚀 [AuthFlowManager] No redirect needed');
-  }, [isAuthenticated, userRole, location, navigate, isAuthPage, getRedirectPath]);
+  }, [isAuthenticated, userRole, location, navigate, isAuthPage, isNoRolePage, getRedirectPath]);
 
   // Initialize on mount ONLY ONCE
   useEffect(() => {

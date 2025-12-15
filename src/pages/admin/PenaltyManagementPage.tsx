@@ -120,6 +120,7 @@ const PenaltyManagementPage: React.FC = () => {
   const fetchRecentVariances = async () => {
     setVariancesLoading(true);
     try {
+      // Simplified query to avoid joins that cause schema cache issues
       const { data, error } = await supabase
         .from('milk_approvals')
         .select(`
@@ -132,26 +133,7 @@ const PenaltyManagementPage: React.FC = () => {
           variance_type,
           penalty_amount,
           approval_notes,
-          approved_at,
-          collections!milk_approvals_collection_id_fkey (
-            collection_id,
-            liters,
-            collection_date,
-            staff_id,
-            staff (
-              profiles (
-                full_name
-              )
-            ),
-            farmers (
-              full_name
-            )
-          ),
-          staff!milk_approvals_staff_id_fkey (
-            profiles (
-              full_name
-            )
-          )
+          approved_at
         `)
         .order('approved_at', { ascending: false })
         .limit(10);
@@ -160,12 +142,148 @@ const PenaltyManagementPage: React.FC = () => {
         throw error;
       }
 
+      // If no data, return early
+      if (!data || data.length === 0) {
+        setVariances([]);
+        return;
+      }
+
+      // Extract collection IDs and staff IDs
+      const collectionIds = [...new Set(data.map(item => item.collection_id).filter(Boolean))] as string[];
+      const staffIds = [...new Set([...data.map(item => item.staff_id).filter(Boolean)])] as string[];
+
+      // Fetch collections data
+      let collectionsData: any[] = [];
+      if (collectionIds.length > 0) {
+        const { data: collections, error: collectionsError } = await supabase
+          .from('collections')
+          .select(`
+            collection_id,
+            liters,
+            collection_date,
+            staff_id,
+            farmer_id
+          `)
+          .in('collection_id', collectionIds);
+
+        if (collectionsError) {
+          console.warn('Error fetching collections data:', collectionsError);
+        } else {
+          collectionsData = collections || [];
+        }
+      }
+
+      // Fetch farmers data for the collections
+      let farmersData: any[] = [];
+      if (collectionsData.length > 0) {
+        const farmerIds = [...new Set(collectionsData.map(c => c.farmer_id).filter(Boolean))] as string[];
+        if (farmerIds.length > 0) {
+          const { data: farmers, error: farmersError } = await supabase
+            .from('farmers')
+            .select(`
+              id,
+              full_name
+            `)
+            .in('id', farmerIds);
+
+          if (farmersError) {
+            console.warn('Error fetching farmers data:', farmersError);
+          } else {
+            farmersData = farmers || [];
+          }
+        }
+      }
+
+      // Fetch staff data for collections
+      let collectionStaffData: any[] = [];
+      if (collectionsData.length > 0) {
+        const collectionStaffIds = [...new Set(collectionsData.map(c => c.staff_id).filter(Boolean))] as string[];
+        if (collectionStaffIds.length > 0) {
+          const { data: staff, error: staffError } = await supabase
+            .from('staff')
+            .select(`
+              id,
+              profiles (full_name)
+            `)
+            .in('id', collectionStaffIds);
+
+          if (staffError) {
+            console.warn('Error fetching collection staff data:', staffError);
+          } else {
+            collectionStaffData = staff || [];
+          }
+        }
+      }
+
+      // Fetch staff data for approvals
+      let approvalStaffData: any[] = [];
+      if (staffIds.length > 0) {
+        const { data: staff, error: staffError } = await supabase
+          .from('staff')
+          .select(`
+            id,
+            profiles (full_name)
+          `)
+          .in('id', staffIds);
+
+        if (staffError) {
+          console.warn('Error fetching approval staff data:', staffError);
+        } else {
+          approvalStaffData = staff || [];
+        }
+      }
+
+      // Create maps for quick lookup
+      const collectionsMap = collectionsData.reduce((acc, collection) => {
+        acc[collection.collection_id] = collection;
+        return acc;
+      }, {} as Record<string, any>);
+
+      const farmersMap = farmersData.reduce((acc, farmer) => {
+        acc[farmer.id] = farmer;
+        return acc;
+      }, {} as Record<string, any>);
+
+      const collectionStaffMap = collectionStaffData.reduce((acc, staff) => {
+        acc[staff.id] = staff;
+        return acc;
+      }, {} as Record<string, any>);
+
+      const approvalStaffMap = approvalStaffData.reduce((acc, staff) => {
+        acc[staff.id] = staff;
+        return acc;
+      }, {} as Record<string, any>);
+
       // Transform the data to match our interface
-      const transformedData = (data || []).map((item: any) => ({
-        ...item,
-        collection_details: item.collections || null,
-        staff_details: item.staff || null
-      }));
+      const transformedData = (data || []).map((item: any) => {
+        const collection = collectionsMap[item.collection_id];
+        const farmer = collection && farmersMap[collection.farmer_id];
+        const collectionStaff = collection && collectionStaffMap[collection.staff_id];
+        const approvalStaff = approvalStaffMap[item.staff_id];
+
+        return {
+          ...item,
+          collection_details: collection ? {
+            collection_id: collection.collection_id,
+            liters: collection.liters,
+            collection_date: collection.collection_date,
+            staff_id: collection.staff_id,
+            staff: collectionStaff ? {
+              profiles: {
+                full_name: collectionStaff.profiles?.full_name || 'Unknown Staff'
+              }
+            } : null,
+            farmers: farmer ? {
+              full_name: farmer.full_name || 'Unknown Farmer'
+            } : null
+          } : null,
+          staff_details: approvalStaff ? {
+            profiles: {
+              full_name: approvalStaff.profiles?.full_name || 'Unknown Staff'
+            }
+          } : null
+        };
+      });
 
       setVariances(transformedData);
     } catch (error: any) {

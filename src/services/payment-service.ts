@@ -306,8 +306,8 @@ export class PaymentService {
       const { error: updateCollectionError } = await supabase
         .from('collections')
         .update({ 
-          status: 'Paid',
-          updated_at: new Date().toISOString()
+          status: 'Paid'
+          // Note: updated_at is automatically managed by the database trigger
         })
         .eq('id', collectionId);
 
@@ -489,7 +489,7 @@ export class PaymentService {
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
           .select('id')
-          .eq('user_id', approvedBy)
+          .eq('id', approvedBy)  // Changed from 'user_id' to 'id'
           .maybeSingle();
           
         if (profileError) {
@@ -632,7 +632,7 @@ export class PaymentService {
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
           .select('id')
-          .eq('user_id', paidBy)
+          .eq('id', paidBy)  // Changed from 'user_id' to 'id'
           .maybeSingle();
           
         if (profileError) {
@@ -970,7 +970,12 @@ export class PaymentService {
         supabase.from('collection_payments').insert(paymentRecords),
         
         // Update all collections
-        supabase.from('collections').upsert(collectionUpdates, { onConflict: 'id' }),
+        collectionUpdates.length > 0 ? supabase.from('collections').update(
+          collectionUpdates.map(c => ({
+            status: c.status,
+            // Note: updated_at is automatically managed by the database trigger
+          }))
+        ).in('id', collectionUpdates.map(c => c.id)) : Promise.resolve({ data: [], error: null }),
         
         // Insert all credit transactions (if any)
         creditTransactions.length > 0 
@@ -1396,7 +1401,12 @@ export class PaymentService {
         supabase.from('collection_payments').insert(paymentRecords),
         
         // Update all collections
-        supabase.from('collections').upsert(collectionUpdates, { onConflict: 'id' }),
+        collectionUpdates.length > 0 ? supabase.from('collections').update(
+          collectionUpdates.map(c => ({
+            status: c.status,
+            // Note: updated_at is automatically managed by the database trigger
+          }))
+        ).in('id', collectionUpdates.map(c => c.id)) : Promise.resolve({ data: [], error: null }),
         
         // Insert all credit transactions (if any)
         creditTransactions.length > 0 

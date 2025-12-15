@@ -98,6 +98,7 @@ const roleNavigation: Record<string, NavItem[]> = {
     { label: 'Collections', path: '/admin/collections', icon: <Milk className="h-5 w-5" />, category: 'operations' },
     { label: 'AI Monitoring', path: '/admin/ai-monitoring', icon: <Eye className="h-5 w-5" />, category: 'operations' },
     { label: 'Payments', path: '/admin/payments', icon: <DollarSign className="h-5 w-5" />, category: 'finance' },
+    { label: 'Farmer Payments', path: '/admin/farmer-payments', icon: <DollarSign className="h-5 w-5" />, category: 'finance' },
     { label: 'Collectors', path: '/admin/collectors', icon: <Users className="h-5 w-5" />, category: 'finance' },
     { label: 'Credit Management', path: '/admin/credit-management', icon: <CreditCard className="h-5 w-5" />, category: 'finance' },
     { label: 'Penalty Management', path: '/admin/penalty-management', icon: <AlertTriangle className="h-5 w-5" />, category: 'finance' },

@@ -54,22 +54,17 @@ interface VarianceRecord {
   variance_type: 'positive' | 'negative' | 'none';
   penalty_amount: number;
   approved_at: string;
-  farmers: {
-    full_name: string;
-  } | null;
-  collection_staff: {
-    profiles: {
-      full_name: string;
-    } | null;
-  } | null;
-  approval_staff: {
-    profiles: {
-      full_name: string;
-    } | null;
-  } | null;
-  // Add the collections property to match the transformed data
-  collections?: {
+  collections: {
+    id: string;
     staff_id: string;
+    farmers: {
+      full_name: string;
+    } | null;
+  } | null;
+  staff: {
+    profiles: {
+      full_name: string;
+    } | null;
   } | null;
 }
 
@@ -190,7 +185,7 @@ const VarianceReportPage: React.FC = () => {
         endDate: endDate.toISOString() 
       });
 
-      // Fetch variance records with proper joins
+      // Fetch variance records with proper joins (simplified notation)
       const { data: varianceData, error: varianceError } = await supabase
         .from('milk_approvals')
         .select(`
@@ -202,18 +197,7 @@ const VarianceReportPage: React.FC = () => {
           variance_type,
           penalty_amount,
           approved_at,
-          collections!milk_approvals_collection_id_fkey (
-            id,
-            staff_id,
-            farmers (
-              full_name
-            )
-          ),
-          staff!milk_approvals_staff_id_fkey (
-            profiles!staff_user_id_fkey (
-              full_name
-            )
-          )
+          staff_id
         `)
         .gte('approved_at', startDate.toISOString())
         .lte('approved_at', endDate.toISOString())
@@ -223,9 +207,146 @@ const VarianceReportPage: React.FC = () => {
         throw new Error(`Failed to fetch variance data: ${varianceError.message}`);
       }
 
-      console.log('Raw variance data count:', varianceData?.length || 0);
+      // If we have data, fetch the related collections and staff information separately
+      if (varianceData && varianceData.length > 0) {
+        // Get unique collection IDs
+        const collectionIds = [...new Set(varianceData.map(item => item.collection_id))];
+        const staffIds = [...new Set(varianceData.map(item => item.staff_id).filter(Boolean))] as string[];
 
-      if (!varianceData || varianceData.length === 0) {
+        // Fetch collections data
+        const { data: collectionsData, error: collectionsError } = await supabase
+          .from('collections')
+          .select(`
+            id,
+            staff_id,
+            liters,
+            farmers (
+              full_name
+            )
+          `)
+          .in('id', collectionIds);
+
+        if (collectionsError) {
+          throw new Error(`Failed to fetch collections data: ${collectionsError.message}`);
+        }
+
+        // Fetch staff data
+        const { data: staffData, error: staffError } = await supabase
+          .from('staff')
+          .select(`
+            id,
+            profiles (
+              full_name
+            )
+          `)
+          .in('id', staffIds);
+
+        if (staffError) {
+          throw new Error(`Failed to fetch staff data: ${staffError.message}`);
+        }
+
+        // Create maps for quick lookup
+        const collectionsMap = new Map(collectionsData?.map(c => [c.id, c]) || []);
+        const staffMap = new Map(staffData?.map(s => [s.id, s]) || []);
+
+        // Merge the data
+        const mergedData = varianceData.map(item => ({
+          ...item,
+          collections: collectionsMap.get(item.collection_id) || null,
+          staff: item.staff_id ? staffMap.get(item.staff_id) || null : null
+        }));
+
+        // Transform data
+        const transformedData: VarianceRecord[] = mergedData.map(item => ({
+          id: item.id,
+          collection_id: item.collection_id,
+          company_received_liters: item.company_received_liters,
+          variance_liters: item.variance_liters,
+          variance_percentage: item.variance_percentage,
+          variance_type: item.variance_type,
+          penalty_amount: item.penalty_amount,
+          approved_at: item.approved_at,
+          collections: item.collections,
+          staff: item.staff
+        }));
+
+        // Get unique staff IDs for collector names
+        const collectorStaffIds = new Set(
+          mergedData
+            .map(item => item.collections?.staff_id)
+            .filter(Boolean) as string[]
+        );
+
+        const staffNameMap = await fetchStaffNames(Array.from(collectorStaffIds));
+
+        // Group by collector and create summaries
+        const collectorMap = new Map<string, CollectorVarianceSummary>();
+
+        transformedData.forEach(record => {
+          const staffId = record.collections?.staff_id;
+          const groupingId = staffId || 'unassigned';
+          
+          const collectorName = staffId 
+            ? staffNameMap.get(staffId) || `Collector (${staffId.substring(0, 8)})`
+            : 'Unassigned Collector';
+
+          if (!collectorMap.has(groupingId)) {
+            collectorMap.set(groupingId, {
+              collector_id: groupingId,
+              collector_name: collectorName,
+              total_collections: 0,
+              total_received_liters: 0,
+              variance_type: 'none',
+              collections: [],
+              first_approval_date: record.approved_at
+            });
+          }
+
+          const summary = collectorMap.get(groupingId)!;
+          summary.total_collections += 1;
+          summary.total_received_liters += record.company_received_liters;
+          summary.collections.push(record);
+        });
+
+        // Calculate averages and determine variance types
+        collectorMap.forEach(summary => {
+          summary.variance_type = 'none';
+          
+          // Calculate approved vs pending collections for this collector
+          const approvedCollections = summary.collections.filter(isCollectionApproved).length;
+          const pendingCollections = summary.collections.filter(isCollectionPending).length;
+          
+          // Add these properties to the summary
+          summary.approved_collections = approvedCollections;
+          summary.pending_collections = pendingCollections;
+        });
+
+        const summariesArray = Array.from(collectorMap.values());
+        
+        // Calculate overall summary data
+        const totalCollections = mergedData.length;
+        const positiveVariances = mergedData.filter(v => v.variance_type === 'positive').length;
+        const negativeVariances = mergedData.filter(v => v.variance_type === 'negative').length;
+        const totalPenalties = mergedData.reduce((sum, v) => sum + (v.penalty_amount || 0), 0);
+        const totalReceivedLiters = mergedData.reduce((sum, v) => sum + (v.company_received_liters || 0), 0);
+        const overallVariancePercentage = mergedData.length > 0 
+          ? (mergedData.reduce((sum, v) => sum + (v.variance_liters || 0), 0) / totalReceivedLiters) * 100
+          : 0;
+
+        setVarianceRecords(transformedData);
+        setCollectorSummaries(summariesArray);
+        setSummaryData({
+          totalCollections,
+          positiveVariances,
+          negativeVariances,
+          totalPenalties,
+          totalReceivedLiters,
+          overallVariancePercentage
+        });
+
+        showSuccess('Variance reports loaded successfully');
+      } else {
+        // No data case
         setVarianceRecords([]);
         setCollectorSummaries([]);
         setSummaryData({
@@ -233,133 +354,11 @@ const VarianceReportPage: React.FC = () => {
           positiveVariances: 0,
           negativeVariances: 0,
           totalPenalties: 0,
-          // Removed totalCollectedLiters to prevent fraud
           totalReceivedLiters: 0,
           overallVariancePercentage: 0
         });
         setIsLoading(false);
-        return;
       }
-
-      // Transform data
-      const transformedData: VarianceRecord[] = varianceData.map(item => ({
-        id: item.id,
-        collection_id: item.collection_id,
-        // Removed liters (collected data) to prevent fraud
-        company_received_liters: item.company_received_liters,
-        variance_liters: item.variance_liters,
-        variance_percentage: item.variance_percentage,
-        variance_type: item.variance_type,
-        penalty_amount: item.penalty_amount,
-        approved_at: item.approved_at,
-        farmers: item.collections?.farmers || null,
-        collection_staff: null, // Will be populated later
-        approval_staff: item.staff ? { profiles: item.staff.profiles } : null
-      }));
-
-      // Get unique staff IDs for collector names
-      const staffIds = new Set(
-        varianceData
-          .map(item => item.collections?.staff_id)
-          .filter(Boolean) as string[]
-      );
-
-      const staffNameMap = await fetchStaffNames(Array.from(staffIds));
-
-      // Group by collector and create summaries
-      const collectorMap = new Map<string, CollectorVarianceSummary>();
-
-      transformedData.forEach(record => {
-        const staffId = record.collections?.staff_id;
-        const groupingId = staffId || 'unassigned';
-        
-        const collectorName = staffId 
-          ? staffNameMap.get(staffId) || `Collector (${staffId.substring(0, 8)})`
-          : 'Unassigned Collector';
-
-        if (!collectorMap.has(groupingId)) {
-          collectorMap.set(groupingId, {
-            collector_id: groupingId,
-            collector_name: collectorName,
-            total_collections: 0,
-            // Removed total_collected_liters to prevent fraud
-            total_received_liters: 0,
-            variance_type: 'none',
-            collections: [],
-            first_approval_date: record.approved_at
-          });
-        }
-
-        const summary = collectorMap.get(groupingId)!;
-        summary.total_collections += 1;
-        // Removed adding to total_collected_liters to prevent fraud
-        summary.total_received_liters += record.company_received_liters;
-        summary.collections.push({
-          ...record,
-          collection_staff: staffId ? { 
-            profiles: { full_name: collectorName } 
-          } : null
-        } as VarianceRecord);
-      });
-
-      // Calculate averages and determine variance types
-      collectorMap.forEach(summary => {
-        // Removed calculation based on collected liters to prevent fraud
-        // Using a simple average of variance percentages instead
-        // if (summary.collections.length > 0) {
-        //   const totalVariancePercentage = summary.collections.reduce((sum, record) => 
-        //     sum + record.variance_percentage, 0);
-        //   summary.average_variance_percentage = totalVariancePercentage / summary.collections.length;
-        // }
-        // 
-        // if (summary.total_variance_liters > 0) {
-        //   summary.variance_type = 'positive';
-        // } else if (summary.total_variance_liters < 0) {
-        //   summary.variance_type = 'negative';
-        // } else {
-        //   summary.variance_type = 'none';
-        // }
-        
-        // Set a default variance type since we're not calculating per-collector variance
-        summary.variance_type = 'none';
-        
-        // Calculate approved vs pending collections for this collector
-        const approvedCollections = summary.collections.filter(isCollectionApproved).length;
-        const pendingCollections = summary.collections.filter(isCollectionPending).length;
-        
-        // Add these properties to the summary
-        summary.approved_collections = approvedCollections;
-        summary.pending_collections = pendingCollections;
-      });
-
-      const summariesArray = Array.from(collectorMap.values());
-      
-      // Calculate overall summary data
-      const totalCollections = varianceData.length;
-      const positiveVariances = varianceData.filter(v => v.variance_type === 'positive').length;
-      const negativeVariances = varianceData.filter(v => v.variance_type === 'negative').length;
-      const totalPenalties = varianceData.reduce((sum, v) => sum + (v.penalty_amount || 0), 0);
-      // Removed totalCollectedLiters calculation to prevent fraud
-      const totalReceivedLiters = varianceData.reduce((sum, v) => sum + (v.company_received_liters || 0), 0);
-      // Keep overallVariancePercentage calculation for total variance information
-      const overallVariancePercentage = varianceData.length > 0 
-        ? (varianceData.reduce((sum, v) => sum + (v.variance_liters || 0), 0) / totalReceivedLiters) * 100
-        : 0;
-
-      setVarianceRecords(transformedData);
-      setCollectorSummaries(summariesArray);
-      setSummaryData({
-        totalCollections,
-        positiveVariances,
-        negativeVariances,
-        totalPenalties,
-        // Removed totalCollectedLiters to prevent fraud
-        totalReceivedLiters,
-        overallVariancePercentage
-      });
-
-      showSuccess('Variance reports loaded successfully');
-
     } catch (error) {
       console.error('Error fetching variance reports:', error);
       showError(error instanceof Error ? error.message : 'Failed to load variance reports');
@@ -578,6 +577,6 @@ const VarianceReportPage: React.FC = () => {
       </Tabs>
     </div>
   );
-};
+}
 
 export default VarianceReportPage;

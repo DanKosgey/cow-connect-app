@@ -431,14 +431,40 @@ const calculateFarmerSummaries = async (
   return farmerSummaries;
 };
 
-export const usePaymentSystemData = (timeFrame: string = 'all', customDateRange: { from: string; to: string } = { from: '', to: '' }) => {
+export const usePaymentSystemData = (timeFrame: string = 'week', customDateRange: { from: string; to: string } = { from: '', to: '' }) => {
   return useQuery<PaymentSystemData>({
     queryKey: [CACHE_KEYS.ADMIN_PAYMENTS, timeFrame, customDateRange],
     queryFn: async () => {
       try {
+        // Build date filter based on timeFrame
+        let dateFilter = '';
+        const now = new Date();
+        
+        switch (timeFrame) {
+          case 'daily':
+            dateFilter = now.toISOString().split('T')[0];
+            break;
+          case 'weekly':
+            const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            dateFilter = `gte.${weekAgo.toISOString().split('T')[0]}`;
+            break;
+          case 'monthly':
+            const monthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+            dateFilter = `gte.${monthAgo.toISOString().split('T')[0]}`;
+            break;
+          case 'custom':
+            if (customDateRange.from && customDateRange.to) {
+              dateFilter = `gte.${customDateRange.from},lte.${customDateRange.to}`;
+            }
+            break;
+          default:
+            // For 'all' or other cases, we'll limit to last 3 months for performance
+            const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate());
+            dateFilter = `gte.${threeMonthsAgo.toISOString().split('T')[0]}`;
+        }
+
         // Fetch collections with farmer data that are approved for company (milk approval)
-        // Limit initial fetch to reduce load
-        const { data: collectionsData, error: collectionsError } = await supabase
+        let query = supabase
           .from('collections')
           .select(`
             *,
@@ -459,9 +485,26 @@ export const usePaymentSystemData = (timeFrame: string = 'all', customDateRange:
               collector_fee
             )
           `)
-          .eq('approved_for_company', true) // Only fetch collections approved for company (milk approval)
+          .eq('approved_for_company', true); // Only fetch collections approved for company (milk approval)
+
+        // Apply date filter if applicable
+        if (dateFilter && timeFrame !== 'all') {
+          if (timeFrame === 'daily') {
+            query = query.eq('collection_date', dateFilter);
+          } else if (dateFilter.includes(',')) {
+            // Handle custom range with both gte and lte
+            const [gtePart, ltePart] = dateFilter.split(',');
+            query = query.gte('collection_date', gtePart.split('.')[1])
+                         .lte('collection_date', ltePart.split('.')[1]);
+          } else {
+            query = query.gte('collection_date', dateFilter.split('.')[1]);
+          }
+        }
+
+        // Order and limit for performance
+        const { data: collectionsData, error: collectionsError } = await query
           .order('collection_date', { ascending: false })
-          .limit(1000); // Limit to 1000 records to prevent overload
+          .limit(500); // Reduced limit for better performance
 
         if (collectionsError) {
           console.error('Error fetching collections data:', collectionsError);
@@ -511,8 +554,8 @@ export const usePaymentSystemData = (timeFrame: string = 'all', customDateRange:
         throw error;
       }
     },
-    staleTime: 1000 * 60 * 5, // 5 minutes
-    gcTime: 1000 * 60 * 15, // 15 minutes
+    staleTime: 1000 * 60 * 3, // Reduced to 3 minutes for more frequent updates
+    gcTime: 1000 * 60 * 10, // Reduced to 10 minutes
     retry: 1, // Reduce retries to prevent hanging
     retryDelay: (attemptIndex) => {
       return Math.min(1000 * 2 ** attemptIndex, 10000); // Exponential backoff up to 10 seconds

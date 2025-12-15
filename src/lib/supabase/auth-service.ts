@@ -606,15 +606,6 @@ class AuthService {
         return directRole;
       }
 
-      // Try auto-assignment for development
-      const autoRole = await this.tryAutoAssignRole(userId);
-      if (autoRole) {
-        console.log('🔐 [AuthService] Role auto-assigned:', autoRole);
-        // Cache the result
-        roleCache.set(userId, { role: autoRole as string, timestamp: Date.now() });
-        return autoRole;
-      }
-
       console.log('🔐 [AuthService] No role found for user');
       return null;
     } catch (error) {
@@ -795,27 +786,9 @@ class AuthService {
 
       console.log('🔐 [AuthService] Auto-assigning role:', role);
       
-      const insertRes = await supabase
-        .from('user_roles')
-        .insert([{
-          user_id: userId,
-          role,
-          active: true
-        }])
-        .select()
-        .single();
-        
-      if (insertRes.error) {
-        // Check if error is duplicate key (role already exists)
-        if (insertRes.error.code === '23505') {
-          console.log('🔐 [AuthService] Role already exists, fetching it');
-          return await this.fetchUserRoleDirectly(userId);
-        }
-        console.error('🔐 [AuthService] Auto-assign failed:', insertRes.error);
-        return null;
-      }
-
-      console.log('🔐 [AuthService] Role auto-assigned successfully');
+      // NOTE: This approach is flawed - roles should be assigned by admins or during registration
+      // For now, we'll just return the determined role without attempting to insert it
+      // The actual role should be created by backend processes or admin UI
       return role;
     } catch (error) {
       console.error('🔐 [AuthService] Auto-assignment error:', error);

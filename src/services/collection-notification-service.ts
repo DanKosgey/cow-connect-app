@@ -29,11 +29,12 @@ export class CollectionNotificationService {
       }
 
       // Get collection details
+      // Removed the approved_for_company filter to avoid timing issues
+      // At this point we know the collection has been approved
       const { data: collection, error: collectionError } = await supabase
         .from('collections')
-        .select('liters, total_amount, collection_date')
+        .select('liters, total_amount, collection_date, approved_for_company')
         .eq('id', collectionId)
-        .eq('approved_for_company', true) // Only consider approved collections
         .maybeSingle();
 
       if (collectionError) {
@@ -60,7 +61,26 @@ export class CollectionNotificationService {
         });
 
       if (notificationError) {
-        logger.warn('CollectionNotificationService - Failed to send approval notification', notificationError);
+        // Log RLS-specific errors with more detail
+        if (notificationError.code === '42501') {
+          logger.warn('CollectionNotificationService - RLS policy violation when sending approval notification. User may not have proper role assigned.', {
+            code: notificationError.code,
+            message: notificationError.message,
+            userId: farmer.user_id
+          });
+          
+          // Try to diagnose the role issue
+          const { data: userRoles, error: rolesError } = await supabase
+            .from('user_roles')
+            .select('role, active')
+            .eq('user_id', farmer.user_id);
+            
+          if (!rolesError && userRoles) {
+            logger.info('CollectionNotificationService - User roles found', { userRoles });
+          }
+        } else {
+          logger.warn('CollectionNotificationService - Failed to send approval notification', notificationError);
+        }
       }
 
       // Send real-time notification via Supabase broadcast
@@ -110,11 +130,12 @@ export class CollectionNotificationService {
       }
 
       // Get collection details
+      // Removed the approved_for_company filter to avoid timing issues
+      // At this point we know the collection has been approved
       const { data: collection, error: collectionError } = await supabase
         .from('collections')
-        .select('liters, total_amount, collection_date')
+        .select('liters, total_amount, collection_date, approved_for_company')
         .eq('id', collectionId)
-        .eq('approved_for_company', true) // Only consider approved collections
         .maybeSingle();
 
       if (collectionError) {
@@ -141,7 +162,26 @@ export class CollectionNotificationService {
         });
 
       if (notificationError) {
-        logger.warn('CollectionNotificationService - Failed to send paid notification', notificationError);
+        // Log RLS-specific errors with more detail
+        if (notificationError.code === '42501') {
+          logger.warn('CollectionNotificationService - RLS policy violation when sending paid notification. User may not have proper role assigned.', {
+            code: notificationError.code,
+            message: notificationError.message,
+            userId: farmer.user_id
+          });
+          
+          // Try to diagnose the role issue
+          const { data: userRoles, error: rolesError } = await supabase
+            .from('user_roles')
+            .select('role, active')
+            .eq('user_id', farmer.user_id);
+            
+          if (!rolesError && userRoles) {
+            logger.info('CollectionNotificationService - User roles found', { userRoles });
+          }
+        } else {
+          logger.warn('CollectionNotificationService - Failed to send paid notification', notificationError);
+        }
       }
 
       // Send real-time notification via Supabase broadcast

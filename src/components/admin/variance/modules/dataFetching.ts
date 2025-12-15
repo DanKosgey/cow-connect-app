@@ -105,7 +105,7 @@ export const fetchVarianceData = async (
     const from = (currentPage - 1) * pageSize;
     const to = from + pageSize - 1;
 
-    // Build the query
+    // Build the query - simplified to avoid joins that cause schema cache issues
     let query = supabase
       .from('milk_approvals')
       .select(`
@@ -118,26 +118,7 @@ export const fetchVarianceData = async (
         variance_type,
         penalty_amount,
         approval_notes,
-        approved_at,
-        collections!milk_approvals_collection_id_fkey (
-          collection_id,
-          liters,
-          collection_date,
-          staff_id,
-          staff (
-            profiles (
-              full_name
-            )
-          ),
-          farmers (
-            full_name
-          )
-        ),
-        staff!milk_approvals_staff_id_fkey (
-          profiles (
-            full_name
-          )
-        )
+        approved_at
       `, { count: 'exact' })
       .gte('approved_at', `${dateRange.from}T00:00:00Z`)
       .lte('approved_at', `${dateRange.to}T23:59:59Z`)
@@ -159,12 +140,147 @@ export const fetchVarianceData = async (
       throw error;
     }
 
+    // If no data, return early
+    if (!data || data.length === 0) {
+      return { data: [], count: 0 };
+    }
+
+    // Extract collection IDs and staff IDs
+    const collectionIds = [...new Set(data.map(item => item.collection_id).filter(Boolean))] as string[];
+    const staffIds = [...new Set([...data.map(item => item.staff_id).filter(Boolean)])] as string[];
+
+    // Fetch collections data
+    let collectionsData: any[] = [];
+    if (collectionIds.length > 0) {
+      const { data: collections, error: collectionsError } = await supabase
+        .from('collections')
+        .select(`
+          collection_id,
+          liters,
+          collection_date,
+          staff_id,
+          farmer_id
+        `)
+        .in('collection_id', collectionIds);
+
+      if (collectionsError) {
+        console.warn('Error fetching collections data:', collectionsError);
+      } else {
+        collectionsData = collections || [];
+      }
+    }
+
+    // Fetch farmers data for the collections
+    let farmersData: any[] = [];
+    if (collectionsData.length > 0) {
+      const farmerIds = [...new Set(collectionsData.map(c => c.farmer_id).filter(Boolean))] as string[];
+      if (farmerIds.length > 0) {
+        const { data: farmers, error: farmersError } = await supabase
+          .from('farmers')
+          .select(`
+            id,
+            full_name
+          `)
+          .in('id', farmerIds);
+
+        if (farmersError) {
+          console.warn('Error fetching farmers data:', farmersError);
+        } else {
+          farmersData = farmers || [];
+        }
+      }
+    }
+
+    // Fetch staff data for collections
+    let collectionStaffData: any[] = [];
+    if (collectionsData.length > 0) {
+      const collectionStaffIds = [...new Set(collectionsData.map(c => c.staff_id).filter(Boolean))] as string[];
+      if (collectionStaffIds.length > 0) {
+        const { data: staff, error: staffError } = await supabase
+          .from('staff')
+          .select(`
+            id,
+            profiles (full_name)
+          `)
+          .in('id', collectionStaffIds);
+
+        if (staffError) {
+          console.warn('Error fetching collection staff data:', staffError);
+        } else {
+          collectionStaffData = staff || [];
+        }
+      }
+    }
+
+    // Fetch staff data for approvals
+    let approvalStaffData: any[] = [];
+    if (staffIds.length > 0) {
+      const { data: staff, error: staffError } = await supabase
+        .from('staff')
+        .select(`
+          id,
+          profiles (full_name)
+        `)
+        .in('id', staffIds);
+
+      if (staffError) {
+        console.warn('Error fetching approval staff data:', staffError);
+      } else {
+        approvalStaffData = staff || [];
+      }
+    }
+
+    // Create maps for quick lookup
+    const collectionsMap = collectionsData.reduce((acc, collection) => {
+      acc[collection.collection_id] = collection;
+      return acc;
+    }, {} as Record<string, any>);
+
+    const farmersMap = farmersData.reduce((acc, farmer) => {
+      acc[farmer.id] = farmer;
+      return acc;
+    }, {} as Record<string, any>);
+
+    const collectionStaffMap = collectionStaffData.reduce((acc, staff) => {
+      acc[staff.id] = staff;
+      return acc;
+    }, {} as Record<string, any>);
+
+    const approvalStaffMap = approvalStaffData.reduce((acc, staff) => {
+      acc[staff.id] = staff;
+      return acc;
+    }, {} as Record<string, any>);
+
     // Transform the data to match our interface
-    let transformedData = (data || []).map((item: any) => ({
-      ...item,
-      collection_details: item.collections || null,
-      staff_details: item.staff || null
-    }));
+    let transformedData = (data || []).map((item: any) => {
+      const collection = collectionsMap[item.collection_id];
+      const farmer = collection && farmersMap[collection.farmer_id];
+      const collectionStaff = collection && collectionStaffMap[collection.staff_id];
+      const approvalStaff = approvalStaffMap[item.staff_id];
+
+      return {
+        ...item,
+        collection_details: collection ? {
+          collection_id: collection.collection_id,
+          liters: collection.liters,
+          collection_date: collection.collection_date,
+          staff_id: collection.staff_id,
+          staff: collectionStaff ? {
+            profiles: {
+              full_name: collectionStaff.profiles?.full_name || 'Unknown Staff'
+            }
+          } : null,
+          farmers: farmer ? {
+            full_name: farmer.full_name || 'Unknown Farmer'
+          } : null
+        } : null,
+        staff_details: approvalStaff ? {
+          profiles: {
+            full_name: approvalStaff.profiles?.full_name || 'Unknown Staff'
+          }
+        } : null
+      };
+    });
 
     // Apply search term filter on client side
     if (searchTerm) {
@@ -522,26 +638,7 @@ export const fetchFarmerHistory = async (
         variance_type,
         penalty_amount,
         approval_notes,
-        approved_at,
-        collections!milk_approvals_collection_id_fkey (
-          collection_id,
-          liters,
-          collection_date,
-          staff_id,
-          staff (
-            profiles (
-              full_name
-            )
-          ),
-          farmers (
-            full_name
-          )
-        ),
-        staff!milk_approvals_staff_id_fkey (
-          profiles (
-            full_name
-          )
-        )
+        approved_at
       `)
       .eq('collection_id', collectionId);
 
@@ -549,12 +646,144 @@ export const fetchFarmerHistory = async (
       throw error;
     }
 
+    // If no data, return early
+    if (!data || data.length === 0) {
+      return [];
+    }
+
+    // Extract staff IDs
+    const staffIds = [...new Set([...data.map(item => item.staff_id).filter(Boolean)])] as string[];
+
+    // Fetch collections data
+    let collectionsData: any[] = [];
+    const { data: collections, error: collectionsError } = await supabase
+      .from('collections')
+      .select(`
+        collection_id,
+        liters,
+        collection_date,
+        staff_id,
+        farmer_id
+      `)
+      .eq('collection_id', collectionId);
+
+    if (collectionsError) {
+      console.warn('Error fetching collections data:', collectionsError);
+    } else {
+      collectionsData = collections || [];
+    }
+
+    // Fetch farmers data for the collections
+    let farmersData: any[] = [];
+    if (collectionsData.length > 0) {
+      const farmerIds = [...new Set(collectionsData.map(c => c.farmer_id).filter(Boolean))] as string[];
+      if (farmerIds.length > 0) {
+        const { data: farmers, error: farmersError } = await supabase
+          .from('farmers')
+          .select(`
+            id,
+            full_name
+          `)
+          .in('id', farmerIds);
+
+        if (farmersError) {
+          console.warn('Error fetching farmers data:', farmersError);
+        } else {
+          farmersData = farmers || [];
+        }
+      }
+    }
+
+    // Fetch staff data for collections
+    let collectionStaffData: any[] = [];
+    if (collectionsData.length > 0) {
+      const collectionStaffIds = [...new Set(collectionsData.map(c => c.staff_id).filter(Boolean))] as string[];
+      if (collectionStaffIds.length > 0) {
+        const { data: staff, error: staffError } = await supabase
+          .from('staff')
+          .select(`
+            id,
+            profiles (full_name)
+          `)
+          .in('id', collectionStaffIds);
+
+        if (staffError) {
+          console.warn('Error fetching collection staff data:', staffError);
+        } else {
+          collectionStaffData = staff || [];
+        }
+      }
+    }
+
+    // Fetch staff data for approvals
+    let approvalStaffData: any[] = [];
+    if (staffIds.length > 0) {
+      const { data: staff, error: staffError } = await supabase
+        .from('staff')
+        .select(`
+          id,
+          profiles (full_name)
+        `)
+        .in('id', staffIds);
+
+      if (staffError) {
+        console.warn('Error fetching approval staff data:', staffError);
+      } else {
+        approvalStaffData = staff || [];
+      }
+    }
+
+    // Create maps for quick lookup
+    const collectionsMap = collectionsData.reduce((acc, collection) => {
+      acc[collection.collection_id] = collection;
+      return acc;
+    }, {} as Record<string, any>);
+
+    const farmersMap = farmersData.reduce((acc, farmer) => {
+      acc[farmer.id] = farmer;
+      return acc;
+    }, {} as Record<string, any>);
+
+    const collectionStaffMap = collectionStaffData.reduce((acc, staff) => {
+      acc[staff.id] = staff;
+      return acc;
+    }, {} as Record<string, any>);
+
+    const approvalStaffMap = approvalStaffData.reduce((acc, staff) => {
+      acc[staff.id] = staff;
+      return acc;
+    }, {} as Record<string, any>);
+
     // Transform the data to match our interface
-    const transformedData = (data || []).map((item: any) => ({
-      ...item,
-      collection_details: item.collections || null,
-      staff_details: item.staff || null
-    }));
+    const transformedData = (data || []).map((item: any) => {
+      const collection = collectionsMap[item.collection_id];
+      const farmer = collection && farmersMap[collection.farmer_id];
+      const collectionStaff = collection && collectionStaffMap[collection.staff_id];
+      const approvalStaff = approvalStaffMap[item.staff_id];
+
+      return {
+        ...item,
+        collection_details: collection ? {
+          collection_id: collection.collection_id,
+          liters: collection.liters,
+          collection_date: collection.collection_date,
+          staff_id: collection.staff_id,
+          staff: collectionStaff ? {
+            profiles: {
+              full_name: collectionStaff.profiles?.full_name || 'Unknown Staff'
+            }
+          } : null,
+          farmers: farmer ? {
+            full_name: farmer.full_name || 'Unknown Farmer'
+          } : null
+        } : null,
+        staff_details: approvalStaff ? {
+          profiles: {
+            full_name: approvalStaff.profiles?.full_name || 'Unknown Staff'
+          }
+        } : null
+      };
+    });
 
     return transformedData;
   } catch (error: any) {

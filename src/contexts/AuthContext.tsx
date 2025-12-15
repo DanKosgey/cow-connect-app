@@ -135,7 +135,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (user && session) {
         setUser(user);
         setSession(session);
+        
+        // For signup, we'll initially set the role in state
+        // The actual role should be properly created by backend processes
         setUserRole(data.role);
+        (authService as any).userRole = data.role;
       }
 
       return { error: null };

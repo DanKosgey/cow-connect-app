@@ -8,6 +8,7 @@ import { preloadRouteWhenIdle } from '@/utils/routePreloader';
 import AdminDebugLogger from '@/utils/adminDebugLogger';
 // Lazy load admin components with preload optimization
 import { AdminPortalLayout } from '@/components/admin/AdminPortalLayout';
+import { PreloadIndicator } from '@/components/admin/PreloadIndicator';
 
 // Lazy load admin components with preload optimization
 const AdminNotifications = lazy(() => import("../pages/admin/AdminNotifications"));
@@ -30,6 +31,7 @@ const FarmerPaymentDetails = lazy(() => import("../pages/admin/FarmerPaymentDeta
 const PaymentBatchManagement = lazy(() => import("../pages/admin/PaymentBatchManagement"));
 const PaymentReports = lazy(() => import("../pages/admin/PaymentReports"));
 const CollectionsAnalyticsDashboard = lazy(() => import("../pages/admin/CollectionsAnalyticsDashboard"));
+const FarmerPaymentsPage = lazy(() => import("../pages/admin/FarmerPaymentsPage"));
 const KYCAdminDashboard = lazy(() => import("../pages/admin/KYCAdminDashboard"));
 const KYCPendingFarmersDashboard = lazy(() => import("../pages/admin/KYCPendingFarmersDashboard"));
 const KYCPendingFarmerDetails = lazy(() => import("../pages/admin/KYCPendingFarmerDetails"));
@@ -69,6 +71,7 @@ export const adminRoutes = [
   { path: '/admin/payments/farmer/:farmerId', element: <FarmerPaymentDetails /> },
   { path: '/admin/payments/batches', element: <PaymentBatchManagement /> },
   { path: '/admin/payments/reports', element: <PaymentReports /> },
+  { path: '/admin/farmer-payments', element: <FarmerPaymentsPage /> },
   { path: '/admin/collections', element: <CollectionsAnalyticsDashboard /> },
   { path: '/admin/kyc', element: <KYCAdminDashboard /> },
   { path: '/admin/kyc-pending-farmers', element: <KYCPendingFarmersDashboard /> },
@@ -141,193 +144,204 @@ export default function AdminRoutes() {
   }, [location.pathname]);
   
   return (
-    <Suspense fallback={<PageLoader type="dashboard" />}>
-      <Routes location={location}>
-        <Route path="login" element={<AdminLogin />} />
-        <Route path="connection-test" element={<ConnectionTestPage />} />
-        <Route path="auth-debug" element={<AuthDebugPage />} />
-        <Route path="auth-diagnostics" element={
-          <ProtectedRoute requiredRole={UserRole.ADMIN}>
-            <PageTransition>
-              <AuthDiagnosticsPage />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="network-diagnostics" element={
-          <ProtectedRoute requiredRole={UserRole.ADMIN}>
-            <PageTransition>
-              <NetworkDiagnosticsPage />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="checkpoints" element={
-          <ProtectedRoute requiredRole={UserRole.ADMIN}>
-            <PageTransition>
-              <Checkpoints />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="/*" element={
-          <ProtectedRoute requiredRole={UserRole.ADMIN}>
-            <AdminPortalLayout>
-              <Routes>
-                <Route path="dashboard" element={<AdminDashboard />} />
-                <Route path="farmers" element={<Farmers />} />
-                <Route path="staff" element={<Staff />} />
-                <Route path="payments" element={<PaymentSystem />} />
-                <Route path="payments/farmer/:farmerId" element={<FarmerPaymentDetails />} />
-                <Route path="payments/batches" element={<PaymentBatchManagement />} />
-                <Route path="payments/reports" element={<PaymentReports />} />
-                <Route path="collections" element={<CollectionsAnalyticsDashboard />} />
-                <Route path="kyc" element={<KYCAdminDashboard />} />
-                <Route path="kyc-pending-farmers" element={<KYCPendingFarmersDashboard />} />
-                <Route path="kyc-pending-farmer/:id" element={<KYCPendingFarmerDetails />} />
-                <Route path="kyc-storage-test" element={<KYCStorageTest />} />
-                <Route path="settings" element={<Settings />} />
-                <Route path="invite" element={<AdminInvite />} />
-                <Route path="notifications" element={<AdminNotifications />} />
-                <Route path="analytics" element={<AnalyticsDashboard />} />
-                <Route path="checkpoints" element={<Checkpoints />} />
-                <Route path="network-diagnostics" element={<NetworkDiagnosticsPage />} />
-                <Route path="auth-diagnostics" element={<AuthDiagnosticsPage />} />
-                <Route path="invitation-management" element={<InvitationManagement />} />
-                <Route path="storage-diagnostics" element={<StorageDiagnostics />} />
-                <Route path="storage-test" element={<StorageTest />} />
-                <Route path="kyc-storage-test" element={<KYCStorageTest />} />
-                <Route path="farmer-performance" element={<FarmerPerformanceDashboard />} />
-                <Route path="credit-management" element={<CreditManagementEssentials />} />
-                {/* Removed credit-defaults, credit-audit, and credit-reports routes */}
-                <Route path="credit-risk-assessment" element={<CreditRiskAssessment />} />
-                <Route path="credit-settings" element={<CreditSettings />} />
-                <Route path="error-reporting" element={<ErrorReportingDashboard />} />
-                <Route path="variance-reporting" element={<VarianceReportingDashboard />} />
-                <Route path="variance-insights" element={<VarianceInsightsDashboard />} />
-                <Route path="penalty-management" element={<PenaltyManagementPage />} />
-                <Route path="collectors" element={<CollectorsPage />} />
-                <Route path="collections-debug" element={<CollectionsDebugPage />} />
-                <Route path="deductions" element={<ServicesPage />} />
-                <Route path="ai-monitoring" element={<AdminAIMonitoringDashboard />} />
-                <Route index element={<Navigate to="dashboard" replace />} />
-                <Route path="*" element={<Navigate to="/admin" replace />} />
-              </Routes>
-            </AdminPortalLayout>
-          </ProtectedRoute>
-        } />
-        <Route path="staff" element={
-          <ProtectedRoute requiredRole={UserRole.ADMIN}>
-            <PageTransition>
-              <Staff />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="payments" element={
-          <ProtectedRoute requiredRole={UserRole.ADMIN}>
-            <PageTransition>
-              <PaymentSystem />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="payments/farmer/:farmerId" element={
-          <ProtectedRoute requiredRole={UserRole.ADMIN}>
-            <PageTransition>
-              <FarmerPaymentDetails />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="payments/batches" element={
-          <ProtectedRoute requiredRole={UserRole.ADMIN}>
-            <PageTransition>
-              <PaymentBatchManagement />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="payments/reports" element={
-          <ProtectedRoute requiredRole={UserRole.ADMIN}>
-            <PageTransition>
-              <PaymentReports />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="collections" element={
-          <ProtectedRoute requiredRole={UserRole.ADMIN}>
-            <PageTransition>
-              <CollectionsAnalyticsDashboard />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="kyc" element={
-          <ProtectedRoute requiredRole={UserRole.ADMIN}>
-            <PageTransition>
-              <KYCAdminDashboard />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="kyc-pending-farmers" element={
-          <ProtectedRoute requiredRole={UserRole.ADMIN}>
-            <PageTransition>
-              <KYCPendingFarmersDashboard />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="kyc-pending-farmer/:id" element={
-          <ProtectedRoute requiredRole={UserRole.ADMIN}>
-            <PageTransition>
-              <KYCPendingFarmerDetails />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="settings" element={
-          <ProtectedRoute requiredRole={UserRole.ADMIN}>
-            <PageTransition>
-              <Settings />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="invite" element={
-          <ProtectedRoute requiredRole={UserRole.ADMIN}>
-            <PageTransition>
-              <AdminInvite />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="notifications" element={
-          <ProtectedRoute requiredRole={UserRole.ADMIN}>
-            <PageTransition>
-              <AdminNotifications />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="analytics" element={
-          <ProtectedRoute requiredRole={UserRole.ADMIN}>
-            <PageTransition>
-              <AnalyticsDashboard />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="credit-management" element={
-          <ProtectedRoute requiredRole={UserRole.ADMIN}>
-            <PageTransition>
-              <CreditManagementEssentials />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        {/* Removed credit-defaults, credit-audit, and credit-reports routes */}
-        <Route path="credit-risk-assessment" element={
-          <ProtectedRoute requiredRole={UserRole.ADMIN}>
-            <PageTransition>
-              <CreditRiskAssessment />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="credit-settings" element={
-          <ProtectedRoute requiredRole={UserRole.ADMIN}>
-            <PageTransition>
-              <CreditSettings />
-            </PageTransition>
-          </ProtectedRoute>
-        } />
-        <Route path="" element={<Navigate to="dashboard" replace />} />
-      </Routes>
-    </Suspense>
+    <>
+      <PreloadIndicator targetPath="/admin/payments" />
+      <Suspense fallback={<PageLoader type="dashboard" />}>
+        <Routes location={location}>
+          <Route path="login" element={<AdminLogin />} />
+          <Route path="connection-test" element={<ConnectionTestPage />} />
+          <Route path="auth-debug" element={<AuthDebugPage />} />
+          <Route path="auth-diagnostics" element={
+            <ProtectedRoute requiredRole={UserRole.ADMIN}>
+              <PageTransition>
+                <AuthDiagnosticsPage />
+              </PageTransition>
+            </ProtectedRoute>
+          } />
+          <Route path="network-diagnostics" element={
+            <ProtectedRoute requiredRole={UserRole.ADMIN}>
+              <PageTransition>
+                <NetworkDiagnosticsPage />
+              </PageTransition>
+            </ProtectedRoute>
+          } />
+          <Route path="checkpoints" element={
+            <ProtectedRoute requiredRole={UserRole.ADMIN}>
+              <PageTransition>
+                <Checkpoints />
+              </PageTransition>
+            </ProtectedRoute>
+          } />
+          <Route path="/*" element={
+            <ProtectedRoute requiredRole={UserRole.ADMIN}>
+              <AdminPortalLayout>
+                <Routes>
+                  <Route path="dashboard" element={<AdminDashboard />} />
+                  <Route path="farmers" element={<Farmers />} />
+                  <Route path="staff" element={<Staff />} />
+                  <Route path="payments" element={<PaymentSystem />} />
+                  <Route path="payments/farmer/:farmerId" element={<FarmerPaymentDetails />} />
+                  <Route path="payments/batches" element={<PaymentBatchManagement />} />
+                  <Route path="payments/reports" element={<PaymentReports />} />
+                  <Route path="farmer-payments" element={<FarmerPaymentsPage />} />
+                  <Route path="collections" element={<CollectionsAnalyticsDashboard />} />
+                  <Route path="kyc" element={<KYCAdminDashboard />} />
+                  <Route path="kyc-pending-farmers" element={<KYCPendingFarmersDashboard />} />
+                  <Route path="kyc-pending-farmer/:id" element={<KYCPendingFarmerDetails />} />
+                  <Route path="kyc-storage-test" element={<KYCStorageTest />} />
+                  <Route path="settings" element={<Settings />} />
+                  <Route path="invite" element={<AdminInvite />} />
+                  <Route path="notifications" element={<AdminNotifications />} />
+                  <Route path="analytics" element={<AnalyticsDashboard />} />
+                  <Route path="checkpoints" element={<Checkpoints />} />
+                  <Route path="network-diagnostics" element={<NetworkDiagnosticsPage />} />
+                  <Route path="auth-diagnostics" element={<AuthDiagnosticsPage />} />
+                  <Route path="invitation-management" element={<InvitationManagement />} />
+                  <Route path="storage-diagnostics" element={<StorageDiagnostics />} />
+                  <Route path="storage-test" element={<StorageTest />} />
+                  <Route path="kyc-storage-test" element={<KYCStorageTest />} />
+                  <Route path="farmer-performance" element={<FarmerPerformanceDashboard />} />
+                  <Route path="credit-management" element={<CreditManagementEssentials />} />
+                  {/* Removed credit-defaults, credit-audit, and credit-reports routes */}
+                  <Route path="credit-risk-assessment" element={<CreditRiskAssessment />} />
+                  <Route path="credit-settings" element={<CreditSettings />} />
+                  <Route path="error-reporting" element={<ErrorReportingDashboard />} />
+                  <Route path="variance-reporting" element={<VarianceReportingDashboard />} />
+                  <Route path="variance-insights" element={<VarianceInsightsDashboard />} />
+                  <Route path="penalty-management" element={<PenaltyManagementPage />} />
+                  <Route path="collectors" element={<CollectorsPage />} />
+                  <Route path="collections-debug" element={<CollectionsDebugPage />} />
+                  <Route path="deductions" element={<ServicesPage />} />
+                  <Route path="ai-monitoring" element={<AdminAIMonitoringDashboard />} />
+                  <Route index element={<Navigate to="dashboard" replace />} />
+                  <Route path="*" element={<Navigate to="/admin" replace />} />
+                </Routes>
+              </AdminPortalLayout>
+            </ProtectedRoute>
+          } />
+          <Route path="staff" element={
+            <ProtectedRoute requiredRole={UserRole.ADMIN}>
+              <PageTransition>
+                <Staff />
+              </PageTransition>
+            </ProtectedRoute>
+          } />
+          <Route path="payments" element={
+            <ProtectedRoute requiredRole={UserRole.ADMIN}>
+              <PageTransition>
+                <PaymentSystem />
+              </PageTransition>
+            </ProtectedRoute>
+          } />
+          <Route path="payments/farmer/:farmerId" element={
+            <ProtectedRoute requiredRole={UserRole.ADMIN}>
+              <PageTransition>
+                <FarmerPaymentDetails />
+              </PageTransition>
+            </ProtectedRoute>
+          } />
+          <Route path="payments/batches" element={
+            <ProtectedRoute requiredRole={UserRole.ADMIN}>
+              <PageTransition>
+                <PaymentBatchManagement />
+              </PageTransition>
+            </ProtectedRoute>
+          } />
+          <Route path="payments/reports" element={
+            <ProtectedRoute requiredRole={UserRole.ADMIN}>
+              <PageTransition>
+                <PaymentReports />
+              </PageTransition>
+            </ProtectedRoute>
+          } />
+          <Route path="farmer-payments" element={
+            <ProtectedRoute requiredRole={UserRole.ADMIN}>
+              <PageTransition>
+                <FarmerPaymentsPage />
+              </PageTransition>
+            </ProtectedRoute>
+          } />
+          <Route path="collections" element={
+            <ProtectedRoute requiredRole={UserRole.ADMIN}>
+              <PageTransition>
+                <CollectionsAnalyticsDashboard />
+              </PageTransition>
+            </ProtectedRoute>
+          } />
+          <Route path="kyc" element={
+            <ProtectedRoute requiredRole={UserRole.ADMIN}>
+              <PageTransition>
+                <KYCAdminDashboard />
+              </PageTransition>
+            </ProtectedRoute>
+          } />
+          <Route path="kyc-pending-farmers" element={
+            <ProtectedRoute requiredRole={UserRole.ADMIN}>
+              <PageTransition>
+                <KYCPendingFarmersDashboard />
+              </PageTransition>
+            </ProtectedRoute>
+          } />
+          <Route path="kyc-pending-farmer/:id" element={
+            <ProtectedRoute requiredRole={UserRole.ADMIN}>
+              <PageTransition>
+                <KYCPendingFarmerDetails />
+              </PageTransition>
+            </ProtectedRoute>
+          } />
+          <Route path="settings" element={
+            <ProtectedRoute requiredRole={UserRole.ADMIN}>
+              <PageTransition>
+                <Settings />
+              </PageTransition>
+            </ProtectedRoute>
+          } />
+          <Route path="invite" element={
+            <ProtectedRoute requiredRole={UserRole.ADMIN}>
+              <PageTransition>
+                <AdminInvite />
+              </PageTransition>
+            </ProtectedRoute>
+          } />
+          <Route path="notifications" element={
+            <ProtectedRoute requiredRole={UserRole.ADMIN}>
+              <PageTransition>
+                <AdminNotifications />
+              </PageTransition>
+            </ProtectedRoute>
+          } />
+          <Route path="analytics" element={
+            <ProtectedRoute requiredRole={UserRole.ADMIN}>
+              <PageTransition>
+                <AnalyticsDashboard />
+              </PageTransition>
+            </ProtectedRoute>
+          } />
+          <Route path="credit-management" element={
+            <ProtectedRoute requiredRole={UserRole.ADMIN}>
+              <PageTransition>
+                <CreditManagementEssentials />
+              </PageTransition>
+            </ProtectedRoute>
+          } />
+          {/* Removed credit-defaults, credit-audit, and credit-reports routes */}
+          <Route path="credit-risk-assessment" element={
+            <ProtectedRoute requiredRole={UserRole.ADMIN}>
+              <PageTransition>
+                <CreditRiskAssessment />
+              </PageTransition>
+            </ProtectedRoute>
+          } />
+          <Route path="credit-settings" element={
+            <ProtectedRoute requiredRole={UserRole.ADMIN}>
+              <PageTransition>
+                <CreditSettings />
+              </PageTransition>
+            </ProtectedRoute>
+          } />
+          <Route path="" element={<Navigate to="dashboard" replace />} />
+        </Routes>
+      </Suspense>
+    </>
   );
 }
