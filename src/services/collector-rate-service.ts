@@ -39,15 +39,23 @@ class CollectorRateService {
         return this.currentRate;
       }
 
+      console.log('Fetching current collector rate...');
       const { data, error } = await supabase
         .rpc('get_current_collector_rate');
 
       if (error) {
+        console.error('Error fetching current collector rate:', error);
         logger.errorWithContext('CollectorRateService - getCurrentRate', error);
-        throw error;
+        // Return default rate instead of throwing error
+        const defaultRate = 3.00;
+        this.currentRate = defaultRate;
+        this.lastFetchTime = now;
+        this.notifyListeners(defaultRate);
+        return defaultRate;
       }
 
-      const rate = data || 0;
+      const rate = data || 3.00; // Use default rate of 3.00 if no data
+      console.log('Current collector rate:', rate);
       this.currentRate = rate;
       this.lastFetchTime = now;
       this.notifyListeners(rate);

@@ -149,6 +149,9 @@ class CollectorEarningsService {
       const ratePerLiter = await collectorRateService.getCurrentRate();
       logger.withContext('CollectorEarningsService - calculateEarnings').info(`Current rate per liter: ${ratePerLiter}`);
 
+      // If rate is 0 or invalid, use a default rate for display purposes
+      const effectiveRate = ratePerLiter > 0 ? ratePerLiter : 3.00; // Default rate of 3.00
+
       // Get total collections and liters for the collector in the period
       // Only count approved collections with pending fees
       const { data, error } = await supabase
@@ -172,7 +175,7 @@ class CollectorEarningsService {
       const totalLiters = data?.reduce((sum, collection) => sum + (collection.liters || 0), 0) || 0;
       
       // Validate calculation results
-      if (ratePerLiter < 0) {
+      if (effectiveRate < 0) {
         throw new CalculationError('Invalid rate per liter');
       }
       
@@ -180,14 +183,14 @@ class CollectorEarningsService {
         throw new CalculationError('Invalid total liters');
       }
       
-      const totalEarnings = totalLiters * ratePerLiter;
+      const totalEarnings = totalLiters * effectiveRate;
       
       logger.withContext('CollectorEarningsService - calculateEarnings').info(`Total collections: ${totalCollections}, Total liters: ${totalLiters}, Total earnings: ${totalEarnings}`);
 
       return {
         totalCollections,
         totalLiters,
-        ratePerLiter,
+        ratePerLiter: effectiveRate,
         totalEarnings,
         periodStart,
         periodEnd
@@ -289,11 +292,14 @@ class CollectorEarningsService {
       const ratePerLiter = await collectorRateService.getCurrentRate();
       logger.withContext('CollectorEarningsService - getAllTimeEarnings').info(`Current rate per liter: ${ratePerLiter}`);
 
+      // If rate is 0 or invalid, use a default rate for display purposes
+      const effectiveRate = ratePerLiter > 0 ? ratePerLiter : 3.00; // Default rate of 3.00
+
       const totalCollections = data.length;
       const totalLiters = data.reduce((sum, collection) => sum + (collection.liters || 0), 0);
       
       // Validate calculation results
-      if (ratePerLiter < 0) {
+      if (effectiveRate < 0) {
         throw new CalculationError('Invalid rate per liter');
       }
       
@@ -303,7 +309,7 @@ class CollectorEarningsService {
       
       // Calculate gross earnings as total liters * rate per liter
       // This represents ALL collection fees regardless of payment status
-      const totalEarnings = totalLiters * ratePerLiter;
+      const totalEarnings = totalLiters * effectiveRate;
       
       logger.withContext('CollectorEarningsService - getAllTimeEarnings').info(`Total collections: ${totalCollections}, Total liters: ${totalLiters}, Gross earnings: ${totalEarnings}`);
 
@@ -314,7 +320,7 @@ class CollectorEarningsService {
       return {
         totalCollections,
         totalLiters,
-        ratePerLiter,
+        ratePerLiter: effectiveRate,
         totalEarnings,
         periodStart: firstCollectionDate ? firstCollectionDate.split('T')[0] : '',
         periodEnd: lastCollectionDate ? lastCollectionDate.split('T')[0] : ''

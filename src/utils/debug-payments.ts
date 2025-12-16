@@ -12,7 +12,7 @@ export const debugPaymentRecords = async () => {
       .from('collector_payments')
       .select(`
         *,
-        staff!inner (
+        staff (
           profiles (
             full_name
           )

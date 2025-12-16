@@ -45,6 +45,21 @@ export interface CollectorPaymentWithPenalties {
   notes?: string;
 }
 
+export interface PaymentDetail {
+  id: string;
+  collection_id: string;
+  collection_date: string;
+  farmer_name: string;
+  liters_collected: number;
+  company_received_liters: number;
+  variance_liters: number;
+  variance_percentage: number;
+  variance_type: 'positive' | 'negative' | 'none';
+  penalty_amount: number;
+  penalty_status: 'pending' | 'paid';
+  approval_date: string;
+}
+
 export interface CollectorPenaltyAnalytics {
   collectorId: string;
   collectorName: string;
@@ -206,13 +221,12 @@ class CollectorPenaltyService {
       let totalPenalties = 0;
       
       // Get all milk approvals and collections for this calculation
-      // Only include penalties with penalty_status = 'pending'
+      // Include all penalties for the period, not just pending ones
       console.log('Fetching all penalty data for collector...');
       const milkApprovalsResponse = await supabase
         .from('milk_approvals')
         .select('id, collection_id, penalty_amount, approved_at, penalty_status')
-        .neq('penalty_amount', 0)
-        .eq('penalty_status', 'pending'); // Changed from neq to eq for consistency
+        .neq('penalty_amount', 0);
       
       const collectionsResponse = await supabase
         .from('collections')
@@ -236,34 +250,78 @@ class CollectorPenaltyService {
         collectionToCollectorMap.set(collection.id, collection.staff_id);
       });
       
+      // Log some mapping info for debugging
+      console.log(`Created collection to collector map with ${collectionToCollectorMap.size} entries`);
+      if (collectionToCollectorMap.size > 0) {
+        console.log(`First few mappings:`);
+        let count = 0;
+        for (const [collectionId, staffId] of collectionToCollectorMap) {
+          console.log(`  Collection ${collectionId} -> Staff ${staffId}`);
+          count++;
+          if (count >= 3) break;
+        }
+      }
+
       // Filter by date range for milk approvals that belong to this collector
       console.log('Checking milk_approvals table for penalties...');
+      console.log(`Looking for penalties between ${startDate} and ${endDate} for collector ${collectorId}`);
+      
+      // Parse dates and handle timezone properly
       const periodStart = new Date(startDate);
       const periodEnd = new Date(endDate);
+      console.log(`Parsed period start: ${periodStart.toISOString()}`);
+      console.log(`Parsed period end: ${periodEnd.toISOString()}`);
+      
       // Set periodEnd to end of day for proper date comparison
-      periodEnd.setHours(23, 59, 59, 999);
+      // Use UTC to avoid timezone issues
+      periodEnd.setUTCHours(23, 59, 59, 999);
+      console.log(`Period end with time: ${periodEnd.toISOString()}`);
+      
+      // Log some sample approvals for debugging
+      if (milkApprovals.length > 0) {
+        console.log(`First few approvals for debugging:`);
+        milkApprovals.slice(0, 3).forEach((approval, index) => {
+          console.log(`  Approval ${index + 1}: id=${approval.id}, approved_at=${approval.approved_at}, penalty_amount=${approval.penalty_amount}`);
+        });
+      }
       
       const filteredApprovals = milkApprovals.filter(approval => {
         // First check if the approval is within the date range
-        if (!approval.approved_at) return false;
+        if (!approval.approved_at) {
+          console.log(`Skipping approval ${approval.id} - no approved_at date`);
+          return false;
+        }
         const approvalDate = new Date(approval.approved_at);
+        console.log(`Checking approval ${approval.id}: approved_at=${approvalDate.toISOString()}`);
         
         // Normalize dates for comparison (compare only date parts, not time)
         const approvalDateNormalized = new Date(approvalDate.getFullYear(), approvalDate.getMonth(), approvalDate.getDate());
         const periodStartNormalized = new Date(periodStart.getFullYear(), periodStart.getMonth(), periodStart.getDate());
         const periodEndNormalized = new Date(periodEnd.getFullYear(), periodEnd.getMonth(), periodEnd.getDate());
         
+        console.log(`  Normalized approval date: ${approvalDateNormalized.toISOString()}`);
+        console.log(`  Normalized period start: ${periodStartNormalized.toISOString()}`);
+        console.log(`  Normalized period end: ${periodEndNormalized.toISOString()}`);
+        
         // Check if approval date is within the payment period
         const isWithinPeriod = approvalDateNormalized >= periodStartNormalized && approvalDateNormalized <= periodEndNormalized;
+        console.log(`  Is within period: ${isWithinPeriod}`);
         
         if (!isWithinPeriod) return false;
         
         // Now check if this approval's collection belongs to this collector
         const collectionId = approval.collection_id;
         const collectorIdForThisCollection = collectionToCollectorMap.get(collectionId);
+        console.log(`  Collection ${collectionId} belongs to collector ${collectorIdForThisCollection}`);
         
         // Check if this collection was collected by the specified collector
-        return collectorIdForThisCollection === collectorId;
+        const isSameCollector = collectorIdForThisCollection === collectorId;
+        console.log(`  Is same collector (${collectorId}): ${isSameCollector}`);
+        
+        // Also log penalty status and amount for debugging
+        console.log(`  Penalty status: ${approval.penalty_status}, amount: ${approval.penalty_amount}`);
+        
+        return isSameCollector;
       });
       
       console.log(`Found ${filteredApprovals.length} penalties in milk_approvals within date range for collector ${collectorId}`);
@@ -285,12 +343,13 @@ class CollectorPenaltyService {
    */
   async getCollectorPaymentsWithPenalties(): Promise<CollectorPaymentWithPenalties[]> {
     try {
-      // Get all collector payments
+      // Get all collector payments with staff information
+      // Fixed the join by using the correct foreign key relationship
       const { data: payments, error: paymentsError } = await supabase
         .from('collector_payments')
         .select(`
           *,
-          staff!inner (
+          staff (
             profiles (
               full_name
             )
@@ -304,13 +363,12 @@ class CollectorPenaltyService {
       }
 
       // Get all milk approvals and collections for better performance
-      // Only include penalties with penalty_status = 'pending'
+      // Include all penalties for the period, not just pending ones
       console.log('Fetching all penalty data...');
       const allMilkApprovalsResponse = await supabase
         .from('milk_approvals')
         .select('id, collection_id, staff_id, penalty_amount, approved_at, penalty_status')
         .neq('penalty_amount', 0)
-        .eq('penalty_status', 'pending') // Changed from neq to eq for consistency
         .order('approved_at', { ascending: false });
       
       const allCollectionsResponse = await supabase
@@ -356,24 +414,50 @@ class CollectorPenaltyService {
           
           // Filter milk approvals for this collector and period
           console.log('--- Checking milk_approvals table ---');
+          console.log(`Payment period start: ${payment.period_start} (${typeof payment.period_start})`);
+          console.log(`Payment period end: ${payment.period_end} (${typeof payment.period_end})`);
+          
+          // Parse dates and handle timezone properly
           const periodStart = new Date(payment.period_start);
           const periodEnd = new Date(payment.period_end);
+          console.log(`Parsed period start: ${periodStart.toISOString()}`);
+          console.log(`Parsed period end: ${periodEnd.toISOString()}`);
+          
           // Set periodEnd to end of day for proper date comparison
-          periodEnd.setHours(23, 59, 59, 999);
+          // Use UTC to avoid timezone issues
+          periodEnd.setUTCHours(23, 59, 59, 999);
+          console.log(`Period end with time: ${periodEnd.toISOString()}`);
+          
+          // Log some sample approvals for debugging
+          if (allMilkApprovals.length > 0) {
+            console.log(`First few approvals for debugging:`);
+            allMilkApprovals.slice(0, 3).forEach((approval, index) => {
+              console.log(`  Approval ${index + 1}: id=${approval.id}, approved_at=${approval.approved_at}, penalty_amount=${approval.penalty_amount}`);
+            });
+          }
           
           // Find approvals that belong to this collector by joining through collections
           const collectorMilkApprovals = allMilkApprovals.filter(approval => {
             // First check if the approval is within the date range
-            if (!approval.approved_at) return false;
+            if (!approval.approved_at) {
+              console.log(`Skipping approval ${approval.id} - no approved_at date`);
+              return false;
+            }
             const approvalDate = new Date(approval.approved_at);
+            console.log(`Checking approval ${approval.id}: approved_at=${approvalDate.toISOString()}`);
             
             // Normalize dates for comparison (compare only date parts, not time)
             const approvalDateNormalized = new Date(approvalDate.getFullYear(), approvalDate.getMonth(), approvalDate.getDate());
             const periodStartNormalized = new Date(periodStart.getFullYear(), periodStart.getMonth(), periodStart.getDate());
             const periodEndNormalized = new Date(periodEnd.getFullYear(), periodEnd.getMonth(), periodEnd.getDate());
             
+            console.log(`  Normalized approval date: ${approvalDateNormalized.toISOString()}`);
+            console.log(`  Normalized period start: ${periodStartNormalized.toISOString()}`);
+            console.log(`  Normalized period end: ${periodEndNormalized.toISOString()}`);
+            
             // Check if approval date is within the payment period
             const isWithinPeriod = approvalDateNormalized >= periodStartNormalized && approvalDateNormalized <= periodEndNormalized;
+            console.log(`  Is within period: ${isWithinPeriod}`);
             
             if (!isWithinPeriod) return false;
             
@@ -381,9 +465,15 @@ class CollectorPenaltyService {
             // Get the collection for this approval
             const collectionId = approval.collection_id;
             const collectorIdForThisCollection = collectionToCollectorMap.get(collectionId);
+            console.log(`  Collection ${collectionId} belongs to collector ${collectorIdForThisCollection}`);
             
             // Check if this collection was collected by the current payment's collector
             const isSameCollector = collectorIdForThisCollection === payment.collector_id;
+            console.log(`  Is same collector (${payment.collector_id}): ${isSameCollector}`);
+            
+            // Also log penalty status and amount for debugging
+            console.log(`  Penalty status: ${approval.penalty_status}, amount: ${approval.penalty_amount}`);
+            
             if (isSameCollector) {
               console.log(`Found approval ${approval.id} for collection ${collectionId} belonging to collector ${payment.collector_id}`);
             }
@@ -437,7 +527,7 @@ class CollectorPenaltyService {
         .from('collector_payments')
         .select(`
           *,
-          staff!inner (
+          staff (
             profiles (
               full_name
             )
@@ -482,6 +572,139 @@ class CollectorPenaltyService {
     } catch (error) {
       logger.errorWithContext('CollectorPenaltyService - getCollectorPaymentWithPenalties exception', error);
       return null;
+    }
+  }
+
+  /**
+   * Get detailed payment information with collection-level penalty details
+   */
+  async getDetailedPaymentWithPenalties(paymentId: string): Promise<{
+    payment: CollectorPaymentWithPenalties | null;
+    collections: PaymentDetail[];
+  }> {
+    try {
+      // Get the payment details
+      const { data: payment, error: paymentError } = await supabase
+        .from('collector_payments')
+        .select(`
+          *,
+          staff (
+            profiles (
+              full_name
+            )
+          )
+        `)
+        .eq('id', paymentId)
+        .single();
+
+      if (paymentError) {
+        logger.errorWithContext('CollectorPenaltyService - getDetailedPaymentWithPenalties fetch payment', paymentError);
+        return { payment: null, collections: [] };
+      }
+
+      if (!payment) {
+        return { payment: null, collections: [] };
+      }
+
+      // Get collections within the payment period for this collector
+      const { data: collections, error: collectionsError } = await supabase
+        .from('collections')
+        .select(`
+          id,
+          collection_date,
+          liters,
+          farmer_id,
+          staff_id,
+          farmers (
+            profiles (
+              full_name
+            )
+          )
+        `)
+        .eq('staff_id', payment.collector_id)
+        .gte('collection_date', payment.period_start)
+        .lte('collection_date', payment.period_end)
+        .eq('approved_for_payment', true)
+        .order('collection_date', { ascending: true });
+
+      if (collectionsError) {
+        logger.errorWithContext('CollectorPenaltyService - getDetailedPaymentWithPenalties fetch collections', collectionsError);
+        return { payment: null, collections: [] };
+      }
+
+      // Get milk approvals for these collections
+      const collectionIds = collections.map(c => c.id);
+      let milkApprovals: any[] = [];
+      
+      if (collectionIds.length > 0) {
+        const { data: approvals, error: approvalsError } = await supabase
+          .from('milk_approvals')
+          .select(`
+            id,
+            collection_id,
+            company_received_liters,
+            variance_liters,
+            variance_percentage,
+            variance_type,
+            penalty_amount,
+            penalty_status,
+            approved_at
+          `)
+          .in('collection_id', collectionIds);
+
+        if (!approvalsError && approvals) {
+          milkApprovals = approvals;
+        }
+      }
+
+      // Combine collection data with approval data
+      const collectionDetails: PaymentDetail[] = collections.map(collection => {
+        const approval = milkApprovals.find(a => a.collection_id === collection.id);
+        
+        return {
+          id: approval?.id || '',
+          collection_id: collection.id,
+          collection_date: collection.collection_date,
+          farmer_name: collection.farmers?.profiles?.full_name || 'Unknown Farmer',
+          liters_collected: collection.liters || 0,
+          company_received_liters: approval?.company_received_liters || 0,
+          variance_liters: approval?.variance_liters || 0,
+          variance_percentage: approval?.variance_percentage || 0,
+          variance_type: approval?.variance_type || 'none',
+          penalty_amount: approval?.penalty_amount || 0,
+          penalty_status: approval?.penalty_status || 'pending',
+          approval_date: approval?.approved_at || ''
+        };
+      });
+
+      // Calculate total penalties
+      const totalPenalties = collectionDetails.reduce((sum, detail) => sum + detail.penalty_amount, 0);
+      const adjustedEarnings = Math.max(0, payment.total_earnings - totalPenalties);
+
+      const paymentWithPenalties: CollectorPaymentWithPenalties = {
+        id: payment.id,
+        collector_id: payment.collector_id,
+        collector_name: payment.staff?.profiles?.full_name || 'Unknown Collector',
+        period_start: payment.period_start,
+        period_end: payment.period_end,
+        total_collections: payment.total_collections,
+        total_liters: payment.total_liters,
+        rate_per_liter: payment.rate_per_liter,
+        total_earnings: payment.total_earnings,
+        total_penalties: parseFloat(totalPenalties.toFixed(2)),
+        adjusted_earnings: parseFloat(adjustedEarnings.toFixed(2)),
+        status: payment.status,
+        payment_date: payment.payment_date,
+        notes: payment.notes
+      };
+
+      return {
+        payment: paymentWithPenalties,
+        collections: collectionDetails
+      };
+    } catch (error) {
+      logger.errorWithContext('CollectorPenaltyService - getDetailedPaymentWithPenalties exception', error);
+      return { payment: null, collections: [] };
     }
   }
 
