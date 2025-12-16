@@ -1,10 +1,10 @@
 -- Migration: 20251128000500_auto_create_collector_payments.sql
--- Description: Automatically create collector payment records for approved collections
--- This will create payment records for collectors based on their approved collections
+-- Description: Create function to automatically generate collector payment records
+-- Estimated time: 2 minutes
 
 BEGIN;
 
--- Create a function to generate collector payment records
+-- Create function to generate collector payment records
 CREATE OR REPLACE FUNCTION generate_collector_payments()
 RETURNS TABLE(
     collector_id UUID,
@@ -16,7 +16,9 @@ RETURNS TABLE(
     total_earnings NUMERIC(10,2),
     total_penalties NUMERIC(10,2),
     adjusted_earnings NUMERIC(10,2)
-) AS $$
+)
+SECURITY DEFINER
+AS $$
 BEGIN
     RETURN QUERY
     WITH collector_earnings AS (
@@ -26,27 +28,25 @@ BEGIN
             MAX(c.collection_date::DATE) as period_end,
             COUNT(c.id)::INTEGER as total_collections,
             SUM(c.liters)::NUMERIC(10,2) as total_liters,
-            -- Get the current collector rate
+            -- Get the current rate from the collector_rates table
             COALESCE((
                 SELECT rate_per_liter 
                 FROM collector_rates 
-                WHERE is_active = true 
-                ORDER BY effective_from DESC 
+                WHERE effective_date <= NOW() 
+                ORDER BY effective_date DESC 
                 LIMIT 1
-            ), 0.00)::NUMERIC(10,2) as rate_per_liter,
-            -- Calculate total earnings
+            ), 3.00)::NUMERIC(10,2) as rate_per_liter,
             (SUM(c.liters) * COALESCE((
                 SELECT rate_per_liter 
                 FROM collector_rates 
-                WHERE is_active = true 
-                ORDER BY effective_from DESC 
+                WHERE effective_date <= NOW() 
+                ORDER BY effective_date DESC 
                 LIMIT 1
-            ), 0.00))::NUMERIC(10,2) as total_earnings
+            ), 3.00))::NUMERIC(10,2) as total_earnings
         FROM collections c
         WHERE c.approved_for_payment = true
           AND c.status = 'Collected'
           AND NOT EXISTS (
-              -- Check if a payment record already exists for this collector and period
               SELECT 1 
               FROM collector_payments cp 
               WHERE cp.collector_id = c.staff_id
@@ -58,7 +58,7 @@ BEGIN
     collector_penalties AS (
         SELECT 
             c.staff_id,
-            COALESCE(SUM(ma.penalty_amount), 0)::NUMERIC(10,2) as total_penalty
+            COALESCE(SUM(CASE WHEN ma.penalty_status = 'pending' THEN ma.penalty_amount ELSE 0 END), 0)::NUMERIC(10,2) as total_penalty
         FROM collections c
         LEFT JOIN milk_approvals ma ON c.id = ma.collection_id AND ma.penalty_amount IS NOT NULL
         WHERE c.approved_for_payment = true

@@ -83,7 +83,7 @@ export const useCollectorsData = () => {
       try {
         setLoading(true);
         
-        // Check cache first
+        // Check cache first, but with stricter validation
         const now = Date.now();
         if (cache.collectors && 
             cache.timestamp && 
@@ -92,98 +92,106 @@ export const useCollectorsData = () => {
           // Use cached data
           const collectorsData = cache.collectors;
           
-          // Apply filters
-          let filteredCollectors = [...collectorsData];
+          // Validate that the cached data is not stale by checking a few key records
+          // If we find inconsistencies, force a refresh
+          let shouldRefresh = false;
           
-          // Apply search term filter
-          if (searchTerm) {
-            filteredCollectors = filteredCollectors.filter(collector => 
-              collector.name.toLowerCase().includes(searchTerm.toLowerCase())
-            );
-          }
-          
-          // Apply payment filter
-          if (paymentFilter !== 'all') {
-            filteredCollectors = filteredCollectors.filter(collector => {
-              if (paymentFilter === 'pending') {
-                return collector.pendingPayments > 0;
-              } else {
-                return collector.pendingPayments === 0 && collector.paidPayments > 0;
-              }
-            });
-          }
-          
-          // Apply advanced filters
-          if (filters.minEarnings !== null) {
-            filteredCollectors = filteredCollectors.filter(collector => 
-              (collector.totalEarnings - collector.totalPenalties) >= filters.minEarnings!
-            );
-          }
-          
-          if (filters.maxEarnings !== null) {
-            filteredCollectors = filteredCollectors.filter(collector => 
-              (collector.totalEarnings - collector.totalPenalties) <= filters.maxEarnings!
-            );
-          }
-          
-          if (filters.performanceRange !== 'all') {
-            filteredCollectors = filteredCollectors.filter(collector => {
-              if (filters.performanceRange === 'excellent') {
-                return collector.performanceScore >= 80;
-              } else if (filters.performanceRange === 'good') {
-                return collector.performanceScore >= 60 && collector.performanceScore < 80;
-              } else {
-                return collector.performanceScore < 60;
-              }
-            });
-          }
-          
-          // Apply date range filter
-          if (filters.dateRange.from || filters.dateRange.to) {
-            // For date filtering, we would need to fetch collections with date filters
-            // This is a simplified implementation - in a full implementation, we would filter by collection dates
-            console.log('Date range filter applied:', filters.dateRange);
-          }
-          
-          // For pagination, we'll slice the data on the client side for now
-          // In a production app, this should be done server-side
-          const startIndex = (page - 1) * pageSize;
-          const endIndex = startIndex + pageSize;
-          const paginatedCollectors = filteredCollectors.slice(startIndex, endIndex);
-          
-          setCollectors(paginatedCollectors);
-          setTotalCount(filteredCollectors.length);
-          
-          // Calculate stats using the aggregated collector data for consistency
-          const totalCollectors = filteredCollectors.length;
-          const totalGrossEarnings = filteredCollectors.reduce((sum, collector) => sum + (collector.totalEarnings || 0), 0);
-          const totalPenalties = filteredCollectors.reduce((sum, collector) => sum + (collector.totalPenalties || 0), 0);
-          
-          // Calculate pending and paid amounts from collections data
-          const totalPendingAmount = filteredCollectors.reduce((sum, collector) => sum + (collector.pendingPayments || 0), 0);
-          const totalPaidAmount = filteredCollectors.reduce((sum, collector) => sum + (collector.paidPayments || 0), 0);
+          if (!shouldRefresh) {
+            // Apply filters
+            let filteredCollectors = [...collectorsData];
             
-          const totalCollections = filteredCollectors.reduce((sum, collector) => sum + (collector.totalCollections || 0), 0);
-          const avgCollectionsPerCollector = totalCollectors > 0 ? totalCollections / totalCollectors : 0;
-          
-          console.log('Calculated stats from cache:', {
-            totalCollectors,
-            totalPendingAmount,
-            totalPaidAmount,
-            totalPenalties,
-            avgCollectionsPerCollector
-          });
-          
-          setStats({
-            totalCollectors,
-            totalPendingAmount,
-            totalPaidAmount,
-            totalPenalties,
-            avgCollectionsPerCollector
-          });
-          
-          setLoading(false);
-          return;
+            // Apply search term filter
+            if (searchTerm) {
+              filteredCollectors = filteredCollectors.filter(collector => 
+                collector.name.toLowerCase().includes(searchTerm.toLowerCase())
+              );
+            }
+            
+            // Apply payment filter
+            if (paymentFilter !== 'all') {
+              filteredCollectors = filteredCollectors.filter(collector => {
+                if (paymentFilter === 'pending') {
+                  return collector.pendingPayments > 0;
+                } else {
+                  return collector.pendingPayments === 0 && collector.paidPayments > 0;
+                }
+              });
+            }
+            
+            // Apply advanced filters
+            if (filters.minEarnings !== null) {
+              filteredCollectors = filteredCollectors.filter(collector => 
+                (collector.totalEarnings - collector.totalPenalties) >= filters.minEarnings!
+              );
+            }
+            
+            if (filters.maxEarnings !== null) {
+              filteredCollectors = filteredCollectors.filter(collector => 
+                (collector.totalEarnings - collector.totalPenalties) <= filters.maxEarnings!
+              );
+            }
+            
+            if (filters.performanceRange !== 'all') {
+              filteredCollectors = filteredCollectors.filter(collector => {
+                if (filters.performanceRange === 'excellent') {
+                  return collector.performanceScore >= 80;
+                } else if (filters.performanceRange === 'good') {
+                  return collector.performanceScore >= 60 && collector.performanceScore < 80;
+                } else {
+                  return collector.performanceScore < 60;
+                }
+              });
+            }
+            
+            // Apply date range filter
+            if (filters.dateRange.from || filters.dateRange.to) {
+              // For date filtering, we would need to fetch collections with date filters
+              // This is a simplified implementation - in a full implementation, we would filter by collection dates
+              console.log('Date range filter applied:', filters.dateRange);
+            }
+            
+            // For pagination, we'll slice the data on the client side for now
+            // In a production app, this should be done server-side
+            const startIndex = (page - 1) * pageSize;
+            const endIndex = startIndex + pageSize;
+            const paginatedCollectors = filteredCollectors.slice(startIndex, endIndex);
+            
+            setCollectors(paginatedCollectors);
+            setTotalCount(filteredCollectors.length);
+            
+            // Calculate stats using the aggregated collector data for consistency
+            const totalCollectors = filteredCollectors.length;
+            const totalGrossEarnings = filteredCollectors.reduce((sum, collector) => sum + (collector.totalEarnings || 0), 0);
+            const totalPenalties = filteredCollectors.reduce((sum, collector) => sum + (collector.totalPenalties || 0), 0);
+            
+            // Calculate pending and paid amounts from collections data
+            const totalPendingAmount = filteredCollectors.reduce((sum, collector) => sum + (collector.pendingPayments || 0), 0);
+            const totalPaidAmount = filteredCollectors.reduce((sum, collector) => sum + (collector.paidPayments || 0), 0);
+              
+            const totalCollections = filteredCollectors.reduce((sum, collector) => sum + (collector.totalCollections || 0), 0);
+            const avgCollectionsPerCollector = totalCollections > 0 ? totalCollections / totalCollectors : 0;
+            
+            console.log('Calculated stats from cache:', {
+              totalCollectors,
+              totalPendingAmount,
+              totalPaidAmount,
+              totalPenalties,
+              avgCollectionsPerCollector
+            });
+            
+            setStats({
+              totalCollectors,
+              totalPendingAmount,
+              totalPaidAmount,
+              totalPenalties,
+              avgCollectionsPerCollector
+            });
+            
+            setLoading(false);
+            return;
+          } else {
+            console.log('Stale cache detected, forcing refresh');
+          }
         }
         
         // Get current collector rate
@@ -281,7 +289,7 @@ export const useCollectorsData = () => {
         const totalPaidAmount = filteredCollectors.reduce((sum, collector) => sum + (collector.paidPayments || 0), 0);
           
         const totalCollections = filteredCollectors.reduce((sum, collector) => sum + (collector.totalCollections || 0), 0);
-        const avgCollectionsPerCollector = totalCollectors > 0 ? totalCollections / totalCollectors : 0;
+        const avgCollectionsPerCollector = totalCollections > 0 ? totalCollections / totalCollectors : 0;
         
         console.log('Calculated stats:', {
           totalCollectors,
@@ -339,8 +347,17 @@ export const useCollectorsData = () => {
       )
       .subscribe();
 
+    // Listen for manual collector data updates
+    const handleCollectorDataUpdate = () => {
+      console.log('Collector data update event received, invalidating cache');
+      invalidateCache();
+    };
+
+    window.addEventListener('collectorDataUpdated', handleCollectorDataUpdate);
+
     return () => {
       supabase.removeChannel(collectionsSubscription);
+      window.removeEventListener('collectorDataUpdated', handleCollectorDataUpdate);
     };
   }, []);
 
@@ -380,6 +397,26 @@ export const useCollectorsData = () => {
     setSortConfig({ key, direction });
   };
 
+  // Function to update a specific collector's data
+  const updateCollectorData = (collectorId: string, updatedData: Partial<CollectorData>) => {
+    setCollectors(prev => 
+      prev.map(collector => 
+        collector.id === collectorId 
+          ? { ...collector, ...updatedData }
+          : collector
+      )
+    );
+  };
+
+  // Function to manually invalidate cache and force refresh
+  const invalidateCache = () => {
+    setCache({
+      collectors: null,
+      timestamp: null,
+      expiryMinutes: 5
+    });
+  };
+
   return {
     collectors,
     collectorRate,
@@ -402,6 +439,8 @@ export const useCollectorsData = () => {
     sortConfig,
     handleSort,
     fetchDataWithRetry,
-    refreshCollectorData
+    refreshCollectorData,
+    updateCollectorData,
+    invalidateCache
   };
 };

@@ -1,10 +1,10 @@
 -- Migration: 20251117183000_create_populate_collector_performance_function.sql
--- Description: Create function to populate collector performance data
--- Estimated time: 1 minute
+-- Description: Create functions to populate and retrieve collector performance data
+-- Estimated time: 2 minutes
 
 BEGIN;
 
--- RPC: populate_collector_performance - populates collector performance data for a given period
+-- RPC: populate_collector_performance - populates performance data for a collector in a period
 CREATE OR REPLACE FUNCTION public.populate_collector_performance(
   p_staff_id UUID,
   p_period_start DATE,
@@ -18,46 +18,33 @@ DECLARE
   v_approved_collections INTEGER;
   v_rejected_collections INTEGER;
   v_pending_collections INTEGER;
-  v_average_variance_percentage NUMERIC(5,2);
   v_positive_variances INTEGER;
   v_negative_variances INTEGER;
+  v_average_variance_percentage NUMERIC(5,2);
   v_total_penalties NUMERIC(10,2);
   v_performance_score NUMERIC(5,2);
 BEGIN
-  -- Get total collections count and liters
+  -- Get collection statistics
   SELECT 
     COUNT(*),
-    COALESCE(SUM(liters), 0)
+    COALESCE(SUM(liters), 0),
+    COUNT(CASE WHEN approved_for_company = true THEN 1 END),
+    COUNT(CASE WHEN status = 'Rejected' THEN 1 END),
+    COUNT(CASE WHEN approved_for_company = false AND status = 'Collected' THEN 1 END)
   INTO 
     v_total_collections,
-    v_total_liters
+    v_total_liters,
+    v_approved_collections,
+    v_rejected_collections,
+    v_pending_collections
   FROM public.collections
-  WHERE collector_id = p_staff_id
+  WHERE staff_id = p_staff_id
   AND DATE(collection_date) BETWEEN p_period_start AND p_period_end;
-  
-  -- Get approved collections count
-  SELECT COUNT(*)
-  INTO v_approved_collections
-  FROM public.collections
-  WHERE collector_id = p_staff_id
-  AND DATE(collection_date) BETWEEN p_period_start AND p_period_end
-  AND approval_status = 'approved';
-  
-  -- Get rejected collections count
-  SELECT COUNT(*)
-  INTO v_rejected_collections
-  FROM public.collections
-  WHERE collector_id = p_staff_id
-  AND DATE(collection_date) BETWEEN p_period_start AND p_period_end
-  AND approval_status = 'rejected';
-  
-  -- Calculate pending collections
-  v_pending_collections := v_total_collections - v_approved_collections - v_rejected_collections;
   
   -- Get variance statistics
   SELECT 
-    COUNT(CASE WHEN variance_type = 'positive' THEN 1 END),
-    COUNT(CASE WHEN variance_type = 'negative' THEN 1 END),
+    COUNT(CASE WHEN ma.variance_type = 'positive' THEN 1 END),
+    COUNT(CASE WHEN ma.variance_type = 'negative' THEN 1 END),
     COALESCE(AVG(variance_percentage), 0)
   INTO 
     v_positive_variances,
@@ -65,15 +52,15 @@ BEGIN
     v_average_variance_percentage
   FROM public.milk_approvals ma
   JOIN public.collections c ON ma.collection_id = c.id
-  WHERE c.collector_id = p_staff_id
+  WHERE c.staff_id = p_staff_id
   AND DATE(c.collection_date) BETWEEN p_period_start AND p_period_end;
   
-  -- Get total penalties
-  SELECT COALESCE(SUM(penalty_amount), 0)
+  -- Get total penalties (only pending penalties)
+  SELECT COALESCE(SUM(CASE WHEN ma.penalty_status = 'pending' THEN ma.penalty_amount ELSE 0 END), 0)
   INTO v_total_penalties
   FROM public.milk_approvals ma
   JOIN public.collections c ON ma.collection_id = c.id
-  WHERE c.collector_id = p_staff_id
+  WHERE c.staff_id = p_staff_id
   AND DATE(c.collection_date) BETWEEN p_period_start AND p_period_end;
   
   -- Calculate performance score (simplified formula)

@@ -1,25 +1,26 @@
 -- Migration: 202511180010_approval_statistics_function.sql
--- Description: Create function to get approval statistics
+-- Description: Create function to get approval statistics for analytics dashboard
 -- Estimated time: 1 minute
 
 BEGIN;
 
--- RPC: get_approval_statistics - returns statistics for milk approvals
+-- Create function to get approval statistics
 CREATE OR REPLACE FUNCTION public.get_approval_statistics(
-  start_date TEXT,
-  end_date TEXT
+    start_date DATE,
+    end_date DATE
 )
 RETURNS TABLE(
-  date DATE,
-  total_approvals BIGINT,
-  approved_collections BIGINT,
-  total_variance NUMERIC,
-  average_variance NUMERIC,
-  positive_variances BIGINT,
-  negative_variances BIGINT,
-  total_penalty_amount NUMERIC
-) 
-LANGUAGE plpgsql AS $$
+    date DATE,
+    total_approvals BIGINT,
+    approved_collections BIGINT,
+    total_variance NUMERIC,
+    average_variance NUMERIC,
+    positive_variances BIGINT,
+    negative_variances BIGINT,
+    total_penalty_amount NUMERIC
+)
+SECURITY DEFINER
+AS $$
 BEGIN
   RETURN QUERY
   SELECT 
@@ -30,7 +31,7 @@ BEGIN
     COALESCE(AVG(ma.variance_liters), 0) as average_variance,
     COUNT(CASE WHEN ma.variance_liters > 0 THEN 1 END)::BIGINT as positive_variances,
     COUNT(CASE WHEN ma.variance_liters < 0 THEN 1 END)::BIGINT as negative_variances,
-    COALESCE(SUM(ma.penalty_amount), 0) as total_penalty_amount
+    COALESCE(SUM(CASE WHEN ma.penalty_status = 'pending' THEN ma.penalty_amount ELSE 0 END), 0) as total_penalty_amount
   FROM public.milk_approvals ma
   JOIN public.collections c ON ma.collection_id = c.id
   WHERE ma.created_at >= start_date::TIMESTAMPTZ

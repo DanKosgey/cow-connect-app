@@ -342,10 +342,12 @@ class CollectorEarningsService {
    * Mark collections as paid for a collector
    * Updates collection_fee_status from 'pending' to 'paid' directly in collections table
    * Also updates penalty_status for related milk_approvals and collector_daily_summaries records
+   * And updates status in collector_payments table
    */
   async markCollectionsAsPaid(collectorId: string, periodStart?: string, periodEnd?: string): Promise<boolean> {
     try {
-      // Validate input
+      logger.withContext('CollectorEarningsService - markCollectionsAsPaid').info('Starting to mark collections as paid for collector', { collectorId, periodStart, periodEnd });
+      
       if (!collectorId) {
         throw new ValidationError('Collector ID is required');
       }
@@ -407,48 +409,229 @@ class CollectorEarningsService {
         throw new DatabaseError('Failed to mark collections as paid', 'UPDATE_COLLECTIONS_STATUS', updateCollectionsError);
       }
 
+      logger.withContext('CollectorEarningsService - markCollectionsAsPaid').info(`Successfully updated ${collectionIds.length} collections to paid status`);
+
       // Update penalty_status for related milk_approvals records
       // Only update penalties for the collections we just marked as paid
       if (collectionIds.length > 0) {
-        const { error: updateMilkApprovalsError } = await supabase
-          .from('milk_approvals')
-          .update({ penalty_status: 'paid' })
-          .in('collection_id', collectionIds)
-          .eq('penalty_status', 'pending'); // Only update penalties that are currently pending
+        try {
+          logger.withContext('CollectorEarningsService - markCollectionsAsPaid').info(`Attempting to update penalty status for ${collectionIds.length} milk approvals`);
+          
+          // First, let's check what records we're trying to update
+          const { data: approvalsToBeUpdated, error: fetchApprovalsError } = await supabase
+            .from('milk_approvals')
+            .select('id, collection_id, staff_id, penalty_status, penalty_amount')
+            .in('collection_id', collectionIds)
+            .eq('penalty_status', 'pending');
+          
+          if (fetchApprovalsError) {
+            logger.warn('Failed to fetch milk approvals to be updated:', fetchApprovalsError);
+          } else {
+            logger.info(`Found ${approvalsToBeUpdated?.length || 0} milk approvals to update:`, approvalsToBeUpdated);
+            
+            // Check if current user has permission to update these approvals
+            const { data: currentUserStaff, error: staffError } = await supabase
+              .from('staff')
+              .select('id')
+              .eq('user_id', (await supabase.auth.getUser()).data.user?.id || '');
+            
+            if (!staffError && currentUserStaff && currentUserStaff.length > 0) {
+              const currentUserStaffId = currentUserStaff[0].id;
+              const unauthorizedApprovals = approvalsToBeUpdated?.filter(approval => 
+                approval.staff_id !== currentUserStaffId
+              ) || [];
+              
+              if (unauthorizedApprovals.length > 0) {
+                logger.warn(`User attempted to update ${unauthorizedApprovals.length} approvals for other collectors:`, unauthorizedApprovals);
+              }
+            }
+          }
+          
+          // Try updating milk approvals with enhanced error handling
+          const { error: updateMilkApprovalsError, data: updatedApprovalsData } = await supabase
+            .from('milk_approvals')
+            .update({ penalty_status: 'paid' })
+            .in('collection_id', collectionIds)
+            .eq('penalty_status', 'pending')
+            .select();
 
-        if (updateMilkApprovalsError) {
-          logger.warn('Failed to update milk approvals penalty status:', updateMilkApprovalsError);
-          // Don't throw here as this is secondary to the main operation
-        } else {
-          logger.withContext('CollectorEarningsService - markCollectionsAsPaid').info(`Updated ${collectionIds.length} milk approvals penalty status to paid`);
+          if (updateMilkApprovalsError) {
+            logger.warn('Failed to update milk approvals penalty status:', updateMilkApprovalsError);
+            // Check if this is an RLS recursion error and handle it gracefully
+            if (updateMilkApprovalsError.message && (
+              updateMilkApprovalsError.message.includes('infinite recursion') || 
+              updateMilkApprovalsError.message.includes('row-level security policy') ||
+              updateMilkApprovalsError.message.includes('permission denied')
+            )) {
+              logger.warn('RLS policy violation detected, attempting alternative update method');
+              
+              // Try updating each record individually as a workaround
+              let successfulUpdates = 0;
+              let failedUpdates = 0;
+              
+              for (const collectionId of collectionIds) {
+                try {
+                  // First, check if there are any approvals for this collection
+                  const { data: existingApprovals, error: checkError } = await supabase
+                    .from('milk_approvals')
+                    .select('id, penalty_status')
+                    .eq('collection_id', collectionId)
+                    .eq('penalty_status', 'pending');
+                  
+                  if (checkError) {
+                    logger.warn(`Failed to check milk approvals for collection ${collectionId}:`, checkError);
+                    failedUpdates++;
+                    continue;
+                  }
+                  
+                  if (!existingApprovals || existingApprovals.length === 0) {
+                    logger.info(`No pending milk approvals found for collection ${collectionId}`);
+                    continue;
+                  }
+                  
+                  // Update the approvals
+                  const { error: individualUpdateError } = await supabase
+                    .from('milk_approvals')
+                    .update({ penalty_status: 'paid' })
+                    .eq('collection_id', collectionId)
+                    .eq('penalty_status', 'pending');
+                  
+                  if (individualUpdateError) {
+                    logger.warn(`Failed to update individual milk approval for collection ${collectionId}:`, individualUpdateError);
+                    failedUpdates++;
+                  } else {
+                    logger.info(`Successfully updated ${existingApprovals.length} milk approvals for collection ${collectionId}`);
+                    successfulUpdates++;
+                  }
+                } catch (individualError) {
+                  logger.warn(`Exception while updating individual milk approval for collection ${collectionId}:`, individualError);
+                  failedUpdates++;
+                }
+              }
+              
+              logger.info(`Individual update results: ${successfulUpdates} successful, ${failedUpdates} failed`);
+              
+              // If we had some successful updates, consider it a partial success
+              if (successfulUpdates > 0) {
+                logger.info(`Partially successful milk approvals update: ${successfulUpdates} updated`);
+              }
+            } else {
+              // Try a more general approach without the penalty_status condition
+              logger.warn('Trying general update without penalty_status condition');
+              const { error: generalUpdateError, data: generalUpdateData } = await supabase
+                .from('milk_approvals')
+                .update({ penalty_status: 'paid' })
+                .in('collection_id', collectionIds)
+                .select();
+              
+              if (generalUpdateError) {
+                logger.warn('General update also failed:', generalUpdateError);
+                
+                // Last resort: Try updating by individual approval IDs
+                if (approvalsToBeUpdated && approvalsToBeUpdated.length > 0) {
+                  logger.warn('Trying update by individual approval IDs');
+                  const approvalIds = approvalsToBeUpdated.map(a => a.id);
+                  
+                  const { error: idUpdateError, data: idUpdateData } = await supabase
+                    .from('milk_approvals')
+                    .update({ penalty_status: 'paid' })
+                    .in('id', approvalIds)
+                    .select();
+                  
+                  if (idUpdateError) {
+                    logger.warn('Update by approval IDs also failed:', idUpdateError);
+                  } else {
+                    logger.info(`Successfully updated ${idUpdateData?.length || 0} milk approvals by ID to paid status`);
+                  }
+                }
+              } else {
+                logger.info(`Successfully updated ${generalUpdateData?.length || 0} milk approvals to paid status (general update)`);
+              }
+            }
+          } else {
+            logger.withContext('CollectorEarningsService - markCollectionsAsPaid').info(`Updated ${updatedApprovalsData?.length || 0} milk approvals penalty status to paid`);
+            
+            // Verify the update worked
+            const { data: updatedApprovals, error: verifyError } = await supabase
+              .from('milk_approvals')
+              .select('id, collection_id, penalty_status')
+              .in('collection_id', collectionIds)
+              .eq('penalty_status', 'paid');
+            
+            if (verifyError) {
+              logger.warn('Failed to verify milk approvals update:', verifyError);
+            } else {
+              logger.info(`Verified ${updatedApprovals?.length || 0} milk approvals were updated to paid status`);
+            }
+          }
+        } catch (milkApprovalsError) {
+          logger.warn('Exception while updating milk approvals penalty status:', milkApprovalsError);
+          // Continue with the operation even if this fails
         }
       }
 
       // Update penalty_status for related collector_daily_summaries records
       // For daily summaries, we need to update based on collector_id and date range
-      if (periodStart || periodEnd) {
-        let dailySummariesQuery = supabase
-          .from('collector_daily_summaries')
-          .update({ penalty_status: 'paid' })
-          .eq('collector_id', collectorId)
-          .eq('penalty_status', 'pending'); // Only update penalties that are currently pending
+      try {
+        if (periodStart || periodEnd) {
+          logger.withContext('CollectorEarningsService - markCollectionsAsPaid').info(`Attempting to update penalty status for daily summaries with date range`, { periodStart, periodEnd });
+          
+          let dailySummariesQuery = supabase
+            .from('collector_daily_summaries')
+            .update({ penalty_status: 'paid' })
+            .eq('collector_id', collectorId)
+            .eq('penalty_status', 'pending');
 
-        if (periodStart) {
-          dailySummariesQuery = dailySummariesQuery.gte('collection_date', periodStart);
+          if (periodStart) {
+            dailySummariesQuery = dailySummariesQuery.gte('collection_date', periodStart);
+          }
+          
+          if (periodEnd) {
+            dailySummariesQuery = dailySummariesQuery.lte('collection_date', periodEnd);
+          }
+
+          const { error: updateDailySummariesError } = await dailySummariesQuery;
+
+          if (updateDailySummariesError) {
+            logger.warn('Failed to update collector daily summaries penalty status:', updateDailySummariesError);
+            // Don't throw here as this is secondary to the main operation
+          } else {
+            logger.withContext('CollectorEarningsService - markCollectionsAsPaid').info(`Updated collector daily summaries penalty status to paid for collector ${collectorId}`);
+          }
         }
+      } catch (dailySummariesError) {
+        logger.warn('Exception while updating collector daily summaries penalty status:', dailySummariesError);
+        // Continue with the operation even if this fails
+      }
+
+      // Update status for related collector_payments records
+      try {
+        logger.withContext('CollectorEarningsService - markCollectionsAsPaid').info(`Attempting to update status for collector payments`);
         
-        if (periodEnd) {
-          dailySummariesQuery = dailySummariesQuery.lte('collection_date', periodEnd);
-        }
+        const { error: updatePaymentsError } = await supabase
+          .from('collector_payments')
+          .update({ status: 'paid' })
+          .eq('collector_id', collectorId)
+          .eq('status', 'pending');
 
-        const { error: updateDailySummariesError } = await dailySummariesQuery;
-
-        if (updateDailySummariesError) {
-          logger.warn('Failed to update collector daily summaries penalty status:', updateDailySummariesError);
+        if (updatePaymentsError) {
+          logger.warn('Failed to update collector payments status:', updatePaymentsError);
           // Don't throw here as this is secondary to the main operation
         } else {
-          logger.withContext('CollectorEarningsService - markCollectionsAsPaid').info(`Updated collector daily summaries penalty status to paid for collector ${collectorId}`);
+          logger.withContext('CollectorEarningsService - markCollectionsAsPaid').info(`Updated collector payments status to paid for collector ${collectorId}`);
         }
+      } catch (paymentsError) {
+        logger.warn('Exception while updating collector payments status:', paymentsError);
+        // Continue with the operation even if this fails
+      }
+
+      // Invalidate cache to ensure fresh data on next fetch
+      // This helps prevent stale data issues
+      try {
+        // Send a custom event to notify other parts of the app to refresh their data
+        window.dispatchEvent(new CustomEvent('collectorDataUpdated', { detail: { collectorId } }));
+      } catch (eventError) {
+        logger.warn('Failed to dispatch collector data update event:', eventError);
       }
 
       return true;
@@ -527,180 +710,196 @@ class CollectorEarningsService {
           p_end_date: endDate.toISOString().split('T')[0]
         });
 
-      if (performanceError) {
-        logger.errorWithContext('CollectorEarningsService - getCollectorsWithEarnings fetch performance', performanceError);
-        // If RPC fails, fall back to manual calculation
-        logger.warn('Falling back to manual calculation for collector performance');
-      }
+    if (performanceError) {
+      logger.errorWithContext('CollectorEarningsService - getCollectorsWithEarnings fetch performance', performanceError);
+      // If RPC fails, fall back to manual calculation
+      logger.warn('Falling back to manual calculation for collector performance');
+    }
 
-      // Get all-time earnings for each collector
-      const collectorsWithEarnings = await Promise.all(
-        collectors.map(async (collector: any) => {
-          logger.withContext('CollectorEarningsService - getCollectorsWithEarnings').info(`Processing earnings for collector ${collector.id}`);
-          
-          const earnings = await this.getAllTimeEarnings(collector.id);
-          
-          // Find performance data for this collector or calculate manually
-          let collectorPerformance;
-          let positiveVariancePenaltiesAmt = 0;
-          let negativeVariancePenaltiesAmt = 0;
-          if (performanceData) {
-            collectorPerformance = performanceData?.find((p: any) => p.collector_id === collector.id) || {
-              total_collections: 0,
-              total_liters_collected: 0,
-              total_variance: 0,
-              total_penalty_amount: 0,
-              positive_variances: 0,
-              negative_variances: 0,
-              average_variance_percentage: 0,
-              performance_score: 0,
-              last_collection_date: null
-            };
-            logger.withContext('CollectorEarningsService - getCollectorsWithEarnings').info(`Found performance data for collector ${collector.id}`);
-          } else {
-            logger.withContext('CollectorEarningsService - getCollectorsWithEarnings').info(`No performance data found for collector ${collector.id}, using fallback calculation`);
-            // Manual calculation fallback
-            // Try to get penalties from both tables
-            let totalPenaltyAmount = 0;
-            let positiveVariances = 0;
-            let negativeVariances = 0;
-            let avgVariancePercentage = 0;
-            let varianceLitersSum = 0;
-            
-            // Try milk_approvals table
-            const { data: milkApprovals, error: approvalsError } = await supabase
-              .from('milk_approvals')
-              .select('penalty_amount, variance_type, variance_percentage, variance_liters')
-              .eq('staff_id', collector.id)
-              .neq('penalty_amount', 0);
-              
-            if (!approvalsError && milkApprovals && milkApprovals.length > 0) {
-              totalPenaltyAmount = milkApprovals.reduce((sum, approval) => sum + (approval.penalty_amount || 0), 0);
-              positiveVariances = milkApprovals.filter(a => a.variance_type === 'positive').length;
-              negativeVariances = milkApprovals.filter(a => a.variance_type === 'negative').length;
-              avgVariancePercentage = milkApprovals.length > 0 
-                ? milkApprovals.reduce((sum, approval) => sum + (approval.variance_percentage || 0), 0) / milkApprovals.length 
-                : 0;
-              varianceLitersSum = milkApprovals.reduce((sum, approval) => sum + (approval.variance_liters || 0), 0);
-              
-              // Calculate penalty breakdown
-              positiveVariancePenaltiesAmt = milkApprovals
-                .filter(a => a.variance_type === 'positive')
-                .reduce((sum, approval) => sum + (approval.penalty_amount || 0), 0);
-              negativeVariancePenaltiesAmt = milkApprovals
-                .filter(a => a.variance_type === 'negative')
-                .reduce((sum, approval) => sum + (approval.penalty_amount || 0), 0);
-            } else {
-              // Try collector_daily_summaries table
-              const { data: dailySummaries, error: summariesError } = await supabase
-                .from('collector_daily_summaries')
-                .select('total_penalty_amount, variance_type, variance_percentage, variance_liters')
-                .eq('collector_id', collector.id)
-                .neq('total_penalty_amount', 0);
-                
-              if (!summariesError && dailySummaries && dailySummaries.length > 0) {
-                totalPenaltyAmount = dailySummaries.reduce((sum, summary) => sum + (summary.total_penalty_amount || 0), 0);
-                positiveVariances = dailySummaries.filter(s => s.variance_type === 'positive').length;
-                negativeVariances = dailySummaries.filter(s => s.variance_type === 'negative').length;
-                avgVariancePercentage = dailySummaries.length > 0 
-                  ? dailySummaries.reduce((sum, summary) => sum + (summary.variance_percentage || 0), 0) / dailySummaries.length 
-                  : 0;
-                varianceLitersSum = dailySummaries.reduce((sum, summary) => sum + (summary.variance_liters || 0), 0);
-                
-                // Calculate penalty breakdown
-                positiveVariancePenaltiesAmt = dailySummaries
-                  .filter(s => s.variance_type === 'positive')
-                  .reduce((sum, summary) => sum + (summary.total_penalty_amount || 0), 0);
-                negativeVariancePenaltiesAmt = dailySummaries
-                  .filter(s => s.variance_type === 'negative')
-                  .reduce((sum, summary) => sum + (summary.total_penalty_amount || 0), 0);
-              } else {
-                // Initialize penalty breakdown variables if no data found
-                positiveVariancePenaltiesAmt = 0;
-                negativeVariancePenaltiesAmt = 0;
-              }
-            }
-                
-            collectorPerformance = {
-              total_collections: earnings.totalCollections || 0,
-              total_liters_collected: earnings.totalLiters || 0,
-              total_variance: varianceLitersSum,
-              total_penalty_amount: totalPenaltyAmount,
-              positive_variances: positiveVariances,
-              negative_variances: negativeVariances,
-              average_variance_percentage: avgVariancePercentage,
-              performance_score: 100 - (totalPenaltyAmount / 100) - ((positiveVariances + negativeVariances) / Math.max(earnings.totalCollections || 1, 1)) * 10,
-              last_collection_date: null
-            };
-          }
-          
-          // Calculate pending and paid amounts directly from collections
-          // Get pending collections
-          const { data: pendingCollections, error: pendingError } = await supabase
-            .from('collections')
-            .select('liters')
-            .eq('staff_id', collector.id)
-            .eq('approved_for_payment', true)
-            .eq('collection_fee_status', 'pending');
-          
-          const pendingLiters = pendingError ? 0 : pendingCollections?.reduce((sum, collection) => sum + (collection.liters || 0), 0) || 0;
-          const pendingAmount = pendingLiters * earnings.ratePerLiter;
-          
-          // Get paid collections
-          const { data: paidCollections, error: paidError } = await supabase
-            .from('collections')
-            .select('liters')
-            .eq('staff_id', collector.id)
-            .eq('approved_for_payment', true)
-            .eq('collection_fee_status', 'paid');
-          
-          const paidLiters = paidError ? 0 : paidCollections?.reduce((sum, collection) => sum + (collection.liters || 0), 0) || 0;
-          const paidAmount = paidLiters * earnings.ratePerLiter;
-          
-          // Note: earnings.totalEarnings now includes ALL collections (pending + paid)
-          // pendingAmount and paidAmount represent the monetary value of pending and paid collections respectively
-          
-          // Note: earnings.totalEarnings now includes ALL collections (pending + paid)
-          // pendingAmount and paidAmount represent the monetary value of pending and paid collections respectively
-
-          // Determine overall penalty status based on whether there are pending penalties
-          // If all penalties have been paid, set penaltyStatus to 'paid', otherwise 'pending'
-          const totalPendingPenalties = await this.calculatePendingPenaltiesForCollector(collector.id);
-          const penaltyStatus = totalPendingPenalties > 0 ? 'pending' : 'paid';
-          
-          logger.withContext('CollectorEarningsService - getCollectorsWithEarnings').info(`Penalty status calculation for collector ${collector.id}:`, {
-            totalPendingPenalties,
-            penaltyStatus
-          });
-
-          logger.withContext('CollectorEarningsService - getCollectorsWithEarnings').info(`Completed processing for collector ${collector.id}: Total liters: ${earnings.totalLiters}, Total earnings: ${earnings.totalEarnings}`);
-          
-          return {
-            id: collector.id,
-            name: collector.profiles?.full_name || 'Unknown Collector',
-            ...earnings,
-            totalCollections: collectorPerformance.total_collections || 0,
-            totalLiters: collectorPerformance.total_liters_collected || 0,
-            totalVariance: collectorPerformance.total_variance || 0,
-            totalPenalties: collectorPerformance.total_penalty_amount || 0,
-            positiveVariances: collectorPerformance.positive_variances || 0,
-            negativeVariances: collectorPerformance.negative_variances || 0,
-            avgVariancePercentage: collectorPerformance.average_variance_percentage || 0,
-            pendingPayments: pendingAmount,
-            paidPayments: paidAmount,
-            performanceScore: collectorPerformance.performance_score || 0,
-            lastCollectionDate: collectorPerformance.last_collection_date || null,
-            penaltyStatus,
-            pendingPenalties: totalPendingPenalties,
-            penaltyDetails: {
-              positiveVariancePenalties: positiveVariancePenaltiesAmt,
-              negativeVariancePenalties: negativeVariancePenaltiesAmt,
-              totalPositiveVariances: collectorPerformance.positive_variances || 0,
-              totalNegativeVariances: collectorPerformance.negative_variances || 0
-            }
+    // Get all-time earnings for each collector
+    const collectorsWithEarnings = await Promise.all(
+      collectors.map(async (collector: any) => {
+        logger.withContext('CollectorEarningsService - getCollectorsWithEarnings').info(`Processing earnings for collector ${collector.id}`);
+        
+        const earnings = await this.getAllTimeEarnings(collector.id);
+        
+        // Find performance data for this collector or calculate manually
+        let collectorPerformance;
+        let positiveVariancePenaltiesAmt = 0;
+        let negativeVariancePenaltiesAmt = 0;
+        if (performanceData) {
+          collectorPerformance = performanceData?.find((p: any) => p.collector_id === collector.id) || {
+            total_collections: 0,
+            total_liters_collected: 0,
+            total_variance: 0,
+            total_penalty_amount: 0,
+            positive_variances: 0,
+            negative_variances: 0,
+            average_variance_percentage: 0,
+            performance_score: 0,
+            last_collection_date: null
           };
-        })
-      );
+          logger.withContext('CollectorEarningsService - getCollectorsWithEarnings').info(`Found performance data for collector ${collector.id}`, collectorPerformance);
+        } else {
+          logger.withContext('CollectorEarningsService - getCollectorsWithEarnings').info(`No performance data found for collector ${collector.id}, using fallback calculation`);
+          // Manual calculation fallback
+          // Try to get penalties from both tables
+          let totalPenaltyAmount = 0;
+          let positiveVariances = 0;
+          let negativeVariances = 0;
+          let avgVariancePercentage = 0;
+          let varianceLitersSum = 0;
+          
+          // Try milk_approvals table
+          const { data: milkApprovals, error: approvalsError } = await supabase
+            .from('milk_approvals')
+            .select('penalty_amount, variance_type, variance_percentage, variance_liters')
+            .eq('staff_id', collector.id)
+            .neq('penalty_amount', 0)
+            .eq('penalty_status', 'pending'); // Add filter for pending penalties only
+              
+          if (!approvalsError && milkApprovals && milkApprovals.length > 0) {
+            totalPenaltyAmount = milkApprovals.reduce((sum, approval) => sum + (approval.penalty_amount || 0), 0);
+            positiveVariances = milkApprovals.filter(a => a.variance_type === 'positive').length;
+            negativeVariances = milkApprovals.filter(a => a.variance_type === 'negative').length;
+            avgVariancePercentage = milkApprovals.length > 0 
+              ? milkApprovals.reduce((sum, approval) => sum + (approval.variance_percentage || 0), 0) / milkApprovals.length 
+              : 0;
+            varianceLitersSum = milkApprovals.reduce((sum, approval) => sum + (approval.variance_liters || 0), 0);
+              
+            // Calculate penalty breakdown
+            positiveVariancePenaltiesAmt = milkApprovals
+              .filter(a => a.variance_type === 'positive')
+              .reduce((sum, approval) => sum + (approval.penalty_amount || 0), 0);
+            negativeVariancePenaltiesAmt = milkApprovals
+              .filter(a => a.variance_type === 'negative')
+              .reduce((sum, approval) => sum + (approval.penalty_amount || 0), 0);
+          } else {
+            // Try collector_daily_summaries table
+            const { data: dailySummaries, error: summariesError } = await supabase
+              .from('collector_daily_summaries')
+              .select('total_penalty_amount, variance_type, variance_percentage, variance_liters')
+              .eq('collector_id', collector.id)
+              .neq('total_penalty_amount', 0)
+              .eq('penalty_status', 'pending');
+              
+            if (!summariesError && dailySummaries && dailySummaries.length > 0) {
+              totalPenaltyAmount = dailySummaries.reduce((sum, summary) => sum + (summary.total_penalty_amount || 0), 0);
+              positiveVariances = dailySummaries.filter(s => s.variance_type === 'positive').length;
+              negativeVariances = dailySummaries.filter(s => s.variance_type === 'negative').length;
+              avgVariancePercentage = dailySummaries.length > 0 
+                ? dailySummaries.reduce((sum, summary) => sum + (summary.variance_percentage || 0), 0) / dailySummaries.length 
+                : 0;
+              varianceLitersSum = dailySummaries.reduce((sum, summary) => sum + (summary.variance_liters || 0), 0);
+                
+              // Calculate penalty breakdown
+              positiveVariancePenaltiesAmt = dailySummaries
+                .filter(s => s.variance_type === 'positive')
+                .reduce((sum, summary) => sum + (summary.total_penalty_amount || 0), 0);
+              negativeVariancePenaltiesAmt = dailySummaries
+                .filter(s => s.variance_type === 'negative')
+                .reduce((sum, summary) => sum + (summary.total_penalty_amount || 0), 0);
+            } else {
+              // Initialize penalty breakdown variables if no data found
+              positiveVariancePenaltiesAmt = 0;
+              negativeVariancePenaltiesAmt = 0;
+            }
+          }
+                
+          collectorPerformance = {
+            total_collections: earnings.totalCollections || 0,
+            total_liters_collected: earnings.totalLiters || 0,
+            total_variance: varianceLitersSum,
+            total_penalty_amount: totalPenaltyAmount,
+            positive_variances: positiveVariances,
+            negative_variances: negativeVariances,
+            average_variance_percentage: avgVariancePercentage,
+            performance_score: 100 - (totalPenaltyAmount / 100) - ((positiveVariances + negativeVariances) / Math.max(earnings.totalCollections || 1, 1)) * 10,
+            last_collection_date: null
+          };
+        }
+        
+        logger.withContext('CollectorEarningsService - getCollectorsWithEarnings').info(`Collector performance data for ${collector.id}:`, collectorPerformance);
+
+        // Calculate pending and paid amounts directly from collections
+        // Get pending collections
+        const { data: pendingCollections, error: pendingError } = await supabase
+          .from('collections')
+          .select('liters')
+          .eq('staff_id', collector.id)
+          .eq('approved_for_payment', true)
+          .eq('collection_fee_status', 'pending');
+        
+        if (pendingError) {
+          logger.warn(`Error fetching pending collections for collector ${collector.id}:`, pendingError);
+        }
+        
+        const pendingLiters = pendingError ? 0 : pendingCollections?.reduce((sum, collection) => sum + (collection.liters || 0), 0) || 0;
+        const pendingAmount = pendingLiters * earnings.ratePerLiter;
+        
+        // Get paid collections
+        const { data: paidCollections, error: paidError } = await supabase
+          .from('collections')
+          .select('liters')
+          .eq('staff_id', collector.id)
+          .eq('approved_for_payment', true)
+          .eq('collection_fee_status', 'paid');
+        
+        if (paidError) {
+          logger.warn(`Error fetching paid collections for collector ${collector.id}:`, paidError);
+        }
+        
+        const paidLiters = paidError ? 0 : paidCollections?.reduce((sum, collection) => sum + (collection.liters || 0), 0) || 0;
+        const paidAmount = paidLiters * earnings.ratePerLiter;
+        
+        // Note: earnings.totalEarnings now includes ALL collections (pending + paid)
+        // pendingAmount and paidAmount represent the monetary value of pending and paid collections respectively
+        
+        // Note: earnings.totalEarnings now includes ALL collections (pending + paid)
+        // pendingAmount and paidAmount represent the monetary value of pending and paid collections respectively
+
+        // Determine overall penalty status based on whether there are pending penalties
+        // If all penalties have been paid, set penaltyStatus to 'paid', otherwise 'pending'
+        const totalPendingPenalties = await this.calculatePendingPenaltiesForCollector(collector.id);
+        const penaltyStatus = totalPendingPenalties > 0 ? 'pending' : 'paid';
+        
+        logger.withContext('CollectorEarningsService - getCollectorsWithEarnings').info(`Penalty calculations for collector ${collector.id}:`, {
+          totalPendingPenalties,
+          penaltyStatus,
+          totalPenaltiesFromPerformance: collectorPerformance.total_penalty_amount
+        });
+
+        logger.withContext('CollectorEarningsService - getCollectorsWithEarnings').info(`Completed processing for collector ${collector.id}: Total liters: ${earnings.totalLiters}, Total earnings: ${earnings.totalEarnings}`);
+        
+        // Use the penalty amount from performance data as the primary source, fallback to calculated pending penalties
+        const displayPenalties = collectorPerformance.total_penalty_amount || totalPendingPenalties;
+        
+        return {
+          id: collector.id,
+          name: collector.profiles?.full_name || 'Unknown Collector',
+          ...earnings,
+          totalCollections: collectorPerformance.total_collections || 0,
+          totalLiters: collectorPerformance.total_liters_collected || 0,
+          totalVariance: collectorPerformance.total_variance || 0,
+          totalPenalties: displayPenalties,
+          positiveVariances: collectorPerformance.positive_variances || 0,
+          negativeVariances: collectorPerformance.negative_variances || 0,
+          avgVariancePercentage: collectorPerformance.average_variance_percentage || 0,
+          pendingPayments: pendingAmount,
+          paidPayments: paidAmount,
+          performanceScore: collectorPerformance.performance_score || 0,
+          lastCollectionDate: collectorPerformance.last_collection_date || null,
+          penaltyStatus,
+          pendingPenalties: totalPendingPenalties,
+          penaltyDetails: {
+            positiveVariancePenalties: positiveVariancePenaltiesAmt,
+            negativeVariancePenalties: negativeVariancePenaltiesAmt,
+            totalPositiveVariances: collectorPerformance.positive_variances || 0,
+            totalNegativeVariances: collectorPerformance.negative_variances || 0
+          }
+        };
+      })
+    );
 
       logger.withContext('CollectorEarningsService - getCollectorsWithEarnings').info(`Completed processing for all collectors`);
       return collectorsWithEarnings;
@@ -759,6 +958,7 @@ class CollectorEarningsService {
         throw new DatabaseError('Failed to fetch collectors', 'FETCH_COLLECTORS_PENALTIES', collectorsError);
       }
 
+      
       // Get earnings data for each collector using the same approach as variance reporting
       // Use a date range that covers all collections (last 10 years to future)
       const startDate = new Date();
@@ -817,7 +1017,8 @@ class CollectorEarningsService {
               .from('milk_approvals')
               .select('penalty_amount, variance_type, variance_percentage, variance_liters')
               .eq('staff_id', collector.id)
-              .neq('penalty_amount', 0);
+              .neq('penalty_amount', 0)
+              .eq('penalty_status', 'pending'); // Add filter for pending penalties only
               
             if (!approvalsError && milkApprovals && milkApprovals.length > 0) {
               totalPenaltyAmount = milkApprovals.reduce((sum, approval) => sum + (approval.penalty_amount || 0), 0);
@@ -841,7 +1042,8 @@ class CollectorEarningsService {
                 .from('collector_daily_summaries')
                 .select('total_penalty_amount, variance_type, variance_percentage, variance_liters')
                 .eq('collector_id', collector.id)
-                .neq('total_penalty_amount', 0);
+                .neq('total_penalty_amount', 0)
+                .eq('penalty_status', 'pending');
                 
               if (!summariesError && dailySummaries && dailySummaries.length > 0) {
                 totalPenaltyAmount = dailySummaries.reduce((sum, summary) => sum + (summary.total_penalty_amount || 0), 0);
@@ -1009,7 +1211,9 @@ class CollectorEarningsService {
             const amount = typeof approval.penalty_amount === 'string' 
               ? parseFloat(approval.penalty_amount) 
               : approval.penalty_amount;
-            return sum + (amount || 0);
+            // Remove validation to prevent extremely high values as requested by user
+            const validatedAmount = amount && amount > 0 ? amount : 0;
+            return sum + validatedAmount;
           }, 0);
           logger.info(`Found ${milkApprovals.length} pending milk approvals for collector ${collectorId}: ${pendingPenalties}`);
         } else {
@@ -1019,54 +1223,35 @@ class CollectorEarningsService {
         logger.warn(`Exception in standard milk approvals query for collector ${collectorId}:`, queryError);
       }
       
-      // Approach 2: Try with collector_id instead of staff_id (in case of naming difference)
-      try {
-        const { data: milkApprovalsAlt, error: altError } = await supabase
-          .from('milk_approvals')
-          .select('penalty_amount')
-          .eq('collector_id', collectorId) // Try collector_id instead
-          .eq('penalty_status', 'pending')
-          .gt('penalty_amount', 0);
-        
-        if (!altError && milkApprovalsAlt && milkApprovalsAlt.length > 0) {
-          const altPenalties = milkApprovalsAlt.reduce((sum, approval) => {
-            const amount = typeof approval.penalty_amount === 'string' 
-              ? parseFloat(approval.penalty_amount) 
-              : approval.penalty_amount;
-            return sum + (amount || 0);
-          }, 0);
-          pendingPenalties += altPenalties;
-          logger.info(`Found ${milkApprovalsAlt.length} pending milk approvals with alternative query for collector ${collectorId}: ${altPenalties}`);
+      // Approach 2: Try collector_daily_summaries if milk_approvals didn't yield results
+      if (pendingPenalties === 0) {
+        try {
+          const { data: dailySummaries, error: summariesError } = await supabase
+            .from('collector_daily_summaries')
+            .select('total_penalty_amount')
+            .eq('collector_id', collectorId)
+            .eq('penalty_status', 'pending')
+            .gt('total_penalty_amount', 0);
+            
+          if (summariesError) {
+            logger.warn(`Standard daily summaries query failed for collector ${collectorId}:`, summariesError);
+          } else if (dailySummaries && dailySummaries.length > 0) {
+            const dailyPenalties = dailySummaries.reduce((sum, summary) => {
+              const amount = typeof summary.total_penalty_amount === 'string' 
+                ? parseFloat(summary.total_penalty_amount) 
+                : summary.total_penalty_amount;
+              // Remove validation to prevent extremely high values as requested by user
+              const validatedAmount = amount && amount > 0 ? amount : 0;
+              return sum + validatedAmount;
+            }, 0);
+            pendingPenalties += dailyPenalties;
+            logger.info(`Found ${dailySummaries.length} pending daily summaries for collector ${collectorId}: ${dailyPenalties}`);
+          } else {
+            logger.info(`No pending daily summaries found with standard query for collector ${collectorId}`);
+          }
+        } catch (summariesQueryError) {
+          logger.warn(`Exception in standard daily summaries query for collector ${collectorId}:`, summariesQueryError);
         }
-      } catch (altQueryError) {
-        logger.warn(`Exception in alternative milk approvals query for collector ${collectorId}:`, altQueryError);
-      }
-      
-      // Approach 3: Try collector_daily_summaries with standard query
-      try {
-        const { data: dailySummaries, error: summariesError } = await supabase
-          .from('collector_daily_summaries')
-          .select('total_penalty_amount')
-          .eq('collector_id', collectorId)
-          .eq('penalty_status', 'pending')
-          .gt('total_penalty_amount', 0);
-          
-        if (summariesError) {
-          logger.warn(`Standard daily summaries query failed for collector ${collectorId}:`, summariesError);
-        } else if (dailySummaries && dailySummaries.length > 0) {
-          const dailyPenalties = dailySummaries.reduce((sum, summary) => {
-            const amount = typeof summary.total_penalty_amount === 'string' 
-              ? parseFloat(summary.total_penalty_amount) 
-              : summary.total_penalty_amount;
-            return sum + (amount || 0);
-          }, 0);
-          pendingPenalties += dailyPenalties;
-          logger.info(`Found ${dailySummaries.length} pending daily summaries for collector ${collectorId}: ${dailyPenalties}`);
-        } else {
-          logger.info(`No pending daily summaries found with standard query for collector ${collectorId}`);
-        }
-      } catch (summariesQueryError) {
-        logger.warn(`Exception in standard daily summaries query for collector ${collectorId}:`, summariesQueryError);
       }
       
       // If we still have 0 penalties, do a broad search to debug
@@ -1077,8 +1262,8 @@ class CollectorEarningsService {
           // Get all milk approvals for this collector to see what we have
           const { data: allMilkApprovals, error: allError } = await supabase
             .from('milk_approvals')
-            .select('penalty_amount, penalty_status, staff_id, collector_id')
-            .or(`staff_id.eq.${collectorId},collector_id.eq.${collectorId}`);
+            .select('penalty_amount, penalty_status, staff_id') // Remove collector_id since it doesn't exist in this table
+            .eq('staff_id', collectorId);
             
           if (!allError && allMilkApprovals && allMilkApprovals.length > 0) {
             logger.info(`Found ${allMilkApprovals.length} total milk approvals for collector ${collectorId}:`, allMilkApprovals);
@@ -1104,8 +1289,10 @@ class CollectorEarningsService {
         }
       }
       
-      logger.info(`Final total pending penalties for collector ${collectorId}: ${pendingPenalties}`);
-      return parseFloat(pendingPenalties.toFixed(2));
+      // Remove validation to prevent extremely high penalty values as requested by user
+      const validatedPenalties = pendingPenalties && pendingPenalties > 0 ? pendingPenalties : 0;
+      logger.info(`Final total pending penalties for collector ${collectorId}: ${validatedPenalties}`);
+      return parseFloat(validatedPenalties.toFixed(2));
     } catch (error) {
       logger.errorWithContext('CollectorEarningsService - calculatePendingPenaltiesForCollector exception', error);
       return 0;

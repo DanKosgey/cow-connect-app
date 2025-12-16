@@ -4,7 +4,7 @@
 
 BEGIN;
 
--- Function to calculate staff performance metrics for a given period
+-- Function to calculate staff performance metrics
 CREATE OR REPLACE FUNCTION public.calculate_staff_performance(
   p_staff_id UUID,
   p_period_start DATE,
@@ -32,16 +32,16 @@ DECLARE
   v_positive_vars INTEGER := 0;
   v_negative_vars INTEGER := 0;
   v_total_penalty NUMERIC := 0;
-  v_accuracy_score NUMERIC := 100;
+  v_accuracy_score NUMERIC := 0;
   v_variance_count INTEGER := 0;
 BEGIN
-  -- Get approval counts and metrics
+  -- Get approval counts and metrics (only pending penalties)
   SELECT 
     COUNT(*)::INTEGER,
     COALESCE(SUM(c.liters), 0),
     COUNT(CASE WHEN ma.variance_type = 'positive' THEN 1 END)::INTEGER,
     COUNT(CASE WHEN ma.variance_type = 'negative' THEN 1 END)::INTEGER,
-    COALESCE(SUM(ma.penalty_amount), 0)
+    COALESCE(SUM(CASE WHEN ma.penalty_status = 'pending' THEN ma.penalty_amount ELSE 0 END), 0)
   INTO 
     v_total_approvals,
     v_total_liters,

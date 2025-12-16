@@ -1,23 +1,24 @@
 -- Migration: 20251117163000_add_variance_trend_function.sql
--- Description: Create function to get variance trend data
+-- Description: Add function to get variance trend data for analytics dashboard
 -- Estimated time: 1 minute
 
 BEGIN;
 
--- RPC: get_variance_trend_data - returns trend data for variance analysis
+-- Create function to get variance trend data
 CREATE OR REPLACE FUNCTION public.get_variance_trend_data(
-  start_date date,
-  end_date date
+    start_date DATE,
+    end_date DATE
 )
 RETURNS TABLE(
-  date date,
-  positive_variance_count bigint,
-  negative_variance_count bigint,
-  average_positive_variance numeric,
-  average_negative_variance numeric,
-  total_penalty_amount numeric
-) 
-LANGUAGE plpgsql AS $$
+    date DATE,
+    positive_variance_count BIGINT,
+    negative_variance_count BIGINT,
+    average_positive_variance NUMERIC,
+    average_negative_variance NUMERIC,
+    total_penalty_amount NUMERIC
+)
+SECURITY DEFINER
+AS $$
 BEGIN
   RETURN QUERY
   SELECT 
@@ -26,7 +27,7 @@ BEGIN
     COUNT(CASE WHEN ma.variance_type = 'negative' THEN 1 END)::bigint as negative_variance_count,
     COALESCE(AVG(CASE WHEN ma.variance_type = 'positive' THEN ma.variance_percentage END), 0) as average_positive_variance,
     COALESCE(AVG(CASE WHEN ma.variance_type = 'negative' THEN ma.variance_percentage END), 0) as average_negative_variance,
-    COALESCE(SUM(ma.penalty_amount), 0) as total_penalty_amount
+    COALESCE(SUM(CASE WHEN ma.penalty_status = 'pending' THEN ma.penalty_amount ELSE 0 END), 0) as total_penalty_amount
   FROM public.milk_approvals ma
   WHERE DATE(ma.approved_at) BETWEEN start_date AND end_date
   GROUP BY DATE(ma.approved_at)

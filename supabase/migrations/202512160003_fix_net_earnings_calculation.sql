@@ -1,10 +1,12 @@
--- Migration: 20251127000500_create_calculate_collector_performance_function.sql
--- Description: Create function to calculate collector performance directly from collections and approvals data
--- Estimated time: 1 minute
+-- Migration: 202512160003_fix_net_earnings_calculation.sql
+-- Description: Fix net earnings calculation to properly deduct penalties from gross earnings
 
 BEGIN;
 
--- RPC: calculate_collector_performance - calculates collector performance for a given date range
+-- Drop the existing function
+DROP FUNCTION IF EXISTS public.calculate_collector_performance(DATE, DATE);
+
+-- Create the updated function with correct net earnings calculation
 CREATE OR REPLACE FUNCTION public.calculate_collector_performance(
     p_start_date DATE,
     p_end_date DATE

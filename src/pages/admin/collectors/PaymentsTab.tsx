@@ -156,7 +156,7 @@ export const PaymentsTab: React.FC<PaymentsTabProps> = ({
           </CardHeader>
           <CardContent>
             <div className={`text-xl font-bold ${totalGrossEarnings - stats.totalPenalties < 0 ? 'text-red-600' : 'text-green-600'}`}>
-              {formatCurrency(totalGrossEarnings - stats.totalPenalties)}
+              {formatCurrency(Math.max(0, totalGrossEarnings - stats.totalPenalties))}
             </div>
             <p className="text-xs text-muted-foreground">After penalties</p>
           </CardContent>

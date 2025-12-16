@@ -1,12 +1,10 @@
 -- Migration: 20251201007_simplified_generate_collector_payments_with_penalties.sql
--- Description: Create a simplified version of generate_collector_payments that includes penalty calculations
+-- Description: Simplified function to generate collector payments with penalty calculations
+-- Estimated time: 1 minute
 
 BEGIN;
 
--- Drop the existing function
-DROP FUNCTION IF EXISTS generate_collector_payments();
-
--- Create a simplified function with penalty calculations
+-- Create or replace the function to generate collector payments
 CREATE OR REPLACE FUNCTION public.generate_collector_payments()
 RETURNS TABLE(
     collector_id UUID,
@@ -18,54 +16,43 @@ RETURNS TABLE(
     total_earnings NUMERIC(10,2),
     total_penalties NUMERIC(10,2),
     adjusted_earnings NUMERIC(10,2)
-) 
+)
 SECURITY DEFINER
-LANGUAGE plpgsql
 AS $$
 BEGIN
     RETURN QUERY
-    WITH collector_data AS (
+    WITH filtered_collectors AS (
         SELECT 
             c.staff_id,
             MIN(c.collection_date::DATE) as min_date,
             MAX(c.collection_date::DATE) as max_date,
             COUNT(c.id) as collection_count,
-            COALESCE(SUM(c.liters), 0) as total_liter
+            SUM(c.liters) as total_liter
         FROM collections c
         WHERE c.approved_for_payment = true
           AND c.status = 'Collected'
+          AND NOT EXISTS (
+              SELECT 1 
+              FROM collector_payments cp 
+              WHERE cp.collector_id = c.staff_id
+                AND cp.period_start <= c.collection_date::DATE
+                AND cp.period_end >= c.collection_date::DATE
+          )
         GROUP BY c.staff_id
-        HAVING COUNT(c.id) > 0
     ),
     rates AS (
         SELECT COALESCE((
             SELECT rate_per_liter 
             FROM collector_rates 
-            WHERE is_active = true 
-            ORDER BY effective_from DESC 
+            WHERE effective_date <= NOW() 
+            ORDER BY effective_date DESC 
             LIMIT 1
-        ), 0.00) as current_rate
-    ),
-    filtered_collectors AS (
-        SELECT 
-            cd.staff_id,
-            cd.min_date,
-            cd.max_date,
-            cd.collection_count,
-            cd.total_liter
-        FROM collector_data cd
-        WHERE NOT EXISTS (
-            SELECT 1 
-            FROM collector_payments cp 
-            WHERE cp.collector_id = cd.staff_id
-              AND cp.period_start <= cd.min_date
-              AND cp.period_end >= cd.max_date
-        )
+        ), 3.00) as current_rate
     ),
     collector_penalties AS (
         SELECT 
             c.staff_id,
-            COALESCE(SUM(ma.penalty_amount), 0)::NUMERIC(10,2) as total_penalty
+            COALESCE(SUM(CASE WHEN ma.penalty_status = 'pending' THEN ma.penalty_amount ELSE 0 END), 0)::NUMERIC(10,2) as total_penalty
         FROM collections c
         LEFT JOIN milk_approvals ma ON c.id = ma.collection_id
         WHERE c.approved_for_payment = true

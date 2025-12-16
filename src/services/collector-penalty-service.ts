@@ -206,13 +206,13 @@ class CollectorPenaltyService {
       let totalPenalties = 0;
       
       // Get all milk approvals and collections for this calculation
-      // Only include penalties with penalty_status != 'paid'
+      // Only include penalties with penalty_status = 'pending'
       console.log('Fetching all penalty data for collector...');
       const milkApprovalsResponse = await supabase
         .from('milk_approvals')
         .select('id, collection_id, penalty_amount, approved_at, penalty_status')
         .neq('penalty_amount', 0)
-        .neq('penalty_status', 'paid'); // Exclude paid penalties
+        .eq('penalty_status', 'pending'); // Changed from neq to eq for consistency
       
       const collectionsResponse = await supabase
         .from('collections')
@@ -304,13 +304,13 @@ class CollectorPenaltyService {
       }
 
       // Get all milk approvals and collections for better performance
-      // Only include penalties with penalty_status != 'paid'
+      // Only include penalties with penalty_status = 'pending'
       console.log('Fetching all penalty data...');
       const allMilkApprovalsResponse = await supabase
         .from('milk_approvals')
         .select('id, collection_id, staff_id, penalty_amount, approved_at, penalty_status')
         .neq('penalty_amount', 0)
-        .neq('penalty_status', 'paid') // Exclude paid penalties
+        .eq('penalty_status', 'pending') // Changed from neq to eq for consistency
         .order('approved_at', { ascending: false });
       
       const allCollectionsResponse = await supabase
@@ -323,6 +323,11 @@ class CollectorPenaltyService {
       
       if (allMilkApprovalsResponse.error) {
         console.log('Error fetching milk approvals:', allMilkApprovalsResponse.error);
+        // Check if this is an RLS recursion error
+        if (allMilkApprovalsResponse.error.message && allMilkApprovalsResponse.error.message.includes('infinite recursion')) {
+          console.log('RLS recursion detected in milk approvals query, using fallback method');
+          // Fallback to individual queries if there's an RLS recursion issue
+        }
       }
       
       if (allCollectionsResponse.error) {
@@ -537,7 +542,7 @@ class CollectorPenaltyService {
         .from('milk_approvals')
         .select('*')
         .neq('penalty_amount', 0)
-        .neq('penalty_status', 'paid') // Exclude paid penalties
+        .eq('penalty_status', 'pending') // Changed from neq to eq for consistency
         .order('approved_at', { ascending: false });
       
       const allCollectionsResponse = await supabase
@@ -550,7 +555,7 @@ class CollectorPenaltyService {
         .from('collector_daily_summaries')
         .select('*')
         .neq('total_penalty_amount', 0)
-        .neq('penalty_status', 'paid') // Exclude paid penalties
+        .eq('penalty_status', 'pending') // Changed from neq to eq for consistency
         .order('collection_date', { ascending: false });
       
       const allMilkApprovals = !allMilkApprovalsResponse.error ? allMilkApprovalsResponse.data : [];

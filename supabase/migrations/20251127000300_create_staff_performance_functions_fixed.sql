@@ -35,13 +35,13 @@ DECLARE
   v_accuracy_score NUMERIC := 100;
   v_variance_count INTEGER := 0;
 BEGIN
-  -- Get approval counts and metrics
+  -- Get approval counts and metrics (only pending penalties)
   SELECT 
     COUNT(*)::INTEGER,
     COALESCE(SUM(c.liters), 0),
     COUNT(CASE WHEN ma.variance_type = 'positive' THEN 1 END)::INTEGER,
     COUNT(CASE WHEN ma.variance_type = 'negative' THEN 1 END)::INTEGER,
-    COALESCE(SUM(ma.penalty_amount), 0)
+    COALESCE(SUM(CASE WHEN ma.penalty_status = 'pending' THEN ma.penalty_amount ELSE 0 END), 0)
   INTO 
     v_total_approvals,
     v_total_liters,

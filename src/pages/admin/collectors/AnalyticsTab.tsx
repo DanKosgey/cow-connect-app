@@ -4,7 +4,8 @@ import {
   BarChart3, 
   DollarSign, 
   TrendingUp, 
-  PieChart 
+  PieChart,
+  AlertTriangle
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -415,7 +416,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-center">
-              {formatCurrency(stats.totalCollectors > 0 ? (stats.totalPaidAmount + stats.totalPendingAmount) / stats.totalCollectors : 0)}
+              {formatCurrency(stats.totalCollectors > 0 ? (totalGrossEarnings - stats.totalPenalties) / stats.totalCollectors : 0)}
             </div>
             <p className="text-sm text-muted-foreground text-center mt-2">
               Average net earnings per collector
@@ -503,7 +504,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                     <td className="py-2 text-right">{formatCurrency(collector.totalEarnings)}</td>
                     <td className="py-2 text-right text-red-600">{formatCurrency(collector.totalPenalties)}</td>
                     <td className="py-2 text-right font-bold">
-                      {formatCurrency(collector.pendingPayments - (collector.pendingPenalties || 0))}
+                      {formatCurrency(Math.max(0, collector.totalEarnings - collector.totalPenalties))}
                     </td>
                     <td className="py-2 text-right">
                       <Badge 

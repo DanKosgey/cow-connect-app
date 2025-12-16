@@ -107,7 +107,10 @@ export const useCollectionAnalyticsData = () => {
           .order('collection_date', { ascending: false })
           .limit(1000);
 
-        if (collectionsError) throw collectionsError;
+        if (collectionsError) {
+          console.error('Error fetching collections:', collectionsError);
+          throw collectionsError;
+        }
         
         // If no collections, return early
         if (!collectionsData || collectionsData.length === 0) return [];

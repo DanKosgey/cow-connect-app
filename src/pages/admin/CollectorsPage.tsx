@@ -74,7 +74,8 @@ export default function CollectorsPage() {
     sortConfig,
     handleSort,
     fetchDataWithRetry,
-    refreshCollectorData
+    refreshCollectorData,
+    updateCollectorData
   } = useCollectorsData();
   
   // State for penalty analytics data
@@ -128,14 +129,19 @@ export default function CollectorsPage() {
 
   // Function to mark all pending collections for a collector as paid
   const handleMarkAsPaid = async (collectorId: string, collectorName: string) => {
-    const { success: markSuccess, message } = await collectorsPageService.markCollectionsAsPaid(collectorId, collectorName);
-    
-    if (markSuccess) {
-      // Refresh the collectors data to update the UI
-      await fetchDataWithRetry();
-      success('Success', message || 'Collections marked as paid');
-    } else {
-      showError('Error', message || 'Failed to mark collections as paid');
+    try {
+      const { success: markSuccess, message } = await collectorsPageService.markCollectionsAsPaid(collectorId, collectorName);
+      
+      if (markSuccess) {
+        // Refresh the collectors data to update the UI
+        await fetchDataWithRetry();
+        success('Success', message || 'Collections marked as paid');
+      } else {
+        showError('Error', message || 'Failed to mark collections as paid');
+      }
+    } catch (error: any) {
+      console.error('Error marking collections as paid:', error);
+      showError('Error', error.message || 'An unexpected error occurred while marking collections as paid');
     }
   };
 
@@ -174,7 +180,7 @@ export default function CollectorsPage() {
       const { data, error } = await collectorsPageService.fetchCollectionsBreakdown(collectorId);
       if (!error) {
         // Update the collector with the breakdown data
-        // This would need to be implemented in the useCollectorsData hook
+        updateCollectorData(collectorId, { collectionsBreakdown: data });
       }
     }
   };
@@ -390,7 +396,6 @@ export default function CollectorsPage() {
                         <th className="text-right p-3">Amount</th>
                         <th className="text-left p-3">Status</th>
                         <th className="text-left p-3">Payment Status</th>
-                        <th className="text-left p-3">Penalty Status</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -434,20 +439,6 @@ export default function CollectorsPage() {
                             }`}>
                               {collection.collection_fee_status === 'paid' ? 'Paid' : 'Pending'}
                             </span>
-                          </td>
-                          <td className="p-3">
-                            {/* Display penalty status from milk_approvals if available */}
-                            {collection.milk_approvals && collection.milk_approvals.length > 0 ? (
-                              <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                                collection.milk_approvals[0].penalty_status === 'paid' ? 
-                                  'bg-green-100 text-green-800' : 
-                                  'bg-orange-100 text-orange-800'
-                              }`}>
-                                {collection.milk_approvals[0].penalty_status === 'paid' ? 'Paid' : 'Pending'}
-                              </span>
-                            ) : (
-                              <span className="text-muted-foreground text-xs">N/A</span>
-                            )}
                           </td>
                         </tr>
                       ))}

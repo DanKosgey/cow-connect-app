@@ -42,7 +42,7 @@ BEGIN
                 (SUM(ma.variance_liters) / SUM(c.liters)) * 100
             ELSE 0
         END as average_variance_percentage,
-        COALESCE(SUM(ma.penalty_amount), 0) as total_penalty_amount,
+        COALESCE(SUM(CASE WHEN ma.penalty_status = 'pending' THEN ma.penalty_amount ELSE 0 END), 0) as total_penalty_amount,
         COUNT(CASE WHEN c.approved_for_company = true THEN 1 END)::integer as approved_collections,
         COUNT(CASE WHEN c.approved_for_company = false THEN 1 END)::integer as pending_collections
     FROM public.staff s

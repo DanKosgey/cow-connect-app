@@ -660,6 +660,9 @@ const CollectionsAnalyticsDashboard: React.FC = () => {
     error 
   } = useCollections?.(filterDate) || { data: [], isLoading: false, error: null };
 
+  // Log for debugging
+  console.log('CollectionsAnalyticsDashboard state:', { rawCollections, isLoading, error });
+
   const showLoading = useLoadingDelay(isLoading, 300);
 
   // Advanced Memoized Analytics Processing
@@ -757,6 +760,7 @@ const CollectionsAnalyticsDashboard: React.FC = () => {
   };
 
   if (error) {
+    console.error('CollectionsAnalyticsDashboard error:', error);
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900 p-4">
         <div className="max-w-md text-center">
@@ -776,7 +780,11 @@ const CollectionsAnalyticsDashboard: React.FC = () => {
     );
   }
 
-  if (showLoading || !analyticsData) return <div className="p-6"><CollectionsSkeleton /></div>;
+  // Show loading skeleton even if we have data but still loading
+  if (showLoading) return <div className="p-6"><CollectionsSkeleton /></div>;
+  
+  // If we're not loading but have no data, show skeleton or empty state
+  if (!analyticsData) return <div className="p-6"><CollectionsSkeleton /></div>;
 
   return (
     <div className="container mx-auto p-6 space-y-8 max-w-7xl">
