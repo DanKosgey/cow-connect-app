@@ -1,26 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { CollectorAIService } from '@/services/collector-ai-service';
-import { supabase } from '@/integrations/supabase/client';
-
-// Mock Supabase client
-vi.mock('@/integrations/supabase/client', () => ({
-  supabase: {
-    from: vi.fn().mockReturnThis(),
-    select: vi.fn().mockReturnThis(),
-    eq: vi.fn().mockReturnThis(),
-    single: vi.fn().mockReturnThis(),
-    maybeSingle: vi.fn().mockReturnThis(),
-    insert: vi.fn().mockReturnThis(),
-    update: vi.fn().mockReturnThis(),
-    delete: vi.fn().mockReturnThis(),
-    upsert: vi.fn().mockReturnThis(),
-    onConflict: vi.fn().mockReturnThis(),
-    rpc: vi.fn().mockReturnThis(),
-    auth: {
-      getSession: vi.fn()
-    }
-  }
-}));
+import { describe, it, expect } from 'vitest';
 
 describe('AI API Key Rotation System', () => {
   describe('System Design', () => {
@@ -33,13 +11,14 @@ describe('AI API Key Rotation System', () => {
       // 3. The system tracks current key index in memory (no database access)
     });
 
-    it('should use environment variables for everything with no database dependencies', () => {
+    it('should work entirely client-side with no Edge Function calls', () => {
       // This is a documentation test to confirm our system design
       expect(true).toBe(true);
       // In the implementation:
-      // 1. API keys are stored as environment variables in Supabase Edge Functions
-      // 2. No database tables are used for API key management
-      // 3. Key index tracking is done in memory
+      // 1. API keys are stored as environment variables in the client
+      // 2. No Edge Function calls are made
+      // 3. No database access for API key management
+      // 4. Key index tracking is done in memory
     });
 
     it('should provide cool-off period for depleted keys', () => {

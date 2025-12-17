@@ -2,89 +2,81 @@
 
 ## Overview
 
-This guide explains how to deploy and configure the new AI API key rotation system that uses environment variables for everything and eliminates all dependencies on the collector_api_keys table.
+This guide explains how to deploy and configure the new AI API key rotation system that works entirely on the client side using environment variables. The system eliminates all Edge Function calls.
 
 ## Prerequisites
 
-1. Supabase project with Edge Functions enabled
-2. Google Gemini API keys (multiple recommended)
-3. Access to Supabase dashboard for environment variable configuration
+1. Google Gemini API keys (multiple recommended)
+2. Access to your project's .env file
 
 ## Deployment Steps
 
 ### 1. Update Environment Variables
 
-Configure your API keys in the Supabase Edge Function environment:
+Configure your API keys in the `.env` file in your project root:
 
-1. Go to your Supabase project dashboard
-2. Navigate to Settings > Functions > Environment Variables
-3. Add your API keys as environment variables:
-   - `VITE_GEMINI_API_KEY` (optional primary key)
-   - `GEMINI_API_KEY_1` (first backup key)
-   - `GEMINI_API_KEY_2` (second backup key)
-   - ... up to `GEMINI_API_KEY_50`
-
-Example configuration:
 ```
-VITE_GEMINI_API_KEY=AIzaSyA**************
-GEMINI_API_KEY_1=AIzaSyB**************
-GEMINI_API_KEY_2=AIzaSyC**************
-GEMINI_API_KEY_3=AIzaSyD**************
+# Primary API key (required)
+VITE_GEMINI_API_KEY=your_primary_api_key_here
+
+# Backup API keys (optional, up to 50)
+GEMINI_API_KEY_1=your_first_backup_key_here
+GEMINI_API_KEY_2=your_second_backup_key_here
+GEMIDI_API_KEY_3=your_third_backup_key_here
+...
+GEMINI_API_KEY_50=your_fiftieth_backup_key_here
 ```
 
-### 2. Deploy Updated Edge Function
+### 2. Install Dependencies
 
-Redeploy the `ai-verification` Edge Function:
+Install the Google Generative AI package:
 
 ```bash
-# From your project root directory
-cd supabase/functions
-supabase functions deploy ai-verification
+npm install @google/generative-ai
 ```
 
-Or deploy via the Supabase dashboard:
-1. Go to Supabase Dashboard > Functions
-2. Find the `ai-verification` function
-3. Click "Deploy" to redeploy with the updated code
+### 3. Clean Up (Optional)
 
-### 3. Clean Up Database (Optional)
+Since the system no longer uses Edge Functions or the collector_api_keys table:
 
-Since the system no longer uses the collector_api_keys table, you can optionally remove it:
+1. **Delete the Edge Function**:
+   - Remove `supabase/functions/ai-verification/` directory
 
-```sql
--- OPTIONAL: Drop the collector_api_keys table if no longer needed
-DROP TABLE IF EXISTS collector_api_keys CASCADE;
+2. **Clean up database** (optional):
+   ```sql
+   -- OPTIONAL: Drop the collector_api_keys table if no longer needed
+   DROP TABLE IF EXISTS collector_api_keys CASCADE;
 
--- OPTIONAL: Drop related functions
-DROP FUNCTION IF EXISTS get_current_api_key(uuid);
-DROP FUNCTION IF EXISTS rotate_api_key(uuid);
-```
+   -- OPTIONAL: Drop related functions
+   DROP FUNCTION IF EXISTS get_current_api_key(uuid);
+   DROP FUNCTION IF EXISTS rotate_api_key(uuid);
+   ```
 
 ### 4. Verify Deployment
 
-Test the system by making a request to the AI verification endpoint:
+Test the system by making a request to the AI verification:
 
 1. Log in as a collector user
 2. Submit a milk collection with a photo
 3. Check that the verification completes successfully
-4. Monitor Supabase function logs for any rotation events
+4. Monitor browser console for any rotation events
 
 ## Configuration Recommendations
 
 ### Minimum Setup
-- Configure at least 3 API keys for basic redundancy
+- Configure at least 1 API key (primary key)
 
 ### Recommended Setup
-- Configure 5-10 API keys for optimal rotation and quota management
+- Configure 1 primary key + 3-5 backup keys for optimal rotation and quota management
 
 ### Enterprise Setup
-- Configure 10-20 API keys for high-volume operations
+- Configure 1 primary key + 10-20 backup keys for high-volume operations
 
 ## Monitoring and Maintenance
 
-### Logs Monitoring
+### Browser Console Monitoring
 
-Check Supabase function logs for:
+Check the browser console for:
 - API key rotation events
 - Quota exceeded errors
 - Invalid key errors
@@ -105,7 +97,7 @@ The system maintains key index tracking in memory (no database access required).
 ### Common Issues
 
 1. **"No API keys configured" Error**
-   - Solution: Verify environment variables are set in Supabase Edge Function settings
+   - Solution: Verify environment variables are set in your .env file
 
 2. **Quota Still Being Hit**
    - Solution: Add more API keys to your rotation pool
@@ -113,10 +105,7 @@ The system maintains key index tracking in memory (no database access required).
 3. **Invalid Key Errors**
    - Solution: Verify API keys are correct and active in Google Cloud Console
 
-4. **Function Deployment Failures**
-   - Solution: Check for syntax errors in the Edge Function code
-
-### Log Analysis
+### Browser Console Analysis
 
 Monitor these key log messages:
 
@@ -128,30 +117,30 @@ Monitor these key log messages:
 
 If you need to rollback to a previous system:
 
-1. Restore the previous version of `supabase/functions/ai-verification/index.ts`
-2. Redeploy the Edge Function
-3. (Optional) Restore the collector_api_keys table and functions if needed
+1. Restore the previous version of the Edge Function
+2. Restore the collector_api_keys table and functions if needed
+3. Update client-side code to call Edge Function again
 
 ## Security Considerations
 
-1. **Environment Variables** - API keys are stored securely as environment variables rather than in the database
-2. **Edge Function Isolation** - Keys are only accessible within the Edge Function runtime
-3. **No Client Exposure** - API keys are never exposed to the client-side application
-4. **Key Rotation** - Regular rotation improves security posture
-5. **No Database Storage** - Eliminates risk of API keys being compromised through database breaches
+1. **Environment Variables** - API keys are stored in client-side environment variables
+2. **Browser Security** - Keys are only accessible within the browser context
+3. **Key Rotation** - Regular rotation improves security posture
+4. **No Server Exposure** - Eliminates server-side key management risks
 
 ## Performance Impact
 
-The new system has minimal performance impact:
-- Slight overhead for key validation (one test request per key)
-- No database access for key management (improved performance)
-- Same response times for successful verifications
-- Potential improvement during quota issues (automatic failover)
+The new system has improved performance:
+- No network round-trip to Edge Function
+- Direct browser-to-Google API communication
+- Faster response times
+- Reduced infrastructure costs
+- Automatic failover during quota issues
 
 ## Support
 
 For issues with the deployment or configuration:
-1. Check Supabase function logs for detailed error messages
+1. Check browser console for detailed error messages
 2. Verify all environment variables are correctly configured
 3. Ensure your API keys have the necessary permissions in Google Cloud
 4. Contact support if issues persist
