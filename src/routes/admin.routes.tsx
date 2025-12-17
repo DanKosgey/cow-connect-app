@@ -58,6 +58,7 @@ const CollectorsPage = lazy(() => import('@/pages/admin/CollectorsPage'));
 const CollectionsDebugPage = lazy(() => import('@/pages/admin/CollectionsDebugPage'));
 const ServicesPage = lazy(() => import('@/pages/admin/ServicesPage'));
 const AdminAIMonitoringDashboard = lazy(() => import('@/pages/admin/ai/AdminAIMonitoringDashboard'));
+const MilkCollectionApprovalPage = lazy(() => import('@/pages/admin/MilkCollectionApprovalPage'));
 
 export const adminRoutes = [
   { path: '/admin/login', element: <AdminLogin /> },
@@ -93,6 +94,7 @@ export const adminRoutes = [
   { path: '/admin/collections-debug', element: <CollectionsDebugPage /> },
   { path: '/admin/deductions', element: <ServicesPage /> },
   { path: '/admin/ai-monitoring', element: <AdminAIMonitoringDashboard /> },
+  { path: '/admin/milk-collection-approval', element: <MilkCollectionApprovalPage /> },
   { path: '/admin', element: <Navigate to="/admin/dashboard" replace /> },
 ];
 
@@ -211,6 +213,7 @@ export default function AdminRoutes() {
                   <Route path="collections-debug" element={<CollectionsDebugPage />} />
                   <Route path="deductions" element={<ServicesPage />} />
                   <Route path="ai-monitoring" element={<AdminAIMonitoringDashboard />} />
+                  <Route path="milk-collection-approval" element={<MilkCollectionApprovalPage />} />
                   <Route index element={<Navigate to="dashboard" replace />} />
                   <Route path="*" element={<Navigate to="/admin" replace />} />
                 </Routes>

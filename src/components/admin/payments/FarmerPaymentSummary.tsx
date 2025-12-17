@@ -20,6 +20,9 @@ interface FarmerPaymentSummaryProps {
   markAllFarmerPaymentsAsPaid: (farmerId: string) => void;
   processingPayments?: Record<string, boolean>;
   processingAllPayments?: Record<string, boolean>;
+  // Add new prop for approve all functionality
+  approveAllCollections?: () => void;
+  processingApproveAll?: boolean;
 }
 
 const FarmerPaymentSummary: React.FC<FarmerPaymentSummaryProps> = ({
@@ -30,7 +33,10 @@ const FarmerPaymentSummary: React.FC<FarmerPaymentSummaryProps> = ({
   approveCollectionsForPayment,
   markAllFarmerPaymentsAsPaid,
   processingPayments = {},
-  processingAllPayments = {}
+  processingAllPayments = {},
+  // Add new props
+  approveAllCollections,
+  processingApproveAll = false
 }) => {
   const [expandedFarmers, setExpandedFarmers] = useState<Record<string, boolean>>({});
   const [sortBy, setSortBy] = useState<'name' | 'pending' | 'paid' | 'net'>('name');
@@ -105,6 +111,22 @@ const FarmerPaymentSummary: React.FC<FarmerPaymentSummaryProps> = ({
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold text-gray-900">Farmer Payment Summary</h2>
         <div className="flex gap-2">
+          {approveAllCollections && (
+            <Button
+              onClick={approveAllCollections}
+              disabled={processingApproveAll}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              {processingApproveAll ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                "Approve All Collections"
+              )}
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"

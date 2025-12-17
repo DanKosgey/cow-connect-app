@@ -74,9 +74,9 @@ const PendingCollectionsSection: React.FC<PendingCollectionsSectionProps> = ({
   filterStatus,
   setFilterStatus
 }) => {
-  // Filter collections to show only pending ones (not paid)
+  // Filter collections to show only pending ones (Collected or Paid AND approved_for_payment = true)
   const pendingCollections = collections.filter(
-    collection => collection.status !== 'Paid'
+    collection => (collection.status === 'Collected' || collection.status === 'Paid') && collection.approved_for_payment
   );
 
   // Apply search and filter
@@ -131,10 +131,8 @@ const PendingCollectionsSection: React.FC<PendingCollectionsSectionProps> = ({
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               >
                 <option value="all">All Statuses</option>
-                <option value="Pending">Pending</option>
                 <option value="Collected">Collected</option>
-                <option value="Verified">Verified</option>
-                <option value="Approved">Approved</option>
+                <option value="Paid">Paid</option>
               </select>
             </div>
           </div>
@@ -194,7 +192,6 @@ const PendingCollectionsSection: React.FC<PendingCollectionsSectionProps> = ({
                       <TableCell>
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                           collection.status === 'Paid' ? 'bg-green-100 text-green-800' :
-                          collection.status === 'Verified' ? 'bg-blue-100 text-blue-800' :
                           collection.status === 'Collected' ? 'bg-yellow-100 text-yellow-800' :
                           'bg-gray-100 text-gray-800'
                         }`}>

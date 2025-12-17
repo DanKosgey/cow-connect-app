@@ -1,225 +1,47 @@
 import { supabase } from '@/integrations/supabase/client';
-// Define the collector_api_keys table structure inline since it's not in the generated types yet
-interface CollectorApiKeys {
-  id: string;
-  staff_id: string;
-  api_key_1: string | null;
-  api_key_2: string | null;
-  api_key_3: string | null;
-  api_key_4: string | null;
-  api_key_5: string | null;
-  api_key_6: string | null;
-  api_key_7: string | null;
-  api_key_8: string | null;
-  current_key_index: number | null;
-  created_at: string;
-  updated_at: string;
-}
-
-interface InsertCollectorApiKeys {
-  id?: string;
-  staff_id: string;
-  api_key_1?: string | null;
-  api_key_2?: string | null;
-  api_key_3?: string | null;
-  api_key_4?: string | null;
-  api_key_5?: string | null;
-  api_key_6?: string | null;
-  api_key_7?: string | null;
-  api_key_8?: string | null;
-  current_key_index?: number | null;
-  created_at?: string;
-  updated_at?: string;
-}
-
-interface UpdateCollectorApiKeys {
-  id?: string;
-  staff_id?: string;
-  api_key_1?: string | null;
-  api_key_2?: string | null;
-  api_key_3?: string | null;
-  api_key_4?: string | null;
-  api_key_5?: string | null;
-  api_key_6?: string | null;
-  api_key_7?: string | null;
-  api_key_8?: string | null;
-  current_key_index?: number | null;
-  created_at?: string;
-  updated_at?: string;
-}
 
 export class CollectorAIService {
   /**
    * Get API keys for the current collector
+   * NOTE: With the new environment variable approach, this is deprecated
+   * API keys are now managed entirely via environment variables in the Edge Function
    */
-  static async getApiKeys(staffId: string): Promise<CollectorApiKeys | null> {
-    console.log('Fetching collector API keys for staff ID:', staffId);
-    
-    const { data, error } = await supabase
-      .from('collector_api_keys')
-      .select('*')
-      .eq('staff_id', staffId)
-      .single();
-
-    if (error) {
-      console.error('Error fetching collector API keys:', error);
-      return null;
-    }
-
-    console.log('Successfully fetched collector API keys:', data);
-    return data;
+  static async getApiKeys(staffId: string): Promise<any | null> {
+    console.log('API keys are now managed via environment variables in the Edge Function');
+    console.warn('This method is deprecated and no longer functional');
+    return null;
   }
 
-  static async createOrUpdateApiKeys(
-    staffId: string,
-    keys: Partial<{
-      api_key_1: string | null;
-      api_key_2: string | null;
-      api_key_3: string | null;
-      api_key_4: string | null;
-      api_key_5: string | null;
-      api_key_6: string | null;
-      api_key_7: string | null;
-      api_key_8: string | null;
-    }>
-  ): Promise<CollectorApiKeys | null> {
-    try {
-      console.log('Creating/updating collector API keys for staff ID:', staffId);
-      
-      // First check if a record already exists for this staff
-      const { data: existingData, error: selectError } = await supabase
-        .from('collector_api_keys')
-        .select('id')
-        .eq('staff_id', staffId)
-        .maybeSingle();
-
-      if (selectError) {
-        console.error('Error checking for existing collector API keys:', selectError);
-        return null;
-      }
-
-      console.log('Existing API keys record:', existingData);
-
-      if (existingData) {
-        // Record exists, update it
-        console.log('Updating existing collector API keys');
-        const { data: updateData, error: updateError } = await supabase
-          .from('collector_api_keys')
-          .update({
-            ...keys,
-            updated_at: new Date().toISOString()
-          })
-          .eq('staff_id', staffId)
-          .select()
-          .single();
-
-        if (updateError) {
-          console.error('Error updating collector API keys:', updateError);
-          return null;
-        }
-
-        console.log('Successfully updated collector API keys:', updateData);
-        return updateData;
-      } else {
-        // No record exists, insert a new one
-        console.log('Inserting new collector API keys');
-        const { data: insertData, error: insertError } = await supabase
-          .from('collector_api_keys')
-          .insert([
-            {
-              staff_id: staffId,
-              ...keys,
-              updated_at: new Date().toISOString()
-            }
-          ])
-          .select()
-          .single();
-
-        if (insertError) {
-          console.error('Error inserting collector API keys:', insertError);
-          return null;
-        }
-
-        console.log('Successfully inserted collector API keys:', insertData);
-        return insertData;
-      }
-    } catch (err) {
-      console.error('Error creating/updating collector API keys:', err);
-      return null;
-    }
+  static async createOrUpdateApiKeys(staffId: string, keys: any): Promise<any | null> {
+    console.log('API keys are now managed via environment variables in the Edge Function');
+    console.warn('This method is deprecated and no longer functional');
+    return null;
   }
 
   static async getCurrentApiKey(staffId: string): Promise<string | null> {
-    // Check if we have an authenticated session before proceeding
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-    if (sessionError || !session) {
-      console.warn('No authenticated session available for getting API key');
-      return null;
-    }
-
-    const { data, error } = await supabase.rpc('get_current_api_key', {
-      staff_uuid: staffId
-    });
-
-    if (error) {
-      console.error('Error getting current API key:', error);
-      return null;
-    }
-
-    return data;
+    console.log('API keys are now managed via environment variables in the Edge Function');
+    console.warn('This method is deprecated and no longer functional');
+    return null;
   }
 
   static async rotateApiKey(staffId: string): Promise<boolean> {
-    // Check if we have an authenticated session before proceeding
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-    if (sessionError || !session) {
-      console.warn('No authenticated session available for rotating API key');
-      return false;
-    }
-
-    const { error } = await supabase.rpc('rotate_api_key', {
-      staff_uuid: staffId
-    });
-
-    if (error) {
-      console.error('Error rotating API key:', error);
-      return false;
-    }
-
+    console.log('API key rotation is now handled automatically by the Edge Function');
+    console.warn('This method is deprecated and no longer functional');
     return true;
   }
 
   static async deleteApiKeys(staffId: string): Promise<boolean> {
-    console.log('Deleting collector API keys for staff ID:', staffId);
-    
-    // Check if we have an authenticated session before proceeding
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-    if (sessionError || !session) {
-      console.warn('No authenticated session available for deleting API keys');
-      return false;
-    }
-    
-    const { error } = await supabase
-      .from('collector_api_keys')
-      .delete()
-      .eq('staff_id', staffId);
-
-    if (error) {
-      console.error('Error deleting collector API keys:', error);
-      return false;
-    }
-
-    console.log('Successfully deleted collector API keys for staff ID:', staffId);
+    console.log('API keys are now managed via environment variables in the Edge Function');
+    console.warn('This method is deprecated and no longer functional');
     return true;
   }
 
   static async testApiKey(apiKey: string): Promise<{ valid: boolean; error?: string }> {
-    // Since we're moving to a secure backend implementation, we'll just return a placeholder
-    // In a real implementation, this would call our Edge Function to test the key
-    console.warn('API key testing is not implemented in the secure backend version');
+    console.log('API key testing is now handled automatically by the Edge Function');
+    console.warn('This method is deprecated and no longer functional');
     return { 
       valid: true,
-      error: 'API key testing is not implemented in the secure backend version. Keys will be validated when used.'
+      error: 'API key testing is now handled automatically by the Edge Function'
     };
   }
 }

@@ -45,7 +45,7 @@ interface FarmerPaymentSummary {
   pending_payments: number;        // Collections with status "Collected" or "Verified" AND approved_for_company = true
   paid_amount: number;             // Collections with status "Paid"
   total_deductions: number;        // All deductions for farmer
-  credit_used: number;             // Approved credit requests with settlement_status "pending"
+  credit_used: number;             // Approved credit requests with settlement_status "pending" or "processed"
   net_payment: number;             // Pending - Deductions - Credit Used - Collector Fees (Pending)
   total_amount: number;            // All collections regardless of status
   bank_info: string;
@@ -58,7 +58,7 @@ interface PaymentAnalytics {
   avg_payment: number;
   daily_trend: { date: string; collections: number; paidAmount: number; pendingAmount: number; creditUsed: number }[];
   farmer_distribution: { name: string; value: number }[];
-  total_credit_used: number;       // All approved credit requests with settlement_status "pending"
+  total_credit_used: number;       // All approved credit requests with settlement_status "pending" or "processed"
   total_deductions: number;        // Total deductions across all farmers
   total_net_payment: number;       // Total net payment across all farmers
   total_amount: number;            // Total amount for all collections regardless of status
@@ -354,9 +354,17 @@ const calculateFarmerSummaries = async (
     return []; // Return empty array as fallback
   }
   
-  const collectorRateResponse = await supabase.rpc('get_current_collector_rate');
-  const collectorRate = collectorRateResponse.data || 0;
+  // Use direct table query instead of RPC for more reliable results
+  const { data: collectorRateData, error: collectorRateError } = await supabase
+    .from('collector_rates')
+    .select('rate_per_liter')
+    .eq('is_active', true)
+    .order('effective_from', { ascending: false })
+    .limit(1)
+    .maybeSingle();
   
+  const collectorRate = (collectorRateData?.rate_per_liter !== undefined) ? collectorRateData.rate_per_liter : 0;
+
   // Calculate summaries for each farmer
   const farmerSummaries: FarmerPaymentSummary[] = [];
   
@@ -391,13 +399,13 @@ const calculateFarmerSummaries = async (
         .select('total_amount, status, settlement_status')
         .eq('farmer_id', farmerId)
         .eq('status', 'approved')
-        .eq('settlement_status', 'pending');
-      
-      if (!creditError && creditRequests) {
-        // Sum all approved credit requests with pending settlement
-        creditUsed = creditRequests.reduce((sum, request) => sum + (request.total_amount || 0), 0);
-      }
-    } catch (error) {
+        .eq('settlement_status', 'pending'); // Only include pending settlement status, not processed
+        
+        if (!creditError && creditRequests) {
+          // Sum all approved credit requests with pending settlement
+          creditUsed = creditRequests.reduce((sum, request) => sum + (request.total_amount || 0), 0);
+        }
+      } catch (error) {
       console.warn('Error fetching credit requests for farmer:', farmerId, error);
     }
 

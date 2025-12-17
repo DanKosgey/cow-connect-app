@@ -149,6 +149,9 @@ class MilkRateService {
         throw insertError;
       }
 
+      // Clear the cache to force a fresh fetch on next request
+      this.clearCache();
+
       // Update the current rate and notify listeners
       this.currentRate = newRate;
       this.lastFetchTime = Date.now();

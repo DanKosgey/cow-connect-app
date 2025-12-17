@@ -168,6 +168,24 @@ const calculatePaymentTrends = async (collectionsData: Collection[], startDate: 
   const start = new Date(startDate);
   const end = new Date(endDate);
   
+  // Get unique farmer IDs from collections data
+  const farmerIds = [...new Set(collectionsData.map(c => c.farmer_id))];
+  
+  // Fetch credit requests for these farmers with both pending and processed settlement status
+  let creditRequestsData: any[] = [];
+  if (farmerIds.length > 0) {
+    const { data: creditRequests, error: creditError } = await supabase
+      .from('credit_requests')
+      .select('farmer_id, total_amount, created_at, status, settlement_status')
+      .in('farmer_id', farmerIds)
+      .eq('status', 'approved')
+      .in('settlement_status', ['pending', 'processed']);
+    
+    if (!creditError && creditRequests) {
+      creditRequestsData = creditRequests;
+    }
+  }
+  
   // Generate daily trend data
   const dailyTrend = [];
   
@@ -188,9 +206,15 @@ const calculatePaymentTrends = async (collectionsData: Collection[], startDate: 
       .filter(c => c.status !== 'Paid' && c.collection_date?.startsWith(dateString))
       .reduce((sum, c) => sum + (c.total_amount || 0), 0);
     
-    // For credit used, we'll use a simplified approach since we don't have access to credit_requests table here
-    // In a real implementation, you would fetch actual credit data
-    const creditUsed = pendingAmount * 0.1; // Assume 10% credit usage for demo
+    // Calculate actual credit used for this date from credit requests
+    const creditUsed = creditRequestsData
+      .filter(request => {
+        if (!request.created_at) return false;
+        const requestDate = new Date(request.created_at);
+        const requestDateString = requestDate.toISOString().split('T')[0];
+        return requestDateString === dateString;
+      })
+      .reduce((sum, request) => sum + (request.total_amount || 0), 0);
     
     dailyTrend.push({ 
       date: dateString, 
@@ -311,6 +335,24 @@ export const useAnalyticsData = (dateRange: string) => {
 
       // Calculate payment trends
       const paymentTrends = await calculatePaymentTrends(collectionsData || [], startDate, endDate);
+
+      // Get unique farmer IDs from collections data
+      const farmerIds = [...new Set((collectionsData || []).map(c => c.farmer_id))];
+
+      // Calculate total credit used across all farmers with both pending and processed settlement status
+      let totalCreditUsed = 0;
+      if (farmerIds.length > 0) {
+        const { data: creditRequests, error: creditError } = await supabase
+          .from('credit_requests')
+          .select('farmer_id, total_amount, status, settlement_status')
+          .in('farmer_id', farmerIds)
+          .eq('status', 'approved')
+          .in('settlement_status', ['pending', 'processed']);
+        
+        if (!creditError && creditRequests) {
+          totalCreditUsed = creditRequests.reduce((sum, request) => sum + (request.total_amount || 0), 0);
+        }
+      }
 
       return {
         collections: collectionsData || [],

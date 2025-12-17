@@ -149,8 +149,9 @@ class CollectorEarningsService {
       const ratePerLiter = await collectorRateService.getCurrentRate();
       logger.withContext('CollectorEarningsService - calculateEarnings').info(`Current rate per liter: ${ratePerLiter}`);
 
-      // If rate is 0 or invalid, use a default rate for display purposes
-      const effectiveRate = ratePerLiter > 0 ? ratePerLiter : 3.00; // Default rate of 3.00
+      // Use the rate from collectorRateService directly without fallback logic
+      // The collectorRateService already handles fallbacks appropriately
+      const effectiveRate = ratePerLiter;
 
       // Get total collections and liters for the collector in the period
       // Count approved collections with pending fees (Collected that are approved)
@@ -283,37 +284,18 @@ class CollectorEarningsService {
         };
       }
 
-      // Log individual collection details for debugging
-      data.forEach((collection, index) => {
-        logger.withContext('CollectorEarningsService - getAllTimeEarnings').info(`Collection ${index + 1}: ${collection.liters} liters`);
-      });
-
       // Get the current collector rate
       const ratePerLiter = await collectorRateService.getCurrentRate();
       logger.withContext('CollectorEarningsService - getAllTimeEarnings').info(`Current rate per liter: ${ratePerLiter}`);
 
-      // If rate is 0 or invalid, try to get it from milk_rates as fallback
-      let effectiveRate = ratePerLiter > 0 ? ratePerLiter : 3.00; // Default rate of 3.00
-      
-      // If we still have the default rate, try to get a better rate
-      if (effectiveRate === 3.00) {
-        try {
-          const { data: milkRatesData, error: milkRatesError } = await supabase
-            .from('milk_rates')
-            .select('rate_per_liter')
-            .eq('is_active', true)
-            .order('effective_from', { ascending: false })
-            .limit(1)
-            .single();
-          
-          if (!milkRatesError && milkRatesData) {
-            effectiveRate = milkRatesData.rate_per_liter;
-            logger.withContext('CollectorEarningsService - getAllTimeEarnings').info(`Using fallback rate from milk_rates: ${effectiveRate}`);
-          }
-        } catch (fallbackError) {
-          logger.warn('Error fetching fallback rate from milk_rates:', fallbackError);
-        }
-      }
+      // Use the rate from collectorRateService directly without fallback logic
+      // The collectorRateService already handles fallbacks appropriately
+      const effectiveRate = ratePerLiter;
+
+      // Log individual collection details for debugging
+      data.forEach((collection, index) => {
+        logger.withContext('CollectorEarningsService - getAllTimeEarnings').info(`Collection ${index + 1}: ${collection.liters} liters`);
+      });
 
       const totalCollections = data.length;
       const totalLiters = data.reduce((sum, collection) => sum + (collection.liters || 0), 0);

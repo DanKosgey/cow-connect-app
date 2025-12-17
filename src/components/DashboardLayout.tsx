@@ -96,6 +96,7 @@ const roleNavigation: Record<string, NavItem[]> = {
     { label: 'Dashboard', path: '/admin/dashboard', icon: <LayoutDashboard className="h-5 w-5" />, category: 'main' },
     { label: 'Checkpoints', path: '/admin/checkpoints', icon: <Target className="h-5 w-5" />, category: 'operations' },
     { label: 'Collections', path: '/admin/collections', icon: <Milk className="h-5 w-5" />, category: 'operations' },
+    { label: 'Milk Approval', path: '/admin/milk-collection-approval', icon: <Check className="h-5 w-5" />, category: 'operations' },
     { label: 'AI Monitoring', path: '/admin/ai-monitoring', icon: <Eye className="h-5 w-5" />, category: 'operations' },
     { label: 'Payments', path: '/admin/payments', icon: <DollarSign className="h-5 w-5" />, category: 'finance' },
     { label: 'Farmer Payments', path: '/admin/farmer-payments', icon: <DollarSign className="h-5 w-5" />, category: 'finance' },

@@ -1,4 +1,5 @@
--- Create collector API keys table for Gemini API key rotation
+-- Create collector API keys table for tracking current API key index
+-- Note: Actual API keys are now stored as environment variables in the Edge Function
 create table if not exists collector_api_keys (
   id uuid primary key default uuid_generate_v4(),
   staff_id uuid references staff(id) on delete cascade not null,
@@ -10,7 +11,7 @@ create table if not exists collector_api_keys (
   api_key_6 text,
   api_key_7 text,
   api_key_8 text,
-  current_key_index integer default 1 check (current_key_index >= 1 and current_key_index <= 8),
+  current_key_index integer default 1 check (current_key_index >= 1 and current_key_index <= 50),
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
@@ -35,6 +36,7 @@ create policy "Collectors can update their own API keys"
   using (staff_id IN (SELECT id FROM staff WHERE user_id = auth.uid()));
 
 -- Create function to get current API key
+-- Note: This function now returns null as keys are managed via environment variables
 create or replace function get_current_api_key(staff_uuid uuid)
 returns text
 language plpgsql
@@ -54,34 +56,13 @@ begin
     return null;
   end if;
   
-  -- Get the appropriate API key based on the current index
-  case key_index
-    when 1 then
-      select api_key_1 into current_key from collector_api_keys where staff_id = staff_uuid;
-    when 2 then
-      select api_key_2 into current_key from collector_api_keys where staff_id = staff_uuid;
-    when 3 then
-      select api_key_3 into current_key from collector_api_keys where staff_id = staff_uuid;
-    when 4 then
-      select api_key_4 into current_key from collector_api_keys where staff_id = staff_uuid;
-    when 5 then
-      select api_key_5 into current_key from collector_api_keys where staff_id = staff_uuid;
-    when 6 then
-      select api_key_6 into current_key from collector_api_keys where staff_id = staff_uuid;
-    when 7 then
-      select api_key_7 into current_key from collector_api_keys where staff_id = staff_uuid;
-    when 8 then
-      select api_key_8 into current_key from collector_api_keys where staff_id = staff_uuid;
-    else
-      -- Default to key 1 if index is out of range
-      select api_key_1 into current_key from collector_api_keys where staff_id = staff_uuid;
-  end case;
-  
-  return current_key;
+  -- Return null as keys are now managed via environment variables
+  return null;
 end;
 $$;
 
 -- Create function to rotate API key
+-- Note: This function now just updates the index for tracking purposes
 create or replace function rotate_api_key(staff_uuid uuid)
 returns void
 language plpgsql
@@ -109,10 +90,10 @@ begin
       set current_key_index = 1, updated_at = now()
       where staff_id = staff_uuid;
     else
-      -- Rotate to next key (1-8 cycle)
+      -- Rotate to next key (1-50 cycle)
       update collector_api_keys 
       set current_key_index = case 
-        when current_key_index >= 8 then 1 
+        when current_key_index >= 50 then 1 
         else current_key_index + 1 
       end,
       updated_at = now()

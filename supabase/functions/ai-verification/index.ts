@@ -2,72 +2,89 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from '@supabase/supabase-js'
 
-interface CollectorApiKeys {
-  id: string;
-  staff_id: string;
-  api_key_1: string | null;
-  api_key_2: string | null;
-  api_key_3: string | null;
-  api_key_4: string | null;
-  api_key_5: string | null;
-  api_key_6: string | null;
-  api_key_7: string | null;
-  api_key_8: string | null;
-  current_key_index: number | null;
-  created_at: string;
-  updated_at: string;
-}
-
 /**
- * Get the current API key for a staff member
- * @param supabaseClient - Supabase client instance
- * @param staffId - Staff UUID
- * @returns Current API key or null
+ * Get API keys from environment variables
+ * @returns Array of API keys from environment variables
  */
-async function getCurrentApiKey(supabaseClient: any, staffId: string): Promise<string | null> {
-  const { data, error } = await supabaseClient.rpc('get_current_api_key', {
-    staff_uuid: staffId
-  });
-
-  if (error) {
-    console.error('Error getting current API key:', error);
-    return null;
+function getApiKeysFromEnv(): string[] {
+  const apiKeys: string[] = [];
+  
+  // Load up to 50 API keys from environment variables
+  for (let i = 1; i <= 50; i++) {
+    // @ts-ignore: Deno is available in Supabase Edge Functions runtime
+    const apiKey = Deno.env.get(`GEMINI_API_KEY_${i}`);
+    if (apiKey) {
+      apiKeys.push(apiKey);
+    } else {
+      // Stop at the first missing key
+      break;
+    }
   }
-
-  return data;
+  
+  // Also check for the default VITE_GEMINI_API_KEY
+  // @ts-ignore: Deno is available in Supabase Edge Functions runtime
+  const defaultApiKey = Deno.env.get('VITE_GEMINI_API_KEY');
+  if (defaultApiKey && !apiKeys.includes(defaultApiKey)) {
+    apiKeys.unshift(defaultApiKey);
+  }
+  
+  return apiKeys;
 }
 
 /**
- * Rotate to the next API key for a staff member
- * @param supabaseClient - Supabase client instance
- * @param staffId - Staff UUID
+ * Simple in-memory tracking of current key index per staff member
+ * This avoids any database access for key tracking
  */
-async function rotateApiKey(supabaseClient: any, staffId: string): Promise<void> {
-  const { error } = await supabaseClient.rpc('rotate_api_key', {
-    staff_uuid: staffId
-  });
+const staffKeyIndexMap = new Map<string, number>();
 
-  if (error) {
-    console.error('Error rotating API key:', error);
-  }
+/**
+ * Get the current API key index for a staff member
+ * @param staffId - Staff UUID
+ * @returns Current API key index or 1
+ */
+function getCurrentKeyIndex(staffId: string): number {
+  return staffKeyIndexMap.get(staffId) || 1;
 }
 
 /**
- * Get the AI model with automatic API key rotation
+ * Set the current API key index for a staff member
+ * @param staffId - Staff UUID
+ * @param index - API key index
+ */
+function setCurrentKeyIndex(staffId: string, index: number): void {
+  staffKeyIndexMap.set(staffId, index);
+}
+
+/**
+ * Get the AI model with automatic API key rotation from environment variables
  * This function will automatically rotate to the next API key if the current one fails
  * due to quota limits (429) or other errors
  */
-async function getModelWithRotation(supabaseClient: any, staffId: string) {
+async function getModelWithRotation(staffId: string) {
+  // Get API keys from environment variables
+  const apiKeys = getApiKeysFromEnv();
+  
+  if (apiKeys.length === 0) {
+    throw new Error('No API keys configured in environment variables');
+  }
+  
+  // Get current key index (no database access)
+  let currentIndex = getCurrentKeyIndex(staffId);
+  
+  // Make sure index is within bounds
+  if (currentIndex < 1 || currentIndex > apiKeys.length) {
+    currentIndex = 1;
+  }
+  
   let attempts = 0;
-  const maxAttempts = 8; // Try all 8 keys maximum
+  const maxAttempts = apiKeys.length; // Try all available keys maximum
   
   while (attempts < maxAttempts) {
     try {
-      // Get current API key
-      const apiKey = await getCurrentApiKey(supabaseClient, staffId);
+      const apiKey = apiKeys[currentIndex - 1]; // Array is 0-indexed
       
       if (!apiKey) {
-        throw new Error('No valid API keys available');
+        throw new Error(`No valid API key at index ${currentIndex}`);
       }
       
       // Test the API key by making a simple request
@@ -90,9 +107,9 @@ async function getModelWithRotation(supabaseClient: any, staffId: string) {
         throw new Error(`API key test failed: ${testResponse.status} - ${errorText}`);
       }
       
-      return { apiKey };
+      return { apiKey, currentIndex };
     } catch (error: any) {
-      console.error('Error validating API key:', error);
+      console.error(`Error validating API key at index ${currentIndex}:`, error);
       
       // Check if it's a quota error (429) or invalid key error
       if (error.message?.includes('429') || 
@@ -103,8 +120,9 @@ async function getModelWithRotation(supabaseClient: any, staffId: string) {
           error.message?.includes('forbidden') ||
           error.message?.includes('403')) {
         
-        // Rotate to next key and try again
-        await rotateApiKey(supabaseClient, staffId);
+        // Rotate to next key
+        currentIndex = (currentIndex % apiKeys.length) + 1;
+        setCurrentKeyIndex(staffId, currentIndex);
         attempts++;
         // Add a small delay to prevent rapid retries
         await new Promise(resolve => setTimeout(resolve, 100));
@@ -140,7 +158,7 @@ async function analyzeMilkCollectionPhoto(
 }> {
   try {
     // Get the API key with rotation
-    const { apiKey } = await getModelWithRotation(supabaseClient, staffId);
+    const { apiKey } = await getModelWithRotation(staffId);
     
     const prompt = `
       Analyze this photo of a milk collection. Based on the container size, quantity, and other 

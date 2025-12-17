@@ -70,24 +70,26 @@ USING (
 );
 
 -- Create function to get current collector rate
-CREATE OR REPLACE FUNCTION public.get_current_collector_rate()
-RETURNS NUMERIC(10,2)
-LANGUAGE plpgsql AS $$
-DECLARE
-  v_rate NUMERIC(10,2);
-BEGIN
-  SELECT rate_per_liter INTO v_rate
-  FROM public.collector_rates
-  WHERE is_active = true
-  ORDER BY effective_from DESC
-  LIMIT 1;
-  
-  RETURN COALESCE(v_rate, 0.00);
-END;
-$$;
+-- DEPRECATED: Using direct database queries instead of RPC functions for better reliability
+-- CREATE OR REPLACE FUNCTION public.get_current_collector_rate()
+-- RETURNS NUMERIC(10,2)
+-- LANGUAGE plpgsql AS $$
+-- DECLARE
+--   v_rate NUMERIC(10,2);
+-- BEGIN
+--   SELECT rate_per_liter INTO v_rate
+--   FROM public.collector_rates
+--   WHERE is_active = true
+--   ORDER BY effective_from DESC
+--   LIMIT 1;
+--   
+--   RETURN COALESCE(v_rate, 0.00);
+-- END;
+-- $$;
 
 -- Grant execute permission to authenticated users
-GRANT EXECUTE ON FUNCTION public.get_current_collector_rate TO authenticated;
+-- DEPRECATED: Using direct database queries instead of RPC functions for better reliability
+-- GRANT EXECUTE ON FUNCTION public.get_current_collector_rate TO authenticated;
 
 COMMIT;
 
@@ -111,4 +113,5 @@ SELECT relname, relrowsecurity FROM pg_class WHERE relname = 'collector_rates';
 SELECT policyname FROM pg_policy WHERE polrelid = 'collector_rates'::regclass;
 
 -- Test the function
-SELECT public.get_current_collector_rate();
+-- DEPRECATED: Using direct database queries instead of RPC functions for better reliability
+-- SELECT public.get_current_collector_rate();

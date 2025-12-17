@@ -895,7 +895,7 @@ export default function ComprehensiveReporting() {
                     <td className="p-3 text-sm">
                       <Badge variant={
                         collection.status === 'Collected' ? 'default' :
-                        collection.status === 'Verified' ? 'secondary' :
+                        collection.status === 'Paid' ? 'secondary' :
                         collection.status === 'Paid' ? 'outline' : 'destructive'
                       }>
                         {collection.status}

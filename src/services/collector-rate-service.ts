@@ -40,8 +40,14 @@ class CollectorRateService {
       }
 
       console.log('Fetching current collector rate...');
+      // Use direct table query instead of RPC for more reliable results
       const { data, error } = await supabase
-        .rpc('get_current_collector_rate');
+        .from('collector_rates')
+        .select('rate_per_liter')
+        .eq('is_active', true)
+        .order('effective_from', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
       if (error) {
         console.error('Error fetching current collector rate:', error);
@@ -54,25 +60,8 @@ class CollectorRateService {
         return defaultRate;
       }
 
-      // Ensure we get a proper rate value
-      let rate = data || 3.00; // Use default rate of 3.00 if no data
-      
-      // If the rate is 0 or very low, check the milk_rates table as fallback
-      if (rate <= 3.00) {
-        console.log('Rate is low or default, checking milk_rates table as fallback...');
-        const { data: milkRatesData, error: milkRatesError } = await supabase
-          .from('milk_rates')
-          .select('rate_per_liter')
-          .eq('is_active', true)
-          .order('effective_from', { ascending: false })
-          .limit(1)
-          .single();
-        
-        if (!milkRatesError && milkRatesData) {
-          rate = milkRatesData.rate_per_liter;
-          console.log('Using rate from milk_rates table:', rate);
-        }
-      }
+      // Get the rate value or use default
+      const rate = (data?.rate_per_liter !== undefined) ? data.rate_per_liter : 3.00;
       
       console.log('Current collector rate:', rate);
       this.currentRate = rate;
@@ -81,27 +70,7 @@ class CollectorRateService {
       return rate;
     } catch (error) {
       logger.errorWithContext('CollectorRateService - getCurrentRate exception', error);
-      // Even in case of exception, try to get a fallback rate
-      try {
-        const { data: milkRatesData, error: milkRatesError } = await supabase
-          .from('milk_rates')
-          .select('rate_per_liter')
-          .eq('is_active', true)
-          .order('effective_from', { ascending: false })
-          .limit(1)
-          .single();
-        
-        if (!milkRatesError && milkRatesData) {
-          const rate = milkRatesData.rate_per_liter;
-          console.log('Fallback rate from milk_rates table:', rate);
-          this.currentRate = rate;
-          this.lastFetchTime = Date.now();
-          this.notifyListeners(rate);
-          return rate;
-        }
-      } catch (fallbackError) {
-        console.error('Error in fallback rate fetch:', fallbackError);
-      }
+      console.error('Error in collector rate fetch:', error);
       return 3.00; // Safe fallback
     }
   }
@@ -135,6 +104,9 @@ class CollectorRateService {
         logger.errorWithContext('CollectorRateService - updateRate insert', insertError);
         throw insertError;
       }
+
+      // Clear the cache to force a fresh fetch on next request
+      this.clearCache();
 
       // Update the current rate and notify listeners
       this.currentRate = newRate;

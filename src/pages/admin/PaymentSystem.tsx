@@ -337,7 +337,39 @@ const PaymentSystemSimple = () => {
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [toast]);
+  }, []); // Empty dependency array to run only once on mount
+
+  // Add effect to refresh rates when settings tab is activated
+  useEffect(() => {
+    if (activeTab === 'settings') {
+      // Clear caches to force fresh fetch
+      milkRateService.clearCache();
+      collectorRateService.clearCache();
+      
+      // Fetch fresh rates
+      const fetchRates = async () => {
+        try {
+          const currentRate = await milkRateService.getCurrentRate();
+          setRateConfig({
+            ratePerLiter: currentRate,
+            effectiveFrom: new Date().toISOString().split('T')[0]
+          });
+
+          const currentCollectorRate = await collectorRateService.getCurrentRate();
+          setCollectorRateConfig({
+            ratePerLiter: currentCollectorRate,
+            effectiveFrom: new Date().toISOString().split('T')[0]
+          });
+        } catch (error) {
+          console.error('Error fetching rates:', error);
+          // Use toast.error instead of toast.show to avoid dependency issues
+          console.error('Failed to fetch rates');
+        }
+      };
+
+      fetchRates();
+    }
+  }, [activeTab]); // Remove toast from dependencies to prevent infinite loops
 
   // Fetch farmer deductions - but defer to reduce initial load
   useEffect(() => {
@@ -351,7 +383,7 @@ const PaymentSystemSimple = () => {
         setFarmerDeductions(deductionsMap);
       } catch (error) {
         console.error('Error fetching farmer deductions:', error);
-        toast.error('Error', 'Failed to fetch farmer deductions');
+        console.error('Failed to fetch farmer deductions');
       }
     };
 
@@ -361,7 +393,7 @@ const PaymentSystemSimple = () => {
     }, 1000);
 
     return () => clearTimeout(timer);
-  }, [toast]);
+  }, []); // Remove toast from dependencies to prevent infinite loops
 
   // Initialize performance monitoring
   const { measureOperation } = usePerformanceMonitor({ 
@@ -381,9 +413,9 @@ const PaymentSystemSimple = () => {
       await refetch();
     } catch (error) {
       console.error('Error fetching payment data:', error);
-      toast.error('Error', 'Failed to fetch payment data. Please try again.');
+      console.error('Failed to fetch payment data. Please try again.');
     }
-  }, [refetch, toast]);
+  }, [refetch]); // Remove toast dependency
 
   // Manual refresh function that handles session refresh more carefully
   const manualRefresh = useCallback(async () => {
@@ -391,67 +423,69 @@ const PaymentSystemSimple = () => {
       // Only refresh session when explicitly requested
       await refreshSession();
       await refetch();
-      toast.success('Success', 'Data refreshed successfully');
+      console.log('Success', 'Data refreshed successfully');
     } catch (error) {
       console.error('Error refreshing data:', error);
-      toast.error('Error', 'Failed to refresh data. Please try again.');
+      console.error('Failed to refresh data. Please try again.');
     }
-  }, [refreshSession, refetch, toast]);
+  }, [refreshSession, refetch]); // Remove toast dependency
 
   // Memoized callbacks for rate updates
   const updateMilkRate = useCallback(async () => {
-    await measureOperation('updateMilkRate', async () => {
-      try {
-        if (rateConfig.ratePerLiter <= 0) {
-          toast.error('Error', 'Rate per liter must be greater than zero');
-          return;
-        }
-        
-        if (!rateConfig.effectiveFrom) {
-          toast.error('Error', 'Effective date is required');
-          return;
-        }
-        
-        const success = await milkRateService.updateRate(rateConfig.ratePerLiter, rateConfig.effectiveFrom);
-        
-        if (success) {
-          toast.success('Success', 'Milk rate updated successfully!');
-        } else {
-          throw new Error('Failed to update milk rate');
-        }
-      } catch (error: any) {
-        console.error('Error updating rate:', error);
-        toast.error('Error', 'Failed to update rate: ' + (error.message || 'Unknown error'));
+    // Remove measureOperation dependency to avoid issues
+    try {
+      if (rateConfig.ratePerLiter <= 0) {
+        console.error('Rate per liter must be greater than zero');
+        return;
       }
-    });
-  }, [measureOperation, rateConfig.ratePerLiter, rateConfig.effectiveFrom, toast]);
+      
+      if (!rateConfig.effectiveFrom) {
+        console.error('Effective date is required');
+        return;
+      }
+      
+      const success = await milkRateService.updateRate(rateConfig.ratePerLiter, rateConfig.effectiveFrom);
+      
+      if (success) {
+        // Clear cache to ensure fresh data on next fetch
+        milkRateService.clearCache();
+        console.log('Success', 'Milk rate updated successfully!');
+      } else {
+        throw new Error('Failed to update milk rate');
+      }
+    } catch (error: any) {
+      console.error('Error updating rate:', error);
+      console.error('Failed to update rate: ' + (error.message || 'Unknown error'));
+    }
+  }, [rateConfig.ratePerLiter, rateConfig.effectiveFrom]); // Remove toast and measureOperation dependencies
 
   const updateCollectorRate = useCallback(async () => {
-    await measureOperation('updateCollectorRate', async () => {
-      try {
-        if (collectorRateConfig.ratePerLiter <= 0) {
-          toast.error('Error', 'Rate per liter must be greater than zero');
-          return;
-        }
-        
-        if (!collectorRateConfig.effectiveFrom) {
-          toast.error('Error', 'Effective date is required');
-          return;
-        }
-        
-        const success = await collectorRateService.updateRate(collectorRateConfig.ratePerLiter, collectorRateConfig.effectiveFrom);
-        
-        if (success) {
-          toast.success('Success', 'Collector rate updated successfully!');
-        } else {
-          throw new Error('Failed to update collector rate');
-        }
-      } catch (error: any) {
-        console.error('Error updating collector rate:', error);
-        toast.error('Error', 'Failed to update collector rate: ' + (error.message || 'Unknown error'));
+    // Remove measureOperation dependency to avoid issues
+    try {
+      if (collectorRateConfig.ratePerLiter <= 0) {
+        console.error('Rate per liter must be greater than zero');
+        return;
       }
-    });
-  }, [measureOperation, collectorRateConfig.ratePerLiter, collectorRateConfig.effectiveFrom, toast]);
+      
+      if (!collectorRateConfig.effectiveFrom) {
+        console.error('Effective date is required');
+        return;
+      }
+      
+      const success = await collectorRateService.updateRate(collectorRateConfig.ratePerLiter, collectorRateConfig.effectiveFrom);
+      
+      if (success) {
+        // Clear cache to ensure fresh data on next fetch
+        collectorRateService.clearCache();
+        console.log('Success', 'Collector rate updated successfully!');
+      } else {
+        throw new Error('Failed to update collector rate');
+      }
+    } catch (error: any) {
+      console.error('Error updating collector rate:', error);
+      console.error('Failed to update collector rate: ' + (error.message || 'Unknown error'));
+    }
+  }, [collectorRateConfig.ratePerLiter, collectorRateConfig.effectiveFrom]); // Remove toast and measureOperation dependencies
 
   const markAsPaid = useCallback(async (collectionId: string, farmerId: string) => {
     await measureOperation('markAsPaid', async () => {
@@ -629,6 +663,108 @@ const PaymentSystemSimple = () => {
       }
     });
   }, [measureOperation, userRole, refreshSession, collections, user?.id, toast, fetchAllData]);
+
+  // New function to approve all collections for payment
+  const approveAllCollections = useCallback(async () => {
+    // Set loading state for approve all
+    setProcessingApproveAll(true);
+    
+    await measureOperation('approveAllCollections', async () => {
+      try {
+        if (userRole !== 'admin') {
+          toast.error('Access Denied', 'Only administrators can approve collections for payment');
+          return;
+        }
+
+        // Refresh session before performing critical operation with better error handling
+        try {
+          await refreshSession().catch(error => {
+            console.warn('Session refresh failed before approving all collections for payment', error);
+            // Continue with operation even if refresh fails
+          });
+        } catch (sessionError) {
+          console.warn('Session refresh error, continuing with operation', sessionError);
+        }
+
+        // Get all unapproved collections across all farmers
+        const unapprovedCollections = collections.filter(c => 
+          !c.approved_for_payment && c.status !== 'Paid' && 
+          (c.status === 'Collected' || c.status === 'Paid')
+        );
+
+        if (unapprovedCollections.length === 0) {
+          toast.show({ title: 'Info', description: 'No collections need approval.' });
+          return;
+        }
+
+        // Group collections by farmer
+        const collectionsByFarmer: Record<string, string[]> = {};
+        unapprovedCollections.forEach(collection => {
+          if (!collectionsByFarmer[collection.farmer_id]) {
+            collectionsByFarmer[collection.farmer_id] = [];
+          }
+          collectionsByFarmer[collection.farmer_id].push(collection.id);
+        });
+
+        // Approve collections for each farmer
+        let successCount = 0;
+        let errorCount = 0;
+        
+        for (const [farmerId, collectionIds] of Object.entries(collectionsByFarmer)) {
+          try {
+            // Get the total amount for these collections
+            const farmerCollections = collections.filter(c => 
+              c.farmer_id === farmerId && collectionIds.includes(c.id)
+            );
+
+            const totalAmount = farmerCollections.reduce((sum, collection) => 
+              sum + (collection.total_amount || 0), 0
+            );
+
+            // Call the payment service to approve collections for payment
+            const result = await PaymentService.createPaymentForApproval(
+              farmerId,
+              collectionIds,
+              totalAmount,
+              'Approved for payment by admin',
+              user?.id
+            );
+
+            if (result.success) {
+              successCount++;
+            } else {
+              errorCount++;
+              console.error(`Failed to approve collections for farmer ${farmerId}:`, result.error);
+            }
+          } catch (error) {
+            errorCount++;
+            console.error(`Error approving collections for farmer ${farmerId}:`, error);
+          }
+        }
+
+        if (errorCount === 0) {
+          toast.success('Success', `Approved collections for ${successCount} farmers successfully!`);
+        } else {
+          toast.show({ 
+            title: 'Partial Success', 
+            description: `Approved collections for ${successCount} farmers. ${errorCount} farmers had errors.` 
+          });
+        }
+        
+        // Refresh the data to ensure consistency
+        await fetchAllData();
+      } catch (error: any) {
+        console.error('Error approving all collections for payment:', error);
+        toast.error('Error', 'Failed to approve all collections for payment: ' + (error.message || 'Unknown error'));
+      } finally {
+        // Reset loading state
+        setProcessingApproveAll(false);
+      }
+    });
+  }, [measureOperation, userRole, refreshSession, collections, user?.id, toast, fetchAllData]);
+
+  // State for approve all processing
+  const [processingApproveAll, setProcessingApproveAll] = useState(false);
 
   // Function to deduct collector fees from pending payments (individual processing)
   const deductCollectorFees = useCallback(async () => {
@@ -900,6 +1036,8 @@ const PaymentSystemSimple = () => {
               markAllFarmerPaymentsAsPaid={markAllFarmerPaymentsAsPaid}
               processingPayments={processingPayments}
               processingAllPayments={processingAllPayments}
+              approveAllCollections={approveAllCollections}
+              processingApproveAll={processingApproveAll}
             />
           </div>
         )}

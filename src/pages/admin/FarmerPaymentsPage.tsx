@@ -307,6 +307,106 @@ const FarmerPaymentsPage = () => {
     }
   };
 
+  // Add state for approve all processing
+  const [processingApproveAll, setProcessingApproveAll] = useState(false);
+
+  // New function to approve all collections for payment
+  const approveAllCollections = async () => {
+    // Set loading state for approve all
+    setProcessingApproveAll(true);
+    
+    try {
+      if (userRole !== 'admin') {
+        toast.error('Access Denied', 'Only administrators can approve collections for payment');
+        return;
+      }
+
+      // Refresh session before performing critical operation with better error handling
+      try {
+        await refreshSession().catch(error => {
+          console.warn('Session refresh failed before approving all collections for payment', error);
+          // Continue with operation even if refresh fails
+        });
+      } catch (sessionError) {
+        console.warn('Session refresh error, continuing with operation', sessionError);
+      }
+
+      // Get all unapproved collections across all farmers
+      const unapprovedCollections = collections.filter(c => 
+        !c.approved_for_payment && c.status !== 'Paid' && 
+        (c.status === 'Collected' || c.status === 'Paid')
+      );
+
+      if (unapprovedCollections.length === 0) {
+        toast.show({ title: 'Info', description: 'No collections need approval.' });
+        return;
+      }
+
+      // Group collections by farmer
+      const collectionsByFarmer: Record<string, string[]> = {};
+      unapprovedCollections.forEach(collection => {
+        if (!collectionsByFarmer[collection.farmer_id]) {
+          collectionsByFarmer[collection.farmer_id] = [];
+        }
+        collectionsByFarmer[collection.farmer_id].push(collection.id);
+      });
+
+      // Approve collections for each farmer
+      let successCount = 0;
+      let errorCount = 0;
+      
+      for (const [farmerId, collectionIds] of Object.entries(collectionsByFarmer)) {
+        try {
+          // Get the total amount for these collections
+          const farmerCollections = collections.filter(c => 
+            c.farmer_id === farmerId && collectionIds.includes(c.id)
+          );
+
+          const totalAmount = farmerCollections.reduce((sum, collection) => 
+            sum + (collection.total_amount || 0), 0
+          );
+
+          // Call the payment service to approve collections for payment
+          const result = await PaymentService.createPaymentForApproval(
+            farmerId,
+            collectionIds,
+            totalAmount,
+            'Approved for payment by admin',
+            user?.id
+          );
+
+          if (result.success) {
+            successCount++;
+          } else {
+            errorCount++;
+            console.error(`Failed to approve collections for farmer ${farmerId}:`, result.error);
+          }
+        } catch (error) {
+          errorCount++;
+          console.error(`Error approving collections for farmer ${farmerId}:`, error);
+        }
+      }
+
+      if (errorCount === 0) {
+        toast.success('Success', `Approved collections for ${successCount} farmers successfully!`);
+      } else {
+        toast.show({ 
+          title: 'Partial Success', 
+          description: `Approved collections for ${successCount} farmers. ${errorCount} farmers had errors.` 
+        });
+      }
+      
+      // Refresh the data to ensure consistency
+      await fetchAllData();
+    } catch (error: any) {
+      console.error('Error approving all collections for payment:', error);
+      toast.error('Error', 'Failed to approve all collections for payment: ' + (error.message || 'Unknown error'));
+    } finally {
+      // Reset loading state
+      setProcessingApproveAll(false);
+    }
+  };
+
   // New function to approve collections for payment
   const approveCollectionsForPayment = async (farmerId: string, collectionIds: string[]) => {
     // Set loading state for this farmer
@@ -397,8 +497,6 @@ const FarmerPaymentsPage = () => {
 
   // Function to reset filters (memoized)
   const resetFilters = () => {
-    setSearchTerm('');
-    setFilterStatus('all');
     setTimeFrame('week');
     setCustomDateRange({ from: '', to: '' });
   };
@@ -515,6 +613,9 @@ const FarmerPaymentsPage = () => {
           markAllFarmerPaymentsAsPaid={markAllFarmerPaymentsAsPaid}
           processingPayments={processingPayments}
           processingAllPayments={processingAllPayments}
+          // Add new props
+          approveAllCollections={approveAllCollections}
+          processingApproveAll={processingApproveAll}
         />
       </div>
     </div>

@@ -843,7 +843,7 @@ export default function StaffPerformanceTracking() {
                     <td className="p-3 text-sm">
                       <Badge variant={
                         record.status === 'Collected' ? 'default' :
-                        record.status === 'Verified' ? 'secondary' :
+                        record.status === 'Paid' ? 'secondary' :
                         record.status === 'Paid' ? 'outline' : 'destructive'
                       }>
                         {record.status}
