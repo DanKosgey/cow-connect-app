@@ -41,7 +41,7 @@ const CollectionsPage = () => {
   const [dateFilter, setDateFilter] = useState("");
 
   const [farmerId, setFarmerId] = useState<string | null>(null);
-  const [timeframe, setTimeframe] = useState("month"); // Add timeframe state
+  const [timeframe, setTimeframe] = useState("week"); // Change default to week
   
   const { data: collectionsData, isLoading: loading, isError, error, refetch } = useFarmerCollectionsData(farmerId, timeframe);
   

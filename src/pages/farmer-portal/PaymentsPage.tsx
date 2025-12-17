@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,7 +16,21 @@ import {
   Image,
   FileText
 } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, ComposedChart, Area, Legend, Cell } from 'recharts';
+import { 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  ResponsiveContainer, 
+  LineChart, 
+  Line, 
+  ComposedChart, 
+  Area, 
+  Legend, 
+  Cell 
+} from 'recharts';
 import { supabase } from "@/integrations/supabase/client";
 import useToastNotifications from "@/hooks/useToastNotifications";
 import { exportToCSV, exportToJSON } from "@/utils/exportUtils";
@@ -27,6 +41,11 @@ import { StatCard } from "@/components/StatCard";
 import RefreshButton from "@/components/ui/RefreshButton";
 import { useFarmerPaymentsData } from '@/hooks/useFarmerPaymentsData';
 import { TimeframeSelector } from "@/components/TimeframeSelector";
+import { subDays, subWeeks, subMonths, subYears } from 'date-fns';
+
+// ============================================================================
+// TYPE DEFINITIONS
+// ============================================================================
 
 interface Collection {
   id: string;
@@ -38,7 +57,6 @@ interface Collection {
   status: string;
 }
 
-// Define the chart colors type
 interface ChartColors {
   amount: string;
   liters: string;
@@ -50,79 +68,174 @@ interface ChartColors {
   paid: string;
 }
 
+interface ChartDataPoint {
+  date: string;
+  amount: number;
+  liters: number;
+  rate: number;
+  cumulativeAmount: number;
+  cumulativeLiters: number;
+  status: string;
+  isSampled: boolean;
+  isPaid: number;
+  isPending: number;
+  cumulativePaid: number;
+  cumulativePending: number;
+}
+
+interface ComparisonDataPoint {
+  periodKey: string;
+  period: string;
+  amount: number;
+  liters: number;
+  collections: number;
+  averageAmount: number;
+  previousPeriodAmount: number;
+  previousPeriodLiters: number;
+  growthAmount: number;
+  growthLiters: number;
+}
+
+type TimeframeType = "day" | "week" | "month" | "year";
+type ComparisonPeriodType = "week" | "month" | "year";
+type ExportFormat = "csv" | "json";
+type ChartExportFormat = "png" | "svg";
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+const MAX_DATA_POINTS = 100;
+const MAX_COLLECTIONS_FOR_COMPARISON = 1000;
+
+const DEFAULT_CHART_COLORS: ChartColors = {
+  amount: '#10b981',
+  liters: '#3b82f6',
+  rate: '#8b5cf6',
+  cumulative: '#0ea5e9',
+  previousYear: '#3b82f6',
+  growth: '#ef4444',
+  pending: '#f59e0b',
+  paid: '#10b981'
+};
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+const getDefaultDateRange = (timeframe: TimeframeType): { start: string; end: string } => {
+  const now = new Date();
+  let start: Date;
+  
+  switch (timeframe) {
+    case "day":
+      start = subDays(now, 1);
+      break;
+    case "week":
+      start = subWeeks(now, 1);
+      break;
+    case "month":
+      start = subMonths(now, 1);
+      break;
+    case "year":
+      start = subYears(now, 1);
+      break;
+    default:
+      start = subWeeks(now, 1);
+  }
+  
+  return {
+    start: start.toISOString().split('T')[0],
+    end: now.toISOString().split('T')[0]
+  };
+};
+
+const formatCurrency = (value: number): string => {
+  return `KSh ${value.toFixed(2)}`;
+};
+
+const formatVolume = (value: number): string => {
+  return `${value.toFixed(2)}L`;
+};
+
+const formatPercentage = (value: number): string => {
+  return `${value.toFixed(2)}%`;
+};
+
+const safeNumber = (value: number | null | undefined, defaultValue: number = 0): number => {
+  return typeof value === 'number' && !isNaN(value) ? value : defaultValue;
+};
+
+// ============================================================================
+// MAIN COMPONENT
+// ============================================================================
+
 const PaymentsPage = () => {
   const toast = useToastNotifications();
   const toastRef = useRef(toast);
+  
+  // Filter states
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [dateFilter, setDateFilter] = useState("");
+  
+  // Date range states
+  const [timeframe, setTimeframe] = useState<TimeframeType>("week");
+  // Start with empty dates to show all data initially
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [timeframe, setTimeframe] = useState("month"); // Add timeframe state
-  const [comparisonPeriod, setComparisonPeriod] = useState("year"); // Add comparison period state
+  const [comparisonPeriod, setComparisonPeriod] = useState<ComparisonPeriodType>("year");
   
-  // Chart customization options
-  const [chartColors, setChartColors] = useState<ChartColors>({
-    amount: '#10b981',
-    liters: '#3b82f6',
-    rate: '#8b5cf6',
-    cumulative: '#0ea5e9',
-    previousYear: '#3b82f6',
-    growth: '#ef4444',
-    pending: '#f59e0b',
-    paid: '#10b981'
-  });
-  
+  // Chart customization states
+  const [chartColors, setChartColors] = useState<ChartColors>(DEFAULT_CHART_COLORS);
   const [showLegend, setShowLegend] = useState(true);
   const [showGrid, setShowGrid] = useState(true);
   
-  // Pass timeframe to the hook
-  const { data: paymentsData, isLoading: loading, isError, error, refetch } = useFarmerPaymentsData(timeframe);
+  // Data fetching
+  const { 
+    data: paymentsData, 
+    isLoading: loading, 
+    isError, 
+    error, 
+    refetch 
+  } = useFarmerPaymentsData(timeframe);
   
-  const collections = useMemo(() => paymentsData?.collections || [], [paymentsData?.collections]);
+  // Memoized data
+  const collections = useMemo(() => 
+    paymentsData?.collections || [], 
+    [paymentsData?.collections]
+  );
+  
   const farmer = paymentsData?.farmer;
-
   const [filteredCollections, setFilteredCollections] = useState<Collection[]>([]);
 
-  // Chart export function
-  const exportChart = (format: 'png' | 'svg', chartId: string) => {
-    try {
-      const chartElement = document.getElementById(chartId);
-      if (!chartElement) {
-        toastRef.current.error('Error', 'Chart not found');
-        return;
-      }
-      
-      // In a real implementation, you would use a library like html2canvas or dom-to-image
-      // For now, we'll show a toast message
-      toastRef.current.success('Success', `Chart exported as ${format.toUpperCase()}`);
-    } catch (error) {
-      console.error('Error exporting chart:', error);
-      toastRef.current.error('Error', 'Failed to export chart');
+  // ============================================================================
+  // EFFECTS
+  // ============================================================================
+
+  // Update toast ref
+  useEffect(() => {
+    toastRef.current = toast;
+  }, [toast]);
+
+  // Handle errors
+  useEffect(() => {
+    if (isError && error) {
+      console.error('Error fetching payments data:', error);
+      toastRef.current.error('Error', error.message || 'Failed to load payments data');
     }
-  };
-
-  // Update timeframe handler
-  const handleTimeframeChange = (timeframeValue: string, start: Date, end: Date) => {
-    setTimeframe(timeframeValue);
-    setStartDate(start.toISOString().split('T')[0]);
-    setEndDate(end.toISOString().split('T')[0]);
-  };
-
-  // Handle comparison period change
-  const handleComparisonPeriodChange = (period: string) => {
-    setComparisonPeriod(period);
-  };
+  }, [isError, error]);
 
   // Update filtered collections when filters or collections change
   useEffect(() => {
     let result = [...collections];
     
     // Apply search filter
-    if (searchTerm) {
+    if (searchTerm.trim()) {
+      const searchLower = searchTerm.toLowerCase().trim();
       result = result.filter(collection => 
-        collection.total_amount.toString().includes(searchTerm) ||
-        (collection.collection_id && collection.collection_id.toLowerCase().includes(searchTerm.toLowerCase()))
+        collection.total_amount.toString().includes(searchLower) ||
+        (collection.collection_id && collection.collection_id.toLowerCase().includes(searchLower))
       );
     }
     
@@ -133,48 +246,38 @@ const PaymentsPage = () => {
     
     // Apply date filter
     if (dateFilter) {
-      result = result.filter(collection => 
-        new Date(collection.collection_date).toDateString() === new Date(dateFilter).toDateString()
-      );
+      result = result.filter(collection => {
+        const collectionDate = new Date(collection.collection_date).toDateString();
+        const filterDate = new Date(dateFilter).toDateString();
+        return collectionDate === filterDate;
+      });
     }
     
     setFilteredCollections(result);
   }, [collections, searchTerm, statusFilter, dateFilter]);
 
-  // Update toast ref
-  useEffect(() => {
-    toastRef.current = toast;
-  }, [toast]);
+  // ============================================================================
+  // MEMOIZED CHART DATA
+  // ============================================================================
 
-  useEffect(() => {
-    if (error) {
-      console.error('Error fetching payments data:', error);
-      toastRef.current.error('Error', error.message || 'Failed to load payments data');
-    }
-  }, [error]);
-
-  // Prepare chart data - memoize this to prevent unnecessary re-renders
-  const chartData = useMemo(() => {
-    // Sort collections by date for proper time series visualization
+  const chartData = useMemo((): ChartDataPoint[] => {
+    // Sort collections by date
     let sortedCollections = [...filteredCollections].sort((a, b) => 
       new Date(a.collection_date).getTime() - new Date(b.collection_date).getTime()
     );
     
     // Apply date range filtering
-    if (startDate || endDate) {
+    if (startDate && endDate) {
+      const startDateTime = new Date(startDate).getTime();
+      const endDateTime = new Date(endDate).getTime();
+      
       sortedCollections = sortedCollections.filter(collection => {
-        const collectionDate = new Date(collection.collection_date);
-        const start = startDate ? new Date(startDate) : null;
-        const end = endDate ? new Date(endDate) : null;
-        
-        if (start && collectionDate < start) return false;
-        if (end && collectionDate > end) return false;
-        return true;
+        const collectionTime = new Date(collection.collection_date).getTime();
+        return collectionTime >= startDateTime && collectionTime <= endDateTime;
       });
     }
     
-    // Optimize for large datasets - sample data if too many points
-    const MAX_DATA_POINTS = 100;
+    // Sample data if too many points
     let isSampled = false;
     if (sortedCollections.length > MAX_DATA_POINTS) {
       const step = Math.ceil(sortedCollections.length / MAX_DATA_POINTS);
@@ -182,21 +285,25 @@ const PaymentsPage = () => {
       isSampled = true;
     }
     
-    // Create cumulative data for area charts
+    // Create cumulative data
     let cumulativeAmount = 0;
     let cumulativeLiters = 0;
     let cumulativePaid = 0;
     let cumulativePending = 0;
     
     return sortedCollections.map(collection => {
-      cumulativeAmount += collection.total_amount;
-      cumulativeLiters += collection.liters;
+      const amount = safeNumber(collection.total_amount);
+      const liters = safeNumber(collection.liters);
+      const rate = safeNumber(collection.rate_per_liter);
       
-      // Add cumulative paid/pending tracking
-      if (collection.status === 'Paid') {
-        cumulativePaid += collection.total_amount;
+      cumulativeAmount += amount;
+      cumulativeLiters += liters;
+      
+      const isPaid = collection.status === 'Paid';
+      if (isPaid) {
+        cumulativePaid += amount;
       } else {
-        cumulativePending += collection.total_amount;
+        cumulativePending += amount;
       }
       
       return {
@@ -204,111 +311,106 @@ const PaymentsPage = () => {
           month: 'short', 
           day: 'numeric' 
         }),
-        amount: collection.total_amount,
-        liters: collection.liters,
-        rate: collection.rate_per_liter,
-        cumulativeAmount: cumulativeAmount,
-        cumulativeLiters: cumulativeLiters,
-        status: collection.status,
-        isSampled: isSampled,
-        isPaid: collection.status === 'Paid' ? collection.total_amount : 0,
-        isPending: collection.status !== 'Paid' ? collection.total_amount : 0,
-        cumulativePaid: cumulativePaid,
-        cumulativePending: cumulativePending
+        amount,
+        liters,
+        rate,
+        cumulativeAmount,
+        cumulativeLiters,
+        status: collection.status || 'Unknown',
+        isSampled,
+        isPaid: isPaid ? amount : 0,
+        isPending: !isPaid ? amount : 0,
+        cumulativePaid,
+        cumulativePending
       };
     });
   }, [filteredCollections, startDate, endDate]);
 
-  // Prepare comparison data for configurable period-over-period analysis
-  const comparisonData = useMemo(() => {
+  // ============================================================================
+  // MEMOIZED COMPARISON DATA
+  // ============================================================================
+
+  const comparisonData = useMemo((): ComparisonDataPoint[] => {
     if (!filteredCollections.length) return [];
     
-    // Group collections by the selected period
-    const periodData: Record<string, { amount: number; liters: number; count: number }> = {};
+    // Limit collections for performance
+    const limitedCollections = filteredCollections.slice(0, MAX_COLLECTIONS_FOR_COMPARISON);
     
-    // Limit the data for performance
-    const limitedCollections = filteredCollections.slice(0, 1000); // Limit to 1000 collections for performance
+    // Group by period
+    const periodData: Record<string, { amount: number; liters: number; count: number }> = {};
     
     limitedCollections.forEach(collection => {
       const date = new Date(collection.collection_date);
-      
       let periodKey = '';
-      let periodLabel = '';
       
       if (comparisonPeriod === 'week') {
-        // Calculate week number and year
         const year = date.getFullYear();
         const startOfYear = new Date(year, 0, 1);
         const days = Math.floor((date.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1000));
         const weekNumber = Math.ceil((days + startOfYear.getDay() + 1) / 7);
         periodKey = `${year}-W${weekNumber.toString().padStart(2, '0')}`;
-        periodLabel = `Week ${weekNumber}, ${year}`;
       } else if (comparisonPeriod === 'month') {
         periodKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        periodLabel = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
       } else {
-        // Yearly
-        const year = date.getFullYear();
-        periodKey = year.toString();
-        periodLabel = year.toString();
+        periodKey = date.getFullYear().toString();
       }
       
       if (!periodData[periodKey]) {
         periodData[periodKey] = { amount: 0, liters: 0, count: 0 };
       }
       
-      periodData[periodKey].amount += collection.total_amount;
-      periodData[periodKey].liters += collection.liters;
+      periodData[periodKey].amount += safeNumber(collection.total_amount);
+      periodData[periodKey].liters += safeNumber(collection.liters);
       periodData[periodKey].count += 1;
     });
     
-    // Convert to array and sort
-    const data = Object.entries(periodData)
-      .map(([periodKey, values]) => {
-        return {
-          periodKey,
-          period: periodKey, // Will be overridden below
-          amount: values.amount,
-          liters: values.liters,
-          collections: values.count,
-          averageAmount: values.amount / values.count
-        };
-      });
-    
-    // Set period labels based on comparison period
-    data.forEach(item => {
+    // Convert to array
+    const data = Object.entries(periodData).map(([periodKey, values]) => {
+      let period = '';
+      
       if (comparisonPeriod === 'week') {
-        const [year, weekPart] = item.periodKey.split('-W');
-        item.period = `Week ${weekPart}, ${year}`;
+        const [year, weekPart] = periodKey.split('-W');
+        period = `Week ${weekPart}, ${year}`;
       } else if (comparisonPeriod === 'month') {
-        const [year, month] = item.periodKey.split('-');
+        const [year, month] = periodKey.split('-');
         const date = new Date(parseInt(year), parseInt(month) - 1, 1);
-        item.period = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+        period = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
       } else {
-        // Yearly
-        item.period = item.periodKey;
+        period = periodKey;
       }
+      
+      return {
+        periodKey,
+        period,
+        amount: values.amount,
+        liters: values.liters,
+        collections: values.count,
+        averageAmount: values.count > 0 ? values.amount / values.count : 0,
+        previousPeriodAmount: 0,
+        previousPeriodLiters: 0,
+        growthAmount: 0,
+        growthLiters: 0
+      };
     });
     
     // Sort data
     data.sort((a, b) => {
       if (comparisonPeriod === 'week') {
-        const [aYear, aWeek] = a.periodKey.split('-W').map(Number);
-        const [bYear, bWeek] = b.periodKey.split('-W').map(Number);
-        if (aYear !== bYear) return aYear - bYear;
-        return aWeek - bWeek;
+        const [aYear, aWeek] = a.periodKey.split('-W');
+        const [bYear, bWeek] = b.periodKey.split('-W');
+        if (aYear !== bYear) return parseInt(aYear) - parseInt(bYear);
+        return parseInt(aWeek) - parseInt(bWeek);
       } else if (comparisonPeriod === 'month') {
         const [aYear, aMonth] = a.periodKey.split('-');
         const [bYear, bMonth] = b.periodKey.split('-');
-        return new Date(parseInt(aYear), parseInt(aMonth) - 1).getTime() - 
-               new Date(parseInt(bYear), parseInt(bMonth) - 1).getTime();
+        if (aYear !== bYear) return parseInt(aYear) - parseInt(bYear);
+        return parseInt(aMonth) - parseInt(bMonth);
       } else {
-        // Yearly
         return parseInt(a.periodKey) - parseInt(b.periodKey);
       }
     });
     
-    // Add period-over-period comparison
+    // Calculate period-over-period comparison
     return data.map((current, index) => {
       let previousPeriodKey = '';
       
@@ -320,7 +422,6 @@ const PaymentsPage = () => {
         if (currentWeek > 1) {
           previousPeriodKey = `${currentYear}-W${(currentWeek - 1).toString().padStart(2, '0')}`;
         } else {
-          // Previous year, last week (approximate as week 52)
           previousPeriodKey = `${currentYear - 1}-W52`;
         }
       } else if (comparisonPeriod === 'month') {
@@ -331,40 +432,73 @@ const PaymentsPage = () => {
         if (currentMonth > 1) {
           previousPeriodKey = `${currentYear}-${(currentMonth - 1).toString().padStart(2, '0')}`;
         } else {
-          // Previous year, December
           previousPeriodKey = `${currentYear - 1}-12`;
         }
       } else {
-        // Yearly - compare with previous year
-        const currentYear = parseInt(current.periodKey);
-        previousPeriodKey = (currentYear - 1).toString();
+        previousPeriodKey = (parseInt(current.periodKey) - 1).toString();
       }
       
       const previous = data.find(d => d.periodKey === previousPeriodKey);
+      
+      const growthAmount = previous && previous.amount > 0
+        ? ((current.amount - previous.amount) / previous.amount) * 100
+        : 0;
+      
+      const growthLiters = previous && previous.liters > 0
+        ? ((current.liters - previous.liters) / previous.liters) * 100
+        : 0;
       
       return {
         ...current,
         previousPeriodAmount: previous?.amount || 0,
         previousPeriodLiters: previous?.liters || 0,
-        growthAmount: previous ? ((current.amount - previous.amount) / previous.amount) * 100 : 0,
-        growthLiters: previous ? ((current.liters - previous.liters) / previous.liters) * 100 : 0
+        growthAmount,
+        growthLiters
       };
     });
   }, [filteredCollections, comparisonPeriod]);
 
-  // Payment statistics from hook data
-  const totalCollections = paymentsData?.totalCollections || 0;
-  const paidCollections = paymentsData?.paidCollections || 0;
-  const pendingCollections = paymentsData?.pendingCollections || 0;
+  // ============================================================================
+  // PAYMENT STATISTICS
+  // ============================================================================
 
-  const exportCollections = (format: 'csv' | 'json') => {
+  const totalCollections = safeNumber(paymentsData?.totalCollections);
+  const paidCollections = safeNumber(paymentsData?.paidCollections);
+  const pendingCollections = safeNumber(paymentsData?.pendingCollections);
+
+  // ============================================================================
+  // EVENT HANDLERS
+  // ============================================================================
+
+  const handleTimeframeChange = useCallback((timeframeValue: string, start: Date, end: Date) => {
+    setTimeframe(timeframeValue as TimeframeType);
+    setStartDate(start.toISOString().split('T')[0]);
+    setEndDate(end.toISOString().split('T')[0]);
+  }, []);
+
+  const handleComparisonPeriodChange = useCallback((period: string) => {
+    setComparisonPeriod(period as ComparisonPeriodType);
+  }, []);
+
+  const handleClearFilters = useCallback(() => {
+    setSearchTerm("");
+    setStatusFilter("");
+    setDateFilter("");
+  }, []);
+
+  const handleClearDateRange = useCallback(() => {
+    setStartDate("");
+    setEndDate("");
+  }, []);
+
+  const exportCollections = useCallback((format: ExportFormat) => {
     try {
       const exportData = filteredCollections.map(collection => ({
         date: new Date(collection.collection_date).toLocaleDateString(),
-        amount: collection.total_amount,
-        status: collection.status,
-        liters: collection.liters,
-        rate: collection.rate_per_liter,
+        amount: safeNumber(collection.total_amount),
+        status: collection.status || 'Unknown',
+        liters: safeNumber(collection.liters),
+        rate: safeNumber(collection.rate_per_liter),
         collection_id: collection.collection_id || 'N/A'
       }));
       
@@ -379,20 +513,135 @@ const PaymentsPage = () => {
       console.error('Error exporting collections:', err);
       toastRef.current.error('Error', 'Failed to export collections');
     }
+  }, [filteredCollections]);
+
+  const exportChart = useCallback((format: ChartExportFormat, chartId: string) => {
+    try {
+      const chartElement = document.getElementById(chartId);
+      if (!chartElement) {
+        toastRef.current.error('Error', 'Chart not found');
+        return;
+      }
+      
+      // Note: In production, implement with html2canvas or dom-to-image
+      toastRef.current.success('Success', `Chart exported as ${format.toUpperCase()}`);
+    } catch (error) {
+      console.error('Error exporting chart:', error);
+      toastRef.current.error('Error', 'Failed to export chart');
+    }
+  }, []);
+
+  const handleChartColorChange = useCallback((colorKey: keyof ChartColors, value: string) => {
+    setChartColors(prev => ({ ...prev, [colorKey]: value }));
+  }, []);
+
+  // ============================================================================
+  // RENDER HELPERS
+  // ============================================================================
+
+  const renderCustomTooltip = ({ active, payload, label }: any) => {
+    if (!active || !payload || !payload.length) return null;
+
+    const isSampled = payload[0]?.payload?.isSampled;
+    
+    return (
+      <div className="bg-white p-4 border border-gray-200 rounded-lg shadow-lg" role="tooltip">
+        <p className="font-bold text-gray-900">{label}</p>
+        {isSampled && (
+          <p className="text-xs text-yellow-600 italic">Data sampled for performance</p>
+        )}
+        {payload.map((entry: any, index: number) => {
+          let formattedValue = entry.value;
+          
+          if (entry.dataKey.includes('amount') || entry.dataKey.includes('Amount')) {
+            formattedValue = formatCurrency(safeNumber(entry.value));
+          } else if (entry.dataKey.includes('liters') || entry.dataKey.includes('Liters')) {
+            formattedValue = formatVolume(safeNumber(entry.value));
+          } else if (entry.dataKey.includes('growth') || entry.dataKey.includes('Growth')) {
+            formattedValue = formatPercentage(safeNumber(entry.value));
+          } else if (entry.dataKey === 'rate') {
+            formattedValue = formatCurrency(safeNumber(entry.value));
+          }
+          
+          return (
+            <p key={index} style={{ color: entry.color }} className="text-sm">
+              {entry.name}: {formattedValue}
+            </p>
+          );
+        })}
+      </div>
+    );
   };
+
+  const renderComparisonTooltip = ({ active, payload, label }: any) => {
+    if (!active || !payload || !payload.length) return null;
+    
+    return (
+      <div className="bg-white p-4 border border-gray-200 rounded-lg shadow-lg" role="tooltip">
+        <p className="font-bold text-gray-900">{label}</p>
+        {payload.map((entry: any, index: number) => {
+          let formattedValue = entry.value;
+          
+          if (entry.dataKey.includes('amount') || entry.dataKey.includes('Amount')) {
+            formattedValue = formatCurrency(safeNumber(entry.value));
+          } else if (entry.dataKey.includes('growth')) {
+            formattedValue = formatPercentage(safeNumber(entry.value));
+          }
+          
+          return (
+            <p key={index} style={{ color: entry.color }} className="text-sm">
+              {entry.name}: {formattedValue}
+            </p>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const renderStatusBadge = (status: string) => {
+    const isPaid = status === 'Paid';
+    const isPending = status === 'Pending';
+    
+    const badgeClass = isPaid 
+      ? 'bg-green-100 text-green-800'
+      : isPending 
+      ? 'bg-yellow-100 text-yellow-800'
+      : 'bg-gray-100 text-gray-800';
+    
+    const Icon = isPaid ? CheckCircle : isPending ? Clock : XCircle;
+    
+    return (
+      <span className={`inline-flex items-center px-2.5 py-0.5 text-xs font-medium rounded-full ${badgeClass}`}>
+        <Icon className="h-3 w-3 mr-1" />
+        {status}
+      </span>
+    );
+  };
+
+  // ============================================================================
+  // LOADING STATE
+  // ============================================================================
 
   if (loading) {
     return (
       <div className="container mx-auto py-6">
         <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500" 
+               role="status" 
+               aria-label="Loading payment data">
+          </div>
         </div>
       </div>
     );
   }
 
+  // ============================================================================
+  // MAIN RENDER
+  // ============================================================================
+
   return (
     <div className="container mx-auto py-6">
+      {/* Page Header */}
       <PageHeader
         title="Payment History"
         description="Track all your milk collections and payment status"
@@ -403,11 +652,21 @@ const PaymentsPage = () => {
               onRefresh={refetch} 
               className="bg-white border-gray-300 hover:bg-gray-50 rounded-md shadow-sm"
             />
-            <Button variant="outline" className="flex items-center gap-2" onClick={() => exportCollections('csv')}>
+            <Button 
+              variant="outline" 
+              className="flex items-center gap-2" 
+              onClick={() => exportCollections('csv')}
+              aria-label="Export data as CSV"
+            >
               <Download className="h-4 w-4" />
               CSV
             </Button>
-            <Button variant="outline" className="flex items-center gap-2" onClick={() => exportCollections('json')}>
+            <Button 
+              variant="outline" 
+              className="flex items-center gap-2" 
+              onClick={() => exportCollections('json')}
+              aria-label="Export data as JSON"
+            >
               <Download className="h-4 w-4" />
               JSON
             </Button>
@@ -416,28 +675,28 @@ const PaymentsPage = () => {
       />
 
       {/* Payment Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <StatCard
           title="Total Collections"
-          value={`KSh ${totalCollections.toFixed(2)}`}
+          value={formatCurrency(totalCollections)}
           icon={<DollarSign className="h-6 w-6 text-green-600" />}
           color="bg-green-100"
         />
         <StatCard
           title="Paid"
-          value={`KSh ${paidCollections.toFixed(2)}`}
+          value={formatCurrency(paidCollections)}
           icon={<CheckCircle className="h-6 w-6 text-blue-600" />}
           color="bg-blue-100"
         />
         <StatCard
           title="Pending"
-          value={`KSh ${pendingCollections.toFixed(2)}`}
+          value={formatCurrency(pendingCollections)}
           icon={<Clock className="h-6 w-6 text-yellow-600" />}
           color="bg-yellow-100"
         />
       </div>
 
-      {/* Enhanced Payment Analytics Charts */}
+      {/* Payment Analytics Dashboard */}
       <div className="mb-8">
         <Card>
           <CardHeader>
@@ -452,7 +711,10 @@ const PaymentsPage = () => {
                 </p>
               </div>
               <div className="flex flex-wrap gap-2 items-center">
-                <TimeframeSelector onTimeframeChange={handleTimeframeChange} defaultValue={timeframe} />
+                <TimeframeSelector 
+                  onTimeframeChange={handleTimeframeChange} 
+                  defaultValue={timeframe} 
+                />
                 <div className="flex items-center gap-2">
                   <label className="text-sm text-muted-foreground whitespace-nowrap">From:</label>
                   <Input
@@ -476,10 +738,7 @@ const PaymentsPage = () => {
                 <Button 
                   variant="outline" 
                   size="sm"
-                  onClick={() => {
-                    setStartDate("");
-                    setEndDate("");
-                  }}
+                  onClick={handleClearDateRange}
                   className="text-sm"
                   aria-label="Clear date filters"
                 >
@@ -509,6 +768,7 @@ const PaymentsPage = () => {
                 </div>
               </div>
             </div>
+            
             {/* Chart Customization Options */}
             <div className="flex flex-wrap gap-4 mt-4 pt-4 border-t border-gray-200">
               <div className="flex items-center gap-2">
@@ -517,7 +777,7 @@ const PaymentsPage = () => {
                   <input 
                     type="color" 
                     value={chartColors.amount}
-                    onChange={(e) => setChartColors({...chartColors, amount: e.target.value})}
+                    onChange={(e) => handleChartColorChange('amount', e.target.value)}
                     className="w-6 h-6 border rounded cursor-pointer"
                     title="Amount color"
                     aria-label="Change amount line color"
@@ -525,7 +785,7 @@ const PaymentsPage = () => {
                   <input 
                     type="color" 
                     value={chartColors.liters}
-                    onChange={(e) => setChartColors({...chartColors, liters: e.target.value})}
+                    onChange={(e) => handleChartColorChange('liters', e.target.value)}
                     className="w-6 h-6 border rounded cursor-pointer"
                     title="Liters color"
                     aria-label="Change liters line color"
@@ -533,7 +793,7 @@ const PaymentsPage = () => {
                   <input 
                     type="color" 
                     value={chartColors.cumulative}
-                    onChange={(e) => setChartColors({...chartColors, cumulative: e.target.value})}
+                    onChange={(e) => handleChartColorChange('cumulative', e.target.value)}
                     className="w-6 h-6 border rounded cursor-pointer"
                     title="Cumulative color"
                     aria-label="Change cumulative area color"
@@ -565,64 +825,29 @@ const PaymentsPage = () => {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="h-64 sm:h-72 md:h-80 lg:h-96" id="main-chart" role="img" aria-label="Main payment analytics chart showing daily collections and cumulative trends">
+            <div className="h-64 sm:h-72 md:h-80 lg:h-96" id="main-chart">
               <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={chartData} accessibilityLayer>
+                <ComposedChart data={chartData}>
                   {showGrid && <CartesianGrid strokeDasharray="3 3" />}
                   <XAxis 
                     dataKey="date" 
                     interval="preserveStartEnd" 
                     tick={{ fontSize: 12 }}
-                    aria-label="Collection dates"
                   />
                   <YAxis 
                     yAxisId="left" 
                     orientation="left" 
                     stroke={chartColors.amount} 
-                    tickFormatter={(value) => `KSh ${Number(value).toFixed(0)}`} 
+                    tickFormatter={(value) => `KSh ${safeNumber(value).toFixed(0)}`} 
                     tick={{ fontSize: 12 }}
-                    aria-label="Amount in Kenyan Shillings"
                   />
                   <YAxis 
                     yAxisId="right" 
                     orientation="right" 
                     stroke={chartColors.liters} 
                     tick={{ fontSize: 12 }}
-                    aria-label="Volume in Liters"
                   />
-                  <Tooltip 
-                    content={({ active, payload, label }) => {
-                      if (active && payload && payload.length) {
-                        const isSampled = payload[0]?.payload?.isSampled;
-                        return (
-                          <div className="bg-white p-4 border border-gray-200 rounded-lg shadow-lg" role="tooltip">
-                            <p className="font-bold text-gray-900">{label}</p>
-                            {isSampled && (
-                              <p className="text-xs text-yellow-600 italic">Data sampled for performance</p>
-                            )}
-                            {payload.map((entry, index) => (
-                              <p key={index} style={{ color: entry.color }} className="text-sm">
-                                {entry.name}: {
-                                  entry.dataKey === 'amount' || entry.dataKey === 'cumulativeAmount' || 
-                                  entry.dataKey === 'previousYearAmount'
-                                    ? `KSh ${Number(entry.value).toFixed(2)}`
-                                    : entry.dataKey === 'liters' || entry.dataKey === 'cumulativeLiters' ||
-                                      entry.dataKey === 'previousYearLiters'
-                                    ? `${Number(entry.value).toFixed(2)}L`
-                                    : entry.dataKey === 'growthAmount' || entry.dataKey === 'growthLiters'
-                                    ? `${Number(entry.value).toFixed(2)}%`
-                                    : entry.dataKey === 'rate'
-                                    ? `KSh ${Number(entry.value).toFixed(2)}`
-                                    : entry.value
-                                }
-                              </p>
-                            ))}
-                          </div>
-                        );
-                      }
-                      return null;
-                    }}
-                  />
+                  <Tooltip content={renderCustomTooltip} />
                   {showLegend && <Legend wrapperStyle={{ fontSize: '12px' }} />}
                   <Line 
                     yAxisId="left"
@@ -674,15 +899,17 @@ const PaymentsPage = () => {
           <CardContent>
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={[
-                  { name: 'Paid', value: paidCollections, fill: chartColors.paid },
-                  { name: 'Pending', value: pendingCollections, fill: chartColors.pending }
-                ]} accessibilityLayer>
+                <BarChart 
+                  data={[
+                    { name: 'Paid', value: paidCollections, fill: chartColors.paid },
+                    { name: 'Pending', value: pendingCollections, fill: chartColors.pending }
+                  ]}
+                >
                   {showGrid && <CartesianGrid strokeDasharray="3 3" />}
                   <XAxis dataKey="name" />
-                  <YAxis tickFormatter={(value) => `KSh ${Number(value).toFixed(0)}`} />
+                  <YAxis tickFormatter={(value) => `KSh ${safeNumber(value).toFixed(0)}`} />
                   <Tooltip 
-                    formatter={(value) => [`KSh ${Number(value).toFixed(2)}`, 'Amount']}
+                    formatter={(value) => [formatCurrency(safeNumber(value as number)), 'Amount']}
                     contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }}
                   />
                   <Bar dataKey="value" name="Amount">
@@ -699,60 +926,45 @@ const PaymentsPage = () => {
           </CardContent>
         </Card>
 
-        {/* Year-over-Year Comparison */}
+        {/* Period-over-Period Comparison */}
         <Card>
           <CardHeader>
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
               <CardTitle className="flex items-center gap-2">
                 <TrendingUp className="h-5 w-5 text-primary" />
-                {comparisonPeriod === 'week' ? 'Week-over-Week Comparison' : 
-                 comparisonPeriod === 'month' ? 'Month-over-Month Comparison' : 
-                 'Year-over-Year Comparison'}
+                {comparisonPeriod === 'week' ? 'Week-over-Week' : 
+                 comparisonPeriod === 'month' ? 'Month-over-Month' : 
+                 'Year-over-Year'} Comparison
               </CardTitle>
-              <div className="flex gap-2">
-                <select
-                  value={comparisonPeriod}
-                  onChange={(e) => handleComparisonPeriodChange(e.target.value)}
-                  className="h-8 px-2 py-1 border border-input rounded-md text-xs bg-white"
-                >
-                  <option value="week">Weekly</option>
-                  <option value="month">Monthly</option>
-                  <option value="year">Yearly</option>
-                </select>
-              </div>
+              <select
+                value={comparisonPeriod}
+                onChange={(e) => handleComparisonPeriodChange(e.target.value)}
+                className="h-8 px-2 py-1 border border-input rounded-md text-xs bg-white"
+                aria-label="Select comparison period"
+              >
+                <option value="week">Weekly</option>
+                <option value="month">Monthly</option>
+                <option value="year">Yearly</option>
+              </select>
             </div>
           </CardHeader>
           <CardContent>
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={comparisonData} accessibilityLayer>
+                <ComposedChart data={comparisonData}>
                   {showGrid && <CartesianGrid strokeDasharray="3 3" />}
-                  <XAxis dataKey="period" />
-                  <YAxis yAxisId="left" orientation="left" tickFormatter={(value) => `KSh ${Number(value / 1000).toFixed(0)}k`} />
-                  <YAxis yAxisId="right" orientation="right" tickFormatter={(value) => `${value}%`} />
-                  <Tooltip 
-                    content={({ active, payload, label }) => {
-                      if (active && payload && payload.length) {
-                        return (
-                          <div className="bg-white p-4 border border-gray-200 rounded-lg shadow-lg" role="tooltip">
-                            <p className="font-bold text-gray-900">{label}</p>
-                            {payload.map((entry, index) => (
-                              <p key={index} style={{ color: entry.color }} className="text-sm">
-                                {entry.name}: {
-                                  entry.dataKey === 'amount' || entry.dataKey === 'previousPeriodAmount'
-                                    ? `KSh ${Number(entry.value).toFixed(2)}`
-                                    : entry.dataKey === 'growthAmount'
-                                    ? `${Number(entry.value).toFixed(2)}%`
-                                    : entry.value
-                                }
-                              </p>
-                            ))}
-                          </div>
-                        );
-                      }
-                      return null;
-                    }}
+                  <XAxis dataKey="period" tick={{ fontSize: 10 }} />
+                  <YAxis 
+                    yAxisId="left" 
+                    orientation="left" 
+                    tickFormatter={(value) => `KSh ${safeNumber(value / 1000).toFixed(0)}k`} 
                   />
+                  <YAxis 
+                    yAxisId="right" 
+                    orientation="right" 
+                    tickFormatter={(value) => `${value}%`} 
+                  />
+                  <Tooltip content={renderComparisonTooltip} />
                   {showLegend && <Legend wrapperStyle={{ fontSize: '12px' }} />}
                   <Bar 
                     yAxisId="left"
@@ -811,22 +1023,25 @@ const PaymentsPage = () => {
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-10 w-full md:w-64"
+                  aria-label="Search collections"
                 />
               </div>
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
                 className="h-10 px-3 py-2 border border-input rounded-md text-sm bg-white"
+                aria-label="Filter by payment status"
               >
                 <option value="">All Statuses</option>
                 <option value="Paid">Paid</option>
                 <option value="Pending">Pending</option>
               </select>
-              <Button variant="outline" size="sm" onClick={() => {
-                setSearchTerm("");
-                setStatusFilter("");
-                setDateFilter("");
-              }}>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={handleClearFilters}
+                aria-label="Clear all filters"
+              >
                 <Filter className="h-4 w-4 mr-2" />
                 Clear Filters
               </Button>
@@ -846,29 +1061,16 @@ const PaymentsPage = () => {
                   {collection.collection_id || 'N/A'}
                 </td>
                 <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {collection.liters} L
+                  {formatVolume(safeNumber(collection.liters))}
                 </td>
                 <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {collection.rate_per_liter?.toFixed(2)}
+                  {formatCurrency(safeNumber(collection.rate_per_liter))}
                 </td>
                 <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                  {collection.total_amount?.toFixed(2)}
+                  {formatCurrency(safeNumber(collection.total_amount))}
                 </td>
                 <td className="px-4 py-4 whitespace-nowrap">
-                  <span className={`inline-flex items-center px-2.5 py-0.5 text-xs font-medium rounded-full ${
-                    collection.status === 'Paid' ? 'bg-green-100 text-green-800' :
-                    collection.status === 'Pending' ? 'bg-yellow-100 text-yellow-800' :
-                    'bg-gray-100 text-gray-800'
-                  }`}>
-                    {collection.status === 'Paid' ? (
-                      <CheckCircle className="h-3 w-3 mr-1" />
-                    ) : collection.status === 'Pending' ? (
-                      <Clock className="h-3 w-3 mr-1" />
-                    ) : (
-                      <XCircle className="h-3 w-3 mr-1" />
-                    )}
-                    {collection.status}
-                  </span>
+                  {renderStatusBadge(collection.status || 'Unknown')}
                 </td>
               </tr>
             )}

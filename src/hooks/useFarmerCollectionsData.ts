@@ -19,7 +19,7 @@ interface FarmerCollectionsData {
   recentCollection?: Collection;
 }
 
-export const useFarmerCollectionsData = (farmerId: string | null, timeframe: string = 'month') => {
+export const useFarmerCollectionsData = (farmerId: string | null, timeframe: string = 'week') => {
   return useQuery<FarmerCollectionsData>({
     queryKey: [CACHE_KEYS.FARMER_COLLECTIONS, farmerId, timeframe],
     queryFn: async () => {

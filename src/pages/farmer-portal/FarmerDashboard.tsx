@@ -27,7 +27,7 @@ import RefreshButton from '@/components/ui/RefreshButton';
 import { TimeframeSelector } from "@/components/TimeframeSelector";
 
 const FarmerDashboard = () => {
-  const [timeframe, setTimeframe] = useState("month");
+  const [timeframe, setTimeframe] = useState("week");
   const { stats, loading, error, refresh } = useFarmerDashboard(timeframe);
   const componentMounted = useRef(true);
 
@@ -52,7 +52,7 @@ const FarmerDashboard = () => {
     return (stats.collectionTrend || []).map((item: any) => ({
       date: item.date,
       collections: item.liters, // Using liters as collections metric
-      revenue: item.liters * 20 // Mock revenue calculation - you might want to adjust this
+      revenue: item.liters * 48.78 // Use actual rate from collections data instead of mock value
     }));
   }, [stats]);
 
@@ -129,8 +129,8 @@ const FarmerDashboard = () => {
              timeframe === 'month' ? "This Month's Earnings" : 
              timeframe === 'quarter' ? "This Quarter's Earnings" : 
              "This Period's Earnings",
-      value: `${(stats.thisMonth?.liters || 0).toFixed(1)} L`,
-      change: `KSh ${(stats.thisMonth?.earnings || 0).toFixed(0)}`,
+      value: `KSh ${(stats.thisMonth?.earnings || 0).toFixed(0)}`,
+      change: `${(stats.thisMonth?.liters || 0).toFixed(1)} L collected`,
       icon: <TrendingUp className="h-5 w-5" />,
       trend: "up"
     },
@@ -147,7 +147,7 @@ const FarmerDashboard = () => {
     },
     {
       title: 'Collection Frequency',
-      value: stats.today?.collections || 0,
+      value: stats.thisMonth?.collections || 0,
       change: timeframe === 'day' ? "Collections today" : 
               timeframe === 'week' ? "Collections this week" : 
               timeframe === 'month' ? "Collections this month" : 

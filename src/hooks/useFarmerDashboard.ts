@@ -5,7 +5,7 @@ import { logger } from '@/utils/logger';
 import { CACHE_KEYS } from '@/services/cache-utils';
 import { subDays, subWeeks, subMonths, subYears } from 'date-fns';
 
-export const useFarmerDashboard = (timeframe: string = 'month') => {
+export const useFarmerDashboard = (timeframe: string = 'week') => {
   const { data: stats, isLoading: loading, error, refetch } = useQuery({
     queryKey: [CACHE_KEYS.FARMER_DASHBOARD, timeframe],
     queryFn: async () => {
@@ -36,44 +36,27 @@ export const useFarmerDashboard = (timeframe: string = 'month') => {
           startDate = subDays(now, 1);
           break;
         case 'week':
-          startDate = subDays(now, 7);
+          startDate = subWeeks(now, 1);
           break;
         case 'month':
-          startDate = subDays(now, 30);
+          startDate = subMonths(now, 1);
           break;
         case 'quarter':
-          startDate = subDays(now, 90);
+          startDate = subMonths(now, 3);
           break;
         case 'year':
-          startDate = subDays(now, 365);
+          startDate = subYears(now, 1);
           break;
         default:
-          startDate = subDays(now, 30);
+          startDate = subMonths(now, 1);
       }
 
-      const startOfDay = new Date(now.setHours(0, 0, 0, 0)).toISOString();
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-
-      // Fetch today's collections (within the selected timeframe)
-      const { data: todayCollections, error: todayCollectionsError } = await supabase
-        .from('collections')
-        .select('*')
-        .eq('farmer_id', farmer.id)
-        .gte('collection_date', startDate.toISOString())
-        .lte('collection_date', now.toISOString())
-        .order('collection_date', { ascending: false });
-
-      if (todayCollectionsError) throw todayCollectionsError;
-
-      // Calculate today's stats
-      const todayLiters = todayCollections ? todayCollections.reduce((sum, collection) => sum + (collection.liters || 0), 0) : 0;
-      const todayEarnings = todayCollections ? todayCollections.reduce((sum, collection) => sum + (collection.total_amount || 0), 0) : 0;
-
-      // Fetch collections within the selected timeframe
+      // Fetch collections within the selected timeframe - only show approved collections
       const { data: timeframeCollections, error: timeframeCollectionsError } = await supabase
         .from('collections')
         .select('*')
         .eq('farmer_id', farmer.id)
+        .eq('approved_for_company', true)  // Add this filter to match Collections page
         .gte('collection_date', startDate.toISOString())
         .lte('collection_date', now.toISOString())
         .order('collection_date', { ascending: false });
@@ -89,6 +72,7 @@ export const useFarmerDashboard = (timeframe: string = 'month') => {
         .from('collections')
         .select('*')
         .eq('farmer_id', farmer.id)
+        .eq('approved_for_company', true)  // Add this filter to match Collections page
         .gte('collection_date', startDate.toISOString())
         .lte('collection_date', now.toISOString())
         .order('collection_date', { ascending: false })
@@ -101,6 +85,7 @@ export const useFarmerDashboard = (timeframe: string = 'month') => {
         .from('collections')
         .select('collection_date, liters')
         .eq('farmer_id', farmer.id)
+        .eq('approved_for_company', true)  // Add this filter to match Collections page
         .gte('collection_date', startDate.toISOString())
         .lte('collection_date', now.toISOString())
         .order('collection_date', { ascending: true });
@@ -131,6 +116,7 @@ export const useFarmerDashboard = (timeframe: string = 'month') => {
         .from('collections')
         .select('liters, total_amount')
         .eq('farmer_id', farmer.id)
+        .eq('approved_for_company', true)  // Add this filter to match Collections page
         .gte('collection_date', startDate.toISOString())
         .lte('collection_date', now.toISOString());
 
@@ -145,9 +131,9 @@ export const useFarmerDashboard = (timeframe: string = 'month') => {
       // Return all stats with null safety
       return {
         today: {
-          collections: todayCollections ? todayCollections.length : 0,
-          liters: todayLiters,
-          earnings: todayEarnings
+          collections: timeframeCollections ? timeframeCollections.length : 0,
+          liters: timeframeLiters,
+          earnings: timeframeEarnings
         },
         thisMonth: {
           collections: timeframeCollections ? timeframeCollections.length : 0,
