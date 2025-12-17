@@ -277,35 +277,53 @@ export default function CollectorPaymentsPage() {
   }, [user]);
 
   const prepareAnalyticsData = (paymentData: PaymentData[]) => {
+    console.log('Preparing analytics data with payment data:', paymentData);
     // Monthly earnings data
     const monthlyMap: Record<string, { earnings: number; collections: number; penalties: number }> = {};
     
-    paymentData.forEach(payment => {
+    paymentData.forEach((payment, index) => {
+      console.log(`Processing payment ${index}:`, payment);
       if (payment.status === 'paid') {
         const dateToUse = payment.payment_date || payment.created_at;
+        console.log(`Date to use for payment ${index}:`, dateToUse);
         if (!dateToUse) return; // Skip if no date available
         
         try {
           const dateObj = new Date(dateToUse);
-          if (isNaN(dateObj.getTime())) return; // Skip if invalid date
+          console.log(`Date object for payment ${index}:`, dateObj);
+          if (isNaN(dateObj.getTime())) {
+            console.log(`Invalid date for payment ${index}:`, dateToUse);
+            return; // Skip if invalid date
+          }
           
           const month = dateObj.toLocaleString('default', { 
             month: 'short', 
             year: 'numeric' 
           });
+          console.log(`Month for payment ${index}:`, month);
           
           if (!monthlyMap[month]) {
             monthlyMap[month] = { earnings: 0, collections: 0, penalties: 0 };
           }
           
-          monthlyMap[month].earnings += payment.adjusted_earnings;
-          monthlyMap[month].collections += payment.total_collections;
-          monthlyMap[month].penalties += payment.total_penalties;
+          const earningsToAdd = payment.adjusted_earnings || 0;
+          const collectionsToAdd = payment.total_collections || 0;
+          const penaltiesToAdd = payment.total_penalties || 0;
+          
+          console.log(`Adding to ${month}: earnings=${earningsToAdd}, collections=${collectionsToAdd}, penalties=${penaltiesToAdd}`);
+          
+          monthlyMap[month].earnings += earningsToAdd;
+          monthlyMap[month].collections += collectionsToAdd;
+          monthlyMap[month].penalties += penaltiesToAdd;
+          
+          console.log(`Updated ${month} totals:`, monthlyMap[month]);
         } catch (e) {
           console.warn('Error processing payment date:', dateToUse, e);
         }
       }
     });
+    
+    console.log('Final monthly map:', monthlyMap);
     
     const monthlyEarnings = Object.entries(monthlyMap).map(([month, data]) => ({
       month,
@@ -369,19 +387,44 @@ export default function CollectorPaymentsPage() {
     let bestMonth = { month: '', earnings: 0 };
     let worstMonth = { month: '', earnings: Number.MAX_VALUE };
     
-    Object.entries(monthlyMap).forEach(([month, data]) => {
-      // Skip invalid months
-      if (!month || month === 'Invalid Date') return;
-      
-      if (data.earnings > bestMonth.earnings) {
-        bestMonth = { month, earnings: data.earnings };
-      }
-      if (data.earnings < worstMonth.earnings && data.earnings >= 0) {
-        worstMonth = { month, earnings: data.earnings };
-      }
-    });
+    // Convert monthlyMap to array for easier processing
+    const monthlyEntries = Object.entries(monthlyMap).filter(([month, _]) => month && month !== 'Invalid Date');
     
-    if (worstMonth.earnings === Number.MAX_VALUE) {
+    if (monthlyEntries.length > 0) {
+      // Find best month
+      let maxEarnings = -1;
+      let bestMonthName = '';
+      
+      // Find worst month
+      let minEarnings = Number.MAX_VALUE;
+      let worstMonthName = '';
+      
+      monthlyEntries.forEach(([month, data]) => {
+        if (data.earnings > maxEarnings) {
+          maxEarnings = data.earnings;
+          bestMonthName = month;
+        }
+        
+        if (data.earnings < minEarnings) {
+          minEarnings = data.earnings;
+          worstMonthName = month;
+        }
+      });
+      
+      // Set best month if we found one with positive earnings
+      if (bestMonthName && maxEarnings >= 0) {
+        bestMonth = { month: bestMonthName, earnings: maxEarnings };
+      }
+      
+      // Set worst month
+      if (worstMonthName) {
+        worstMonth = { month: worstMonthName, earnings: minEarnings };
+      } else {
+        worstMonth = { month: '', earnings: 0 };
+      }
+    } else {
+      // No valid months found
+      bestMonth = { month: '', earnings: 0 };
       worstMonth = { month: '', earnings: 0 };
     }
     

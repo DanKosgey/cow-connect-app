@@ -153,7 +153,7 @@ class CollectorEarningsService {
       const effectiveRate = ratePerLiter > 0 ? ratePerLiter : 3.00; // Default rate of 3.00
 
       // Get total collections and liters for the collector in the period
-      // Only count approved collections with pending fees
+      // Count approved collections with pending fees (Collected that are approved)
       const { data, error } = await supabase
         .from('collections')
         .select('id, liters')
@@ -292,8 +292,28 @@ class CollectorEarningsService {
       const ratePerLiter = await collectorRateService.getCurrentRate();
       logger.withContext('CollectorEarningsService - getAllTimeEarnings').info(`Current rate per liter: ${ratePerLiter}`);
 
-      // If rate is 0 or invalid, use a default rate for display purposes
-      const effectiveRate = ratePerLiter > 0 ? ratePerLiter : 3.00; // Default rate of 3.00
+      // If rate is 0 or invalid, try to get it from milk_rates as fallback
+      let effectiveRate = ratePerLiter > 0 ? ratePerLiter : 3.00; // Default rate of 3.00
+      
+      // If we still have the default rate, try to get a better rate
+      if (effectiveRate === 3.00) {
+        try {
+          const { data: milkRatesData, error: milkRatesError } = await supabase
+            .from('milk_rates')
+            .select('rate_per_liter')
+            .eq('is_active', true)
+            .order('effective_from', { ascending: false })
+            .limit(1)
+            .single();
+          
+          if (!milkRatesError && milkRatesData) {
+            effectiveRate = milkRatesData.rate_per_liter;
+            logger.withContext('CollectorEarningsService - getAllTimeEarnings').info(`Using fallback rate from milk_rates: ${effectiveRate}`);
+          }
+        } catch (fallbackError) {
+          logger.warn('Error fetching fallback rate from milk_rates:', fallbackError);
+        }
+      }
 
       const totalCollections = data.length;
       const totalLiters = data.reduce((sum, collection) => sum + (collection.liters || 0), 0);
@@ -364,6 +384,7 @@ class CollectorEarningsService {
         .select('id')
         .eq('staff_id', collectorId)
         .eq('approved_for_payment', true)
+        .in('status', ['Collected']) // Only include Collected collections
         .eq('collection_fee_status', 'pending'); // Only get collections with pending fees
 
       // Apply date filters if provided
@@ -397,6 +418,7 @@ class CollectorEarningsService {
         .update({ collection_fee_status: 'paid' })
         .eq('staff_id', collectorId)
         .eq('approved_for_payment', true)
+        .eq('status', 'Collected')
         .eq('collection_fee_status', 'pending'); // Only update collections with pending fees
 
       // Apply date filters if provided

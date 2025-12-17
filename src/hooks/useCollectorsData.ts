@@ -399,13 +399,25 @@ export const useCollectorsData = () => {
 
   // Function to update a specific collector's data
   const updateCollectorData = (collectorId: string, updatedData: Partial<CollectorData>) => {
-    setCollectors(prev => 
-      prev.map(collector => 
+    setCollectors(prevCollectors => {
+      const updatedCollectors = prevCollectors.map(collector => 
         collector.id === collectorId 
           ? { ...collector, ...updatedData }
           : collector
-      )
-    );
+      );
+      
+      // Recalculate stats with updated data
+      const totalPendingAmount = updatedCollectors.reduce((sum, collector) => sum + (collector.pendingPayments || 0), 0);
+      const totalPaidAmount = updatedCollectors.reduce((sum, collector) => sum + (collector.paidPayments || 0), 0);
+      
+      setStats(prevStats => ({
+        ...prevStats,
+        totalPendingAmount,
+        totalPaidAmount
+      }));
+      
+      return updatedCollectors;
+    });
   };
 
   // Function to manually invalidate cache and force refresh

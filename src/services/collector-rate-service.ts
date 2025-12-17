@@ -54,7 +54,26 @@ class CollectorRateService {
         return defaultRate;
       }
 
-      const rate = data || 3.00; // Use default rate of 3.00 if no data
+      // Ensure we get a proper rate value
+      let rate = data || 3.00; // Use default rate of 3.00 if no data
+      
+      // If the rate is 0 or very low, check the milk_rates table as fallback
+      if (rate <= 3.00) {
+        console.log('Rate is low or default, checking milk_rates table as fallback...');
+        const { data: milkRatesData, error: milkRatesError } = await supabase
+          .from('milk_rates')
+          .select('rate_per_liter')
+          .eq('is_active', true)
+          .order('effective_from', { ascending: false })
+          .limit(1)
+          .single();
+        
+        if (!milkRatesError && milkRatesData) {
+          rate = milkRatesData.rate_per_liter;
+          console.log('Using rate from milk_rates table:', rate);
+        }
+      }
+      
       console.log('Current collector rate:', rate);
       this.currentRate = rate;
       this.lastFetchTime = now;
@@ -62,7 +81,28 @@ class CollectorRateService {
       return rate;
     } catch (error) {
       logger.errorWithContext('CollectorRateService - getCurrentRate exception', error);
-      return 0;
+      // Even in case of exception, try to get a fallback rate
+      try {
+        const { data: milkRatesData, error: milkRatesError } = await supabase
+          .from('milk_rates')
+          .select('rate_per_liter')
+          .eq('is_active', true)
+          .order('effective_from', { ascending: false })
+          .limit(1)
+          .single();
+        
+        if (!milkRatesError && milkRatesData) {
+          const rate = milkRatesData.rate_per_liter;
+          console.log('Fallback rate from milk_rates table:', rate);
+          this.currentRate = rate;
+          this.lastFetchTime = Date.now();
+          this.notifyListeners(rate);
+          return rate;
+        }
+      } catch (fallbackError) {
+        console.error('Error in fallback rate fetch:', fallbackError);
+      }
+      return 3.00; // Safe fallback
     }
   }
 

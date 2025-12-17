@@ -267,8 +267,10 @@ export default function CollectorEarningsPage() {
       // Get payment history with penalties
       const history = await collectorPenaltyService.getCollectorPaymentsWithPenalties();
       console.log('Payment history:', history);
-      const collectorPayments = history.filter(p => p.collector_id === staffId);
+      console.log('Filtering payment history for staffId:', staffId);
+      const collectorPayments = history.filter(p => p && p.collector_id === staffId);
       console.log('Filtered payment history:', collectorPayments);
+      console.log('Number of payments found:', collectorPayments.length);
       setPaymentHistory(collectorPayments);
       
       // Prepare analytics data
@@ -285,35 +287,83 @@ export default function CollectorEarningsPage() {
   }, [user]);
 
   const prepareAnalyticsData = (paymentData: any[]) => {
+    console.log('Preparing analytics data with payment data:', paymentData);
     // Monthly earnings data
     const monthlyMap: Record<string, { earnings: number; collections: number; penalties: number }> = {};
     
-    paymentData.forEach(payment => {
+    paymentData.forEach((payment, index) => {
+      console.log(`Processing payment ${index}:`, payment);
       if (payment && payment.status === 'paid') {
-        const dateToUse = payment.payment_date || payment.created_at;
+        // Try multiple date fields to find a valid date
+        let dateToUse = payment.payment_date || payment.created_at || payment.period_start;
+        console.log(`Date to use for payment ${index}:`, dateToUse);
         if (!dateToUse) return; // Skip if no date available
         
         try {
-          const dateObj = new Date(dateToUse);
-          if (isNaN(dateObj.getTime())) return; // Skip if invalid date
+          // More robust date parsing
+          let dateObj: Date;
+          if (dateToUse instanceof Date) {
+            dateObj = dateToUse;
+          } else if (typeof dateToUse === 'string') {
+            // Try parsing the string date
+            dateObj = new Date(dateToUse);
+            // If that fails, try with different formats
+            if (isNaN(dateObj.getTime())) {
+              // Try parsing common date formats
+              const parts = dateToUse.split(/[-/ :T]/);
+              if (parts.length >= 3) {
+                // Handle various date formats
+                if (parts[0].length === 4) {
+                  // YYYY-MM-DD format
+                  dateObj = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+                } else if (parts[2] && parts[2].length === 4) {
+                  // MM/DD/YYYY or DD/MM/YYYY format
+                  // Assume DD/MM/YYYY format (more common in Kenya)
+                  dateObj = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+                } else {
+                  // Try MM/DD/YY format
+                  dateObj = new Date(parseInt(parts[2]) + 2000, parseInt(parts[0]) - 1, parseInt(parts[1]));
+                }
+              }
+            }
+          } else {
+            dateObj = new Date(dateToUse);
+          }
+          
+          console.log(`Date object for payment ${index}:`, dateObj);
+          if (isNaN(dateObj.getTime())) {
+            console.log(`Invalid date for payment ${index}:`, dateToUse);
+            return; // Skip if invalid date
+          }
           
           const month = dateObj.toLocaleString('default', { 
             month: 'short', 
             year: 'numeric' 
           });
+          console.log(`Month for payment ${index}:`, month);
           
           if (!monthlyMap[month]) {
             monthlyMap[month] = { earnings: 0, collections: 0, penalties: 0 };
           }
           
-          monthlyMap[month].earnings += payment.adjusted_earnings || 0;
-          monthlyMap[month].collections += payment.total_collections || 0;
-          monthlyMap[month].penalties += payment.total_penalties || 0;
+          const earningsToAdd = payment.adjusted_earnings || 0;
+          const collectionsToAdd = payment.total_collections || 0;
+          const penaltiesToAdd = payment.total_penalties || 0;
+          
+          console.log(`Adding to ${month}: earnings=${earningsToAdd}, collections=${collectionsToAdd}, penalties=${penaltiesToAdd}`);
+          
+          monthlyMap[month].earnings += earningsToAdd;
+          monthlyMap[month].collections += collectionsToAdd;
+          monthlyMap[month].penalties += penaltiesToAdd;
+          
+          console.log(`Updated ${month} totals:`, monthlyMap[month]);
         } catch (e) {
           console.warn('Error processing payment date:', dateToUse, e);
         }
       }
     });
+    
+    console.log('Final monthly map:', monthlyMap);
     
     const monthlyEarnings = Object.entries(monthlyMap).map(([month, data]) => ({
       month,
@@ -335,10 +385,17 @@ export default function CollectorEarningsPage() {
     
     // Earning trends (last 10 payments)
     const earningTrends = [...paymentData]
-      .filter(payment => payment && payment.created_at) // Filter out payments without created_at
+      .filter(payment => payment && (payment.created_at || payment.payment_date || payment.period_start)) // Filter out payments without any date
       .sort((a: any, b: any) => {
-        const dateA = new Date(a.created_at);
-        const dateB = new Date(b.created_at);
+        // Get the best available date for each payment
+        const getDate = (payment: any) => {
+          const dateStr = payment.payment_date || payment.created_at || payment.period_start;
+          if (!dateStr) return new Date(0);
+          return new Date(dateStr);
+        };
+        
+        const dateA = getDate(a);
+        const dateB = getDate(b);
         // Handle invalid dates
         if (isNaN(dateA.getTime()) || isNaN(dateB.getTime())) return 0;
         return dateB.getTime() - dateA.getTime();
@@ -346,7 +403,9 @@ export default function CollectorEarningsPage() {
       .slice(0, 10)
       .map((payment: any) => {
         try {
-          const dateObj = new Date(payment.created_at);
+          // Get the best available date for display
+          const dateStr = payment.payment_date || payment.created_at || payment.period_start;
+          const dateObj = new Date(dateStr);
           if (isNaN(dateObj.getTime())) {
             return { date: 'Unknown Date', earnings: payment?.adjusted_earnings || 0 };
           }
@@ -377,19 +436,44 @@ export default function CollectorEarningsPage() {
     let bestMonth = { month: '', earnings: 0 };
     let worstMonth = { month: '', earnings: Number.MAX_VALUE };
     
-    Object.entries(monthlyMap).forEach(([month, data]) => {
-      // Skip invalid months
-      if (!month || month === 'Invalid Date') return;
-      
-      if (data.earnings > bestMonth.earnings) {
-        bestMonth = { month, earnings: data.earnings };
-      }
-      if (data.earnings < worstMonth.earnings && data.earnings >= 0) {
-        worstMonth = { month, earnings: data.earnings };
-      }
-    });
+    // Convert monthlyMap to array for easier processing
+    const monthlyEntries = Object.entries(monthlyMap).filter(([month, _]) => month && month !== 'Invalid Date');
     
-    if (worstMonth.earnings === Number.MAX_VALUE) {
+    if (monthlyEntries.length > 0) {
+      // Find best month
+      let maxEarnings = -1;
+      let bestMonthName = '';
+      
+      // Find worst month
+      let minEarnings = Number.MAX_VALUE;
+      let worstMonthName = '';
+      
+      monthlyEntries.forEach(([month, data]) => {
+        if (data.earnings > maxEarnings) {
+          maxEarnings = data.earnings;
+          bestMonthName = month;
+        }
+        
+        if (data.earnings < minEarnings) {
+          minEarnings = data.earnings;
+          worstMonthName = month;
+        }
+      });
+      
+      // Set best month if we found one with positive earnings
+      if (bestMonthName && maxEarnings >= 0) {
+        bestMonth = { month: bestMonthName, earnings: maxEarnings };
+      }
+      
+      // Set worst month
+      if (worstMonthName && minEarnings !== Number.MAX_VALUE) {
+        worstMonth = { month: worstMonthName, earnings: minEarnings };
+      } else {
+        worstMonth = { month: '', earnings: 0 };
+      }
+    } else {
+      // No valid months found
+      bestMonth = { month: '', earnings: 0 };
       worstMonth = { month: '', earnings: 0 };
     }
     

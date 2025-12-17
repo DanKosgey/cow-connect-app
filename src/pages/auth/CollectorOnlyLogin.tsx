@@ -1,69 +1,16 @@
 import { useState, useEffect } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
-import { UserRole } from "@/types/auth.types";
-import { useAuth } from "@/hooks/useAuth";
-import { LoginForm } from "@/components/auth/LoginForm";
-import { UserCog } from "@/utils/iconImports";
+import { useNavigate } from "react-router-dom";
 
 const CollectorOnlyLogin = () => {
   const navigate = useNavigate();
-  const location = useLocation();
-  const { isAuthenticated, userRole, isLoading } = useAuth();
-  const [role, setRole] = useState<UserRole>(UserRole.COLLECTOR);
 
-  // Get the return URL from location state or default to dashboard
-  const from = (location.state as any)?.from?.pathname || '/collector-only/dashboard';
-
-  // Check if user is already logged in with correct role
+  // Redirect to unified login page
   useEffect(() => {
-    if (!isLoading && isAuthenticated && userRole === UserRole.COLLECTOR) {
-      // Redirect immediately to dashboard
-      navigate(from, { replace: true });
-    }
-  }, [isAuthenticated, userRole, isLoading, navigate, from]);
+    navigate("/login", { replace: true });
+  }, [navigate]);
 
-  const handleRoleChange = (newRole: UserRole) => {
-    setRole(newRole);
-    
-    // If user changes role, redirect to appropriate login page
-    const rolePaths: Record<string, string> = {
-      farmer: '/farmer/login',
-      collector: '/collector-only/login',
-      staff: '/staff-only/login',
-      creditor: '/creditor/login',
-      admin: '/admin/login'
-    };
-    
-    if (rolePaths[newRole] && newRole !== UserRole.COLLECTOR) {
-      navigate(rolePaths[newRole]);
-    }
-  };
-
-  return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-6">
-      <div className="w-full max-w-md space-y-8">
-        <LoginForm role={role} onRoleChange={handleRoleChange} />
-
-        {/* Header */}
-        <div className="text-center space-y-4">
-          <div className="flex justify-center">
-            <div className="w-20 h-20 gradient-collector rounded-2xl flex items-center justify-center shadow-lg">
-              <UserCog className="w-10 h-10 text-primary-foreground" />
-            </div>
-          </div>
-          <div>
-            <h1 className="text-3xl font-heading font-bold">Field Collector Portal</h1>
-            <p className="text-muted-foreground mt-2">Access collection dashboard and tools</p>
-          </div>
-        </div>
-
-        {/* Security Notice */}
-        <div className="text-center text-sm text-muted-foreground">
-          <p>This is a secure area. All login attempts are monitored and logged.</p>
-        </div>
-      </div>
-    </div>
-  );
+  // Render nothing while redirecting
+  return null;
 };
 
 export default CollectorOnlyLogin;

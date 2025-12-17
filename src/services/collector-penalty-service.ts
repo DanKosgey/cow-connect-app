@@ -447,9 +447,9 @@ class CollectorPenaltyService {
             console.log(`Checking approval ${approval.id}: approved_at=${approvalDate.toISOString()}`);
             
             // Normalize dates for comparison (compare only date parts, not time)
-            const approvalDateNormalized = new Date(approvalDate.getFullYear(), approvalDate.getMonth(), approvalDate.getDate());
-            const periodStartNormalized = new Date(periodStart.getFullYear(), periodStart.getMonth(), periodStart.getDate());
-            const periodEndNormalized = new Date(periodEnd.getFullYear(), periodEnd.getMonth(), periodEnd.getDate());
+            const approvalDateNormalized = new Date(approvalDate.getUTCFullYear(), approvalDate.getUTCMonth(), approvalDate.getUTCDate());
+            const periodStartNormalized = new Date(periodStart.getUTCFullYear(), periodStart.getUTCMonth(), periodStart.getUTCDate());
+            const periodEndNormalized = new Date(periodEnd.getUTCFullYear(), periodEnd.getUTCMonth(), periodEnd.getUTCDate());
             
             console.log(`  Normalized approval date: ${approvalDateNormalized.toISOString()}`);
             console.log(`  Normalized period start: ${periodStartNormalized.toISOString()}`);
@@ -505,7 +505,7 @@ class CollectorPenaltyService {
             total_penalties: parseFloat(totalPenalties.toFixed(2)),
             adjusted_earnings: parseFloat(adjustedEarnings.toFixed(2)),
             status: payment.status,
-            payment_date: payment.payment_date,
+            payment_date: payment.payment_date || payment.created_at || payment.period_start,
             notes: payment.notes
           };
         })

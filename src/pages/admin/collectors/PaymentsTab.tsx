@@ -80,6 +80,7 @@ interface PaymentsTabProps {
   exportPaymentsToCSV: () => void;
   exportData: (format: 'csv' | 'excel' | 'pdf') => void;
   renderPagination: () => React.ReactNode;
+  processingCollectors?: Record<string, boolean>; // Add this prop
 }
 
 export const PaymentsTab: React.FC<PaymentsTabProps> = ({
@@ -104,7 +105,8 @@ export const PaymentsTab: React.FC<PaymentsTabProps> = ({
   progress,
   exportPaymentsToCSV,
   exportData,
-  renderPagination
+  renderPagination,
+  processingCollectors = {} // Add this prop with default value
 }) => {
   return (
     <div className="space-y-6">
@@ -308,6 +310,7 @@ export const PaymentsTab: React.FC<PaymentsTabProps> = ({
               expandedCollectors={expandedCollectors}
               onToggleCollectorExpansion={toggleCollectorExpansion}
               onLoadCollectionsBreakdown={loadCollectionsBreakdown}
+              processingCollectors={processingCollectors} // Pass the processing state
             />
           ) : (
             <div className="text-center py-12 text-muted-foreground">

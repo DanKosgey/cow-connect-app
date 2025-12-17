@@ -44,6 +44,14 @@ export default function PublicRoutes() {
           </PageTransition>
         } />
         <Route path="/auth/login" element={<Navigate to="/login" replace />} />
+        
+        {/* Redirect all role-specific login pages to unified login */}
+        <Route path="/farmer/login" element={<Navigate to="/login" replace />} />
+        <Route path="/collector-only/login" element={<Navigate to="/login" replace />} />
+        <Route path="/staff-only/login" element={<Navigate to="/login" replace />} />
+        <Route path="/creditor/login" element={<Navigate to="/login" replace />} />
+        <Route path="/admin/login" element={<Navigate to="/login" replace />} />
+        
         <Route path="/auth-test" element={
           <PageTransition>
             <NotFound />

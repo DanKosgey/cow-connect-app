@@ -150,48 +150,16 @@ const Landing = () => {
             </p>
           </div>
 
-          {/* CTA Buttons */}
+          {/* Unified CTA Button */}
           <div className="mt-12 flex flex-col sm:flex-row gap-4 justify-center items-center animate-fade-in-up delay-400">
             <Button 
               size="lg"
               className="group relative px-8 py-4 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-semibold rounded-full shadow-lg hover:shadow-2xl transform hover:scale-105 transition-all duration-300 flex items-center gap-2 overflow-hidden"
-              onClick={() => navigate('/farmer/login')}
+              onClick={() => navigate('/login')}
             >
               <span className="absolute inset-0 bg-white opacity-0 group-hover:opacity-20 transition-opacity duration-300"></span>
-              <span className="relative">Farmer Login</span>
+              <span className="relative">Login to Your Account</span>
               <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-            </Button>
-            <Button 
-              size="lg"
-              variant="outline"
-              className="px-8 py-4 bg-white/10 text-white font-semibold rounded-full border-2 border-white/20 hover:border-blue-500 shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300 backdrop-blur-sm"
-              onClick={() => navigate('/collector-only/login')}
-            >
-              Collectors
-            </Button>
-            <Button 
-              size="lg"
-              variant="outline"
-              className="px-8 py-4 bg-white/10 text-white font-semibold rounded-full border-2 border-white/20 hover:border-purple-500 shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300 backdrop-blur-sm"
-              onClick={() => navigate('/admin/login')}
-            >
-              Admin
-            </Button>
-            <Button 
-              size="lg"
-              variant="outline"
-              className="px-8 py-4 bg-white/10 text-white font-semibold rounded-full border-2 border-white/20 hover:border-indigo-500 shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300 backdrop-blur-sm"
-              onClick={() => navigate('/staff-only/login')}
-            >
-              Staff
-            </Button>
-            <Button 
-              size="lg"
-              variant="outline"
-              className="px-8 py-4 bg-white/10 text-white font-semibold rounded-full border-2 border-white/20 hover:border-green-500 shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300 backdrop-blur-sm"
-              onClick={() => navigate('/creditor/login')}
-            >
-              Creditors
             </Button>
           </div>
 

@@ -57,6 +57,7 @@ interface CollectorsTableProps {
   expandedCollectors: Record<string, boolean>;
   onToggleCollectorExpansion: (collectorId: string) => void;
   onLoadCollectionsBreakdown: (collectorId: string) => void;
+  processingCollectors?: Record<string, boolean>; // Add this prop
 }
 
 export const CollectorsTable: React.FC<CollectorsTableProps> = ({
@@ -67,7 +68,8 @@ export const CollectorsTable: React.FC<CollectorsTableProps> = ({
   sortConfig,
   expandedCollectors,
   onToggleCollectorExpansion,
-  onLoadCollectionsBreakdown
+  onLoadCollectionsBreakdown,
+  processingCollectors = {} // Add this prop with default value
 }) => {
   // Calculate net payment for a collector
   const calculateNetPayment = (collector: CollectorData) => {
@@ -204,10 +206,17 @@ export const CollectorsTable: React.FC<CollectorsTableProps> = ({
                             onMarkAsPaid(collector.id, collector.name);
                           }
                         }}
-                        disabled={isNegativeNetPayment || !hasPendingPayments}
-                        className={`h-8 px-2 text-xs ${isNegativeNetPayment || !hasPendingPayments ? 'bg-gray-300 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'}`}
+                        disabled={isNegativeNetPayment || !hasPendingPayments || !!processingCollectors[collector.id]}
+                        className={`h-8 px-2 text-xs ${isNegativeNetPayment || !hasPendingPayments ? 'bg-gray-300 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'} ${processingCollectors[collector.id] ? 'opacity-50 cursor-not-allowed' : ''}`}
                       >
-                        Mark as Paid
+                        {processingCollectors[collector.id] ? (
+                          <>
+                            <Loader2Icon className="mr-1 h-3 w-3 animate-spin" />
+                            Processing...
+                          </>
+                        ) : (
+                          'Mark as Paid'
+                        )}
                       </Button>
                     </TableCell>
                     <TableCell className="text-right">
@@ -324,10 +333,17 @@ export const CollectorsTable: React.FC<CollectorsTableProps> = ({
                                     onMarkAsPaid(collector.id, collector.name);
                                   }
                                 }}
-                                disabled={isNegativeNetPayment || !hasPendingPayments}
-                                className={`text-xs h-8 ${isNegativeNetPayment || !hasPendingPayments ? 'bg-gray-300 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'}`}
+                                disabled={isNegativeNetPayment || !hasPendingPayments || !!processingCollectors[collector.id]}
+                                className={`text-xs h-8 ${isNegativeNetPayment || !hasPendingPayments ? 'bg-gray-300 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'} ${processingCollectors[collector.id] ? 'opacity-50 cursor-not-allowed' : ''}`}
                               >
-                                Mark All Pending as Paid
+                                {processingCollectors[collector.id] ? (
+                                  <>
+                                    <Loader2Icon className="mr-1 h-3 w-3 animate-spin" />
+                                    Processing...
+                                  </>
+                                ) : (
+                                  'Mark All Pending as Paid'
+                                )}
                               </Button>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

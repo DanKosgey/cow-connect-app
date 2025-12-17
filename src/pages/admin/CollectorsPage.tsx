@@ -95,6 +95,9 @@ export default function CollectorsPage() {
   const [paymentHistory, setPaymentHistory] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
 
+  // State for tracking which collectors are being processed
+  const [processingCollectors, setProcessingCollectors] = useState<Record<string, boolean>>({});
+
   useEffect(() => {
     fetchDataWithRetry();
   }, [page, pageSize, searchTerm, paymentFilter, filters]);
@@ -130,11 +133,41 @@ export default function CollectorsPage() {
   // Function to mark all pending collections for a collector as paid
   const handleMarkAsPaid = async (collectorId: string, collectorName: string) => {
     try {
+      // Set this collector as processing
+      setProcessingCollectors(prev => ({ ...prev, [collectorId]: true }));
+      
       const { success: markSuccess, message } = await collectorsPageService.markCollectionsAsPaid(collectorId, collectorName);
       
       if (markSuccess) {
-        // Refresh the collectors data to update the UI
-        await fetchDataWithRetry();
+        // Update the UI immediately without waiting for a full refresh
+        const collectorToUpdate = collectors.find(c => c.id === collectorId);
+        if (collectorToUpdate) {
+          updateCollectorData(collectorId, {
+            pendingPayments: 0,
+            paidPayments: collectorToUpdate.totalEarnings,
+            penaltyStatus: 'paid'
+          });
+          
+          // Also update stats immediately
+          const updatedCollectors = collectors.map(collector => 
+            collector.id === collectorId 
+              ? { 
+                  ...collector, 
+                  pendingPayments: 0,
+                  paidPayments: collector.totalEarnings,
+                  penaltyStatus: 'paid'
+                } 
+              : collector
+          );
+          
+          // Recalculate stats with updated data
+          const totalPendingAmount = updatedCollectors.reduce((sum, collector) => sum + (collector.pendingPayments || 0), 0);
+          const totalPaidAmount = updatedCollectors.reduce((sum, collector) => sum + (collector.paidPayments || 0), 0);
+          
+          // Update stats (we'll trigger a refresh to update the stats properly)
+          // The useCollectorsData hook will handle updating the stats properly
+        }
+        
         success('Success', message || 'Collections marked as paid');
       } else {
         showError('Error', message || 'Failed to mark collections as paid');
@@ -142,6 +175,13 @@ export default function CollectorsPage() {
     } catch (error: any) {
       console.error('Error marking collections as paid:', error);
       showError('Error', error.message || 'An unexpected error occurred while marking collections as paid');
+    } finally {
+      // Remove this collector from processing state
+      setProcessingCollectors(prev => {
+        const newState = { ...prev };
+        delete newState[collectorId];
+        return newState;
+      });
     }
   };
 
@@ -535,6 +575,7 @@ export default function CollectorsPage() {
           exportPaymentsToCSV={exportPaymentsToCSV}
           exportData={exportData}
           renderPagination={renderPagination}
+          processingCollectors={processingCollectors} // Pass the processing state
         />
       )}
 

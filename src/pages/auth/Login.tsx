@@ -1,22 +1,23 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Lock, Users, UserCog, Shield, Scale, CreditCard } from "lucide-react";
+import { Lock, Eye, EyeOff, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { UserRole } from "@/types/auth.types";
-import { useAuth } from "@/hooks/useAuth"; // Updated import
+import { useAuth } from "@/hooks/useAuth";
 import { useEffect } from "react";
+import useToastNotifications from "@/hooks/useToastNotifications";
 
 const Login = () => {
   const navigate = useNavigate();
-  const { isAuthenticated, userRole, isLoading } = useAuth(); // Updated destructuring
-  const roleOptions = [
-    { value: UserRole.FARMER, label: 'Farmer', icon: <Users className="h-4 w-4" /> },
-    { value: UserRole.COLLECTOR, label: 'Field Collector', icon: <UserCog className="h-4 w-4" /> },
-    { value: UserRole.STAFF, label: 'Office Admin', icon: <Scale className="h-4 w-4" /> },
-    { value: UserRole.CREDITOR, label: 'Agrovet Creditor', icon: <CreditCard className="h-4 w-4" /> },
-    { value: UserRole.ADMIN, label: 'Admin', icon: <Shield className="h-4 w-4" /> }
-  ];
+  const { login, isAuthenticated, userRole, isLoading } = useAuth();
+  const toast = useToastNotifications();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Check if user is already logged in and redirect appropriately
   useEffect(() => {
@@ -26,7 +27,8 @@ const Login = () => {
         [UserRole.ADMIN]: '/admin/dashboard',
         [UserRole.COLLECTOR]: '/collector-only/dashboard',
         [UserRole.STAFF]: '/staff-only/dashboard',
-        [UserRole.FARMER]: '/farmer/dashboard'
+        [UserRole.FARMER]: '/farmer/dashboard',
+        [UserRole.CREDITOR]: '/creditor/dashboard'
       };
       
       // If we have a user role, redirect to their dashboard
@@ -36,6 +38,27 @@ const Login = () => {
       }
     }
   }, [isAuthenticated, userRole, isLoading, navigate]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+
+    try {
+      const { error } = await login({ email, password });
+
+      if (error) {
+        toast.error("Login Failed", error.message || "Invalid credentials. Please try again.");
+        return;
+      }
+
+      // Success - redirection will be handled by the useEffect above
+      toast.success("Login Successful", "Welcome back! Redirecting to your dashboard...");
+    } catch (err) {
+      toast.error("Login Error", "An unexpected error occurred. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background to-secondary/10 flex items-center justify-center p-4">
@@ -60,40 +83,68 @@ const Login = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-6">
-              {/* Role Selection */}
+            <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label className="text-lg font-medium">I am a:</Label>
-                <div className="grid grid-cols-2 gap-3">
-                  {roleOptions.map((role) => (
-                    <button
-                      key={role.value}
-                      onClick={() => {
-                        const rolePaths: Record<string, string> = {
-                          farmer: '/farmer/login',
-                          collector: '/collector-only/login',
-                          staff: '/staff-only/login',
-                          creditor: '/creditor/login',
-                          admin: '/admin/login'
-                        };
-                        navigate(rolePaths[role.value]);
-                      }}
-                      className="flex flex-col items-center justify-between rounded-lg border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground transition-all cursor-pointer relative shadow-sm hover:shadow-md"
-                    >
-                      {role.icon}
-                      <span className="mt-2 text-sm font-medium">{role.label}</span>
-                      <div className="absolute inset-0 rounded-lg border-2 border-primary opacity-0 hover:opacity-20 transition-opacity"></div>
-                    </button>
-                  ))}
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="your.email@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  disabled={isSubmitting}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    disabled={isSubmitting}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-2 top-1/2 transform -translate-y-1/2"
+                    onClick={() => setShowPassword(!showPassword)}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </Button>
                 </div>
               </div>
 
-              <p className="text-center text-muted-foreground">
-                Select your role above to be redirected to the appropriate login page
-              </p>
-            </div>
+              <Button 
+                className="w-full" 
+                type="submit" 
+                disabled={isSubmitting || isLoading}
+              >
+                {isSubmitting ? "Signing In..." : "Sign In"}
+              </Button>
+            </form>
 
             <div className="mt-6 text-center">
+              <Button
+                variant="ghost"
+                className="text-sm text-muted-foreground hover:text-foreground"
+                onClick={() => navigate('/auth/forgot-password')}
+              >
+                Forgot Password?
+              </Button>
+            </div>
+
+            <div className="mt-4 text-center">
               <Button
                 variant="ghost"
                 className="text-sm text-muted-foreground hover:text-foreground"
@@ -105,8 +156,8 @@ const Login = () => {
           </CardContent>
         </Card>
 
-        {/* Diagnostic Actions */}
-        <div className="mt-6 text-center space-y-2">
+        {/* Back to Home */}
+        <div className="mt-6 text-center">
           <Button
             variant="ghost"
             onClick={() => navigate('/')}
@@ -114,18 +165,6 @@ const Login = () => {
           >
             Back to Home
           </Button>
-          
-          {/* Add a link to the auth test page for debugging */}
-          <div className="pt-2">
-            <Button
-              variant="link"
-              size="sm"
-              onClick={() => navigate('/auth-test')}
-              className="text-muted-foreground"
-            >
-              Authentication Diagnostics
-            </Button>
-          </div>
         </div>
       </div>
     </div>
