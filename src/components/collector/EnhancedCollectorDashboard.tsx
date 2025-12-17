@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -12,15 +12,21 @@ import {
   Bot, 
   Settings as SettingsIcon,
   Plus,
-  TrendingUp
+  TrendingUp,
+  DollarSign,
+  AlertTriangle,
+  Clock,
+  CheckCircle
 } from 'lucide-react';
 import { useStaffInfo } from '@/hooks/useStaffData';
 import { useCollectorCollections } from '@/hooks/useCollectorCollections';
-import { formatCurrency } from '@/utils/formatters';
+import { formatCurrency, formatAmount } from '@/utils/formatters';
 import PersonalAIAssistant from './PersonalAIAssistant';
 import CollectorAISettings from './CollectorAISettings';
 import AIAgentButton from './AIAgentButton';
 import AISettingsPanel from './AISettingsPanel';
+import { supabase } from '@/integrations/supabase/client';
+import { collectorEarningsService } from '@/services/collector-earnings-service';
 
 const EnhancedCollectorDashboard = () => {
   const navigate = useNavigate();
@@ -28,12 +34,61 @@ const EnhancedCollectorDashboard = () => {
   const { data: collectionsData, isLoading: collectionsLoading } = useCollectorCollections(staffInfo?.id || '');
   const [showAISettings, setShowAISettings] = useState(false);
   const [showAISettingsPanel, setShowAISettingsPanel] = useState(false);
+  const [earningsData, setEarningsData] = useState({
+    allTime: {
+      totalEarnings: 0,
+      totalCollections: 0,
+      totalLiters: 0,
+      ratePerLiter: 0,
+      totalPenalties: 0
+    },
+    pendingPayments: 0,
+    paidPayments: 0
+  });
+  const [loadingEarnings, setLoadingEarnings] = useState(true);
+
+  // Fetch actual earnings data
+  useEffect(() => {
+    const fetchEarnings = async () => {
+      if (!staffInfo?.id) return;
+      
+      try {
+        setLoadingEarnings(true);
+        
+        // Get all-time earnings
+        const allTime = await collectorEarningsService.getAllTimeEarnings(staffInfo.id);
+        
+        // Get collector data with penalties
+        const collectorsData = await collectorEarningsService.getCollectorsWithEarningsAndPenalties();
+        const collectorData = collectorsData.find(c => c.id === staffInfo.id);
+        
+        // Combine earnings data with penalty information
+        const allTimeEarningsData = {
+          ...allTime,
+          totalPenalties: collectorData?.totalPenalties || 0,
+          pendingPayments: collectorData?.pendingPayments || 0,
+          paidPayments: collectorData?.paidPayments || 0
+        };
+        
+        setEarningsData({
+          allTime: allTimeEarningsData,
+          pendingPayments: collectorData?.pendingPayments || 0,
+          paidPayments: collectorData?.paidPayments || 0
+        });
+      } catch (error) {
+        console.error('Error fetching earnings data:', error);
+      } finally {
+        setLoadingEarnings(false);
+      }
+    };
+    
+    fetchEarnings();
+  }, [staffInfo?.id]);
 
   // Calculate dashboard stats
   const stats = {
     totalCollections: collectionsData?.length || 0,
     totalLiters: collectionsData?.reduce((sum, collection) => sum + (collection.liters || 0), 0) || 0,
-    totalEarnings: collectionsData?.reduce((sum, collection) => sum + (collection.total_amount || 0), 0) || 0,
     todayCollections: collectionsData?.filter(collection => {
       const today = new Date();
       const collectionDate = new Date(collection.collection_date);
@@ -138,10 +193,103 @@ const EnhancedCollectorDashboard = () => {
                     <Wallet className="h-5 w-5 text-purple-600" />
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground">Total Earnings</p>
-                    <p className="text-2xl font-bold">{formatCurrency(stats.totalEarnings)}</p>
+                    <p className="text-sm text-muted-foreground">Net Earnings</p>
+                    {loadingEarnings ? (
+                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-purple-600"></div>
+                    ) : (
+                      <p className="text-2xl font-bold">
+                        {formatAmount(earningsData.allTime.totalEarnings - earningsData.allTime.totalPenalties)}
+                      </p>
+                    )}
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Earnings Summary Cards - Simplified version without Current Month and Penalties */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
+            {/* Rate Per Liter */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Rate Per Liter</CardTitle>
+                <Milk className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                {loadingEarnings ? (
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-amber-600"></div>
+                ) : (
+                  <>
+                    <div className="text-xl sm:text-2xl font-bold">
+                      {earningsData.allTime.ratePerLiter > 0 ? formatAmount(earningsData.allTime.ratePerLiter) : '3.00'}
+                    </div>
+                    <p className="text-xs text-muted-foreground">Payment rate</p>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* All-Time Collections */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">All-Time Collections</CardTitle>
+                <TrendingUp className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                {loadingEarnings ? (
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-600"></div>
+                ) : (
+                  <>
+                    <div className="text-xl sm:text-2xl font-bold">
+                      {earningsData.allTime.totalCollections || 0}
+                    </div>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {earningsData.allTime.totalLiters?.toFixed(2) || '0.00'}L collected
+                    </p>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* All-Time Earnings */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">All-Time Earnings</CardTitle>
+                <DollarSign className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                {loadingEarnings ? (
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-purple-600"></div>
+                ) : (
+                  <>
+                    <div className="text-xl sm:text-2xl font-bold">
+                      {earningsData.allTime.totalEarnings > 0 ? formatAmount(earningsData.allTime.totalEarnings) : '0.00'}
+                    </div>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {earningsData.allTime.totalCollections || 0} collections, {earningsData.allTime.totalLiters?.toFixed(2) || '0.00'}L
+                    </p>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Pending Payments */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Pending Payments</CardTitle>
+                <Clock className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                {loadingEarnings ? (
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-yellow-600"></div>
+                ) : (
+                  <>
+                    <div className="text-xl sm:text-2xl font-bold">
+                      {Math.round(earningsData.pendingPayments)}
+                    </div>
+                    <p className="text-xs text-muted-foreground">Awaiting payment</p>
+                  </>
+                )}
               </CardContent>
             </Card>
           </div>
