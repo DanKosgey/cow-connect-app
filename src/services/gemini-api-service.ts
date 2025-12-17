@@ -5,26 +5,37 @@ const staffKeyIndexMap = new Map<string, number>();
 
 /**
  * Get API keys from environment variables
+ * Handles both Vercel (VITE_ prefix) and local (.env file) environments
  * @returns Array of API keys from environment variables
  */
 function getApiKeysFromEnv(): string[] {
   const apiKeys: string[] = [];
   
-  // Check for primary API key
-  const primaryKey = import.meta.env.VITE_GEMINI_API_KEY;
+  // Check for primary API key (VITE_ prefix for Vercel compatibility)
+  const primaryKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.GEMINI_API_KEY;
   if (primaryKey) {
     apiKeys.push(primaryKey);
   }
   
   // Load up to 50 backup API keys from environment variables
+  // Check both VITE_ prefixed (for Vercel) and non-prefixed (for local development) versions
   for (let i = 1; i <= 50; i++) {
-    const apiKey = import.meta.env[`GEMINI_API_KEY_${i}`];
-    if (apiKey) {
-      apiKeys.push(apiKey);
-    } else {
-      // Stop at the first missing key
-      break;
+    // First check VITE_ prefixed version (for Vercel)
+    const vitePrefixedKey = import.meta.env[`VITE_GEMINI_API_KEY_${i}`];
+    if (vitePrefixedKey) {
+      apiKeys.push(vitePrefixedKey);
+      continue;
     }
+    
+    // Then check non-prefixed version (for local development)
+    const nonPrefixedKey = import.meta.env[`GEMINI_API_KEY_${i}`];
+    if (nonPrefixedKey) {
+      apiKeys.push(nonPrefixedKey);
+      continue;
+    }
+    
+    // Stop at the first missing key
+    break;
   }
   
   return apiKeys;
@@ -58,7 +69,7 @@ export async function getModelWithRotation(staffId: string) {
   const apiKeys = getApiKeysFromEnv();
   
   if (apiKeys.length === 0) {
-    throw new Error('No API keys configured in environment variables. Please set VITE_GEMINI_API_KEY in your .env file.');
+    throw new Error('No API keys configured in environment variables. Please set VITE_GEMINI_API_KEY in your .env file or Vercel environment variables.');
   }
   
   // Get current key index
