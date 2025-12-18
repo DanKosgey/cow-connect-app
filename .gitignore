@@ -7,23 +7,31 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
 # Dependencies
 node_modules
+jspm_packages
 
 # Build outputs
 dist
+build
 dist-ssr
 *.local
+.out
 
 # Environment files
-.env
-.env.local
-.env.development.local
-.env.production.local
+.env*
+!.env.example
 
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
+!.vscode/settings.json
 .idea
 .DS_Store
 *.suo
@@ -31,6 +39,11 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
 
 # Python
 venv/
@@ -43,3 +56,16 @@ __pycache__/
 # Temporary files
 *.tmp
 *.temp
+
+# Debug
+npm-debug.log*
+
+# Testing
+coverage/
+.nyc_output
+
+#IDE
+*.idea
+
+# Typescript
+*.tsbuildinfo

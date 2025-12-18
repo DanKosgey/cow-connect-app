@@ -21,16 +21,16 @@ import {
   Search,
   Filter,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  RefreshCw
 } from "lucide-react";
 import { useRealtimeForumPosts, useRealtimeForumComments } from "@/hooks/useRealtimeForum";
 import { supabase } from "@/integrations/supabase/client";
+import { useCommunityForumData } from "@/hooks/useCommunityForumData";
+import { getModelWithRotation } from '@/services/gemini-api-service';
 import { useAuth } from "@/hooks/useAuth";
 import { PageHeader } from "@/components/PageHeader";
 import RefreshButton from "@/components/ui/RefreshButton";
-import { useCommunityForumData } from "@/hooks/useCommunityForumData";
-
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "AIzaSyAbRPjA1V7byZ5db23NOxWtY1UX7qp5h8M";
 
 // Notification Component
 const NotificationCenter = ({ notifications, onClose, onClear }) => {
@@ -90,6 +90,7 @@ const AIChatCenter = () => {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef(null);
+  const { user } = useAuth();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -118,62 +119,18 @@ Always cite scientific sources when possible (e.g., Journal of Dairy Science, IL
 Be concise, practical, and farmer-friendly in your language.
 Use bullet points and clear formatting for better readability.`;
 
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            contents: [
-              {
-                role: "user",
-                parts: [
-                  {
-                    text: systemPrompt + "\n\nFarmer's Question: " + userMessage
-                  }
-                ]
-              }
-            ],
-            generationConfig: {
-              temperature: 0.7,
-              topK: 40,
-              topP: 0.95,
-              maxOutputTokens: 2048,
-            },
-            safetySettings: [
-              {
-                category: "HARM_CATEGORY_HARASSMENT",
-                threshold: "BLOCK_MEDIUM_AND_ABOVE"
-              },
-              {
-                category: "HARM_CATEGORY_HATE_SPEECH",
-                threshold: "BLOCK_MEDIUM_AND_ABOVE"
-              },
-              {
-                category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                threshold: "BLOCK_MEDIUM_AND_ABOVE"
-              },
-              {
-                category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-                threshold: "BLOCK_MEDIUM_AND_ABOVE"
-              }
-            ]
-          })
-        }
-      );
+      // Use the same rotation mechanism as the collector service
+      const staffId = user?.id || 'anonymous_user';
+      const { model } = await getModelWithRotation(staffId);
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error('API Error Details:', errorData);
-        throw new Error(`API request failed: ${response.status}`);
-      }
+      const result = await model.generateContent([
+        systemPrompt + "\n\nFarmer's Question: " + userMessage
+      ]);
 
-      const data = await response.json();
+      const response = await result.response;
       
-      if (data.candidates && data.candidates[0] && data.candidates[0].content) {
-        return data.candidates[0].content.parts[0].text;
+      if (response) {
+        return response.text();
       } else {
         throw new Error('Unexpected API response format');
       }
@@ -181,11 +138,9 @@ Use bullet points and clear formatting for better readability.`;
       console.error('Gemini API Error:', error);
       
       // More helpful error message
-      if (error.message.includes('API request failed: 400')) {
-        return "⚠️ I encountered an error processing your request. This might be due to API configuration. Please try rephrasing your question or contact support if this continues.";
-      } else if (error.message.includes('API request failed: 429')) {
+      if (error.message?.includes('429')) {
         return "⚠️ I'm receiving too many requests right now. Please wait a moment and try again.";
-      } else if (error.message.includes('API request failed: 403')) {
+      } else if (error.message?.includes('403') || error.message?.includes('API key')) {
         return "⚠️ There's an authentication issue with the API. Please contact the administrator to check the API key configuration.";
       } else {
         return "⚠️ I'm having trouble connecting right now. Please check your internet connection and try again. If the issue persists, contact support.";

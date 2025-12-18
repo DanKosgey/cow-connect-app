@@ -38,6 +38,17 @@ function getApiKeysFromEnv(): string[] {
     break;
   }
   
+  // Debug logging
+  console.log('Environment keys checked:');
+  console.log('- VITE_GEMINI_API_KEY:', import.meta.env.VITE_GEMINI_API_KEY);
+  console.log('- GEMINI_API_KEY:', import.meta.env.GEMINI_API_KEY);
+  for (let i = 1; i <= 3; i++) {
+    console.log(`- GEMINI_API_KEY_${i}:`, import.meta.env[`GEMINI_API_KEY_${i}`]);
+    console.log(`- VITE_GEMINI_API_KEY_${i}:`, import.meta.env[`VITE_GEMINI_API_KEY_${i}`]);
+  }
+  console.log('Total API keys found:', apiKeys.length);
+  console.log('API keys:', apiKeys);
+  
   return apiKeys;
 }
 
@@ -69,7 +80,7 @@ export async function getModelWithRotation(staffId: string) {
   const apiKeys = getApiKeysFromEnv();
   
   if (apiKeys.length === 0) {
-    throw new Error('No API keys configured in environment variables. Please set VITE_GEMINI_API_KEY in your .env file or Vercel environment variables.');
+    throw new Error('No API keys configured in environment variables. Please set GEMINI_API_KEY_1 in your .env file.');
   }
   
   // Get current key index

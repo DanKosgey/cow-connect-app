@@ -27,13 +27,13 @@ export const useAIVerification = () => {
     }
   };
 
-  const verifyCollection = async (photoUrl: string, recordedLiters: number) => {
+  const verifyCollection = async (photoUrl: string, recordedLiters: number, staffId: string) => {
     try {
       setVerifying(true);
       setError(null);
       
-      // Call the Gemini service to verify the collection
-      const result = await verifyCollectionPhoto(photoUrl, recordedLiters);
+      // Call the Gemini service to verify the collection with staffId for API key rotation
+      const result = await verifyCollectionPhoto(photoUrl, recordedLiters, staffId);
       
       if (!result.success) {
         throw new Error(result.error || 'Failed to verify collection');

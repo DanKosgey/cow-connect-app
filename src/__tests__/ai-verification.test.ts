@@ -44,7 +44,7 @@ describe('AI Verification Service', () => {
 
   describe('verifyCollectionPhoto', () => {
     it('should successfully verify a collection photo', async () => {
-      const result = await verifyCollectionPhoto('https://example.com/photo.jpg', 10);
+      const result = await verifyCollectionPhoto('https://example.com/photo.jpg', 10, 'test_staff_id');
       
       expect(result).toEqual({
         success: true,
@@ -66,7 +66,7 @@ describe('AI Verification Service', () => {
         })
       }));
 
-      const result = await verifyCollectionPhoto('https://example.com/photo.jpg', 10);
+      const result = await verifyCollectionPhoto('https://example.com/photo.jpg', 10, 'test_staff_id');
       
       expect(result).toEqual({
         success: false,

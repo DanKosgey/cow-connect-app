@@ -1,8 +1,6 @@
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai';
 import { supabase } from '@/integrations/supabase/client';
-
-// Initialize Gemini AI with API key from environment variables
-const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+import { getModelWithRotation } from '../gemini-api-service';
 
 // Safety settings to allow all content for analysis
 const safetySettings = [
@@ -33,19 +31,10 @@ const modelConfig = {
   responseMimeType: "application/json",
 };
 
-// Get the Gemini model
-const getModel = () => {
-  // Check if API key is available
-  if (!API_KEY) {
-    throw new Error('Gemini API key is missing. Please set VITE_GEMINI_API_KEY in your environment variables.');
-  }
-  
-  const genAI = new GoogleGenerativeAI(API_KEY);
-  return genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
-    safetySettings,
-    generationConfig: modelConfig,
-  });
+// Get the Gemini model with rotation
+const getModel = async (staffId: string) => {
+  const { model } = await getModelWithRotation(staffId);
+  return model;
 };
 
 /**
@@ -120,11 +109,12 @@ export const getLatestAIInstructions = async () => {
  * Analyze a milk collection photo to verify liters match the recorded amount
  * @param imageUrl URL of the uploaded photo
  * @param recordedLiters The liters recorded by the collector
+ * @param staffId The staff ID for API key rotation (optional)
  * @returns Analysis result with verification status and confidence
  */
-export const verifyCollectionPhoto = async (imageUrl: string, recordedLiters: number) => {
+export const verifyCollectionPhoto = async (imageUrl: string, recordedLiters: number, staffId: string = 'default_staff') => {
   try {
-    const model = getModel();
+    const model = await getModel(staffId);
     
     // Download the image
     const imageResponse = await fetch(imageUrl);
@@ -159,7 +149,7 @@ export const verifyCollectionPhoto = async (imageUrl: string, recordedLiters: nu
     
     CRITICAL: Respond with ONLY the JSON object. No other text, no markdown, no explanations outside the JSON.
     CRITICAL: Ensure all values are valid JSON types.
-    CRITICAL: Do not wrap the JSON in markdown code blocks or any other formatting.
+    CRITICAL: Do not wrap the JSON in any other formatting.
     CRITICAL: The confidence value must be between 0.0 and 1.0.
     
     Be conservative in your estimates. If you cannot clearly determine the volume, set verificationPassed to false.
@@ -220,9 +210,9 @@ export const verifyCollectionPhoto = async (imageUrl: string, recordedLiters: nu
     let errorMessage = 'Unknown error occurred';
     if (error instanceof Error) {
       if (error.message.includes('API key not valid')) {
-        errorMessage = 'Invalid Gemini API key. Please check your VITE_GEMINI_API_KEY environment variable.';
+        errorMessage = 'Invalid Gemini API key. Please check your GEMINI_API_KEY_1 environment variable.';
       } else if (error.message.includes('API key is missing')) {
-        errorMessage = 'Gemini API key is missing. Please set VITE_GEMINI_API_KEY in your environment variables.';
+        errorMessage = 'Gemini API key is missing. Please set GEMINI_API_KEY_1 in your environment variables.';
       } else {
         errorMessage = error.message;
       }
