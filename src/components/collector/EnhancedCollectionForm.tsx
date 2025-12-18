@@ -28,7 +28,8 @@ import {
   AlertCircle,
   XCircle,
   Search,
-  Clock
+  Clock,
+  Zap
 } from 'lucide-react';
 import { WarehouseService } from '@/services/warehouse-service';
 import { useStaffInfo } from '@/hooks/useStaffData';
@@ -38,7 +39,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { useAIVerification } from '@/hooks/useAIVerification';
 import { useCollectorAIVerification } from '@/hooks/useCollectorAIVerification';
-import { imageUrlToBase64 } from '@/utils/imageUtils';
+import { imageUrlToBase64, isBase64 } from '@/utils/imageUtils';
 
 interface Farmer {
   id: string;
@@ -63,6 +64,7 @@ const EnhancedCollectionForm = () => {
   } = useAIVerification();
   const { 
     verifying: collectorVerifying, 
+    progress: verificationProgress,
     verifyCollectionWithCollectorAI,
     saveVerificationResult: saveCollectorVerificationResult
   } = useCollectorAIVerification();
@@ -202,11 +204,11 @@ const EnhancedCollectionForm = () => {
         });
         
         try {
-          // Convert image URL to base64 for collector-specific AI verification
-          const imageBase64 = await imageUrlToBase64(photoUrl);
+          // Use the photo URL directly for AI verification (more efficient)
+          const imageData = photoUrl; // Direct URL is more efficient than base64 conversion
           
           // Use collector-specific AI verification
-          const result = await verifyCollectionWithCollectorAI(staffInfo.id, imageBase64, parseFloat(liters));
+          const result = await verifyCollectionWithCollectorAI(staffInfo.id, imageData, parseFloat(liters));
           
           if (result) {
             currentVerificationResult = result;
@@ -877,6 +879,27 @@ const EnhancedCollectionForm = () => {
               </CardContent>
             </Card>
 
+            {/* AI Verification Status */}
+            {(collectorVerifying || verificationProgress) && (
+              <Card className="bg-blue-50 border-blue-200">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2">
+                    <Zap className="h-5 w-5 text-blue-600 animate-pulse" />
+                    <span className="font-medium text-blue-800">AI Verification in Progress</span>
+                  </div>
+                  {verificationProgress && (
+                    <p className="text-sm text-blue-700 mt-1">{verificationProgress}</p>
+                  )}
+                  <div className="w-full bg-blue-200 rounded-full h-2 mt-2">
+                    <div 
+                      className="bg-blue-600 h-2 rounded-full animate-pulse" 
+                      style={{ width: '75%' }}
+                    ></div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             {/* Submit Button */}
             <Card className="bg-primary/5 border-primary/20">
               <CardContent className="p-6">
@@ -884,12 +907,12 @@ const EnhancedCollectionForm = () => {
                   type="submit" 
                   className="w-full"
                   size="lg"
-                  disabled={submitting || verifying || !selectedFarmer || !liters || (isRejected && !rejectionReason)}
+                  disabled={submitting || collectorVerifying || !selectedFarmer || !liters || (isRejected && !rejectionReason)}
                 >
-                  {submitting || verifying ? (
+                  {submitting || collectorVerifying ? (
                     <>
                       <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                      {verifying ? 'Verifying with AI...' : isRejected ? 'Cancelling Collection...' : 'Recording Collection...'}
+                      {collectorVerifying ? 'Verifying with AI...' : isRejected ? 'Cancelling Collection...' : 'Recording Collection...'}
                     </>
                   ) : (
                     <>

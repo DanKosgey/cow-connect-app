@@ -777,12 +777,7 @@ const PenaltyManagementPage: React.FC = () => {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Collection ID</TableHead>
-                  <TableHead>Farmer</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Collector</TableHead>
                   <TableHead>Approved By</TableHead>
-                  <TableHead>Collected (L)</TableHead>
                   <TableHead>Received (L)</TableHead>
                   <TableHead>Variance</TableHead>
                   <TableHead>Type</TableHead>
@@ -793,7 +788,7 @@ const PenaltyManagementPage: React.FC = () => {
               <TableBody>
                 {variancesLoading ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center py-8">
+                    <TableCell colSpan={6} className="text-center py-8">
                       <div className="flex justify-center">
                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
                       </div>
@@ -802,25 +797,8 @@ const PenaltyManagementPage: React.FC = () => {
                 ) : variances.length > 0 ? (
                   variances.map((variance) => (
                     <TableRow key={variance.id}>
-                      <TableCell className="font-mono">
-                        {variance.collection_details?.collection_id || 'N/A'}
-                      </TableCell>
-                      <TableCell>
-                        {variance.collection_details?.farmers?.full_name || 'Unknown Farmer'}
-                      </TableCell>
-                      <TableCell>
-                        {variance.collection_details?.collection_date 
-                          ? format(new Date(variance.collection_details.collection_date), 'MMM dd, yyyy')
-                          : 'N/A'}
-                      </TableCell>
-                      <TableCell>
-                        {variance.collection_details?.staff?.profiles?.full_name || 'Unknown Collector'}
-                      </TableCell>
                       <TableCell>
                         {variance.staff_details?.profiles?.full_name || 'Unknown Staff'}
-                      </TableCell>
-                      <TableCell>
-                        {variance.collection_details?.liters?.toFixed(2) || '0.00'}
                       </TableCell>
                       <TableCell>
                         {variance.company_received_liters?.toFixed(2) || '0.00'}
@@ -861,7 +839,7 @@ const PenaltyManagementPage: React.FC = () => {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center py-8">
+                    <TableCell colSpan={6} className="text-center py-8">
                       <p className="text-muted-foreground">No recent variances found</p>
                     </TableCell>
                   </TableRow>

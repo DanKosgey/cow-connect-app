@@ -1,16 +1,109 @@
 import { getModelWithRotation } from '@/services/gemini-api-service';
+import { getMimeTypeFromFilename } from '@/utils/imageUtils';
+
+// Simple in-memory cache for AI verification results
+const verificationCache = new Map<string, {
+  result: any;
+  timestamp: number;
+}>();
+
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Generate a cache key based on image characteristics and recorded liters
+ * @param imageIdentifier - URL or base64 string identifier
+ * @param recordedLiters - The liters recorded by the collector
+ * @returns Cache key string
+ */
+function generateCacheKey(imageIdentifier: string, recordedLiters: number): string {
+  // For cache key, we use a simplified representation
+  const identifier = imageIdentifier.length > 100 ? 
+    imageIdentifier.substring(0, 50) + '...' + imageIdentifier.substring(imageIdentifier.length - 50) : 
+    imageIdentifier;
+  return `${identifier}_${recordedLiters}`;
+}
+
+/**
+ * Check if we have a cached result for this verification
+ * @param imageIdentifier - URL or base64 string identifier
+ * @param recordedLiters - The liters recorded by the collector
+ * @returns Cached result or null if not found/expired
+ */
+function getCachedResult(imageIdentifier: string, recordedLiters: number): any | null {
+  const cacheKey = generateCacheKey(imageIdentifier, recordedLiters);
+  const cached = verificationCache.get(cacheKey);
+  
+  if (cached) {
+    // Check if cache is still valid
+    if (Date.now() - cached.timestamp < CACHE_DURATION) {
+      console.log('Returning cached AI verification result');
+      return cached.result;
+    } else {
+      // Expired, remove from cache
+      verificationCache.delete(cacheKey);
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Cache the verification result
+ * @param imageIdentifier - URL or base64 string identifier
+ * @param recordedLiters - The liters recorded by the collector
+ * @param result - The verification result to cache
+ */
+function cacheResult(imageIdentifier: string, recordedLiters: number, result: any): void {
+  const cacheKey = generateCacheKey(imageIdentifier, recordedLiters);
+  verificationCache.set(cacheKey, {
+    result,
+    timestamp: Date.now()
+  });
+  
+  // Clean up old cache entries periodically
+  if (Math.random() < 0.1) { // 10% chance to clean up
+    cleanupCache();
+  }
+}
+
+/**
+ * Clean up expired cache entries
+ */
+function cleanupCache(): void {
+  const now = Date.now();
+  for (const [key, value] of verificationCache.entries()) {
+    if (now - value.timestamp >= CACHE_DURATION) {
+      verificationCache.delete(key);
+    }
+  }
+}
+
+/**
+ * Extract filename from URL
+ * @param url The URL to extract filename from
+ * @returns Filename or empty string
+ */
+function extractFilenameFromUrl(url: string): string {
+  try {
+    const urlObj = new URL(url);
+    const pathname = urlObj.pathname;
+    return pathname.substring(pathname.lastIndexOf('/') + 1);
+  } catch (e) {
+    return '';
+  }
+}
 
 /**
  * Analyze a milk collection photo to verify it matches the recorded liters
  * This function now works directly with Gemini API with automatic key rotation
  * @param staffId - The collector's staff ID (used for tracking API key rotation)
- * @param imageBase64 - Base64 encoded image
+ * @param imageData - Base64 encoded image or image URL
  * @param recordedLiters - The liters recorded by the collector
  * @returns Analysis result with verification status
  */
 export const analyzeMilkCollectionPhoto = async (
   staffId: string,
-  imageBase64: string,
+  imageData: string,
   recordedLiters: number
 ): Promise<{
   isValid: boolean;
@@ -19,6 +112,12 @@ export const analyzeMilkCollectionPhoto = async (
   suggestedLiters?: number;
 }> => {
   try {
+    // Check cache first
+    const cachedResult = getCachedResult(imageData, recordedLiters);
+    if (cachedResult) {
+      return cachedResult;
+    }
+
     // Get model with automatic API key rotation
     const { model } = await getModelWithRotation(staffId);
 
@@ -40,14 +139,31 @@ export const analyzeMilkCollectionPhoto = async (
       CRITICAL: Do not wrap the JSON in markdown code blocks or any other formatting.
     `;
 
-    const image = {
-      inlineData: {
-        data: imageBase64,
-        mimeType: "image/jpeg"
-      }
-    };
+    // Determine if imageData is a URL or base64
+    let imagePart: any;
+    if (imageData.startsWith('http')) {
+      // It's a URL, determine MIME type from filename
+      const filename = extractFilenameFromUrl(imageData);
+      const mimeType = getMimeTypeFromFilename(filename);
+      
+      // Use fileData for URLs
+      imagePart = {
+        fileData: {
+          fileUri: imageData,
+          mimeType: mimeType
+        }
+      };
+    } else {
+      // It's base64 data, assume JPEG
+      imagePart = {
+        inlineData: {
+          data: imageData,
+          mimeType: "image/jpeg"
+        }
+      };
+    }
 
-    const result = await model.generateContent([prompt, image]);
+    const result = await model.generateContent([prompt, imagePart]);
     const response = await result.response;
     const text = response.text();
 
@@ -88,12 +204,17 @@ export const analyzeMilkCollectionPhoto = async (
     const tolerance = estimatedLiters * 0.15;
     const isValid = difference <= tolerance;
 
-    return {
+    const finalResult = {
       isValid,
       confidence,
       explanation,
       suggestedLiters: estimatedLiters
     };
+
+    // Cache the result
+    cacheResult(imageData, recordedLiters, finalResult);
+
+    return finalResult;
   } catch (error) {
     console.error('Error analyzing milk collection photo:', error);
     throw error;

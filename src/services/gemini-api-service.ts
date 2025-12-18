@@ -3,6 +3,10 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 // In-memory tracking of current key index
 const staffKeyIndexMap = new Map<string, number>();
 
+// Cache for validated models
+const modelCache = new Map<string, { model: any; timestamp: number }>();
+const CACHE_DURATION = 10 * 60 * 1000; // 10 minutes
+
 /**
  * Get API keys from environment variables
  * Handles both Vercel (VITE_ prefix) and local (.env file) environments
@@ -71,6 +75,58 @@ function setCurrentKeyIndex(staffId: string, index: number): void {
 }
 
 /**
+ * Get cached model if available and not expired
+ * @param cacheKey - Key to identify the cached model
+ * @returns Cached model or null if not found/expired
+ */
+function getCachedModel(cacheKey: string): any | null {
+  const cached = modelCache.get(cacheKey);
+  if (cached && (Date.now() - cached.timestamp < CACHE_DURATION)) {
+    return cached.model;
+  }
+  return null;
+}
+
+/**
+ * Cache a validated model
+ * @param cacheKey - Key to identify the cached model
+ * @param model - The validated model to cache
+ */
+function cacheModel(cacheKey: string, model: any): void {
+  modelCache.set(cacheKey, {
+    model,
+    timestamp: Date.now()
+  });
+  
+  // Periodically clean up expired entries
+  if (Math.random() < 0.1) { // 10% chance to clean up
+    cleanupModelCache();
+  }
+}
+
+/**
+ * Clean up expired model cache entries
+ */
+function cleanupModelCache(): void {
+  const now = Date.now();
+  for (const [key, value] of modelCache.entries()) {
+    if (now - value.timestamp >= CACHE_DURATION) {
+      modelCache.delete(key);
+    }
+  }
+}
+
+/**
+ * Test if an API key is valid by making a simple request
+ * @param model - The model to test
+ * @returns Promise that resolves if the key is valid
+ */
+async function testApiKey(model: any): Promise<void> {
+  const testResult = await model.generateContent("Hello, this is a test to validate the API key.");
+  await testResult.response;
+}
+
+/**
  * Get the AI model with automatic API key rotation from environment variables
  * This function will automatically rotate to the next API key if the current one fails
  * due to quota limits (429) or other errors
@@ -102,16 +158,23 @@ export async function getModelWithRotation(staffId: string) {
         throw new Error(`No valid API key at index ${currentIndex}`);
       }
       
-      // Initialize Google Generative AI
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+      // Check if we have a cached model for this key
+      const cacheKey = `model_${apiKey}`;
+      let model = getCachedModel(cacheKey);
       
-      // Test the API key by making a simple request
-      const testResult = await model.generateContent("Hello, this is a test to validate the API key.");
-      const testResponse = await testResult.response;
-      const testText = testResponse.text();
+      if (!model) {
+        // Initialize Google Generative AI
+        const genAI = new GoogleGenerativeAI(apiKey);
+        model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+        
+        // Test the API key by making a simple request
+        await testApiKey(model);
+        
+        // Cache the validated model
+        cacheModel(cacheKey, model);
+      }
       
-      // If we get here, the key is valid
+      // If we get here, the key/model is valid
       return { model, apiKey, currentIndex };
     } catch (error: any) {
       console.error(`Error validating API key at index ${currentIndex}:`, error);

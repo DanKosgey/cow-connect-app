@@ -11,19 +11,26 @@ interface CollectorAIVerificationResult {
 
 export const useCollectorAIVerification = () => {
   const [verifying, setVerifying] = useState(false);
+  const [progress, setProgress] = useState<string>(''); // Track verification progress
   const [error, setError] = useState<string | null>(null);
 
   const verifyCollectionWithCollectorAI = async (
     staffId: string,
-    imageBase64: string,
+    imageData: string,
     recordedLiters: number
   ) => {
     try {
       setVerifying(true);
+      setProgress('Initializing AI verification...');
       setError(null);
       
+      // Update progress
+      setProgress('Analyzing milk collection photo...');
+      
       // Call the collector-specific Gemini service to verify the collection
-      const result = await analyzeMilkCollectionPhoto(staffId, imageBase64, recordedLiters);
+      const result = await analyzeMilkCollectionPhoto(staffId, imageData, recordedLiters);
+      
+      setProgress('Analysis complete');
       
       return result;
     } catch (err) {
@@ -52,6 +59,7 @@ export const useCollectorAIVerification = () => {
       throw err;
     } finally {
       setVerifying(false);
+      setProgress(''); // Clear progress message
     }
   };
 
@@ -92,6 +100,7 @@ export const useCollectorAIVerification = () => {
 
   return {
     verifying,
+    progress,
     error,
     verifyCollectionWithCollectorAI,
     saveVerificationResult,

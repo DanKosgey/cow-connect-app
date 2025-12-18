@@ -35,3 +35,35 @@ export const imageUrlToBase64 = async (imageUrl: string): Promise<string> => {
     throw new Error(`Failed to convert image to base64: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 };
+
+/**
+ * Check if image is already in base64 format
+ * @param imageData Image data that might be base64
+ * @returns True if the data is already base64 encoded
+ */
+export const isBase64 = (imageData: string): boolean => {
+  // Check if it's already base64 (doesn't have URL prefixes)
+  return !(imageData.startsWith('http') || imageData.startsWith('data:'));
+};
+
+/**
+ * Determine MIME type from file extension
+ * @param filename The filename to analyze
+ * @returns MIME type string
+ */
+export const getMimeTypeFromFilename = (filename: string): string => {
+  const ext = filename.toLowerCase().split('.').pop() || '';
+  switch (ext) {
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg';
+    case 'png':
+      return 'image/png';
+    case 'gif':
+      return 'image/gif';
+    case 'webp':
+      return 'image/webp';
+    default:
+      return 'image/jpeg'; // Default fallback
+  }
+};
