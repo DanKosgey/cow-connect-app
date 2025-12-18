@@ -143,6 +143,7 @@ const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                 <div className="bg-green-50 p-4 rounded-lg">
                   <p className="text-sm text-green-700">Gross Payments</p>
                   <p className="text-xl font-bold text-green-900">{formatCurrency(analytics.total_pending + analytics.total_paid)}</p>
+                  <p className="text-xs text-green-600">Total pending + paid amounts</p>
                 </div>
                 
                 <div className="bg-purple-50 p-4 rounded-lg">
@@ -153,7 +154,8 @@ const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                 
                 <div className="bg-indigo-50 p-4 rounded-lg">
                   <p className="text-sm text-indigo-700">Net Payments</p>
-                  <p className="text-xl font-bold text-indigo-900">{formatCurrency(analytics.total_net_payment)}</p>
+                  <p className="text-xl font-bold text-indigo-900">{formatCurrency((analytics.total_pending + analytics.total_paid) - analytics.total_credit_used)}</p>
+                  <p className="text-xs text-indigo-600">Gross payments minus credit deductions</p>
                 </div>
               </div>
               

@@ -138,6 +138,10 @@ interface Collection {
   collection_date: string;
   status: string;
   notes: string;
+  approved_for_company?: boolean;
+  approved_for_payment?: boolean;
+  approved_by?: string;
+  approved_at?: string;
   farmers?: {
     id: string;
     user_id: string;
@@ -147,13 +151,6 @@ interface Collection {
     };
   };
   staff?: {
-    id: string;
-    user_id: string;
-    profiles: {
-      full_name: string;
-    };
-  };
-  approved_by?: {
     id: string;
     user_id: string;
     profiles: {
@@ -573,9 +570,6 @@ const AdminDashboard = () => {
         // Calculate enhanced metrics
         const enhancedMetrics = calculateEnhancedMetrics({ collections, farmers, staff });
         
-        // Process KPI data
-        const kpiData = processKPIData({ collections, farmers, staff });
-
         // Generate alerts
         const alerts = generateEnhancedAlerts(collections, farmers, pendingFarmers);
 
@@ -594,7 +588,6 @@ const AdminDashboard = () => {
           pendingFarmers,
           dualAxisData,
           enhancedMetrics,
-          kpiData,
           alerts,
           kycStats
         };
@@ -756,61 +749,77 @@ const AdminDashboard = () => {
       .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
   }, []);
 
-  // Process KPI data
-  const processKPIData = useCallback((data: any) => {
-    // Get targets from state (dashboard settings)
-    const targetAchievementTarget = dashboardTargets.find(t => t.id === 'targetAchievement')?.target || 100;
-    const farmerSatisfactionTarget = dashboardTargets.find(t => t.id === 'farmerSatisfaction')?.target || 95;
-    const collectionEfficiencyTarget = dashboardTargets.find(t => t.id === 'efficiency')?.target || 90;
-    const paymentTimelinessTarget = dashboardTargets.find(t => t.id === 'paymentTimeliness')?.target || 95;
-
-    // Calculate real KPI values based on data
-    const targetAchievement = data.collections && data.collections.length > 0 
-      ? Math.round((data.collections.filter((c: any) => c.status === 'Approved').length / data.collections.length) * 100)
-      : 0;
-      
-    const farmerSatisfaction = data.farmers && data.farmers.length > 0
-      ? Math.round((data.farmers.filter((f: any) => f.kyc_status === 'approved').length / data.farmers.length) * 100)
-      : 0;
-      
-    const collectionEfficiency = data.collections && data.collections.length > 0
-      ? Math.round((data.collections.filter((c: any) => 
-          new Date(c.collection_date) >= subDays(new Date(), 7)).length / 
-          Math.max(data.collections.length / 7, 1)) * 100)
-      : 0;
-      
-    const paymentTimeliness = data.collections && data.collections.length > 0
-      ? Math.round((data.collections.filter((c: any) => c.status === 'Paid').length / 
-          Math.max(data.collections.filter((c: any) => c.status === 'Approved').length, 1)) * 100)
-      : 0;
-
-    return [
+  // Collection Approval Status Distribution Chart
+  const CollectionApprovalChart = ({ collections }: { collections: Collection[] }) => {
+    // Categorize collections based on approval status according to user requirements
+    const collectedNotApproved = collections.filter(c => 
+      c.status === 'Collected' && !c.approved_for_payment
+    ).length;
+    
+    const needingAdminApproval = collections.filter(c => 
+      c.status === 'Collected' && c.approved_for_payment && !c.approved_by
+    ).length;
+    
+    const approvedForPayments = collections.filter(c => 
+      c.status === 'Collected' && c.approved_for_payment && !!c.approved_by
+    ).length;
+    
+    // Prepare data for pie chart - only 3 sectors as requested
+    const chartData = [
       { 
-        label: 'Target Achievement', 
-        value: Math.min(targetAchievement, 100), 
-        target: targetAchievementTarget,
-        color: CHART_COLORS.primary 
+        name: 'Collected, Not Approved', 
+        value: collectedNotApproved, 
+        color: CHART_COLORS.danger 
       },
       { 
-        label: 'Farmer Satisfaction', 
-        value: Math.min(farmerSatisfaction, 100), 
-        target: farmerSatisfactionTarget,
-        color: CHART_COLORS.secondary 
-      },
-      { 
-        label: 'Collection Efficiency', 
-        value: Math.min(collectionEfficiency, 100), 
-        target: collectionEfficiencyTarget,
+        name: 'Needing Admin Approval', 
+        value: needingAdminApproval, 
         color: CHART_COLORS.accent 
       },
       { 
-        label: 'Payment Timeliness', 
-        value: Math.min(paymentTimeliness, 100), 
-        target: paymentTimelinessTarget,
-        color: CHART_COLORS.teal 
+        name: 'Approved for Payments', 
+        value: approvedForPayments, 
+        color: CHART_COLORS.primary 
       }
-    ];
-  }, [dashboardTargets]);
+    ].filter(item => item.value > 0); // Only show categories with data
+    
+    if (chartData.length === 0) {
+      return (
+        <div className="h-64 flex items-center justify-center">
+          <div className="text-center">
+            <BarChart3 className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+            <p className="text-gray-500 dark:text-gray-400">No collection data available</p>
+          </div>
+        </div>
+      );
+    }
+    
+    return (
+      <div className="h-64">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={chartData}
+              cx="50%"
+              cy="50%"
+              labelLine={true}
+              outerRadius={80}
+              fill="#8884d8"
+              dataKey="value"
+              nameKey="name"
+              label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+            >
+              {chartData.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={entry.color} />
+              ))}
+            </Pie>
+            <Tooltip formatter={(value) => [value, 'Collections']} />
+            <Legend />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+    );
+  };
 
   // Generate enhanced alerts
   const generateEnhancedAlerts = useCallback((collections: Collection[], farmers: Farmer[], pendingFarmers: PendingFarmer[]) => {
@@ -993,7 +1002,7 @@ const AdminDashboard = () => {
               stroke="#3b82f6"
               tick={{ fill: '#3b82f6', fontSize: 12 }}
               label={{ 
-                value: 'Liters', 
+                value: 'Liters / Collections', 
                 angle: -90, 
                 position: 'insideLeft',
                 fill: '#3b82f6'
@@ -1021,7 +1030,7 @@ const AdminDashboard = () => {
               formatter={(value, name) => {
                 if (name === 'liters') return [formatNumber(Number(value)), 'Liters'];
                 if (name === 'revenue') return [formatCurrency(Number(value)), 'Revenue'];
-                if (name === 'avgRate') return [formatCurrency(Number(value)), 'Avg Rate'];
+                if (name === 'collections') return [formatNumber(Number(value)), 'Daily Collections'];
                 return [value, name];
               }}
             />
@@ -1047,8 +1056,8 @@ const AdminDashboard = () => {
             <Line 
               yAxisId="left"
               type="monotone"
-              dataKey="avgRate"
-              name="Avg Rate/Liter"
+              dataKey="collections"
+              name="Daily Collections"
               stroke={CHART_COLORS.accent}
               strokeWidth={2}
               strokeDasharray="5 5"
@@ -1056,44 +1065,6 @@ const AdminDashboard = () => {
             />
           </ComposedChart>
         </ResponsiveContainer>
-      </div>
-    );
-  };
-
-  // KPI Progress Chart
-  const KPIProgressChart = ({ data }: { data: any[] }) => {
-    return (
-      <div className="space-y-4">
-        {data.map((item, index) => {
-          // Calculate percentage relative to target
-          const percentage = item.target ? Math.min((item.value / item.target) * 100, 100) : item.value;
-          
-          return (
-            <div key={index} className="space-y-2">
-              <div className="flex justify-between items-center">
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  {item.label}
-                </span>
-                <div className="text-right">
-                  <span className="text-sm font-bold" style={{ color: item.color }}>
-                    {Math.round(item.value)}%
-                  </span>
-                  {item.target && (
-                    <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">
-                      / {Math.round(item.target)}%
-                    </span>
-                  )}
-                </div>
-              </div>
-              <Progress value={percentage} className="h-2" />
-              {item.target && (
-                <div className="text-xs text-gray-500 dark:text-gray-400">
-                  Target: {Math.round(item.target)}%
-                </div>
-              )}
-            </div>
-          );
-        })}
       </div>
     );
   };
@@ -1580,16 +1551,17 @@ const AdminDashboard = () => {
 
               {/* Right Column - Sidebar */}
               <div className="space-y-6">
-                {/* KPI Progress */}
+                {/* Collection Approval Status Distribution */}
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <Target className="h-5 w-5" />
-                      Key Performance Indicators
+                      <PieChartIcon className="h-5 w-5" />
+                      Collection Approval Status
                     </CardTitle>
+                    <CardDescription>Distribution of collections by approval status</CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <KPIProgressChart data={dashboardData?.kpiData || []} />
+                    <CollectionApprovalChart collections={collections} />
                   </CardContent>
                 </Card>
 

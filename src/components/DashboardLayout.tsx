@@ -31,7 +31,8 @@ import {
   Package,
   ChevronUp,
   ChevronDown,
-  Eye
+  Eye,
+  Download as DownloadIcon // Added Download icon
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
@@ -351,6 +352,16 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
           <span className="font-bold text-xl">Dairy Farmers of Trans Nzoia</span>
         </div>
         <div className="flex items-center gap-2">
+          {/* Download App Button for Mobile - Improved visibility */}
+          <Button
+            variant="default"
+            size="icon"
+            onClick={() => navigate('/download-app')}
+            title="Download Mobile & Desktop Apps"
+            className="bg-primary text-primary-foreground hover:bg-primary/90"
+          >
+            <DownloadIcon className="h-5 w-5" />
+          </Button>
           <GlobalSearch /> {/* Add GlobalSearch here */}
         </div>
       </div>
@@ -402,7 +413,17 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
                 <RotateCw className="h-4 w-4" />
               </Button>
             </div>
-            <div className="hidden md:block">
+            {/* Download App Button for Desktop - Improved visibility and positioning */}
+            <Button
+              variant="default"
+              onClick={() => navigate('/download-app')}
+              title="Download Mobile & Desktop Apps"
+              className="ml-2 flex items-center gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              <DownloadIcon className="h-4 w-4" />
+              <span className="hidden lg:inline">Download App</span>
+            </Button>
+            <div className="hidden md:block ml-2">
               <GlobalSearch /> {/* Add GlobalSearch for desktop */}
             </div>
             <Button
