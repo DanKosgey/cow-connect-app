@@ -163,7 +163,6 @@ const PendingCollectionsSection: React.FC<PendingCollectionsSectionProps> = ({
                     <TableHead>Amount</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Approved</TableHead>
-                    <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -209,30 +208,7 @@ const PendingCollectionsSection: React.FC<PendingCollectionsSectionProps> = ({
                           </span>
                         )}
                       </TableCell>
-                      <TableCell>
-                        <div className="flex gap-2">
-                          {!collection.approved_for_payment && (
-                            <Button
-                              size="sm"
-                              onClick={() => approveCollectionsForPayment(
-                                collection.farmer_id, 
-                                [collection.id]
-                              )}
-                              className="bg-blue-600 hover:bg-blue-700"
-                            >
-                              Approve
-                            </Button>
-                          )}
-                          <Button
-                            size="sm"
-                            onClick={() => markAsPaid(collection.id, collection.farmer_id)}
-                            disabled={!collection.approved_for_payment || collection.status === 'Paid'}
-                            className="bg-green-600 hover:bg-green-700 disabled:bg-gray-300"
-                          >
-                            Mark Paid
-                          </Button>
-                        </div>
-                      </TableCell>
+
                     </TableRow>
                   ))}
                 </TableBody>

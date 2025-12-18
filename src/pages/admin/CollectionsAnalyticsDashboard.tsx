@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo, useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import {
   LineChart,
   Line,
@@ -58,7 +59,8 @@ import {
   Award,
   Clock,
   DollarSign,
-  Users
+  Users,
+  ArrowRight
 } from 'lucide-react';
 
 // Hooks & Logic
@@ -801,6 +803,9 @@ const CollectionsAnalyticsDashboard: React.FC = () => {
                 <p className="text-gray-500 dark:text-gray-400 mt-2 ml-1">
                     Real-time collection insights and statistical modeling
                 </p>
+                <Link to="/admin/farmer-collections" className="inline-flex items-center mt-2 ml-1 text-sm text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300">
+                    View Farmer Collections <ArrowRight className="ml-1 h-4 w-4" />
+                </Link>
             </div>
             <div className="flex items-center gap-2">
                 <Button 

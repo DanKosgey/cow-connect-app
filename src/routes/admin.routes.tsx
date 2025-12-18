@@ -59,6 +59,7 @@ const CollectionsDebugPage = lazy(() => import('@/pages/admin/CollectionsDebugPa
 const ServicesPage = lazy(() => import('@/pages/admin/ServicesPage'));
 const AdminAIMonitoringDashboard = lazy(() => import('@/pages/admin/ai/AdminAIMonitoringDashboard'));
 const MilkCollectionApprovalPage = lazy(() => import('@/pages/admin/MilkCollectionApprovalPage'));
+const FarmerCollectionPage = lazy(() => import('@/pages/admin/FarmerCollectionPage'));
 
 export const adminRoutes = [
   { path: '/admin/login', element: <AdminLogin /> },
@@ -73,6 +74,7 @@ export const adminRoutes = [
   { path: '/admin/payments/reports', element: <PaymentReports /> },
   { path: '/admin/farmer-payments', element: <FarmerPaymentsPage /> },
   { path: '/admin/collections', element: <CollectionsAnalyticsDashboard /> },
+  { path: '/admin/farmer-collections', element: <FarmerCollectionPage /> },
   { path: '/admin/kyc', element: <KYCAdminDashboard /> },
   { path: '/admin/kyc-pending-farmers', element: <KYCPendingFarmersDashboard /> },
   { path: '/admin/kyc-pending-farmer/:id', element: <KYCPendingFarmerDetails /> },
@@ -185,6 +187,7 @@ export default function AdminRoutes() {
                   <Route path="payments/reports" element={<PaymentReports />} />
                   <Route path="farmer-payments" element={<FarmerPaymentsPage />} />
                   <Route path="collections" element={<CollectionsAnalyticsDashboard />} />
+                  <Route path="farmer-collections" element={<FarmerCollectionPage />} />
                   <Route path="kyc" element={<KYCAdminDashboard />} />
                   <Route path="kyc-pending-farmers" element={<KYCPendingFarmersDashboard />} />
                   <Route path="kyc-pending-farmer/:id" element={<KYCPendingFarmerDetails />} />

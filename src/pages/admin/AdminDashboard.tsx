@@ -243,8 +243,6 @@ const CHART_TYPES = [
 // Define DASHBOARD_TABS constant
 const DASHBOARD_TABS = [
   { id: 'overview', label: 'Overview', icon: BarChart3 },
-  { id: 'collections', label: 'Collections', icon: Droplets },
-  { id: 'alerts', label: 'Alerts', icon: AlertCircle },
   { id: 'settings', label: 'Settings', icon: Settings }
 ] as const;
 

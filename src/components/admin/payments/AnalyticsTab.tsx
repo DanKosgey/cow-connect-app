@@ -42,6 +42,13 @@ const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
   analytics,
   creditAnalytics
 }) => {
+  // Prepare data for the payment distribution pie chart
+  const paymentDistributionData = [
+    { name: 'Paid Amounts', value: analytics.total_paid, color: '#10b981' },
+    { name: 'Pending Amounts', value: analytics.total_pending, color: '#f59e0b' },
+    { name: 'Credit Used', value: analytics.total_credit_used, color: '#8b5cf6' }
+  ].filter(item => item.value > 0); // Only show items with values
+
   return (
     <div className="space-y-6">
       {/* Mini tab navigation */}
@@ -74,28 +81,28 @@ const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
           <div className="space-y-6">
             {/* Credit Utilization Overview */}
             <div className="bg-white rounded-xl shadow-lg p-6">
-              <h3 className="text-xl font-bold text-gray-900 mb-6">Credit Utilization</h3>
+              <h3 className="text-xl font-bold text-gray-900 mb-6">Payment Distribution Overview</h3>
               
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* Credit Distribution Pie Chart */}
+                {/* Payment Distribution Pie Chart */}
                 <div className="md:col-span-2">
-                  <h4 className="font-semibold text-gray-800 mb-4">Credit Distribution</h4>
+                  <h4 className="font-semibold text-gray-800 mb-4">Payment Status Distribution</h4>
                   <div className="h-64">
                     <ResponsiveContainer width="100%" height="100%">
                       <RechartsPieChart>
                         <Pie
-                          data={creditAnalytics.creditDistribution.slice(0, 5)}
+                          data={paymentDistributionData}
                           cx="50%"
                           cy="50%"
-                          labelLine={false}
+                          labelLine={true}
                           outerRadius={80}
                           fill="#8884d8"
-                          dataKey="creditUsed"
+                          dataKey="value"
                           nameKey="name"
                           label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
                         >
-                          {creditAnalytics.creditDistribution.slice(0, 5).map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          {paymentDistributionData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
                           ))}
                         </Pie>
                         <Tooltip formatter={(value) => formatCurrency(Number(value))} />
@@ -211,12 +218,14 @@ const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
               </div>
               
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Top 10 Farmers by Total Payments */}
+                {/* Top 10 Farmers by Total Payments - FIXED CALCULATIONS */}
                 <div className="border rounded-lg p-4">
                   <h4 className="font-semibold text-gray-800 mb-4">Top 10 Farmers by Total Payments</h4>
                   <div className="space-y-3 max-h-80 overflow-y-auto">
                     {creditAnalytics.creditDistribution
-                      .slice(0, 10)
+                      .slice() // Create a copy to avoid mutating original array
+                      .sort((a: any, b: any) => b.totalAmount - a.totalAmount) // Sort by total amount descending
+                      .slice(0, 10) // Take top 10
                       .map((farmer: any, index: number) => (
                         <div key={index} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg transition-colors">
                           <div className="flex items-center gap-3">
@@ -287,8 +296,8 @@ const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                         <div className="text-right">
                           <p className="font-medium">{formatCurrency(analytics.total_credit_used)}</p>
                           <p className="text-sm text-gray-500">
-                            {analytics.total_paid + analytics.total_credit_used > 0 
-                              ? ((analytics.total_credit_used / (analytics.total_paid + analytics.total_credit_used)) * 100).toFixed(1) 
+                            {analytics.total_pending + analytics.total_paid + analytics.total_credit_used > 0 
+                              ? ((analytics.total_credit_used / (analytics.total_pending + analytics.total_paid + analytics.total_credit_used)) * 100).toFixed(1) 
                               : '0.0'}%
                           </p>
                         </div>

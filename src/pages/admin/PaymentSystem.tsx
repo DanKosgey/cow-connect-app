@@ -1156,6 +1156,38 @@ const PaymentSystemSimple = () => {
           </React.Suspense>
         )}
 
+        {/* Pending Payments Tab */}
+        {activeTab === 'pending' && (
+          <React.Suspense fallback={<div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin text-indigo-600" /></div>}>
+            <PendingPaymentsTab
+              timeFrame={timeFrame}
+              customDateRange={customDateRange}
+              collections={collections}
+              handleTimeFrameChange={handleTimeFrameChange}
+              resetFilters={resetFilters}
+              handleCustomDateChange={handleCustomDateChange}
+              applyCustomDateRange={applyCustomDateRange}
+              markAsPaid={markAsPaid}
+              approveCollectionsForPayment={approveCollectionsForPayment}
+            />
+          </React.Suspense>
+        )}
+
+        {/* Paid Payments Tab */}
+        {activeTab === 'paid' && (
+          <React.Suspense fallback={<div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin text-indigo-600" /></div>}>
+            <PaidPaymentsTab
+              timeFrame={timeFrame}
+              customDateRange={customDateRange}
+              collections={collections}
+              handleTimeFrameChange={handleTimeFrameChange}
+              resetFilters={resetFilters}
+              handleCustomDateChange={handleCustomDateChange}
+              applyCustomDateRange={applyCustomDateRange}
+            />
+          </React.Suspense>
+        )}
+
         {/* Analytics Tab */}
         {activeTab === 'analytics' && (
           <React.Suspense fallback={<div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin text-indigo-600" /></div>}>
