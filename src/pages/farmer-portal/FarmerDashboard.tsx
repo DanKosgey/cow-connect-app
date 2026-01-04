@@ -1,12 +1,13 @@
 import { useState, useEffect, useMemo, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { 
-  Milk, 
-  DollarSign, 
-  BarChart3, 
-  Calendar, 
-  TrendingUp, 
+import {
+  Milk,
+  DollarSign,
+  BarChart3,
+  Calendar,
+  TrendingUp,
   Award,
   Droplets,
   Leaf,
@@ -27,6 +28,7 @@ import RefreshButton from '@/components/ui/RefreshButton';
 import { TimeframeSelector } from "@/components/TimeframeSelector";
 
 const FarmerDashboard = () => {
+  const navigate = useNavigate();
   const [timeframe, setTimeframe] = useState("week");
   const { stats, loading, error, refresh } = useFarmerDashboard(timeframe);
   const componentMounted = useRef(true);
@@ -38,6 +40,13 @@ const FarmerDashboard = () => {
     };
   }, []);
 
+  // Handle redirection for pending farmers
+  useEffect(() => {
+    if (error === 'Farmer profile not found') {
+      navigate('/farmer/application-status');
+    }
+  }, [error, navigate]);
+
   // Update timeframe handler
   const handleTimeframeChange = (timeframeValue: string, start: Date, end: Date) => {
     if (componentMounted.current) {
@@ -48,7 +57,7 @@ const FarmerDashboard = () => {
   // Memoize chart data to prevent unnecessary recalculations
   const collectionTrendData = useMemo(() => {
     if (!stats || !stats.collectionTrend) return [];
-    
+
     return (stats.collectionTrend || []).map((item: any) => ({
       date: item.date,
       collections: item.liters, // Using liters as collections metric
@@ -59,7 +68,7 @@ const FarmerDashboard = () => {
   // Prepare data for daily collections bar chart
   const dailyCollectionsData = useMemo(() => {
     if (!stats || !stats.collectionTrend) return [];
-    
+
     return (stats.collectionTrend || []).map((item: any) => ({
       date: format(new Date(item.date), 'MMM dd'),
       liters: item.liters
@@ -85,8 +94,8 @@ const FarmerDashboard = () => {
             <h3 className="text-lg font-medium text-red-800">Error Loading Data</h3>
           </div>
           <p className="mt-2 text-red-700">{error}</p>
-          <Button 
-            onClick={() => window.location.reload()} 
+          <Button
+            onClick={() => window.location.reload()}
             className="mt-4"
           >
             Try Again
@@ -113,22 +122,22 @@ const FarmerDashboard = () => {
   // Stats cards data with null safety
   const statsCards = [
     {
-      title: timeframe === 'day' ? "Today's Collection" : 
-             timeframe === 'week' ? "This Week's Collection" : 
-             timeframe === 'month' ? "This Month's Collection" : 
-             timeframe === 'quarter' ? "This Quarter's Collection" : 
-             "This Period's Collection",
+      title: timeframe === 'day' ? "Today's Collection" :
+        timeframe === 'week' ? "This Week's Collection" :
+          timeframe === 'month' ? "This Month's Collection" :
+            timeframe === 'quarter' ? "This Quarter's Collection" :
+              "This Period's Collection",
       value: `${(stats.today?.liters || 0).toFixed(1)} L`,
       change: `${stats.today?.collections || 0} collections`,
       icon: <Droplets className="h-5 w-5" />,
       trend: "up"
     },
     {
-      title: timeframe === 'day' ? "Today's Earnings" : 
-             timeframe === 'week' ? "This Week's Earnings" : 
-             timeframe === 'month' ? "This Month's Earnings" : 
-             timeframe === 'quarter' ? "This Quarter's Earnings" : 
-             "This Period's Earnings",
+      title: timeframe === 'day' ? "Today's Earnings" :
+        timeframe === 'week' ? "This Week's Earnings" :
+          timeframe === 'month' ? "This Month's Earnings" :
+            timeframe === 'quarter' ? "This Quarter's Earnings" :
+              "This Period's Earnings",
       value: `KSh ${(stats.thisMonth?.earnings || 0).toFixed(0)}`,
       change: `${(stats.thisMonth?.liters || 0).toFixed(1)} L collected`,
       icon: <TrendingUp className="h-5 w-5" />,
@@ -137,10 +146,10 @@ const FarmerDashboard = () => {
     {
       title: 'Total Earnings',
       value: `KSh ${(stats.allTime?.totalEarnings || 0).toFixed(0)}`,
-      change: timeframe === 'day' ? 'Today' : 
-              timeframe === 'week' ? 'This week' : 
-              timeframe === 'month' ? 'This month' : 
-              timeframe === 'quarter' ? 'This quarter' : 
+      change: timeframe === 'day' ? 'Today' :
+        timeframe === 'week' ? 'This week' :
+          timeframe === 'month' ? 'This month' :
+            timeframe === 'quarter' ? 'This quarter' :
               'This period',
       icon: <DollarSign className="h-5 w-5" />,
       trend: "up"
@@ -148,10 +157,10 @@ const FarmerDashboard = () => {
     {
       title: 'Collection Frequency',
       value: stats.thisMonth?.collections || 0,
-      change: timeframe === 'day' ? "Collections today" : 
-              timeframe === 'week' ? "Collections this week" : 
-              timeframe === 'month' ? "Collections this month" : 
-              timeframe === 'quarter' ? "Collections this quarter" : 
+      change: timeframe === 'day' ? "Collections today" :
+        timeframe === 'week' ? "Collections this week" :
+          timeframe === 'month' ? "Collections this month" :
+            timeframe === 'quarter' ? "Collections this quarter" :
               "Collections this period",
       icon: <Calendar className="h-5 w-5" />,
       trend: "up"
@@ -175,9 +184,9 @@ const FarmerDashboard = () => {
         </div>
         <div className="mt-4 md:mt-0 flex items-center space-x-3">
           <TimeframeSelector onTimeframeChange={handleTimeframeChange} defaultValue={timeframe} />
-          <RefreshButton 
-            isRefreshing={loading} 
-            onRefresh={refresh} 
+          <RefreshButton
+            isRefreshing={loading}
+            onRefresh={refresh}
             className="bg-white border-gray-300 hover:bg-gray-50 rounded-md shadow-sm"
           />
           <Button variant="outline" className="flex items-center gap-2">
@@ -230,36 +239,36 @@ const FarmerDashboard = () => {
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={collectionTrendData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis 
-                      dataKey="date" 
+                    <XAxis
+                      dataKey="date"
                       stroke="#6b7280"
                       tickFormatter={(value) => format(new Date(value), 'MMM dd')}
                     />
-                    <YAxis 
-                      yAxisId="left" 
-                      stroke="#10b981" 
+                    <YAxis
+                      yAxisId="left"
+                      stroke="#10b981"
                       tickFormatter={(value) => `${value} L`}
-                      label={{ 
-                        value: 'Collections (Liters)', 
-                        angle: -90, 
+                      label={{
+                        value: 'Collections (Liters)',
+                        angle: -90,
                         position: 'insideLeft',
                         style: { textAnchor: 'middle', fill: '#10b981' }
                       }}
                     />
-                    <YAxis 
-                      yAxisId="right" 
-                      orientation="right" 
-                      stroke="#3b82f6" 
-                      tickFormatter={(value) => `KSh${value >= 1000 ? `${(value/1000).toFixed(1)}k` : value}`}
-                      label={{ 
-                        value: 'Revenue (KSh)', 
-                        angle: 90, 
+                    <YAxis
+                      yAxisId="right"
+                      orientation="right"
+                      stroke="#3b82f6"
+                      tickFormatter={(value) => `KSh${value >= 1000 ? `${(value / 1000).toFixed(1)}k` : value}`}
+                      label={{
+                        value: 'Revenue (KSh)',
+                        angle: 90,
                         position: 'insideRight',
                         style: { textAnchor: 'middle', fill: '#3b82f6' }
                       }}
                     />
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }} 
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }}
                       formatter={(value, name) => {
                         if (name === 'collections') return [`${value} L`, 'Collections'];
                         if (name === 'revenue') return [`KSh ${Number(value).toLocaleString()}`, 'Revenue'];
@@ -267,23 +276,23 @@ const FarmerDashboard = () => {
                       }}
                       labelFormatter={(value) => format(new Date(value), 'MMM dd, yyyy')}
                     />
-                    <Line 
+                    <Line
                       yAxisId="left"
-                      type="monotone" 
-                      dataKey="collections" 
-                      stroke="#10b981" 
-                      strokeWidth={2} 
-                      dot={{ r: 4, fill: '#10b981' }} 
+                      type="monotone"
+                      dataKey="collections"
+                      stroke="#10b981"
+                      strokeWidth={2}
+                      dot={{ r: 4, fill: '#10b981' }}
                       activeDot={{ r: 6, stroke: '#10b981', strokeWidth: 2 }}
                       name="Collections (L)"
                     />
-                    <Line 
+                    <Line
                       yAxisId="right"
-                      type="monotone" 
-                      dataKey="revenue" 
-                      stroke="#3b82f6" 
-                      strokeWidth={2} 
-                      dot={{ r: 4, fill: '#3b82f6' }} 
+                      type="monotone"
+                      dataKey="revenue"
+                      stroke="#3b82f6"
+                      strokeWidth={2}
+                      dot={{ r: 4, fill: '#3b82f6' }}
                       activeDot={{ r: 6, stroke: '#3b82f6', strokeWidth: 2 }}
                       name="Revenue (KSh)"
                     />
@@ -314,7 +323,7 @@ const FarmerDashboard = () => {
                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                     <XAxis dataKey="date" stroke="#6b7280" />
                     <YAxis stroke="#6b7280" />
-                    <Tooltip 
+                    <Tooltip
                       contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }}
                       formatter={(value) => [`${value} L`, 'Collections']}
                     />
@@ -347,23 +356,23 @@ const FarmerDashboard = () => {
                 <div className="flex justify-between mb-1">
                   <span className="text-sm font-medium text-gray-700">Collection Consistency</span>
                   <span className="text-sm font-medium text-gray-900">
-                    {stats.thisMonth?.collections && stats.thisMonth.collections > 0 
-                      ? `${Math.min(100, Math.round((stats.thisMonth.collections / 30) * 100))}%` 
+                    {stats.thisMonth?.collections && stats.thisMonth.collections > 0
+                      ? `${Math.min(100, Math.round((stats.thisMonth.collections / 30) * 100))}%`
                       : '0%'}
                   </span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div 
-                    className="bg-green-600 h-2 rounded-full" 
-                    style={{ 
-                      width: `${stats.thisMonth?.collections && stats.thisMonth.collections > 0 
-                        ? Math.min(100, Math.round((stats.thisMonth.collections / 30) * 100)) 
-                        : 0}%` 
+                  <div
+                    className="bg-green-600 h-2 rounded-full"
+                    style={{
+                      width: `${stats.thisMonth?.collections && stats.thisMonth.collections > 0
+                        ? Math.min(100, Math.round((stats.thisMonth.collections / 30) * 100))
+                        : 0}%`
                     }}
                   ></div>
                 </div>
               </div>
-              
+
               <div>
                 <div className="flex justify-between mb-1">
                   <span className="text-sm font-medium text-gray-700">Earnings Growth</span>
@@ -372,21 +381,21 @@ const FarmerDashboard = () => {
                   </span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div 
-                    className="bg-purple-600 h-2 rounded-full" 
+                  <div
+                    className="bg-purple-600 h-2 rounded-full"
                     style={{ width: `${stats.thisMonth?.earnings ? 12.5 : 0}%` }}
                   ></div>
                 </div>
               </div>
-              
+
               <div className="pt-4 border-t border-gray-200">
                 <h3 className="font-medium text-gray-900 mb-2">Key Insights</h3>
                 <ul className="space-y-2">
                   <li className="flex items-start">
                     <div className="flex-shrink-0 h-5 w-5 text-green-500">✓</div>
                     <p className="ml-2 text-sm text-gray-600">
-                      {stats.thisMonth?.collections && stats.thisMonth.collections > 15 
-                        ? "Great collection frequency!" 
+                      {stats.thisMonth?.collections && stats.thisMonth.collections > 15
+                        ? "Great collection frequency!"
                         : "Aim for daily collections"}
                     </p>
                   </li>

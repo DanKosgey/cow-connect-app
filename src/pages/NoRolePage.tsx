@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,7 +11,7 @@ import { logger } from '@/utils/logger';
  * Provides information and options for getting a role assigned
  */
 const NoRolePage: React.FC = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, refreshSession } = useAuth();
 
   const handleContactAdmin = () => {
     // In a real app, this would open a support ticket or send a message to admins
@@ -26,6 +26,16 @@ const NoRolePage: React.FC = () => {
       logger.error('Error logging out', { error });
     }
   };
+  // Removed automatic polling to prevent "Invalid Refresh Token" errors and loops.
+  // Users should click "Logout" or "Contact Admin" or we can rely on manual refresh/reload.
+
+  const handleCompleteSignup = () => {
+    // Allow user to go back to signup if they got stuck here
+    window.location.href = '/farmer/signup';
+  };
+
+  // If role appears, AuthFlowManager will handle the redirect automatically
+  // thanks to our previous fix in AuthFlowManager.tsx
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
@@ -71,14 +81,21 @@ const NoRolePage: React.FC = () => {
           )}
 
           <div className="space-y-3">
-            <Button 
-              onClick={handleContactAdmin} 
+            <Button
+              onClick={handleContactAdmin}
               className="w-full"
             >
               Contact Administrator
             </Button>
-            <Button 
-              variant="outline" 
+            <Button
+              variant="secondary"
+              onClick={handleCompleteSignup}
+              className="w-full"
+            >
+              Complete Registration
+            </Button>
+            <Button
+              variant="outline"
               onClick={handleLogout}
               className="w-full"
             >

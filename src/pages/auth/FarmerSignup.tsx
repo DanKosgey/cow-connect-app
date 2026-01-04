@@ -63,6 +63,12 @@ const OTP_ATTEMPTS_KEY = 'otp_attempts_v1';
 const OTP_ATTEMPT_LIMIT = 3;
 const OTP_ATTEMPT_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
 
+interface DocumentFile {
+  id: string;
+  file: File;
+  preview: string;
+}
+
 interface FormData {
   fullName: string;
   email: string;
@@ -79,27 +85,28 @@ interface FormData {
   farmLocation: string;
   primaryBreed: string;
   breedCount: string;
-  idFrontFile: File | null;
-  idBackFile: File | null;
-  selfieFile: File | null;
-  idFrontPreview: string;
-  idBackPreview: string;
-  selfiePreview: string;
+  idFrontFiles: DocumentFile[];
+  idBackFiles: DocumentFile[];
+  selfieFiles: DocumentFile[];
 }
 
 const FarmerSignup: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
-  
+
   // Enhanced navigation debugging
   const debugNavigate = (path: string) => {
     console.log('FarmerSignup: Debug navigation called', { path, currentLocation: location.pathname });
     navigate(path);
     console.log('FarmerSignup: Debug navigation completed', { path });
   };
-  
-  const [currentStep, setCurrentStep] = useState(1);
+
+  const [currentStep, setCurrentStep] = useState(() => {
+    const savedStep = localStorage.getItem('farmer_signup_step');
+    return savedStep ? parseInt(savedStep) : 1;
+  });
+
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -110,32 +117,58 @@ const FarmerSignup: React.FC = () => {
   const [otpVerifying, setOtpVerifying] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [isGettingLocation, setIsGettingLocation] = useState(false);
-  
-  const [formData, setFormData] = useState<FormData>({
-    fullName: "",
-    email: "",
-    phone: "",
-    gender: "",
-    age: "",
-    idNumber: "",
-    address: "",
-    password: "",
-    confirmPassword: "",
-    numberOfCows: "",
-    primaryBreed: "",
-    breedCount: "",
-    breedingMethod: "",
-    feedingType: "",
-    farmLocation: "",
-    idFrontFile: null,
-    idBackFile: null,
-    selfieFile: null,
-    idFrontPreview: "",
-    idBackPreview: "",
-    selfiePreview: ""
+
+  const [formData, setFormData] = useState<FormData>(() => {
+    const savedData = localStorage.getItem('farmer_signup_data');
+    if (savedData) {
+      try {
+        const parsed = JSON.parse(savedData);
+        // Ensure file arrays are initialized as empty (files can't be persisted safely in LS)
+        return {
+          ...parsed,
+          idFrontFiles: [],
+          idBackFiles: [],
+          selfieFiles: []
+        };
+      } catch (e) {
+        console.error("Failed to parse saved signup data", e);
+      }
+    }
+    return {
+      fullName: "",
+      email: "",
+      phone: "",
+      gender: "",
+      age: "",
+      idNumber: "",
+      address: "",
+      password: "",
+      confirmPassword: "",
+      numberOfCows: "",
+      primaryBreed: "",
+      breedCount: "",
+      breedingMethod: "",
+      feedingType: "",
+      farmLocation: "",
+      idFrontFiles: [],
+      idBackFiles: [],
+      selfieFiles: [],
+    };
   });
-  
-  const { refreshUserRole } = useAuth();
+
+  // Persist form data and step
+  useEffect(() => {
+    // Save Step
+    localStorage.setItem('farmer_signup_step', currentStep.toString());
+
+    // Save Data (exclude files)
+    const dataToSave = { ...formData, idFrontFiles: [], idBackFiles: [], selfieFiles: [] };
+    localStorage.setItem('farmer_signup_data', JSON.stringify(dataToSave));
+  }, [formData, currentStep]);
+
+  // Removed auto-advance logic - users should manually click "Next" after OTP verification
+
+  const { refreshSession } = useAuth();
 
   // OTP attempt tracking functions
   const getOtpAttemptsMap = (): Record<string, number[]> => {
@@ -199,10 +232,10 @@ const FarmerSignup: React.FC = () => {
     const error = urlParams.get('error');
     const errorCode = urlParams.get('error_code');
     const errorDescription = urlParams.get('error_description');
-    
+
     if (error || errorCode) {
       console.error('Authentication error:', { error, errorCode, errorDescription });
-      
+
       if (errorCode === 'otp_expired' || errorDescription?.includes('expired')) {
         toast({
           title: "Link Expired",
@@ -249,9 +282,9 @@ const FarmerSignup: React.FC = () => {
       return { isValid: false, error: 'Password must be at least 8 characters' };
     }
     if (!PASSWORD_REGEX.test(data.password)) {
-      return { 
-        isValid: false, 
-        error: 'Password must include uppercase, lowercase, number, and special character' 
+      return {
+        isValid: false,
+        error: 'Password must include uppercase, lowercase, number, and special character'
       };
     }
     if (data.password !== data.confirmPassword) {
@@ -290,15 +323,8 @@ const FarmerSignup: React.FC = () => {
   };
 
   // Handle file uploads for KYC
-  const handleFileChange = async (field: 'idFrontFile' | 'idBackFile' | 'selfieFile', file: File | null) => {
-    if (!file) {
-      setFormData(prev => ({
-        ...prev,
-        [field]: null,
-        [`${field.replace('File', 'Preview')}`]: ""
-      }));
-      return;
-    }
+  const handleFileChange = async (field: 'idFrontFiles' | 'idBackFiles' | 'selfieFiles', file: File | null) => {
+    if (!file) return;
 
     // Validate file type
     if (!ALLOWED_FILE_TYPES.includes(file.type)) {
@@ -334,10 +360,15 @@ const FarmerSignup: React.FC = () => {
     // Create preview
     const reader = new FileReader();
     reader.onloadend = () => {
+      const newFile: DocumentFile = {
+        id: Math.random().toString(36).substring(7),
+        file: file,
+        preview: reader.result as string
+      };
+
       setFormData(prev => ({
         ...prev,
-        [field]: file,
-        [`${field.replace('File', 'Preview')}`]: reader.result as string
+        [field]: [...prev[field], newFile]
       }));
     };
 
@@ -350,6 +381,13 @@ const FarmerSignup: React.FC = () => {
     };
 
     reader.readAsDataURL(file);
+  };
+
+  const handleRemoveFile = (field: 'idFrontFiles' | 'idBackFiles' | 'selfieFiles', id: string) => {
+    setFormData(prev => ({
+      ...prev,
+      [field]: prev[field].filter(f => f.id !== id)
+    }));
   };
 
   const validateStep = (step: number): { isValid: boolean; error?: string } => {
@@ -396,9 +434,9 @@ const FarmerSignup: React.FC = () => {
         const requiredFarmFields = ['numberOfCows', 'breedingMethod', 'feedingType', 'farmLocation'] as const;
         for (const field of requiredFarmFields) {
           if (!formData[field]?.trim()) {
-            return { 
-              isValid: false, 
-              error: `${field.replace(/([A-Z])/g, ' $1').toLowerCase()} is required` 
+            return {
+              isValid: false,
+              error: `${field.replace(/([A-Z])/g, ' $1').toLowerCase()} is required`
             };
           }
         }
@@ -420,37 +458,23 @@ const FarmerSignup: React.FC = () => {
         }
 
         if (breedCount > numCows) {
-          return { 
-            isValid: false, 
-            error: "Breed count cannot exceed total number of cows" 
+          return {
+            isValid: false,
+            error: "Breed count cannot exceed total number of cows"
           };
         }
 
       } else if (step === 3) {
         // KYC Documents validation
         const requiredFiles = [
-          { file: formData.idFrontFile, name: 'ID front photo' },
-          { file: formData.idBackFile, name: 'ID back photo' },
-          { file: formData.selfieFile, name: 'selfie photo' }
+          { files: formData.idFrontFiles, name: 'ID front photo' },
+          { files: formData.idBackFiles, name: 'ID back photo' },
+          { files: formData.selfieFiles, name: 'selfie photo' }
         ];
 
-        for (const { file, name } of requiredFiles) {
-          if (!file) {
-            return { isValid: false, error: `Please upload ${name}` };
-          }
-          
-          if (!ALLOWED_FILE_TYPES.includes(file.type)) {
-            return { 
-              isValid: false, 
-              error: `${name} must be a JPEG or PNG file` 
-            };
-          }
-
-          if (file.size > MAX_FILE_SIZE) {
-            return { 
-              isValid: false, 
-              error: `${name} must be less than 5MB` 
-            };
+        for (const { files, name } of requiredFiles) {
+          if (!files || files.length === 0) {
+            return { isValid: false, error: `Please upload at least one ${name}` };
           }
         }
       }
@@ -458,9 +482,9 @@ const FarmerSignup: React.FC = () => {
       return { isValid: true };
     } catch (error) {
       console.error('Validation error:', error);
-      return { 
-        isValid: false, 
-        error: "An error occurred during validation. Please try again." 
+      return {
+        isValid: false,
+        error: "An error occurred during validation. Please try again."
       };
     }
   };
@@ -506,7 +530,7 @@ const FarmerSignup: React.FC = () => {
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         const { latitude, longitude } = position.coords;
-        
+
         try {
           const locationText = `Lat: ${latitude.toFixed(6)}, Lng: ${longitude.toFixed(6)}`;
           setFormData(prev => ({ ...prev, [field]: locationText }));
@@ -528,7 +552,7 @@ const FarmerSignup: React.FC = () => {
       (error) => {
         console.error("Geolocation error:", error);
         let errorMessage = "Could not get your location. Please enter manually.";
-        
+
         if (error.code === 1) {
           // PERMISSION_DENIED
           errorMessage = "Location access was denied. Please enable location permissions or enter your address manually.";
@@ -539,7 +563,7 @@ const FarmerSignup: React.FC = () => {
           // TIMEOUT
           errorMessage = "Location request timed out. Please try again or enter your address manually.";
         }
-        
+
         toast({
           title: "Location Error",
           description: errorMessage,
@@ -619,8 +643,8 @@ const FarmerSignup: React.FC = () => {
 
       // Send OTP
       const result = await OtpService.sendOtp(
-        formData.email.toLowerCase().trim(), 
-        userProfile, 
+        formData.email.toLowerCase().trim(),
+        userProfile,
         formData.password
       );
 
@@ -639,7 +663,7 @@ const FarmerSignup: React.FC = () => {
 
     } catch (error: any) {
       console.error('OTP send error:', error);
-      
+
       const errorMessage = error.message?.toLowerCase?.() || '';
       if (errorMessage.includes('already registered') || errorMessage.includes('already exists')) {
         toast({
@@ -686,7 +710,7 @@ const FarmerSignup: React.FC = () => {
 
       // Verify OTP
       const result = await OtpService.verifyOtp(formData.email, otpToken);
-      
+
       if (result.success) {
         setOtpVerified(true);
         toast({
@@ -708,13 +732,13 @@ const FarmerSignup: React.FC = () => {
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    
+
     // Clean up old storage items to free up space
     cleanupOldStorageItems();
 
     try {
       console.log('FarmerSignup: Starting registration process');
-      
+
       // Get session from email verification
       let session;
       try {
@@ -769,7 +793,7 @@ const FarmerSignup: React.FC = () => {
           role: 'farmer',
           active: true
         }, {
-          onConflict: 'user_id'
+          onConflict: 'user_id,role'
         });
 
       if (roleError) {
@@ -780,7 +804,7 @@ const FarmerSignup: React.FC = () => {
       // Validate data before creating pending_farmer record
       const allowedFeedingTypes = ['zero_grazing', 'field_grazing', 'mixed'];
       const allowedBreedingMethods = ['male_bull', 'artificial_insemination', 'both'];
-      
+
       if (!allowedFeedingTypes.includes(formData.feedingType)) {
         throw new Error(`Invalid feeding type. Must be one of: ${allowedFeedingTypes.join(', ')}`);
       }
@@ -799,8 +823,8 @@ const FarmerSignup: React.FC = () => {
         age: parseInt(formData.age),
         id_number: formData.idNumber.trim(),
         number_of_cows: parseInt(formData.numberOfCows),
-        cow_breeds: [{ 
-          breedName: formData.primaryBreed, 
+        cow_breeds: [{
+          breedName: formData.primaryBreed,
           count: parseInt(formData.breedCount)
         }],
         breeding_method: formData.breedingMethod,
@@ -840,34 +864,40 @@ const FarmerSignup: React.FC = () => {
       }
 
       // Insert with retry logic
+      // Insert with retry logic
       let insertError;
+      let pendingFarmerId;
+
       for (let attempt = 1; attempt <= 3; attempt++) {
         try {
-          const { error } = await supabase
+          const { data, error } = await supabase
             .from('pending_farmers')
-            .insert([pendingFarmerData]);
+            .insert([pendingFarmerData])
+            .select()
+            .single();
 
-          if (!error) {
+          if (!error && data) {
+            pendingFarmerId = data.id;
             insertError = null;
             break;
           }
 
           insertError = error;
-          
+
           console.error('Insert error details:', {
-            code: error.code,
-            message: error.message,
-            details: error.details,
-            hint: error.hint
+            code: error?.code,
+            message: error?.message,
+            details: error?.details,
+            hint: error?.hint
           });
 
           // Handle specific database constraint violations
-          if (error.code === '23514') { // Check constraint violation
-            if (error.message?.includes('status_check')) {
+          if (error?.code === '23514') { // Check constraint violation
+            if (error?.message?.includes('status_check')) {
               console.error('Status constraint error:', pendingFarmerData.status);
               throw new Error('Registration status is invalid. Please try again.');
             }
-            if (error.message?.includes('feeding_type_check')) {
+            if (error?.message?.includes('feeding_type_check')) {
               console.error('Feeding type error:', pendingFarmerData.feeding_type);
               throw new Error('Please select a valid feeding type (zero_grazing, field_grazing, or mixed).');
             }
@@ -875,7 +905,7 @@ const FarmerSignup: React.FC = () => {
           }
 
           // Only retry on timeout/network errors
-          if (error.code !== 'PGRST504' && !error.message?.includes('timeout')) {
+          if (error?.code !== 'PGRST504' && !error?.message?.includes('timeout')) {
             break;
           }
 
@@ -884,7 +914,7 @@ const FarmerSignup: React.FC = () => {
         } catch (error: any) {
           console.error('Farmer profile creation error:', error);
           insertError = error;
-          
+
           // Don't retry on validation/constraint errors
           if (error.code?.startsWith('23')) {
             break;
@@ -892,34 +922,57 @@ const FarmerSignup: React.FC = () => {
         }
       }
 
-      if (insertError) {
+      if (insertError || !pendingFarmerId) {
         console.error('FarmerSignup: Insert error details', insertError);
-        throw new Error(`Failed to create farmer profile: ${insertError.message}`);
+        throw new Error(`Failed to create farmer profile: ${insertError?.message || 'Unknown error'}`);
       }
 
-      // Store files for later upload (but don't store the actual file data due to storage limits)
-      const fileData = {
-        userId: userId,
-        idFront: {
-          name: formData.idFrontFile?.name,
-          type: formData.idFrontFile?.type,
-          size: formData.idFrontFile?.size
-        },
-        idBack: {
-          name: formData.idBackFile?.name,
-          type: formData.idBackFile?.type,
-          size: formData.idBackFile?.size
-        },
-        selfie: {
-          name: formData.selfieFile?.name,
-          type: formData.selfieFile?.type,
-          size: formData.selfieFile?.size
+      // Upload KYC Documents
+      const fileGroups = [
+        { type: 'id_front', files: formData.idFrontFiles, fieldName: 'idFrontFiles' },
+        { type: 'id_back', files: formData.idBackFiles, fieldName: 'idBackFiles' },
+        { type: 'selfie', files: formData.selfieFiles, fieldName: 'selfieFiles' }
+      ];
+
+      for (const group of fileGroups) {
+        for (const docFile of group.files) {
+          const file = docFile.file;
+          const fileExtension = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+          const fileName = `${userId}_${group.type}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExtension}`;
+          const filePath = `${userId}/${group.type}/${fileName}`;
+
+          // Upload to Storage
+          const { error: uploadError } = await supabase.storage
+            .from('kyc-documents')
+            .upload(filePath, file, { cacheControl: '3600', upsert: false });
+
+          if (uploadError) {
+            console.error(`Failed to upload ${group.type} file`, uploadError);
+            // Continue uploading others, or throw? better to log and maybe alert user later
+            // For now, we continue but don't insert metadata
+            continue;
+          }
+
+          // Insert Metadata
+          const { error: metaError } = await supabase
+            .from('kyc_documents')
+            .insert([{
+              pending_farmer_id: pendingFarmerId,
+              farmer_id: null,
+              document_type: group.type,
+              file_name: fileName,
+              file_path: filePath,
+              file_size: file.size,
+              mime_type: file.type,
+              status: 'pending'
+            }]);
+
+          if (metaError) {
+            console.error(`Failed to insert metadata for ${group.type}`, metaError);
+          }
         }
-      };
-      
-      // Store file metadata (without actual file data)
-      localStorage.setItem('pending_kyc_files', JSON.stringify(fileData));
-      
+      }
+
       // Store minimal registration data for reference
       localStorage.setItem('pending_registration', JSON.stringify({
         email: formData.email,
@@ -931,32 +984,47 @@ const FarmerSignup: React.FC = () => {
       // Set user role in localStorage to speed up authentication
       localStorage.setItem('cached_role', 'farmer');
       localStorage.setItem('auth_cache_timestamp', Date.now().toString());
-      
+
+      // Explicitly assign 'farmer' role to ensure access
+      // We try to insert/update the role to ensure the user can access protected routes
+      const { error: roleAssignError } = await supabase
+        .from('user_roles')
+        .upsert(
+          { user_id: userId, role: 'farmer', active: true },
+          { onConflict: 'user_id,role' }
+        );
+
+      if (roleAssignError) {
+        console.error('Failed to assign farmer role:', roleAssignError);
+        // We log but don't throw, as a trigger might have already handled it 
+        // or RLS might be preventing it (though unlikely for self-registration flows usually)
+      }
+
       // Refresh user role in auth context to ensure it's picked up immediately
       // We'll trigger this after the async function completes
-      
+
       toast({
         title: "Registration Submitted",
-        description: "Your application has been submitted. You can now upload your KYC documents."
+        description: "Your application and documents have been submitted successfully."
       });
-      
+
       // Refresh user role to ensure it's picked up immediately
       try {
-        await refreshUserRole();
+        await refreshSession();
         // Add a small delay to ensure the role is properly set
         await new Promise(resolve => setTimeout(resolve, 100));
       } catch (error) {
         console.error('Failed to refresh user role', error);
       }
-      
-      // Navigate to KYC upload page immediately
-      console.log('FarmerSignup: Attempting navigation to KYC upload page');
-      debugNavigate('/farmer/kyc-upload');
+
+      // Navigate to application status page to show submission confirmation
+      console.log('FarmerSignup: Attempting navigation to application status page');
+      debugNavigate('/farmer/application-status');
       console.log('FarmerSignup: Navigation call completed');
-      
+
     } catch (error: any) {
       console.error("Registration error:", error);
-      
+
       // Handle specific error cases
       if (error.message?.includes('verify your email')) {
         toast({
@@ -967,7 +1035,7 @@ const FarmerSignup: React.FC = () => {
         setCurrentStep(1); // Go back to email verification step
         return;
       }
-      
+
       toast({
         title: "Registration Error",
         description: error.message || "Failed to complete registration. Please try again.",
@@ -982,7 +1050,7 @@ const FarmerSignup: React.FC = () => {
     <div className="min-h-screen bg-gradient-to-br from-background to-secondary/10">
       {/* Navigation Diagnostics - Only show in development */}
       {import.meta.env.DEV && <NavigationDiagnostics />}
-      
+
       {/* Header */}
       <header className="border-b border-border bg-background/80 backdrop-blur-sm sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4">
@@ -991,8 +1059,8 @@ const FarmerSignup: React.FC = () => {
               <Milk className="h-8 w-8 text-primary" />
               <span className="text-xl font-bold">DAIRY FARMERS OF TRANS-NZOIA</span>
             </div>
-            <Button 
-              variant="ghost" 
+            <Button
+              variant="ghost"
               onClick={() => navigate('/')}
               className="flex items-center gap-2"
             >
@@ -1025,11 +1093,10 @@ const FarmerSignup: React.FC = () => {
             <div className="flex items-center justify-between relative">
               {[1, 2, 3].map((step) => (
                 <div key={step} className="flex flex-col items-center z-10">
-                  <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-white shadow-lg ${
-                    currentStep >= step 
-                      ? 'bg-gradient-to-r from-primary to-primary/80' 
-                      : 'bg-muted'
-                  }`}>
+                  <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-white shadow-lg ${currentStep >= step
+                    ? 'bg-gradient-to-r from-primary to-primary/80'
+                    : 'bg-muted'
+                    }`}>
                     {currentStep > step ? <CheckCircle className="w-6 h-6" /> : step}
                   </div>
                   <span className="mt-2 text-sm font-medium">
@@ -1040,7 +1107,7 @@ const FarmerSignup: React.FC = () => {
                 </div>
               ))}
               <div className="absolute top-6 left-0 right-0 h-1 bg-muted z-0">
-                <div 
+                <div
                   className="h-full bg-gradient-to-r from-primary to-primary/80 transition-all duration-500"
                   style={{ width: `${(currentStep - 1) * 50}%` }}
                 />
@@ -1449,7 +1516,7 @@ const FarmerSignup: React.FC = () => {
                             </SelectContent>
                           </Select>
                         </div>
-                        
+
                         <div className="space-y-2">
                           <Label htmlFor="breedCount">Number of Cows (Primary Breed)</Label>
                           <Input
@@ -1499,172 +1566,85 @@ const FarmerSignup: React.FC = () => {
                             <li>• Images must be clear and readable</li>
                             <li>• Accepted formats: JPEG, PNG</li>
                             <li>• Maximum file size: 5MB per image</li>
-                            <li>• Minimum dimensions: 600x400 pixels</li>
-                            <li>• All three documents are required</li>
+                            <li>• All three documents are required (at least one image for each)</li>
                           </ul>
                         </div>
                       </div>
                     </div>
 
-                    {/* ID Front Upload */}
-                    <div className="space-y-2">
-                      <Label htmlFor="idFront">ID Card - Front Side *</Label>
-                      <div className="border-2 border-dashed rounded-lg p-6 text-center hover:border-primary transition-colors">
-                        {formData.idFrontPreview ? (
-                          <div className="relative">
-                            <img 
-                              src={formData.idFrontPreview} 
-                              alt="ID Front Preview" 
-                              className="max-h-64 mx-auto rounded-lg"
-                            />
-                            <Button
-                              type="button"
-                              variant="destructive"
-                              size="sm"
-                              className="absolute top-2 right-2"
-                              onClick={() => handleFileChange('idFrontFile', null)}
-                            >
-                              <X className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        ) : (
-                          <div className="space-y-4">
-                            <div className="flex justify-center">
-                              <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center">
-                                <Upload className="w-8 h-8 text-primary" />
+                    {[
+                      {
+                        id: 'idFront',
+                        label: 'ID Card - Front Side',
+                        field: 'idFrontFiles' as const
+                      },
+                      {
+                        id: 'idBack',
+                        label: 'ID Card - Back Side',
+                        field: 'idBackFiles' as const
+                      },
+                      {
+                        id: 'selfie',
+                        label: 'Selfie Photo',
+                        field: 'selfieFiles' as const
+                      }
+                    ].map((section) => (
+                      <div key={section.id} className="space-y-2">
+                        <Label htmlFor={section.id}>{section.label} *</Label>
+                        <div className="border-2 border-dashed rounded-lg p-6 hover:border-primary transition-colors">
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
+                            {formData[section.field].map((file) => (
+                              <div key={file.id} className="relative group">
+                                <img
+                                  src={file.preview}
+                                  alt="Preview"
+                                  className="w-full h-32 object-cover rounded-lg border border-border"
+                                />
+                                <Button
+                                  type="button"
+                                  variant="destructive"
+                                  size="sm"
+                                  className="absolute top-1 right-1 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                                  onClick={() => handleRemoveFile(section.field, file.id)}
+                                >
+                                  <X className="h-3 w-3" />
+                                </Button>
                               </div>
-                            </div>
-                            <div>
-                              <p className="text-sm text-muted-foreground mb-2">
-                                Click to upload or drag and drop
-                              </p>
-                              <Input
-                                id="idFront"
-                                type="file"
-                                accept="image/jpeg,image/png,image/jpg"
-                                onChange={(e) => handleFileChange('idFrontFile', e.target.files?.[0] || null)}
-                                className="hidden"
-                              />
-                              <Button
-                                type="button"
-                                variant="outline"
-                                onClick={() => document.getElementById('idFront')?.click()}
-                              >
-                                <ImageIcon className="mr-2 h-4 w-4" />
-                                Choose File
-                              </Button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                            ))}
 
-                    {/* ID Back Upload */}
-                    <div className="space-y-2">
-                      <Label htmlFor="idBack">ID Card - Back Side *</Label>
-                      <div className="border-2 border-dashed rounded-lg p-6 text-center hover:border-primary transition-colors">
-                        {formData.idBackPreview ? (
-                          <div className="relative">
-                            <img 
-                              src={formData.idBackPreview} 
-                              alt="ID Back Preview" 
-                              className="max-h-64 mx-auto rounded-lg"
-                            />
-                            <Button
-                              type="button"
-                              variant="destructive"
-                              size="sm"
-                              className="absolute top-2 right-2"
-                              onClick={() => handleFileChange('idBackFile', null)}
-                            >
-                              <X className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        ) : (
-                          <div className="space-y-4">
-                            <div className="flex justify-center">
-                              <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center">
-                                <Upload className="w-8 h-8 text-primary" />
-                              </div>
-                            </div>
-                            <div>
-                              <p className="text-sm text-muted-foreground mb-2">
-                                Click to upload or drag and drop
-                              </p>
+                            {/* Upload Button */}
+                            <div className="relative">
                               <Input
-                                id="idBack"
+                                id={section.id}
                                 type="file"
                                 accept="image/jpeg,image/png,image/jpg"
-                                onChange={(e) => handleFileChange('idBackFile', e.target.files?.[0] || null)}
+                                onChange={(e) => {
+                                  handleFileChange(section.field, e.target.files?.[0] || null);
+                                  // Reset input value to allow uploading same file again
+                                  if (e.target) e.target.value = '';
+                                }}
                                 className="hidden"
                               />
                               <Button
                                 type="button"
                                 variant="outline"
-                                onClick={() => document.getElementById('idBack')?.click()}
+                                className="w-full h-32 flex flex-col items-center justify-center gap-2 border-dashed"
+                                onClick={() => document.getElementById(section.id)?.click()}
                               >
-                                <ImageIcon className="mr-2 h-4 w-4" />
-                                Choose File
+                                <Upload className="h-6 w-6 text-muted-foreground" />
+                                <span className="text-xs text-muted-foreground">Add Photo</span>
                               </Button>
                             </div>
                           </div>
-                        )}
-                      </div>
-                    </div>
 
-                    {/* Selfie Upload */}
-                    <div className="space-y-2">
-                      <Label htmlFor="selfie">Selfie Photo *</Label>
-                      <div className="border-2 border-dashed rounded-lg p-6 text-center hover:border-primary transition-colors">
-                        {formData.selfiePreview ? (
-                          <div className="relative">
-                            <img 
-                              src={formData.selfiePreview} 
-                              alt="Selfie Preview" 
-                              className="max-h-64 mx-auto rounded-lg"
-                            />
-                            <Button
-                              type="button"
-                              variant="destructive"
-                              size="sm"
-                              className="absolute top-2 right-2"
-                              onClick={() => handleFileChange('selfieFile', null)}
-                            >
-                              <X className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        ) : (
-                          <div className="space-y-4">
-                            <div className="flex justify-center">
-                              <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center">
-                                <Camera className="w-8 h-8 text-primary" />
-                              </div>
-                            </div>
-                            <div>
-                              <p className="text-sm text-muted-foreground mb-2">
-                                Take a clear selfie or upload photo
-                              </p>
-                              <Input
-                                id="selfie"
-                                type="file"
-                                accept="image/jpeg,image/png,image/jpg"
-                                capture="user"
-                                onChange={(e) => handleFileChange('selfieFile', e.target.files?.[0] || null)}
-                                className="hidden"
-                              />
-                              <Button
-                                type="button"
-                                variant="outline"
-                                onClick={() => document.getElementById('selfie')?.click()}
-                              >
-                                <Camera className="mr-2 h-4 w-4" />
-                                Take/Upload Selfie
-                              </Button>
-                            </div>
-                          </div>
-                        )}
+                          {formData[section.field].length === 0 && (
+                            <p className="text-sm text-center text-muted-foreground">
+                              No photos uploaded yet. Click above to add photos.
+                            </p>
+                          )}
+                        </div>
                       </div>
-                    </div>
+                    ))}
 
                     <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
                       <div className="flex items-start gap-3">

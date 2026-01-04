@@ -57,20 +57,6 @@ CREATE POLICY "Collectors can read collections they've made"
     WHERE s.user_id = auth.uid()
   ));
 
--- MILK QUALITY PARAMETERS TABLE
--- Collectors can view quality parameters for collections they've made
-ALTER TABLE IF EXISTS public.milk_quality_parameters ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "Collectors can read quality params for collections they've made" ON public.milk_quality_parameters;
-
-CREATE POLICY "Collectors can read quality params for collections they've made" 
-  ON public.milk_quality_parameters FOR SELECT 
-  TO authenticated
-  USING (collection_id IN (
-    SELECT c.id FROM public.collections c
-    JOIN public.staff s ON c.staff_id = s.id
-    WHERE s.user_id = auth.uid()
-  ));
 
 -- FARMERS TABLE
 -- Collectors can view farmers they collect from
@@ -102,20 +88,6 @@ CREATE POLICY "Collectors can read kyc documents for farmers they collect from"
     WHERE s.user_id = auth.uid()
   ));
 
--- FARMER ANALYTICS TABLE
--- Collectors can view analytics for farmers they collect from
-ALTER TABLE IF EXISTS public.farmer_analytics ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "Collectors can read analytics for farmers they collect from" ON public.farmer_analytics;
-
-CREATE POLICY "Collectors can read analytics for farmers they collect from" 
-  ON public.farmer_analytics FOR SELECT 
-  TO authenticated
-  USING (farmer_id IN (
-    SELECT DISTINCT c.farmer_id FROM public.collections c
-    JOIN public.staff s ON c.staff_id = s.id
-    WHERE s.user_id = auth.uid()
-  ));
 
 -- COLLECTION PAYMENTS TABLE
 -- Collectors can view payment details for collections they've made
@@ -200,46 +172,3 @@ CREATE POLICY "Collectors can read their own payments"
     WHERE s.user_id = auth.uid()
   ));
 
--- FARMER CHARGES TABLE
--- Collectors can view charges they've applied
-ALTER TABLE IF EXISTS public.farmer_charges ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "Collectors can read charges they've applied" ON public.farmer_charges;
-
-CREATE POLICY "Collectors can read charges they've applied" 
-  ON public.farmer_charges FOR SELECT 
-  TO authenticated
-  USING (applied_by IN (
-    SELECT s.id FROM public.staff s 
-    WHERE s.user_id = auth.uid()
-  ));
-
--- COLLECTOR PENALTY ACCOUNTS TABLE
--- Collectors can view their own penalty account
-ALTER TABLE IF EXISTS public.collector_penalty_accounts ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "Collectors can read their own penalty account" ON public.collector_penalty_accounts;
-
-CREATE POLICY "Collectors can read their own penalty account" 
-  ON public.collector_penalty_accounts FOR SELECT 
-  TO authenticated
-  USING (collector_id IN (
-    SELECT s.id FROM public.staff s 
-    WHERE s.user_id = auth.uid()
-  ));
-
--- COLLECTOR PENALTY TRANSACTIONS TABLE
--- Collectors can view their own penalty transactions
-ALTER TABLE IF EXISTS public.collector_penalty_transactions ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "Collectors can read their own penalty transactions" ON public.collector_penalty_transactions;
-
-CREATE POLICY "Collectors can read their own penalty transactions" 
-  ON public.collector_penalty_transactions FOR SELECT 
-  TO authenticated
-  USING (collector_id IN (
-    SELECT s.id FROM public.staff s 
-    WHERE s.user_id = auth.uid()
-  ));
-
-COMMIT;

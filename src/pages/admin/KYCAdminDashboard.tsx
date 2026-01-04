@@ -41,7 +41,7 @@ const KYCAdminDashboard = () => {
   const [viewingDocument, setViewingDocument] = useState<string | null>(null); // URL of document being viewed
 
   const { data: kycData, isLoading, isError, error, refetch } = useKYCAdminData(searchTerm, statusFilter);
-  
+
   const farmers = kycData?.farmers || [];
   const stats = kycData?.stats || {
     total: 0,
@@ -94,7 +94,7 @@ const KYCAdminDashboard = () => {
         (payload) => {
           // If we're viewing a farmer's details, refresh their documents
           if (selectedFarmer) {
-            fetchDocuments(selectedFarmer.id);
+            fetchDocuments(selectedFarmer);
           }
           toast.success('New Document', 'A farmer has uploaded a new KYC document');
         }
@@ -107,13 +107,31 @@ const KYCAdminDashboard = () => {
     };
   }, [selectedFarmer, refetch]);
 
-  const fetchDocuments = async (farmerId: string) => {
+  const fetchDocuments = async (farmer: Farmer) => {
     try {
-      const { data, error } = await supabase
-        .from('kyc_documents')
-        .select('*')
-        .eq('farmer_id', farmerId)
-        .order('created_at', { ascending: false });
+      let query = supabase.from('kyc_documents').select('*');
+
+      if ((farmer.status as string) === 'approved' || (farmer.kyc_status as string) === 'approved') {
+        if (farmer.user_id) {
+          const { data: realFarmerData } = await supabase
+            .from('farmers')
+            .select('id')
+            .eq('user_id', farmer.user_id)
+            .single();
+
+          if (realFarmerData) {
+            query = query.eq('farmer_id', realFarmerData.id);
+          } else {
+            query = query.eq('pending_farmer_id', farmer.id);
+          }
+        } else {
+          query = query.eq('pending_farmer_id', farmer.id);
+        }
+      } else {
+        query = query.eq('pending_farmer_id', farmer.id);
+      }
+
+      const { data, error } = await query.order('created_at', { ascending: false });
 
       if (error) throw error;
 
@@ -126,7 +144,7 @@ const KYCAdminDashboard = () => {
 
   const viewFarmerDetails = (farmer: Farmer) => {
     setSelectedFarmer(farmer);
-    fetchDocuments(farmer.id);
+    fetchDocuments(farmer);
   };
 
   const approveFarmer = async () => {
@@ -134,7 +152,7 @@ const KYCAdminDashboard = () => {
 
     try {
       setActionLoading(true);
-      
+
       // Get current user
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
@@ -166,7 +184,7 @@ const KYCAdminDashboard = () => {
 
     try {
       setActionLoading(true);
-      
+
       // Get current user
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
@@ -196,28 +214,28 @@ const KYCAdminDashboard = () => {
   const handleViewDocument = async (filePath: string) => {
     try {
       console.log('Attempting to view document:', filePath);
-      
+
       // Try to get the public URL for the document first
       const { data: publicData } = supabase.storage
         .from('kyc-documents')
         .getPublicUrl(filePath);
-      
+
       if (publicData?.publicUrl) {
         console.log('Opening public URL:', publicData.publicUrl);
         setViewingDocument(publicData.publicUrl);
         return;
       }
-      
+
       // If public URL fails, try signed URL for admin access
       const { data: signedData, error: signedError } = await supabase.storage
         .from('kyc-documents')
         .createSignedUrl(filePath, 600); // 10 minutes expiry for admin view
-      
+
       if (signedError) {
         console.error('Signed URL error:', signedError);
         throw signedError;
       }
-      
+
       if (signedData?.signedUrl) {
         console.log('Opening signed URL:', signedData.signedUrl);
         setViewingDocument(signedData.signedUrl);
@@ -276,7 +294,7 @@ const KYCAdminDashboard = () => {
       a.download = `kyc-farmers-${new Date().toISOString().split('T')[0]}.csv`;
       a.click();
       URL.revokeObjectURL(url);
-      
+
       toast.success('Success', 'CSV exported successfully');
     } catch (error: any) {
       console.error('Error exporting CSV:', error);
@@ -308,9 +326,9 @@ const KYCAdminDashboard = () => {
               <p className="text-gray-600 mt-2">View and manage approved farmer profiles</p>
             </div>
             <div className="mt-4 md:mt-0">
-              <RefreshButton 
-                isRefreshing={loading} 
-                onRefresh={refetch} 
+              <RefreshButton
+                isRefreshing={loading}
+                onRefresh={refetch}
                 className="bg-white border-gray-300 hover:bg-gray-50 rounded-lg shadow-sm"
               />
             </div>
@@ -431,11 +449,11 @@ const KYCAdminDashboard = () => {
                           {farmer.national_id || 'N/A'}
                         </td>
                         <td className="px-6 py-4">
-                          <Badge 
+                          <Badge
                             variant={
                               farmer.kyc_status === 'approved' ? 'secondary' :
-                              farmer.kyc_status === 'rejected' ? 'destructive' :
-                              'default'
+                                farmer.kyc_status === 'rejected' ? 'destructive' :
+                                  'default'
                             }
                           >
                             {farmer.kyc_status || 'pending'}
@@ -508,11 +526,11 @@ const KYCAdminDashboard = () => {
                     </div>
                     <div>
                       <label className="text-sm text-gray-500">KYC Status</label>
-                      <Badge 
+                      <Badge
                         variant={
                           selectedFarmer.kyc_status === 'approved' ? 'secondary' :
-                          selectedFarmer.kyc_status === 'rejected' ? 'destructive' :
-                          'default'
+                            selectedFarmer.kyc_status === 'rejected' ? 'destructive' :
+                              'default'
                         }
                       >
                         {selectedFarmer.kyc_status || 'pending'}
@@ -539,11 +557,11 @@ const KYCAdminDashboard = () => {
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
-                              <Badge 
+                              <Badge
                                 variant={
                                   doc.status === 'approved' ? 'secondary' :
-                                  doc.status === 'rejected' ? 'destructive' :
-                                  'default'
+                                    doc.status === 'rejected' ? 'destructive' :
+                                      'default'
                                 }
                               >
                                 {doc.status || 'pending'}

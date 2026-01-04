@@ -18,24 +18,24 @@ const PROGRESS_STEP = 50;
  * Authentication Flow Manager
  * Coordinates authentication flow and provides smooth transitions between states
  */
-export const AuthFlowManager: React.FC<AuthFlowManagerProps> = ({ 
+export const AuthFlowManager: React.FC<AuthFlowManagerProps> = ({
   children,
   redirectPath = '/dashboard'
 }) => {
-  const { 
-    isAuthenticated, 
-    isLoading, 
+  const {
+    isAuthenticated,
+    isLoading,
     isSessionRefreshing,
     userRole
   } = useAuth();
-  
+
   // REMOVED: const { validateSession } = useSessionManager(); ← This was causing the loop!
   const navigate = useNavigate();
   const location = useLocation();
-  
+
   const [isInitializing, setIsInitializing] = useState(true);
   const [initProgress, setInitProgress] = useState(0);
-  
+
   // Track if component is mounted to prevent state updates after unmount
   const isMounted = useRef(true);
   const hasRedirected = useRef(false);
@@ -48,11 +48,11 @@ export const AuthFlowManager: React.FC<AuthFlowManagerProps> = ({
       logger.debug('Initializing authentication flow');
       setIsInitializing(true);
       setInitProgress(0);
-      
+
       // Step 1: Check user role
       setInitProgress(PROGRESS_STEP);
       await new Promise(resolve => setTimeout(resolve, INIT_DELAY));
-      
+
       // Step 2: Finalize
       if (isMounted.current) {
         setInitProgress(100);
@@ -75,7 +75,7 @@ export const AuthFlowManager: React.FC<AuthFlowManagerProps> = ({
    */
   const getRedirectPath = useCallback((role: string | null): string => {
     if (!role) return '/no-role'; // Redirect to no-role page instead of generic dashboard
-    
+
     // Role-based dashboard paths
     const rolePaths: Record<string, string> = {
       admin: '/admin/dashboard',
@@ -84,7 +84,7 @@ export const AuthFlowManager: React.FC<AuthFlowManagerProps> = ({
       collector: '/collector/dashboard',
       creditor: '/creditor/dashboard'
     };
-    
+
     return rolePaths[role] || '/no-role'; // Redirect to no-role page for unknown roles
   }, []);
 
@@ -92,7 +92,7 @@ export const AuthFlowManager: React.FC<AuthFlowManagerProps> = ({
    * Check if current path is a login/auth page
    */
   const isAuthPage = useCallback((pathname: string): boolean => {
-    const authPages = ['/login', '/signup', '/auth', '/reset-password'];
+    const authPages = ['/login', '/signup', '/register', '/auth', '/reset-password'];
     return authPages.some(page => pathname.includes(page));
   }, []);
 
@@ -107,8 +107,11 @@ export const AuthFlowManager: React.FC<AuthFlowManagerProps> = ({
    * Handle authentication redirects
    */
   const handleRedirect = useCallback(() => {
-    // Prevent multiple redirects
-    if (hasRedirected.current) {
+    // Prevent multiple redirects, UNLESS we are on the no-role page and now have a role
+    // This allows users to be "rescued" from the no-role screen once their role loads
+    const isRecoveringFromNoRole = isAuthenticated && userRole && isNoRolePage(location.pathname);
+
+    if (hasRedirected.current && !isRecoveringFromNoRole) {
       console.log('🚀 [AuthFlowManager] Redirect already handled, skipping');
       return;
     }
@@ -134,8 +137,16 @@ export const AuthFlowManager: React.FC<AuthFlowManagerProps> = ({
       return;
     }
 
-    // Case 2: User is authenticated but on an auth page (login/signup)
+    // Case 2: User is authenticated but on an auth page (login/signup/register)
     if (isAuthenticated && isAuthPage(pathname)) {
+      // Special handling for signup/register: If they are on signup or register, 
+      // DO NOT redirect. Let them finish the form.
+      // Even if they have a role (assigned early or from OTP verification), they need to finish the wizard.
+      if (pathname.includes('/signup') || pathname.includes('/register')) {
+        console.log('🚀 [AuthFlowManager] Authenticated on signup/register - staying on page to complete registration');
+        return;
+      }
+
       const targetPath = getRedirectPath(userRole);
       console.log('🚀 [AuthFlowManager] Redirecting from auth page to:', targetPath);
       logger.debug('Redirecting authenticated user to dashboard', { targetPath, userRole });
@@ -207,9 +218,9 @@ export const AuthFlowManager: React.FC<AuthFlowManagerProps> = ({
       handleRedirect();
     }
   }, [
-    isAuthenticated, 
-    isLoading, 
-    isInitializing, 
+    isAuthenticated,
+    isLoading,
+    isInitializing,
     location.pathname,
     userRole,
     handleRedirect
@@ -220,7 +231,7 @@ export const AuthFlowManager: React.FC<AuthFlowManagerProps> = ({
   // Don't show loading during session refresh to prevent loop
   if (isInitializing || (isLoading && !isSessionRefreshing)) {
     return (
-      <AuthLoadingScreen 
+      <AuthLoadingScreen
         message={getLoadingMessage(isInitializing, isSessionRefreshing)}
         showProgress={isInitializing}
         progress={initProgress}

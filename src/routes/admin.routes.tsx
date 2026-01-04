@@ -102,25 +102,25 @@ export const adminRoutes = [
 
 export default function AdminRoutes() {
   const location = useLocation();
-  
+
   console.log('🏢 [AdminRoutes] Component rendering:', {
     pathname: location.pathname,
     search: location.search,
     hash: location.hash,
     timestamp: new Date().toISOString()
   });
-  
-  AdminDebugLogger.route('AdminRoutes component rendering', { 
+
+  AdminDebugLogger.route('AdminRoutes component rendering', {
     pathname: location.pathname,
     search: location.search,
     hash: location.hash
   });
-  
+
   // Preload commonly accessed routes when on the dashboard
   useEffect(() => {
     console.log('🏢 [AdminRoutes] Preload effect triggered for:', location.pathname);
     AdminDebugLogger.route('Preload effect triggered', { pathname: location.pathname });
-    
+
     if (location.pathname.includes('dashboard')) {
       console.log('🏢 [AdminRoutes] On dashboard, preloading pages');
       AdminDebugLogger.route('On dashboard, preloading Farmers and Staff pages');
@@ -129,14 +129,14 @@ export default function AdminRoutes() {
       preloadRouteWhenIdle(() => import("../pages/admin/Staff"));
       preloadRouteWhenIdle(() => import("../pages/admin/PaymentSystem"));
     }
-    
+
     // Preload the dashboard when on other pages
     if (!location.pathname.includes('dashboard')) {
       console.log('🏢 [AdminRoutes] Not on dashboard, preloading AdminDashboard');
       AdminDebugLogger.route('Not on dashboard, preloading AdminDashboard');
       preloadRouteWhenIdle(() => import("../pages/admin/AdminDashboard"));
     }
-    
+
     // Preload payments page when on related pages
     if (location.pathname.includes('collections') || location.pathname.includes('analytics')) {
       console.log('🏢 [AdminRoutes] On related page, preloading PaymentSystem');
@@ -144,7 +144,7 @@ export default function AdminRoutes() {
       preloadRouteWhenIdle(() => import("../pages/admin/PaymentSystem"));
     }
   }, [location.pathname]);
-  
+
   return (
     <>
       <PreloadIndicator targetPath="/admin/payments" />
@@ -190,7 +190,7 @@ export default function AdminRoutes() {
                   <Route path="farmer-collections" element={<FarmerCollectionPage />} />
                   <Route path="kyc" element={<KYCAdminDashboard />} />
                   <Route path="kyc-pending-farmers" element={<KYCPendingFarmersDashboard />} />
-                  <Route path="kyc-pending-farmer/:id" element={<KYCPendingFarmerDetails />} />
+                  <Route path="kyc-pending-farmers/:id" element={<KYCPendingFarmerDetails />} />
                   <Route path="kyc-storage-test" element={<KYCStorageTest />} />
                   <Route path="settings" element={<Settings />} />
                   <Route path="invite" element={<AdminInvite />} />

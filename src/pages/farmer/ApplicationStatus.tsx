@@ -52,41 +52,67 @@ const ApplicationStatus = () => {
 
       // Get current user
       const { data: { user }, error: userError } = await supabase.auth.getUser();
-      
+
       if (userError || !user) {
         console.error('User not authenticated:', userError);
         navigate('/farmer/login');
         return;
       }
 
-      // Fetch farmer data from pending_farmers table
-      const { data, error } = await supabase
+      console.log("Fetching status for user:", user.id);
+
+      // 1. First check pending_farmers
+      const { data: pendingData, error: pendingError } = await supabase
         .from('pending_farmers')
-        .select('status, full_name, email, created_at, rejection_reason, email_verified, submitted_at')
-        .eq('user_id', user.id);
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle();
 
-      if (error) {
-        console.error('Error fetching farmer data:', error);
-        toast.error("Error", "Failed to load application status");
-        return;
+      if (pendingError) {
+        console.error('Error fetching pending farmer data:', pendingError);
       }
 
-      // Check if we have data and handle accordingly
-      const farmerData = data && data.length > 0 ? data[0] : null;
+      // 2. Then check farmers (in case already approved)
+      const { data: approvedData, error: approvedError } = await supabase
+        .from('farmers')
+        .select('*') // Select minimal needed fields
+        .eq('user_id', user.id)
+        .maybeSingle();
 
-      if (!farmerData) {
-        console.error('No farmer data found for user:', user.id);
-        toast.error("Error", "No application found");
-        return;
+      if (approvedError) {
+        console.error('Error fetching approved farmer data:', approvedError);
       }
 
-      setFarmerData(farmerData);
+      // Determine efficient status
+      if (approvedData) {
+        setFarmerData({
+          status: 'approved',
+          full_name: approvedData.first_name + ' ' + approvedData.last_name, // Adjust based on farmers table schema
+          email: user.email || '',
+          created_at: approvedData.created_at,
+          updated_at: approvedData.updated_at,
+          email_verified: true,
+          kyc_complete: true,
+          required_documents: [], // Not needed for approved
+          verification_steps: []
+        } as FarmerData);
 
-      // If approved, redirect to dashboard
-      if (farmerData.status === 'approved') {
         toast.success("Approved!", "Your application has been approved. Redirecting to dashboard...");
         setTimeout(() => navigate('/farmer/dashboard'), 2000);
+        return;
       }
+
+      if (pendingData) {
+        setFarmerData(pendingData as FarmerData);
+        return;
+      }
+
+      // If we reach here, no data was found in either table
+      console.warn('No farmer data found in pending_farmers OR farmers for user:', user.id);
+
+      // Fallback: Check if registration was *just* completed (local storage flag?)
+      // We will show a "Processing" state instead of "Not Found" if it's confusing
+      // For now, we set null, but we'll handle the UI to be less aggressive
 
     } catch (error: any) {
       console.error('Error:', error);
@@ -134,12 +160,21 @@ const ApplicationStatus = () => {
       <div className="min-h-screen bg-gradient-to-br from-background to-secondary/10 flex items-center justify-center p-4">
         <Card className="max-w-md w-full">
           <CardHeader>
-            <CardTitle>No Application Found</CardTitle>
-            <CardDescription>We couldn't find your application</CardDescription>
+            <CardTitle>Application Not Found</CardTitle>
+            <CardDescription>
+              We couldn't retrieve your application status at this moment.
+              If you just registered, your data might still be processing.
+            </CardDescription>
           </CardHeader>
-          <CardContent>
-            <Button onClick={() => navigate('/farmer/signup')} className="w-full">
+          <CardContent className="space-y-4">
+            <Button onClick={fetchApplicationStatus} className="w-full" variant="default">
+              Retry Sync
+            </Button>
+            <Button onClick={() => navigate('/farmer/signup')} className="w-full" variant="outline">
               Start New Application
+            </Button>
+            <Button onClick={() => navigate('/farmer/login')} className="w-full" variant="ghost">
+              Back to Login
             </Button>
           </CardContent>
         </Card>
@@ -157,8 +192,8 @@ const ApplicationStatus = () => {
               <Milk className="h-8 w-8 text-primary" />
               <span className="text-xl font-bold">DAIRY FARMERS OF TRANS-NZOIA</span>
             </div>
-            <Button 
-              variant="ghost" 
+            <Button
+              variant="ghost"
               onClick={() => navigate('/')}
               className="flex items-center gap-2"
             >
@@ -173,11 +208,10 @@ const ApplicationStatus = () => {
         <div className="max-w-3xl mx-auto">
           {/* Status Icon and Title */}
           <div className="text-center mb-8">
-            <div className={`inline-flex items-center justify-center w-20 h-20 rounded-full mb-6 ${
-              (farmerData.status === 'pending_verification' || farmerData.status === 'email_verified') 
-                ? 'bg-blue-100 dark:bg-blue-900/20'
-                : 'bg-red-100 dark:bg-red-900/20'
-            }`}>
+            <div className={`inline-flex items-center justify-center w-20 h-20 rounded-full mb-6 ${(farmerData.status === 'pending_verification' || farmerData.status === 'email_verified')
+              ? 'bg-blue-100 dark:bg-blue-900/20'
+              : 'bg-red-100 dark:bg-red-900/20'
+              }`}>
               {(farmerData.status === 'pending_verification' || farmerData.status === 'email_verified') ? (
                 <Clock className="w-10 h-10 text-blue-600 dark:text-blue-400" />
               ) : (
@@ -202,7 +236,7 @@ const ApplicationStatus = () => {
                 <div>
                   <CardTitle>Application Status</CardTitle>
                   <CardDescription>
-                    {farmerData.submitted_at 
+                    {farmerData.submitted_at
                       ? `Submitted on ${formatDate(farmerData.submitted_at)}`
                       : `Created on ${formatDate(farmerData.created_at)}`}
                   </CardDescription>
@@ -229,7 +263,7 @@ const ApplicationStatus = () => {
                     <Clock className="h-4 w-4" />
                     <AlertTitle>Application Status</AlertTitle>
                     <AlertDescription>
-                      Your application is currently being reviewed by our team. 
+                      Your application is currently being reviewed by our team.
                       This process typically takes 1-3 business days.
                     </AlertDescription>
                   </Alert>
@@ -306,7 +340,7 @@ const ApplicationStatus = () => {
                   </div>
 
                   <div className="pt-4">
-                    <Button 
+                    <Button
                       onClick={() => navigate('/farmer/kyc-resubmit')}
                       className="w-full"
                     >
@@ -335,8 +369,8 @@ const ApplicationStatus = () => {
 
           {/* Action Buttons */}
           <div className="flex justify-center gap-4">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={() => navigate('/')}
             >
               <Home className="mr-2 h-4 w-4" />
