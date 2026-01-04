@@ -23,7 +23,7 @@ export class OtpService {
    * Send OTP to email and prepare for user creation.
    * The user will be created only after successful OTP verification.
    */
-  static async sendOtp(email: string, profile: UserProfile, password?: string) {
+  static async sendOtp(email: string, profile: Partial<UserProfile>, password?: string) {
     try {
       // Pass profile data and password through options.data
       // These will be used to create the user after OTP verification
