@@ -3,11 +3,11 @@ import { ReactNode, useMemo, useEffect, useCallback } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth'; // Updated import
 import { Button } from '@/components/ui/button';
-import { 
-  LayoutDashboard, 
-  Users, 
-  Milk, 
-  BarChart3, 
+import {
+  LayoutDashboard,
+  Users,
+  Milk,
+  BarChart3,
   Settings,
   LogOut,
   UserCog,
@@ -32,7 +32,8 @@ import {
   ChevronUp,
   ChevronDown,
   Eye,
-  Download as DownloadIcon // Added Download icon
+  Download as DownloadIcon, // Added Download icon
+  Smartphone // Added Smartphone icon
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
@@ -55,23 +56,23 @@ const roleNavigation: Record<string, NavItem[]> = {
   farmer: [
     // Main Dashboard
     { label: 'Dashboard', path: '/farmer/dashboard', icon: <LayoutDashboard className="h-5 w-5" />, category: 'main' },
-    
+
     // Operations - Core farming activities
     { label: 'My Collections', path: '/farmer/collections', icon: <Milk className="h-5 w-5" />, category: 'operations' },
-    
+
     // Finance - Payments and earnings
     { label: 'Payments', path: '/farmer/payments', icon: <Activity className="h-5 w-5" />, category: 'finance' },
     { label: 'Credit', path: '/farmer/credit', icon: <CreditCard className="h-5 w-5" />, category: 'finance' },
     { label: 'Analytics', path: '/farmer/analytics', icon: <BarChart3 className="h-5 w-5" />, category: 'finance' },
-    
+
     // Communication & Community
     { label: 'Community Forum', path: '/farmer/community', icon: <MessageCircle className="h-5 w-5" />, category: 'community' },
     { label: 'Notifications', path: '/farmer/notifications', icon: <Bell className="h-5 w-5" />, category: 'community' },
-    
+
     // Account Management
     { label: 'KYC Upload', path: '/farmer/kyc-upload', icon: <FileText className="h-5 w-5" />, category: 'account' },
     { label: 'Profile', path: '/farmer/profile', icon: <UserCog className="h-5 w-5" />, category: 'account' },
-    
+
     // System & Settings
     { label: 'Application Status', path: '/farmer/application-status', icon: <Activity className="h-5 w-5" />, category: 'system' },
     { label: 'Documents Under Review', path: '/farmer/documents-under-review', icon: <FileText className="h-5 w-5" />, category: 'system' },
@@ -161,7 +162,7 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
-  
+
   // Memoize the handleLogout function to prevent unnecessary re-renders
   const handleLogout = useCallback(async () => {
     try {
@@ -172,7 +173,7 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
         timestamp: new Date().toISOString(),
         path: location.pathname
       });
-      
+
       await logout(); // Changed signOut() to logout()
       console.log('[DashboardLayout] Logout completed successfully');
       console.log('[PortalAccess] User logout completed', {
@@ -180,7 +181,7 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
         userId: user?.id,
         timestamp: new Date().toISOString()
       });
-      
+
       // Redirect to role-specific login page or home
       if (userRole) {
         const loginPaths: Record<string, string> = {
@@ -190,7 +191,7 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
           'admin': '/admin/login',
           'creditor': '/creditor/login'
         };
-        
+
         const loginPath = loginPaths[userRole] || '/';
         console.log('[DashboardLayout] Redirecting to login page', { loginPath });
         console.log('[PortalAccess] Redirecting user after logout', {
@@ -214,7 +215,7 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
         error: error instanceof Error ? error.message : 'Unknown error',
         timestamp: new Date().toISOString()
       });
-      
+
       // Even if there's an error, still navigate to appropriate login page
       if (userRole) {
         const loginPaths: Record<string, string> = {
@@ -224,7 +225,7 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
           'admin': '/admin/login',
           'creditor': '/creditor/login'
         };
-        
+
         const loginPath = loginPaths[userRole] || '/';
         console.log('[DashboardLayout] Redirecting to login page after error', { loginPath });
         console.log('[PortalAccess] Redirecting user after logout error', {
@@ -248,7 +249,7 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
     if (import.meta.env.DEV) {
       // Only minimal logging for component lifecycle
     }
-    
+
     return () => {
       // Cleanup
     };
@@ -307,7 +308,7 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
     navigate(1);
   };
 
-  
+
   const handleRefresh = () => {
     if (import.meta.env.DEV) {
       // Minimal logging for refresh action
@@ -352,16 +353,7 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
           <span className="font-bold text-xl">Dairy Farmers of Trans Nzoia</span>
         </div>
         <div className="flex items-center gap-2">
-          {/* Download App Button for Mobile - Improved visibility */}
-          <Button
-            variant="default"
-            size="icon"
-            onClick={() => navigate('/download-app')}
-            title="Download Mobile & Desktop Apps"
-            className="bg-primary text-primary-foreground hover:bg-primary/90"
-          >
-            <DownloadIcon className="h-5 w-5" />
-          </Button>
+
           <GlobalSearch /> {/* Add GlobalSearch here */}
         </div>
       </div>
@@ -383,60 +375,19 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
             <span className="font-bold text-xl">Dairy Farmers of Trans Nzoia</span>
           </div>
           <div className="flex items-center gap-2">
-            {/* Navigation Controls */}
-            <div className="flex gap-1">
+            <div className="flex items-center gap-2">
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={handleBack}
-                title="Go back"
-                className="h-8 w-8"
+                onClick={() => {
+                  console.log('[DashboardLayout] Desktop menu toggle clicked', { sidebarOpen });
+                  setSidebarOpen(!sidebarOpen);
+                }}
+                className="ml-2"
               >
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleForward}
-                title="Go forward"
-                className="h-8 w-8"
-              >
-                <ArrowRight className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleRefresh}
-                title="Refresh page"
-                className="h-8 w-8"
-              >
-                <RotateCw className="h-4 w-4" />
+                {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
               </Button>
             </div>
-            {/* Download App Button for Desktop - Improved visibility and positioning */}
-            <Button
-              variant="default"
-              onClick={() => navigate('/download-app')}
-              title="Download Mobile & Desktop Apps"
-              className="ml-2 flex items-center gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
-            >
-              <DownloadIcon className="h-4 w-4" />
-              <span className="hidden lg:inline">Download App</span>
-            </Button>
-            <div className="hidden md:block ml-2">
-              <GlobalSearch /> {/* Add GlobalSearch for desktop */}
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => {
-                console.log('[DashboardLayout] Desktop menu toggle clicked', { sidebarOpen });
-                setSidebarOpen(!sidebarOpen);
-              }}
-              className="ml-2"
-            >
-              {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-            </Button>
           </div>
         </div>
 
@@ -463,15 +414,15 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
                   </span>
                 </button>
               )}
-              
+
               {/* Navigation items - show on all screen sizes when category is expanded and sidebar is open */}
               {sidebarOpen && expandedCategories[category] && items.map((item) => {
                 const isActive = isActivePath(item.path);
                 const categoryStyle = categoryStyles[item.category || 'other'] || categoryStyles.main;
-                
+
                 return (
-                  <Link 
-                    key={item.path} 
+                  <Link
+                    key={item.path}
                     to={item.path}
                     onClick={() => {
                       console.log('[DashboardLayout] Navigation item clicked', { path: item.path, label: item.label });
@@ -552,7 +503,7 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
 
       {/* Overlay for mobile - only show when sidebar is open on mobile */}
       {sidebarOpen && window.innerWidth < 768 && (
-        <div 
+        <div
           className="md:hidden fixed inset-0 bg-black/50 z-40"
           onClick={() => {
             console.log('[DashboardLayout] Sidebar overlay clicked, closing sidebar');
@@ -568,39 +519,33 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
 
       {/* Main Content */}
       <main className="flex-1 overflow-auto">
-        {/* Desktop Navigation Controls */}
-        <div className="hidden md:flex items-center justify-between p-2 bg-card border-b border-border">
-          <div className="flex gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleBack}
-              title="Go back"
-              className="h-8 w-8"
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleForward}
-              title="Go forward"
-              className="h-8 w-8"
-            >
-              <ArrowRight className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleRefresh}
-              title="Refresh page"
-              className="h-8 w-8"
-            >
-              <RotateCw className="h-4 w-4" />
-            </Button>
+        {/* Premium Top Bar */}
+        <div className="hidden md:flex items-center justify-between px-6 py-3 bg-card border-b border-border shadow-sm sticky top-0 z-20">
+          <div className="flex-1 max-w-xl">
+            <GlobalSearch />
           </div>
-          <div className="hidden md:block mr-4">
-            <GlobalSearch /> {/* Add GlobalSearch for desktop in main content area */}
+
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate('/download-app')}
+              className="hidden lg:flex items-center gap-2 text-muted-foreground hover:text-primary hover:bg-primary/5 transition-all rounded-full px-4 border border-transparent hover:border-primary/10"
+              title="Download Mobile & Desktop Apps"
+            >
+              <Smartphone className="h-4 w-4" />
+              <span>Get App</span>
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => navigate('/download-app')}
+              className="lg:hidden w-10 h-10 rounded-full bg-muted/50 hover:bg-primary/10 hover:text-primary transition-colors"
+              title="Download Mobile & Desktop Apps"
+            >
+              <Smartphone className="h-5 w-5" />
+            </Button>
           </div>
         </div>
         <div className="p-4 md:p-6">

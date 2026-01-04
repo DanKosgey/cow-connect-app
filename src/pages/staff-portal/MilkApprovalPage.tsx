@@ -87,11 +87,11 @@ const MilkApprovalPage: React.FC = () => {
       const result = await MilkApprovalService.getPendingCollections(user?.id);
       if (result.success && result.data) {
         console.log('Fetched pending collections count:', result.data.length);
-        
+
         // Use the enriched data directly without additional normalization
         // The MilkApprovalService now returns properly enriched collections
         const enrichedCollections = result.data;
-        
+
         // Log detailed information about the first few collections
         enrichedCollections.slice(0, 2).forEach((collection: Collection, index: number) => {
           console.log(`Sample collection ${index}:`, {
@@ -102,7 +102,7 @@ const MilkApprovalPage: React.FC = () => {
             hasFarmer: !!collection.farmer
           });
         });
-        
+
         setPendingCollections(enrichedCollections);
         groupCollections(enrichedCollections);
       }
@@ -127,7 +127,7 @@ const MilkApprovalPage: React.FC = () => {
       // Use collector data from enriched service
       const collectorId = collection.collector?.staffId || collection.staff_id || 'unassigned';
       const collectorName = collection.collector?.fullName || 'Unknown Collector';
-      
+
       // Log detailed information about what we're using (only first 2)
       if (index < 2) {
         console.log(`Processing collection ${index}:`, {
@@ -139,8 +139,8 @@ const MilkApprovalPage: React.FC = () => {
       }
 
       // Use safer date parsing
-      const date = formatDateSafely(collection.collection_date).includes('Invalid Date') 
-        ? 'Invalid Date' 
+      const date = formatDateSafely(collection.collection_date).includes('Invalid Date')
+        ? 'Invalid Date'
         : collection.collection_date.split('T')[0];
       const key = `${collectorId}-${date}`;
 
@@ -227,42 +227,34 @@ const MilkApprovalPage: React.FC = () => {
     }
     setIsSubmitting(true);
     try {
-      // Safer calculation with numeric conversion
-      const totalExpected = batchGroup.collections.reduce((sum, col) => sum + (Number(col.liters) || 0), 0);
-      const promises = batchGroup.collections.map(async (col) => {
-        const factor = totalExpected > 0 ? (Number(col.liters) || 0) / totalExpected : 0;
-        const receivedLiters = factor * received;
-        return MilkApprovalService.approveMilkCollection({
-          collectionId: col.id,
-          staffId: user.id,
-          companyReceivedLiters: receivedLiters,
-          approvalNotes: batchFormData.notes
+      // Use the service method which calls the RPC function 'batch_approve_collector_collections'
+      // This avoids client-side ID format issues and is more efficient
+      const result = await MilkApprovalService.batchApproveCollections(
+        user.id,
+        batchGroup.collectorId,
+        batchGroup.collectionDate,
+        received
+      );
+
+      if (result.success) {
+        toast({
+          title: "Success",
+          description: `Batch approved successfully. ${result.data?.approved_count || ''} collections processed.`
         });
-      });
-      const results = await Promise.all(promises);
-      const allSuccessful = results.every(res => res.success);
-      if (allSuccessful) {
-        toast({ title: "Success", description: "Batch approved successfully" });
         fetchPendingCollections();
         refetchVarianceStats();
         setShowBatchForm(false);
       } else {
-        // Check if any errors are related to staff validation
-        const staffError = results.find(res => !res.success && res.error && 
-          (res.error as Error).message?.includes('staff record'));
-        
-        if (staffError) {
-          toast({ 
-            title: "Permission Error", 
-            description: (staffError.error as Error).message || "Only staff members can approve collections",
-            variant: "destructive" 
-          });
-        } else {
-          toast({ title: "Error", description: "Some collections failed to approve", variant: "destructive" });
-        }
+        console.error('Batch approval failed:', result.error);
+        toast({
+          title: "Error",
+          description: (result.error as Error)?.message || "Failed to approve batch",
+          variant: "destructive"
+        });
       }
     } catch (error) {
-      toast({ title: "Error", description: "Failed to batch approve", variant: "destructive" });
+      console.error('Batch approval exception:', error);
+      toast({ title: "Error", description: "An unexpected error occurred during batch approval", variant: "destructive" });
     } finally {
       setIsSubmitting(false);
     }
@@ -312,7 +304,7 @@ const MilkApprovalPage: React.FC = () => {
                         {group.collectorName}
                         {group.collectorId === 'unassigned' && (
                           <Badge variant="destructive" className="ml-2" title="These collections have missing collector information and cannot be batch approved">Unassigned</Badge>
-                       )}
+                        )}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
@@ -339,7 +331,7 @@ const MilkApprovalPage: React.FC = () => {
                             <Scale className="h-4 w-4 mr-1" />
                             Batch Approve
                           </Button>
-                       )}
+                        )}
                       </TableCell>
                     </TableRow>
                   ))
@@ -460,7 +452,7 @@ const MilkApprovalPage: React.FC = () => {
                         <div className="h-6 w-12 bg-gray-200 rounded animate-pulse"></div>
                       ) : (
                         `${varianceStats?.avgVariance >= 0 ? '+' : ''}${varianceStats?.avgVariance || 0}%`
-                     )}
+                      )}
                     </div>
                   </div>
                   <TrendingUp className="h-8 w-8 text-blue-500" />
@@ -478,7 +470,7 @@ const MilkApprovalPage: React.FC = () => {
                         <div className="h-6 w-8 bg-gray-200 rounded animate-pulse"></div>
                       ) : (
                         varianceStats?.positiveVariances || 0
-                     )}
+                      )}
                     </div>
                   </div>
                   <div className="h-8 w-8 rounded-full bg-green-100 flex items-center justify-center">
@@ -498,7 +490,7 @@ const MilkApprovalPage: React.FC = () => {
                         <div className="h-6 w-8 bg-gray-200 rounded animate-pulse"></div>
                       ) : (
                         varianceStats?.negativeVariances || 0
-                     )}
+                      )}
                     </div>
                   </div>
                   <div className="h-8 w-8 rounded-full bg-red-100 flex items-center justify-center">
