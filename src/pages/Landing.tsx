@@ -100,13 +100,13 @@ const Landing = () => {
             <div className="p-2 bg-green-600 rounded-lg">
               <Milk className="w-6 h-6 text-white" />
             </div>
-            <span className={`font-bold text-xl tracking-tight ${scrollY > 50 ? 'text-slate-900' : 'text-white'}`}>
-              DAIRY FARMERS <span className="font-light opacity-80">OF TRANS-NZOIA</span>
+            <span className={`font-bold text-lg md:text-xl tracking-tight transition-colors ${scrollY > 50 ? 'text-slate-900' : 'text-white'}`}>
+              DAIRY FARMERS <span className="font-light opacity-80 hidden sm:inline">OF TRANS-NZOIA</span>
             </span>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 md:gap-4">
             <Button
-              className="login-btn-animated text-white font-bold px-6 py-2 rounded-full shadow-lg border-2 border-green-400/50 backdrop-blur-sm"
+              className="login-btn-animated text-white font-bold px-4 md:px-6 py-2 rounded-full shadow-lg border-2 border-green-400/50 backdrop-blur-sm text-sm md:text-base"
               onClick={() => navigate('/login')}
             >
               Login
@@ -157,10 +157,14 @@ const Landing = () => {
             </Button>
             <Button
               size="lg"
-              className="h-14 px-8 border-2 border-white/30 hover:border-green-400 bg-white/5 hover:bg-green-600/20 backdrop-blur-md text-white text-lg font-medium rounded-full w-full sm:w-auto transition-all animate-pulse"
-              onClick={() => navigate('/login')}
+              variant="outline"
+              className="h-14 px-8 bg-white/5 backdrop-blur-sm border-white/20 hover:bg-white/10 text-white text-lg font-medium rounded-full w-full sm:w-auto text-white hover:text-white"
+              onClick={() => {
+                const element = document.getElementById('features');
+                element?.scrollIntoView({ behavior: 'smooth' });
+              }}
             >
-              Member Login
+              Learn More
             </Button>
           </div>
 
