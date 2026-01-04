@@ -104,16 +104,15 @@ const Landing = () => {
               DAIRY FARMERS <span className="font-light opacity-80">OF TRANS-NZOIA</span>
             </span>
           </div>
-          <div className="hidden md:flex items-center gap-6">
+          <div className="flex items-center gap-4">
             <Button
-              variant="ghost"
-              className={`font-medium ${scrollY > 50 ? 'text-slate-600 hover:text-green-600' : 'text-slate-200 hover:text-white'} hover:bg-transparent`}
-              onClick={() => navigate('/farmer/login')}
+              className="login-btn-animated text-white font-bold px-6 py-2 rounded-full shadow-lg border-2 border-green-400/50 backdrop-blur-sm"
+              onClick={() => navigate('/login')}
             >
-              Sign In
+              Login
             </Button>
             <Button
-              className="bg-green-600 hover:bg-green-700 text-white font-medium px-6 rounded-full transition-all"
+              className="hidden md:flex bg-white/10 hover:bg-white/20 text-white border border-white/20 font-medium px-6 rounded-full transition-all backdrop-blur-md"
               onClick={() => navigate('/farmer/signup')}
             >
               Register
@@ -158,14 +157,10 @@ const Landing = () => {
             </Button>
             <Button
               size="lg"
-              variant="outline"
-              className="h-14 px-8 bg-white/5 backdrop-blur-sm border-white/20 hover:bg-white/10 text-white text-lg font-medium rounded-full w-full sm:w-auto"
-              onClick={() => {
-                const element = document.getElementById('features');
-                element?.scrollIntoView({ behavior: 'smooth' });
-              }}
+              className="h-14 px-8 border-2 border-white/30 hover:border-green-400 bg-white/5 hover:bg-green-600/20 backdrop-blur-md text-white text-lg font-medium rounded-full w-full sm:w-auto transition-all animate-pulse"
+              onClick={() => navigate('/login')}
             >
-              Learn More
+              Member Login
             </Button>
           </div>
 
@@ -312,6 +307,40 @@ const Landing = () => {
         .delay-200 { animation-delay: 200ms; }
         .delay-300 { animation-delay: 300ms; }
         .delay-500 { animation-delay: 500ms; }
+
+        @keyframes pulse-glow {
+          0%, 100% {
+            box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.4);
+            transform: scale(1);
+          }
+          50% {
+            box-shadow: 0 0 20px 0 rgba(74, 222, 128, 0.7);
+            transform: scale(1.05);
+          }
+        }
+
+        .login-btn-animated {
+          animation: pulse-glow 2s infinite;
+          background: linear-gradient(45deg, #16a34a, #22c55e);
+          transition: all 0.3s ease;
+        }
+
+        .login-btn-animated:hover {
+          animation: none;
+          transform: scale(1.05);
+          box-shadow: 0 0 30px rgba(34, 197, 94, 0.6);
+        }
+
+        @keyframes gradient-xy {
+          0% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+          100% { background-position: 0% 50%; }
+        }
+
+        .animate-gradient {
+          background-size: 200% 200%;
+          animation: gradient-xy 3s ease infinite;
+        }
       `}</style>
     </div>
   );

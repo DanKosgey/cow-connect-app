@@ -45,7 +45,7 @@ import { AuthService } from "@/services/auth-service";
 import { OtpService } from "@/services/otp-service";
 import { supabase } from "@/integrations/supabase/client";
 import { checkStorageQuota, safeSetLocalStorage, cleanupOldStorageItems } from '@/utils/storageQuotaManager';
-import NavigationDiagnostics from '@/components/NavigationDiagnostics';
+
 import { useAuth } from '@/hooks/useAuth';
 
 // Constants for validation
@@ -1048,8 +1048,7 @@ const FarmerSignup: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background to-secondary/10">
-      {/* Navigation Diagnostics - Only show in development */}
-      {import.meta.env.DEV && <NavigationDiagnostics />}
+
 
       {/* Header */}
       <header className="border-b border-border bg-background/80 backdrop-blur-sm sticky top-0 z-50">
