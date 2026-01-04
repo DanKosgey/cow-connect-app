@@ -60,6 +60,9 @@ const ServicesPage = lazy(() => import('@/pages/admin/ServicesPage'));
 const AdminAIMonitoringDashboard = lazy(() => import('@/pages/admin/ai/AdminAIMonitoringDashboard'));
 const MilkCollectionApprovalPage = lazy(() => import('@/pages/admin/MilkCollectionApprovalPage'));
 const FarmerCollectionPage = lazy(() => import('@/pages/admin/FarmerCollectionPage'));
+const StaffInvitePage = lazy(() => import('@/pages/admin/StaffInvitePage'));
+const PendingStaffDashboard = lazy(() => import('@/pages/admin/PendingStaffDashboard'));
+const PendingStaffDetails = lazy(() => import('@/pages/admin/PendingStaffDetails'));
 
 export const adminRoutes = [
   { path: '/admin/login', element: <AdminLogin /> },
@@ -189,8 +192,10 @@ export default function AdminRoutes() {
                   <Route path="collections" element={<CollectionsAnalyticsDashboard />} />
                   <Route path="farmer-collections" element={<FarmerCollectionPage />} />
                   <Route path="kyc" element={<KYCAdminDashboard />} />
-                  <Route path="kyc-pending-farmers" element={<KYCPendingFarmersDashboard />} />
-                  <Route path="kyc-pending-farmers/:id" element={<KYCPendingFarmerDetails />} />
+                  <Route path="kyc-pending-farmer/:id" element={<KYCPendingFarmerDetails />} />
+                  <Route path="staff/invite" element={<StaffInvitePage />} />
+                  <Route path="staff/pending" element={<PendingStaffDashboard />} />
+                  <Route path="staff/pending/:id" element={<PendingStaffDetails />} />
                   <Route path="kyc-storage-test" element={<KYCStorageTest />} />
                   <Route path="settings" element={<Settings />} />
                   <Route path="invite" element={<AdminInvite />} />

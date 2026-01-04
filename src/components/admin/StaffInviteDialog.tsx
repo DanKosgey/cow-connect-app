@@ -1,12 +1,11 @@
 import React, { useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { UserPlus, Mail, Shield, Send, Plus } from 'lucide-react';
-import { invitationService } from '@/services/invitation-service';
+import { UserPlus, Mail, Shield, Send, Plus, Copy, CheckCircle, AlertCircle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import useToastNotifications from '@/hooks/useToastNotifications';
 
@@ -17,10 +16,11 @@ interface StaffInviteDialogProps {
 export const StaffInviteDialog: React.FC<StaffInviteDialogProps> = ({ onInviteSent }) => {
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState<'staff' | 'admin'>('staff');
-  const [message, setMessage] = useState('');
+  const [role, setRole] = useState<'staff' | 'admin' | 'collector' | 'creditor'>('staff');
   const [loading, setLoading] = useState(false);
-  
+  const [invitationLink, setInvitationLink] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
   const { show, error: showError } = useToastNotifications();
 
   const validateEmail = (email: string): boolean => {
@@ -29,7 +29,6 @@ export const StaffInviteDialog: React.FC<StaffInviteDialogProps> = ({ onInviteSe
   };
 
   const handleSendInvite = async () => {
-    // Validate email
     if (!email) {
       showError('Validation Error', 'Please enter an email address');
       return;
@@ -41,14 +40,9 @@ export const StaffInviteDialog: React.FC<StaffInviteDialogProps> = ({ onInviteSe
     }
 
     setLoading(true);
-    try {
-      // Check if Resend API key is configured
-      const resendApiKey = import.meta.env.VITE_RESEND_API_KEY;
-      if (!resendApiKey) {
-        throw new Error('Email service is not configured. Please add VITE_RESEND_API_KEY to your environment variables.');
-      }
+    setInvitationLink(null);
 
-      // Get the current user ID
+    try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         throw new Error('User not authenticated');
@@ -56,83 +50,65 @@ export const StaffInviteDialog: React.FC<StaffInviteDialogProps> = ({ onInviteSe
 
       console.log('[INVITE] Creating invitation for:', email);
 
-      // Create the invitation
-      const invitation = await invitationService.createInvitation({
-        email,
-        role,
-        message: message.trim() || undefined,
-        invitedBy: user.id
+      const { data, error } = await supabase.rpc('create_staff_invitation', {
+        p_email: email,
+        p_invited_by: user.id,
+        p_suggested_role: role
       });
 
-      if (!invitation) {
-        throw new Error('Failed to create invitation record');
+      if (error) throw error;
+
+      const result = data as any;
+
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to create invitation');
       }
 
-      console.log('[INVITE] Invitation created successfully:', invitation.id);
-      console.log('[INVITE] Sending invitation email...');
+      console.log('[INVITE] Invitation created successfully');
 
-      // Send the invitation email
-      const emailSent = await invitationService.sendInvitationEmail(invitation);
-      
-      if (!emailSent) {
-        throw new Error('Failed to send invitation email. Please check your Resend API configuration and ensure your domain is verified.');
-      }
+      // Generate invitation link
+      const baseUrl = window.location.origin;
+      const link = `${baseUrl}/staff/register/${result.token}`;
+      setInvitationLink(link);
 
-      console.log('[INVITE] Invitation email sent successfully');
-
-      show({ 
-        title: 'Invitation Sent!', 
-        description: `Invitation email sent to ${email} for the ${role} role. They will receive instructions to join the system.` 
+      show({
+        title: 'Invitation Created!',
+        description: `Invitation created for ${email}. You can copy the link below.`
       });
-      
-      // Reset form
-      setEmail('');
-      setRole('staff');
-      setMessage('');
-      setOpen(false);
-      
-      // Notify parent component
+
       onInviteSent?.();
+
     } catch (err: any) {
       console.error('[INVITE] Error:', err);
-      
-      // Provide detailed error messages
-      let errorTitle = 'Invitation Failed';
-      let errorMessage = err?.message || 'Failed to send invitation';
-      
-      if (errorMessage.includes('not configured')) {
-        errorTitle = 'Configuration Error';
-        errorMessage = 'Email service is not configured. Please contact your system administrator.';
-      } else if (errorMessage.includes('Resend API') || errorMessage.includes('domain')) {
-        errorTitle = 'Email Service Error';
-        errorMessage = 'There was a problem with the email service. Please verify your Resend API key and domain configuration.';
-      } else if (errorMessage.includes('not authenticated')) {
-        errorTitle = 'Authentication Error';
-        errorMessage = 'Please log in again to send invitations.';
-      }
-      
-      showError(errorTitle, errorMessage);
+      showError('Invitation Failed', err?.message || 'Failed to create invitation');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleOpenChange = (newOpen: boolean) => {
-    if (!loading) {
-      setOpen(newOpen);
-      if (!newOpen) {
-        // Reset form when closing
-        setEmail('');
-        setRole('staff');
-        setMessage('');
-      }
+  const handleCopyLink = () => {
+    if (invitationLink) {
+      navigator.clipboard.writeText(invitationLink);
+      setCopied(true);
+      show({
+        title: 'Link Copied',
+        description: 'Invitation link copied to clipboard'
+      });
+      setTimeout(() => setCopied(false), 2000);
     }
   };
 
+  const handleClose = () => {
+    setOpen(false);
+    setEmail('');
+    setRole('staff');
+    setInvitationLink(null);
+  };
+
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
+    <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button 
+        <Button
           className="bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800"
         >
           <Plus className="h-4 w-4 mr-2" />
@@ -146,131 +122,102 @@ export const StaffInviteDialog: React.FC<StaffInviteDialogProps> = ({ onInviteSe
             Invite New Staff Member
           </DialogTitle>
           <DialogDescription>
-            Send an invitation to a new staff member via email. They will receive instructions to create their account.
+            Generate an invitation link for a new staff member.
           </DialogDescription>
         </DialogHeader>
-        
-        <div className="space-y-6 py-4">
-          {/* Email Input */}
-          <div className="space-y-2">
-            <Label htmlFor="email" className="flex items-center gap-2">
-              <Mail className="h-4 w-4" />
-              Email Address
-            </Label>
-            <Input
-              id="email"
-              type="email"
-              placeholder="staff@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={loading}
-              className="w-full"
-              autoComplete="email"
-              required
-            />
-            {email && !validateEmail(email) && (
-              <p className="text-sm text-red-600">Please enter a valid email address</p>
-            )}
-          </div>
 
-          {/* Role Selection */}
-          <div className="space-y-2">
-            <Label htmlFor="role" className="flex items-center gap-2">
-              <Shield className="h-4 w-4" />
-              Role
-            </Label>
-            <Select value={role} onValueChange={(value: 'staff' | 'admin') => setRole(value)} disabled={loading}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select a role" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="staff">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                    Staff Member
-                  </div>
-                </SelectItem>
-                <SelectItem value="admin">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
-                    Administrator
-                  </div>
-                </SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-gray-500">
-              {role === 'staff' 
-                ? 'Staff members have standard access to the system' 
-                : 'Administrators have full system access and management capabilities'}
-            </p>
-          </div>
+        {!invitationLink ? (
+          <div className="space-y-6 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="email" className="flex items-center gap-2">
+                <Mail className="h-4 w-4" />
+                Email Address
+              </Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="staff@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={loading}
+                autoComplete="email"
+              />
+            </div>
 
-          {/* Optional Message */}
-          <div className="space-y-2">
-            <Label htmlFor="message">
-              Welcome Message (Optional)
-            </Label>
-            <Textarea
-              id="message"
-              placeholder="Add a personal welcome message for the new staff member..."
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              disabled={loading}
-              rows={3}
-              className="resize-none"
-              maxLength={500}
-            />
-            {message && (
-              <p className="text-xs text-gray-500 text-right">
-                {message.length}/500 characters
+            <div className="space-y-2">
+              <Label htmlFor="role" className="flex items-center gap-2">
+                <Shield className="h-4 w-4" />
+                Role
+              </Label>
+              <Select value={role} onValueChange={(value: any) => setRole(value)} disabled={loading}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a role" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="staff">Staff Member</SelectItem>
+                  <SelectItem value="collector">Collector</SelectItem>
+                  <SelectItem value="creditor">Creditor</SelectItem>
+                  <SelectItem value="admin">Administrator</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
+              <p className="font-medium mb-1 flex items-center gap-2">
+                <AlertCircle className="h-4 w-4" />
+                Note
               </p>
-            )}
-          </div>
-
-          {/* Info Box */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <div className="flex items-start gap-3">
-              <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 flex-shrink-0"></div>
-              <div className="text-sm text-blue-800">
-                <p className="font-medium mb-1">What happens next?</p>
-                <ul className="space-y-1 text-blue-700">
-                  <li>• An invitation email will be sent to {email || 'the specified address'}</li>
-                  <li>• The recipient will receive a secure link to create their account</li>
-                  <li>• The invitation link will expire after 7 days</li>
-                  <li>• Once accepted, they'll have access with their assigned role</li>
-                </ul>
-              </div>
+              <p>The system will generate a unique link that expires in 7 days.</p>
             </div>
           </div>
-        </div>
+        ) : (
+          <div className="space-y-6 py-4">
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
+              <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-2" />
+              <h3 className="text-lg font-medium text-green-800">Invitation Ready!</h3>
+              <p className="text-green-700">The invitation for {email} has been created.</p>
+            </div>
 
-        {/* Actions */}
-        <div className="flex justify-end gap-3 pt-4 border-t">
-          <Button 
-            variant="outline" 
-            onClick={() => handleOpenChange(false)}
-            disabled={loading}
-          >
-            Cancel
-          </Button>
-          <Button 
-            onClick={handleSendInvite}
-            disabled={loading || !email || !validateEmail(email)}
-            className="bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800"
-          >
-            {loading ? (
-              <>
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                Sending...
-              </>
-            ) : (
-              <>
-                <Send className="h-4 w-4 mr-2" />
-                Send Invitation
-              </>
-            )}
-          </Button>
-        </div>
+            <div className="space-y-2">
+              <Label>Invitation Link</Label>
+              <div className="flex gap-2">
+                <Input value={invitationLink} readOnly className="bg-gray-50" />
+                <Button onClick={handleCopyLink} variant="outline" size="icon">
+                  {copied ? <CheckCircle className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
+                </Button>
+              </div>
+              <p className="text-xs text-gray-500">
+                Copy this link and send it to the staff member.
+              </p>
+            </div>
+          </div>
+        )}
+
+        <DialogFooter>
+          {!invitationLink ? (
+            <>
+              <Button variant="outline" onClick={() => setOpen(false)} disabled={loading}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSendInvite}
+                disabled={loading || !email}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                {loading ? 'Generating...' : 'Generate Link'}
+              </Button>
+            </>
+          ) : (
+            <div className="flex gap-2 w-full">
+              <Button variant="outline" onClick={handleClose} className="flex-1">
+                Close
+              </Button>
+              <Button onClick={() => setInvitationLink(null)} className="flex-1">
+                Send Another
+              </Button>
+            </div>
+          )}
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

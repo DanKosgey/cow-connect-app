@@ -19,23 +19,26 @@ import RefreshButton from '@/components/ui/RefreshButton';
 import { useStaffManagementData } from '@/hooks/useStaffManagementData';
 import { StaffEditDialog } from '@/components/admin/StaffEditDialog';
 import { StaffMember } from '@/types/staff.types';
+import { useNavigate } from 'react-router-dom';
+import { UserCheck } from 'lucide-react';
 
 const Staff = () => {
+  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [editingStaffMember, setEditingStaffMember] = useState<any>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-  
+
   // Initialize performance monitoring
-  const { measureOperation } = usePerformanceMonitor({ 
+  const { measureOperation } = usePerformanceMonitor({
     componentName: 'StaffPage',
     enabled: process.env.NODE_ENV === 'development'
   });
 
   const { data: staffData, isLoading, isError, error, refetch } = useStaffManagementData(currentPage, pageSize, searchTerm, roleFilter);
-  
+
   const staff = staffData?.staff || [];
   const totalCount = staffData?.totalCount || 0;
   const loading = isLoading;
@@ -47,7 +50,7 @@ const Staff = () => {
   // }, [staff]);
 
   const totalPages = Math.ceil(totalCount / pageSize);
-  
+
   // Use server-side pagination, so we don't need to paginate again on the client
   const paginatedData = {
     data: staff,
@@ -109,9 +112,17 @@ const Staff = () => {
         icon={<UserCog className="h-8 w-8" />}
         actions={
           <div className="flex items-center space-x-2">
-            <RefreshButton 
-              isRefreshing={loading} 
-              onRefresh={refetch} 
+            <Button
+              variant="outline"
+              className="gap-2 bg-white border-gray-300 hover:bg-gray-50"
+              onClick={() => navigate('/admin/staff/pending')}
+            >
+              <UserCheck className="h-4 w-4" />
+              Pending Approvals
+            </Button>
+            <RefreshButton
+              isRefreshing={loading}
+              onRefresh={refetch}
               className="bg-white border-gray-300 hover:bg-gray-50 rounded-lg shadow-sm"
             />
             <StaffInviteDialog onInviteSent={handleInviteSent} />
@@ -127,21 +138,21 @@ const Staff = () => {
           icon={<UserCog className="h-6 w-6 text-blue-500" />}
           color="border-l-blue-500"
         />
-        
+
         <StatsCard
           title="Admins"
           value={stats.admins}
           icon={<UserCog className="h-6 w-6 text-green-500" />}
           color="border-l-green-500"
         />
-        
+
         <StatsCard
           title="Staff"
           value={stats.staff}
           icon={<UserCog className="h-6 w-6 text-purple-500" />}
           color="border-l-purple-500"
         />
-        
+
         <StatsCard
           title="Active"
           value={stats.active}
@@ -220,18 +231,18 @@ const Staff = () => {
                         </TableCell>
                         <TableCell>
                           <Badge variant={staffMember.activeRoles?.length > 0 ? "default" : "destructive"}>
-                            {staffMember.activeRoles?.length > 0 
-                              ? 'Active' 
+                            {staffMember.activeRoles?.length > 0
+                              ? 'Active'
                               : staffMember.hasAnyRoles
-                                ? (staffMember.allRolesInactive 
-                                  ? 'Inactive (Role Inactive)' 
+                                ? (staffMember.allRolesInactive
+                                  ? 'Inactive (Role Inactive)'
                                   : 'Inactive (No Valid Role)')
                                 : 'Inactive (No Role Assigned)'}
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          <Button 
-                            variant="outline" 
+                          <Button
+                            variant="outline"
                             size="sm"
                             onClick={() => handleEditClick(staffMember)}
                           >

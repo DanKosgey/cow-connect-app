@@ -13,6 +13,8 @@ const FarmerSignup = lazy(() => import("../pages/auth/FarmerSignup"));
 const EmailVerificationWaiting = lazy(() => import("../pages/auth/EmailVerificationWaiting"));
 const ForgotPassword = lazy(() => import("../pages/auth/ForgotPassword"));
 const ResetPassword = lazy(() => import("../pages/auth/ResetPassword"));
+const StaffRegistrationPage = lazy(() => import("../pages/auth/StaffRegistrationPage"));
+const StaffApplicationStatus = lazy(() => import("../pages/staff/StaffApplicationStatus"));
 
 
 
@@ -23,13 +25,13 @@ const NotFound = lazy(() => import("../pages/NotFound"));
 
 export default function PublicRoutes() {
   const location = useLocation();
-  
+
   // Preload commonly accessed routes
   useEffect(() => {
     preloadRouteWhenIdle(() => import("../pages/auth/Login"));
     preloadRouteWhenIdle(() => import("../pages/auth/FarmerSignup"));
   }, []);
-  
+
   return (
     <Suspense fallback={<LoadingSkeleton type="form" />}>
       <Routes location={location}>
@@ -44,14 +46,14 @@ export default function PublicRoutes() {
           </PageTransition>
         } />
         <Route path="/auth/login" element={<Navigate to="/login" replace />} />
-        
+
         {/* Redirect all role-specific login pages to unified login */}
         <Route path="/farmer/login" element={<Navigate to="/login" replace />} />
         <Route path="/collector-only/login" element={<Navigate to="/login" replace />} />
         <Route path="/staff-only/login" element={<Navigate to="/login" replace />} />
         <Route path="/creditor/login" element={<Navigate to="/login" replace />} />
         <Route path="/admin/login" element={<Navigate to="/login" replace />} />
-        
+
         <Route path="/auth-test" element={
           <PageTransition>
             <NotFound />
@@ -92,6 +94,16 @@ export default function PublicRoutes() {
             <ResetPassword />
           </PageTransition>
         } />
+        <Route path="/staff/register/:token" element={
+          <PageTransition>
+            <StaffRegistrationPage />
+          </PageTransition>
+        } />
+        <Route path="/staff/application-status" element={
+          <PageTransition>
+            <StaffApplicationStatus />
+          </PageTransition>
+        } />
         <Route path="/auth/reset-test" element={
           <PageTransition>
             <NotFound />
@@ -112,7 +124,7 @@ export default function PublicRoutes() {
             <AcceptInvitePage />
           </PageTransition>
         } />
-        
+
         <Route path="*" element={
           <PageTransition>
             <NotFound />
