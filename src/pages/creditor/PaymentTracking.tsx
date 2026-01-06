@@ -1,30 +1,31 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  Legend, 
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
   ResponsiveContainer,
   LineChart,
   Line,
   AreaChart,
   Area
 } from 'recharts';
-import { 
-  BarChart3, 
-  TrendingUp, 
-  CreditCard, 
+import {
+  BarChart3,
+  TrendingUp,
+  CreditCard,
   Calendar,
   Search,
   Filter,
   AlertTriangle,
   Bell,
   Clock,
-  User
+  User,
+  CheckCircle
 } from 'lucide-react';
 import { formatCurrency } from '@/utils/formatters';
 import { Button } from '@/components/ui/button';
@@ -91,12 +92,15 @@ const PaymentTracking = () => {
   const [filteredPayments, setFilteredPayments] = useState<PaymentRecord[]>([]);
   const [analytics, setAnalytics] = useState<PaymentAnalytics[]>([]);
   const [overduePayments, setOverduePayments] = useState<OverduePayment[]>([]);
-  const [paymentSchedules, setPaymentSchedules] = useState<{[key: string]: PaymentSchedule[]}>({});
+  const [paymentSchedules, setPaymentSchedules] = useState<{ [key: string]: PaymentSchedule[] }>({});
+  const [pendingSettlements, setPendingSettlements] = useState<any[]>([]);
+  const [totalSectorDebt, setTotalSectorDebt] = useState(0);
   const [selectedFarmerId, setSelectedFarmerId] = useState<string | null>(null);
   const [showOverdueAlerts, setShowOverdueAlerts] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState("all");
   const [timeRange, setTimeRange] = useState("30");
+  const [activeTab, setActiveTab] = useState("transactions");
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
 
@@ -105,6 +109,7 @@ const PaymentTracking = () => {
     fetchAnalytics();
     fetchOverduePayments();
     fetchPaymentSchedules();
+    fetchPendingSettlements();
   }, [timeRange]);
 
   useEffect(() => {
@@ -112,7 +117,7 @@ const PaymentTracking = () => {
     let filtered = payments;
 
     if (searchTerm) {
-      filtered = filtered.filter(payment => 
+      filtered = filtered.filter(payment =>
         payment.farmer_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         payment.farmer_phone.includes(searchTerm)
       );
@@ -125,10 +130,64 @@ const PaymentTracking = () => {
     setFilteredPayments(filtered);
   }, [searchTerm, filterType, payments]);
 
+  const fetchPendingSettlements = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('credit_requests')
+        .select(`
+          *,
+          farmers!inner (
+            full_name,
+            phone_number
+          )
+        `)
+        .eq('status', 'approved')
+        .eq('agrovet_settlement_status', 'pending')
+        .order('approved_at', { ascending: false });
+
+      if (error) throw error;
+
+      const settlements = data || [];
+      setPendingSettlements(settlements);
+
+      const totalDebt = settlements.reduce((sum, item) => sum + (item.total_amount || 0), 0);
+      setTotalSectorDebt(totalDebt);
+    } catch (err) {
+      console.error("Error fetching pending settlements:", err);
+      // Don't block the whole page if this fails, just log it
+    }
+  };
+
+  const markAsSettled = async (requestId: string) => {
+    try {
+      const { error } = await supabase
+        .from('credit_requests')
+        .update({ agrovet_settlement_status: 'processed' })
+        .eq('id', requestId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Settlement Processed",
+        description: "Transaction marked as settled successfully."
+      });
+
+      // Refresh data
+      fetchPendingSettlements();
+    } catch (err) {
+      console.error("Error settling transaction:", err);
+      toast({
+        title: "Error",
+        description: "Failed to process settlement",
+        variant: "destructive"
+      });
+    }
+  };
+
   const fetchData = async () => {
     try {
       setLoading(true);
-      
+
       // Get credit transactions with farmer details
       const { data, error } = await supabase
         .from('farmer_credit_transactions')
@@ -136,7 +195,7 @@ const PaymentTracking = () => {
           *,
           farmers:farmer_id (
             full_name,
-            phone
+            phone_number
           )
         `)
         .order('created_at', { ascending: false })
@@ -149,12 +208,12 @@ const PaymentTracking = () => {
         id: transaction.id,
         farmer_id: transaction.farmer_id,
         farmer_name: transaction.farmers?.full_name || 'Unknown Farmer',
-        farmer_phone: transaction.farmers?.phone || 'No phone',
+        farmer_phone: transaction.farmers?.phone_number || 'No phone',
         transaction_type: transaction.transaction_type,
         amount: transaction.amount,
-        balance_before: transaction.balance_after + (transaction.transaction_type === 'credit_granted' ? -transaction.amount : 
-                      transaction.transaction_type === 'credit_used' ? transaction.amount : 
-                      transaction.transaction_type === 'credit_repaid' ? -transaction.amount : 0),
+        balance_before: transaction.balance_after + (transaction.transaction_type === 'credit_granted' ? -transaction.amount :
+          transaction.transaction_type === 'credit_used' ? transaction.amount :
+            transaction.transaction_type === 'credit_repaid' ? -transaction.amount : 0),
         balance_after: transaction.balance_after,
         description: transaction.description,
         created_at: transaction.created_at
@@ -317,7 +376,7 @@ const PaymentTracking = () => {
   };
 
   const getTransactionTypeColor = (type: string) => {
-    switch(type) {
+    switch (type) {
       case 'credit_granted': return 'bg-green-100 text-green-800';
       case 'credit_used': return 'bg-blue-100 text-blue-800';
       case 'credit_repaid': return 'bg-purple-100 text-purple-800';
@@ -328,7 +387,7 @@ const PaymentTracking = () => {
   };
 
   const getTransactionTypeLabel = (type: string) => {
-    switch(type) {
+    switch (type) {
       case 'credit_granted': return 'Credit Granted';
       case 'credit_used': return 'Credit Used';
       case 'credit_repaid': return 'Credit Repaid';
@@ -349,7 +408,7 @@ const PaymentTracking = () => {
   };
 
   const getScheduleStatusColor = (status: string) => {
-    switch(status) {
+    switch (status) {
       case 'paid': return 'bg-green-100 text-green-800';
       case 'overdue': return 'bg-red-100 text-red-800';
       case 'pending': return 'bg-yellow-100 text-yellow-800';
@@ -358,7 +417,7 @@ const PaymentTracking = () => {
   };
 
   const getScheduleStatusLabel = (status: string) => {
-    switch(status) {
+    switch (status) {
       case 'paid': return 'Paid';
       case 'overdue': return 'Overdue';
       case 'pending': return 'Pending';
@@ -366,7 +425,7 @@ const PaymentTracking = () => {
     }
   };
 
-  if (loading) {
+  if (loading && payments.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
@@ -377,7 +436,7 @@ const PaymentTracking = () => {
     );
   }
 
-  if (error) {
+  if (error && payments.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="bg-red-50 border border-red-200 rounded-lg p-6 max-w-md">
@@ -401,8 +460,8 @@ const PaymentTracking = () => {
               <p className="text-gray-600 mt-2">Track credit repayments and outstanding balances</p>
             </div>
             {overduePayments.length > 0 && (
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 onClick={() => setShowOverdueAlerts(!showOverdueAlerts)}
                 className="flex items-center gap-2"
               >
@@ -413,308 +472,423 @@ const PaymentTracking = () => {
           </div>
         </div>
 
-        {/* Overdue Payments Alerts */}
-        {showOverdueAlerts && overduePayments.length > 0 && (
-          <Card className="mb-6 border-l-4 border-l-yellow-500">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <AlertTriangle className="w-5 h-5 text-yellow-600" />
-                Overdue Payments Alert
+        {/* Dairy Sector Debt Summary */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+          <Card className="border-l-4 border-l-red-500 shadow-sm">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                Owed by Dairy Sector
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b">
-                      <th className="text-left py-2">Farmer</th>
-                      <th className="text-left py-2">Phone</th>
-                      <th className="text-left py-2">Outstanding Amount</th>
-                      <th className="text-left py-2">Days Overdue</th>
-                      <th className="text-left py-2">Last Payment</th>
-                      <th className="text-left py-2">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {overduePayments.map((payment, index) => (
-                      <tr key={index} className="border-b">
-                        <td className="py-3 font-medium">{payment.farmer_name}</td>
-                        <td className="py-3">{payment.farmer_phone}</td>
-                        <td className="py-3 font-medium">{formatCurrency(payment.outstanding_amount)}</td>
-                        <td className="py-3">{getOverdueBadge(payment.days_overdue)}</td>
-                        <td className="py-3">{new Date(payment.last_payment_date).toLocaleDateString()}</td>
-                        <td className="py-3">
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => sendOverdueNotification(payment.farmer_id, payment.farmer_name)}
-                            className="flex items-center gap-1"
-                          >
-                            <Bell className="w-4 h-4" />
-                            Send Reminder
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Payment Schedule Visualization */}
-        {selectedFarmerId && paymentSchedules[selectedFarmerId] && (
-          <Card className="mb-6">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Calendar className="w-5 h-5" />
-                Payment Schedule for {payments.find(p => p.farmer_id === selectedFarmerId)?.farmer_name}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart
-                    data={paymentSchedules[selectedFarmerId].map(schedule => ({
-                      date: new Date(schedule.date).toLocaleDateString(),
-                      amount: schedule.amount,
-                      status: schedule.status
-                    }))}
-                    margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
-                    <YAxis tickFormatter={(value) => `KES ${value/1000}k`} />
-                    <Tooltip formatter={(value) => [formatCurrency(Number(value)), 'Amount']} />
-                    <Area 
-                      type="monotone" 
-                      dataKey="amount" 
-                      stroke="#8884d8" 
-                      fill="#8884d8" 
-                      fillOpacity={0.3} 
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="mt-4">
-                <h3 className="font-medium mb-2">Schedule Details</h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {paymentSchedules[selectedFarmerId].map((schedule, index) => (
-                    <div key={index} className="border rounded-lg p-3">
-                      <div className="flex justify-between items-center">
-                        <span className="font-medium">{new Date(schedule.date).toLocaleDateString()}</span>
-                        <span className={`px-2 py-1 rounded-full text-xs ${getScheduleStatusColor(schedule.status)}`}>
-                          {getScheduleStatusLabel(schedule.status)}
-                        </span>
-                      </div>
-                      <div className="mt-2 text-lg font-semibold">{formatCurrency(schedule.amount)}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Analytics Charts */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          {/* Payment Volume Chart */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <TrendingUp className="w-5 h-5" />
-                Payment Volume
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={analytics}
-                    margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
-                    <YAxis tickFormatter={(value) => `KES ${value/1000}k`} />
-                    <Tooltip formatter={(value) => [formatCurrency(Number(value)), 'Amount']} />
-                    <Legend />
-                    <Bar dataKey="credit_granted" fill="#10B981" name="Credit Granted" />
-                    <Bar dataKey="credit_used" fill="#3B82F6" name="Credit Used" />
-                    <Bar dataKey="credit_repaid" fill="#8B5CF6" name="Credit Repaid" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+              <div className="text-3xl font-bold text-red-600">{formatCurrency(totalSectorDebt)}</div>
+              <p className="text-xs text-muted-foreground mt-1">Total pending settlements from Dairy company</p>
             </CardContent>
           </Card>
 
-          {/* Net Change Chart */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <BarChart3 className="w-5 h-5" />
-                Net Credit Change
+          <Card className="border-l-4 border-l-blue-500 shadow-sm">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                Pending Settlements
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart
-                    data={analytics}
-                    margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
-                    <YAxis tickFormatter={(value) => `KES ${value/1000}k`} />
-                    <Tooltip formatter={(value) => [formatCurrency(Number(value)), 'Amount']} />
-                    <Legend />
-                    <Line 
-                      type="monotone" 
-                      dataKey="net_change" 
-                      stroke="#F59E0B" 
-                      name="Net Change" 
-                      strokeWidth={2}
-                      dot={{ r: 4 }}
-                      activeDot={{ r: 6 }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
+              <div className="text-3xl font-bold text-blue-600">{pendingSettlements.length}</div>
+              <p className="text-xs text-muted-foreground mt-1">Transactions awaiting settlement</p>
             </CardContent>
           </Card>
         </div>
 
-        {/* Search and Filter Bar */}
-        <Card className="mb-6">
-          <CardContent className="p-6">
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-              <div className="flex flex-col sm:flex-row gap-4 flex-1">
-                <div className="relative flex-1 max-w-md">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                  <Input
-                    placeholder="Search by farmer name or phone..."
-                    className="pl-10"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                  />
-                </div>
-                <div className="flex gap-2 flex-wrap">
-                  <Select value={filterType} onValueChange={setFilterType}>
-                    <SelectTrigger className="w-[180px]">
-                      <SelectValue placeholder="Filter by type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Types</SelectItem>
-                      <SelectItem value="credit_granted">Credit Granted</SelectItem>
-                      <SelectItem value="credit_used">Credit Used</SelectItem>
-                      <SelectItem value="credit_repaid">Credit Repaid</SelectItem>
-                      <SelectItem value="credit_adjusted">Credit Adjusted</SelectItem>
-                      <SelectItem value="settlement">Settlement</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Select value={timeRange} onValueChange={setTimeRange}>
-                    <SelectTrigger className="w-[180px]">
-                      <SelectValue placeholder="Time range" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="7">Last 7 days</SelectItem>
-                      <SelectItem value="30">Last 30 days</SelectItem>
-                      <SelectItem value="90">Last 90 days</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Button variant="outline" onClick={fetchData}>
-                    Refresh
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        {/* Tabs for toggling views */}
+        <div className="flex border-b border-gray-200 mb-6 w-full">
+          <button
+            className={`px-4 py-3 font-medium text-sm flex items-center gap-2 ${activeTab === 'transactions' ? 'border-b-2 border-primary text-primary' : 'text-gray-500 hover:text-gray-700'}`}
+            onClick={() => setActiveTab('transactions')}
+          >
+            <CreditCard className="w-4 h-4" />
+            Farmer Transactions
+          </button>
+          <button
+            className={`px-4 py-3 font-medium text-sm flex items-center gap-2 ${activeTab === 'settlements' ? 'border-b-2 border-primary text-primary' : 'text-gray-500 hover:text-gray-700'}`}
+            onClick={() => setActiveTab('settlements')}
+          >
+            <TrendingUp className="w-4 h-4" />
+            Dairy Sector Settlements
+          </button>
+        </div>
 
-        {/* Payment Transactions Table */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <CreditCard className="w-5 h-5" />
-              Recent Transactions
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {filteredPayments.length === 0 ? (
-              <div className="text-center py-12">
-                <CreditCard className="w-12 h-12 mx-auto text-gray-400 mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-1">No transactions found</h3>
-                <p className="text-gray-500">
-                  {searchTerm || filterType !== "all"
-                    ? "No transactions match your search criteria"
-                    : "Transactions will appear here when credit activities occur"}
-                </p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Farmer</TableHead>
-                      <TableHead>Transaction Type</TableHead>
-                      <TableHead>Amount</TableHead>
-                      <TableHead>Balance Before</TableHead>
-                      <TableHead>Balance After</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredPayments.map((payment) => (
-                      <TableRow key={payment.id}>
-                        <TableCell>
-                          <div>
-                            <div className="font-medium">{payment.farmer_name}</div>
-                            <div className="text-sm text-gray-500">{payment.farmer_phone}</div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getTransactionTypeColor(payment.transaction_type)}`}>
-                            {getTransactionTypeLabel(payment.transaction_type)}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <div className="font-medium">{formatCurrency(payment.amount)}</div>
-                        </TableCell>
-                        <TableCell>
-                          {formatCurrency(payment.balance_before)}
-                        </TableCell>
-                        <TableCell>
-                          {formatCurrency(payment.balance_after)}
-                        </TableCell>
-                        <TableCell>
-                          <div className="max-w-xs text-sm text-gray-600">
-                            {payment.description || 'No description'}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {new Date(payment.created_at).toLocaleDateString()}
-                        </TableCell>
-                        <TableCell>
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => setSelectedFarmerId(payment.farmer_id === selectedFarmerId ? null : payment.farmer_id)}
-                            className="flex items-center gap-1"
-                          >
-                            <User className="w-4 h-4" />
-                            {payment.farmer_id === selectedFarmerId ? 'Hide' : 'View'} Schedule
-                          </Button>
-                        </TableCell>
+        {activeTab === 'settlements' ? (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <TrendingUp className="w-5 h-5 text-blue-600" />
+                Pending Settlements from Dairy Sector
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {pendingSettlements.length === 0 ? (
+                <div className="text-center py-12">
+                  <CheckCircle className="w-12 h-12 mx-auto text-green-500 mb-4 opacity-50" />
+                  <h3 className="text-lg font-medium text-gray-900">All Settled!</h3>
+                  <p className="text-gray-500">There are no pending payments from the Dairy Sector.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Farmer</TableHead>
+                        <TableHead>Product</TableHead>
+                        <TableHead className="text-right">Amount</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                    </TableHeader>
+                    <TableBody>
+                      {pendingSettlements.map((item) => (
+                        <TableRow key={item.id}>
+                          <TableCell>{new Date(item.created_at).toLocaleDateString()}</TableCell>
+                          <TableCell>
+                            <div>
+                              <div className="font-medium">{item.farmers?.full_name || 'Unknown'}</div>
+                              <div className="text-xs text-gray-500">{item.farmers?.phone_number}</div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="font-medium">{item.product_name}</div>
+                            <div className="text-xs text-gray-500">{item.quantity} x {formatCurrency(item.unit_price)}</div>
+                          </TableCell>
+                          <TableCell className="text-right font-bold text-red-600">
+                            {formatCurrency(item.total_amount)}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">
+                              {item.agrovet_settlement_status || 'Pending'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              size="sm"
+                              onClick={() => markAsSettled(item.id)}
+                            >
+                              Mark as Settled
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        ) : (
+          <>
+            {/* Overdue Payments Alerts */}
+            {showOverdueAlerts && overduePayments.length > 0 && (
+              <Card className="mb-6 border-l-4 border-l-yellow-500">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <AlertTriangle className="w-5 h-5 text-yellow-600" />
+                    Overdue Payments Alert
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b">
+                          <th className="text-left py-2">Farmer</th>
+                          <th className="text-left py-2">Phone</th>
+                          <th className="text-left py-2">Outstanding Amount</th>
+                          <th className="text-left py-2">Days Overdue</th>
+                          <th className="text-left py-2">Last Payment</th>
+                          <th className="text-left py-2">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {overduePayments.map((payment, index) => (
+                          <tr key={index} className="border-b">
+                            <td className="py-3 font-medium">{payment.farmer_name}</td>
+                            <td className="py-3">{payment.farmer_phone}</td>
+                            <td className="py-3 font-medium">{formatCurrency(payment.outstanding_amount)}</td>
+                            <td className="py-3">{getOverdueBadge(payment.days_overdue)}</td>
+                            <td className="py-3">{new Date(payment.last_payment_date).toLocaleDateString()}</td>
+                            <td className="py-3">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => sendOverdueNotification(payment.farmer_id, payment.farmer_name)}
+                                className="flex items-center gap-1"
+                              >
+                                <Bell className="w-4 h-4" />
+                                Send Reminder
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
             )}
-          </CardContent>
-        </Card>
+
+            {/* Payment Schedule Visualization */}
+            {selectedFarmerId && paymentSchedules[selectedFarmerId] && (
+              <Card className="mb-6">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Calendar className="w-5 h-5" />
+                    Payment Schedule for {payments.find(p => p.farmer_id === selectedFarmerId)?.farmer_name}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart
+                        data={paymentSchedules[selectedFarmerId].map(schedule => ({
+                          date: new Date(schedule.date).toLocaleDateString(),
+                          amount: schedule.amount,
+                          status: schedule.status
+                        }))}
+                        margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="date" />
+                        <YAxis tickFormatter={(value) => `KES ${value / 1000}k`} />
+                        <Tooltip formatter={(value) => [formatCurrency(Number(value)), 'Amount']} />
+                        <Area
+                          type="monotone"
+                          dataKey="amount"
+                          stroke="#8884d8"
+                          fill="#8884d8"
+                          fillOpacity={0.3}
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="mt-4">
+                    <h3 className="font-medium mb-2">Schedule Details</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {paymentSchedules[selectedFarmerId].map((schedule, index) => (
+                        <div key={index} className="border rounded-lg p-3">
+                          <div className="flex justify-between items-center">
+                            <span className="font-medium">{new Date(schedule.date).toLocaleDateString()}</span>
+                            <span className={`px-2 py-1 rounded-full text-xs ${getScheduleStatusColor(schedule.status)}`}>
+                              {getScheduleStatusLabel(schedule.status)}
+                            </span>
+                          </div>
+                          <div className="mt-2 text-lg font-semibold">{formatCurrency(schedule.amount)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Analytics Charts */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+              {/* Payment Volume Chart */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <TrendingUp className="w-5 h-5" />
+                    Payment Volume
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-80">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={analytics}
+                        margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="date" />
+                        <YAxis tickFormatter={(value) => `KES ${value / 1000}k`} />
+                        <Tooltip formatter={(value) => [formatCurrency(Number(value)), 'Amount']} />
+                        <Legend />
+                        <Bar dataKey="credit_granted" fill="#10B981" name="Credit Granted" />
+                        <Bar dataKey="credit_used" fill="#3B82F6" name="Credit Used" />
+                        <Bar dataKey="credit_repaid" fill="#8B5CF6" name="Credit Repaid" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Net Change Chart */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <BarChart3 className="w-5 h-5" />
+                    Net Credit Change
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-80">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart
+                        data={analytics}
+                        margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="date" />
+                        <YAxis tickFormatter={(value) => `KES ${value / 1000}k`} />
+                        <Tooltip formatter={(value) => [formatCurrency(Number(value)), 'Amount']} />
+                        <Legend />
+                        <Line
+                          type="monotone"
+                          dataKey="net_change"
+                          stroke="#F59E0B"
+                          name="Net Change"
+                          strokeWidth={2}
+                          dot={{ r: 4 }}
+                          activeDot={{ r: 6 }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Search and Filter Bar */}
+            <Card className="mb-6">
+              <CardContent className="p-6">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                  <div className="flex flex-col sm:flex-row gap-4 flex-1">
+                    <div className="relative flex-1 max-w-md">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                      <Input
+                        placeholder="Search by farmer name or phone..."
+                        className="pl-10"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                      />
+                    </div>
+                    <div className="flex gap-2 flex-wrap">
+                      <Select value={filterType} onValueChange={setFilterType}>
+                        <SelectTrigger className="w-[180px]">
+                          <SelectValue placeholder="Filter by type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Types</SelectItem>
+                          <SelectItem value="credit_granted">Credit Granted</SelectItem>
+                          <SelectItem value="credit_used">Credit Used</SelectItem>
+                          <SelectItem value="credit_repaid">Credit Repaid</SelectItem>
+                          <SelectItem value="credit_adjusted">Credit Adjusted</SelectItem>
+                          <SelectItem value="settlement">Settlement</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Select value={timeRange} onValueChange={setTimeRange}>
+                        <SelectTrigger className="w-[180px]">
+                          <SelectValue placeholder="Time range" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="7">Last 7 days</SelectItem>
+                          <SelectItem value="30">Last 30 days</SelectItem>
+                          <SelectItem value="90">Last 90 days</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Button variant="outline" onClick={fetchData}>
+                        Refresh
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Payment Transactions Table */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <CreditCard className="w-5 h-5" />
+                  Recent Transactions
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {filteredPayments.length === 0 ? (
+                  <div className="text-center py-12">
+                    <CreditCard className="w-12 h-12 mx-auto text-gray-400 mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-1">No transactions found</h3>
+                    <p className="text-gray-500">
+                      {searchTerm || filterType !== "all"
+                        ? "No transactions match your search criteria"
+                        : "Transactions will appear here when credit activities occur"}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Farmer</TableHead>
+                          <TableHead>Transaction Type</TableHead>
+                          <TableHead>Amount</TableHead>
+                          <TableHead>Balance Before</TableHead>
+                          <TableHead>Balance After</TableHead>
+                          <TableHead>Description</TableHead>
+                          <TableHead>Date</TableHead>
+                          <TableHead>Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredPayments.map((payment) => (
+                          <TableRow key={payment.id}>
+                            <TableCell>
+                              <div>
+                                <div className="font-medium">{payment.farmer_name}</div>
+                                <div className="text-sm text-gray-500">{payment.farmer_phone}</div>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getTransactionTypeColor(payment.transaction_type)}`}>
+                                {getTransactionTypeLabel(payment.transaction_type)}
+                              </span>
+                            </TableCell>
+                            <TableCell>
+                              <div className="font-medium">{formatCurrency(payment.amount)}</div>
+                            </TableCell>
+                            <TableCell>
+                              {formatCurrency(payment.balance_before)}
+                            </TableCell>
+                            <TableCell>
+                              {formatCurrency(payment.balance_after)}
+                            </TableCell>
+                            <TableCell>
+                              <div className="max-w-xs text-sm text-gray-600">
+                                {payment.description || 'No description'}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              {new Date(payment.created_at).toLocaleDateString()}
+                            </TableCell>
+                            <TableCell>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setSelectedFarmerId(payment.farmer_id === selectedFarmerId ? null : payment.farmer_id)}
+                                className="flex items-center gap-1"
+                              >
+                                <User className="w-4 h-4" />
+                                {payment.farmer_id === selectedFarmerId ? 'Hide' : 'View'} Schedule
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </>
+        )}
       </div>
     </div>
   );

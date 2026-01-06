@@ -31,7 +31,7 @@ export class CreditRequestService {
   ): Promise<CreditRequest> {
     try {
       const totalAmount = quantity * unitPrice;
-      
+
       // Log the packaging option ID being stored
       logger.info(`CreditRequestService - creating credit request`, {
         farmerId,
@@ -41,7 +41,7 @@ export class CreditRequestService {
         totalAmount,
         packagingOptionId
       });
-      
+
       const { data, error } = await supabase
         .from('credit_requests')
         .insert({
@@ -120,7 +120,7 @@ export class CreditRequestService {
       requestId,
       approvedBy
     });
-    
+
     try {
       // Validate input
       if (!requestId) {
@@ -157,29 +157,29 @@ export class CreditRequestService {
       }
 
       if (!request.quantity || request.quantity <= 0) {
-        logger.error(`CreditRequestService - approveCreditRequest: Valid quantity is required`, { 
-          requestId, 
-          quantity: request.quantity 
+        logger.error(`CreditRequestService - approveCreditRequest: Valid quantity is required`, {
+          requestId,
+          quantity: request.quantity
         });
         return { success: false, errorMessage: 'Valid quantity is required' };
       }
 
       if (!request.unit_price || request.unit_price <= 0) {
-        logger.error(`CreditRequestService - approveCreditRequest: Valid unit price is required`, { 
-          requestId, 
-          unitPrice: request.unit_price 
+        logger.error(`CreditRequestService - approveCreditRequest: Valid unit price is required`, {
+          requestId,
+          unitPrice: request.unit_price
         });
         return { success: false, errorMessage: 'Valid unit price is required' };
       }
 
       if (!request.total_amount || request.total_amount <= 0) {
-        logger.error(`CreditRequestService - approveCreditRequest: Valid total amount is required`, { 
-          requestId, 
-          totalAmount: request.total_amount 
+        logger.error(`CreditRequestService - approveCreditRequest: Valid total amount is required`, {
+          requestId,
+          totalAmount: request.total_amount
         });
         return { success: false, errorMessage: 'Valid total amount is required' };
       }
-      
+
       // If the request has a packaging option ID, verify it still exists
       // But allow approval to proceed if we have all the necessary data stored
       if (request.packaging_option_id) {
@@ -189,7 +189,7 @@ export class CreditRequestService {
           .eq('id', request.packaging_option_id)
           .eq('product_id', request.product_id)
           .maybeSingle();
-          
+
         if (packagingError) {
           logger.errorWithContext('CreditRequestService - verifying packaging option existence', packagingError);
           // Don't fail the approval just because of a verification error
@@ -201,7 +201,7 @@ export class CreditRequestService {
             error: packagingError.message
           });
         }
-        
+
         if (!packagingData) {
           logger.warn(`CreditRequestService - approveCreditRequest: Packaging option no longer exists`, {
             requestId,
@@ -233,15 +233,15 @@ export class CreditRequestService {
         request.total_amount,
         'credit_used'
       );
-      
+
       if (!preApprovalCheck.isAllowed) {
         logger.warn(`CreditRequestService - approveCreditRequest: Pre-approval check failed`, {
           requestId,
           farmerId: request.farmer_id,
           reason: preApprovalCheck.reason
         });
-        return { 
-          success: false, 
+        return {
+          success: false,
           errorMessage: `Pre-approval check failed: ${preApprovalCheck.reason}`,
           enforcementDetails: preApprovalCheck
         };
@@ -275,7 +275,7 @@ export class CreditRequestService {
               .select('id')
               .eq('user_id', approvedBy)
               .maybeSingle();
-            
+
             if (!staffError && staffData) {
               staffId = staffData.id;
             } else {
@@ -307,12 +307,35 @@ export class CreditRequestService {
           throw updateError;
         }
 
+        // Create a purchase record for collection tracking (Disbursement Flow)
+        // This allows the creditor/agrovet to see the item in the "Product Disbursement" page
+        const { error: purchaseError } = await supabase
+          .from('agrovet_purchases')
+          .insert({
+            farmer_id: request.farmer_id,
+            item_id: request.product_id,
+            quantity: request.quantity,
+            unit_price: request.unit_price,
+            total_amount: request.total_amount,
+            payment_method: 'credit',
+            credit_transaction_id: result.transactionId,
+            status: 'pending_collection',
+            purchased_by: staffId
+          });
+
+        if (purchaseError) {
+          logger.errorWithContext('CreditRequestService - creating purchase record', purchaseError);
+          // We don't throw here to avoid rolling back the approval if just the purchase tracking fails
+          // But in a real system we might want transactionality. 
+          // Since we can't easily do distributed transactions here without RPC, we'll log it.
+        }
+
         logger.info(`CreditRequestService - approveCreditRequest: Request approved successfully`, {
           requestId,
           farmerId: request.farmer_id
         });
 
-        return { 
+        return {
           success: true,
           enforcementDetails: result.enforcementDetails
         };
@@ -322,17 +345,17 @@ export class CreditRequestService {
           farmerId: request.farmer_id,
           errorMessage: result.errorMessage
         });
-        return { 
-          success: false, 
+        return {
+          success: false,
           errorMessage: result.errorMessage || 'Failed to process credit transaction',
           enforcementDetails: result.enforcementDetails
         };
       }
     } catch (error) {
       logger.errorWithContext('CreditRequestService - approveCreditRequest', error);
-      return { 
-        success: false, 
-        errorMessage: (error as Error).message 
+      return {
+        success: false,
+        errorMessage: (error as Error).message
       };
     }
   }
@@ -350,7 +373,7 @@ export class CreditRequestService {
             .select('id')
             .eq('user_id', rejectedBy)
             .maybeSingle();
-          
+
           if (!staffError && staffData) {
             staffId = staffData.id;
           } else {

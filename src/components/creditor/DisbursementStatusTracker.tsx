@@ -58,7 +58,7 @@ const DisbursementStatusTracker = () => {
     let filtered = disbursements;
 
     if (searchTerm) {
-      filtered = filtered.filter(disbursement => 
+      filtered = filtered.filter(disbursement =>
         disbursement.farmer_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         disbursement.farmer_phone.includes(searchTerm) ||
         disbursement.product_name.toLowerCase().includes(searchTerm.toLowerCase())
@@ -75,52 +75,78 @@ const DisbursementStatusTracker = () => {
   const fetchDisbursements = async () => {
     try {
       setLoading(true);
-      
-      // Get agrovet disbursements with related data
-      const { data, error } = await supabase
-        .from('agrovet_disbursements')
+
+      // Get agrovet purchases with related data (joining farmers via users profile logic might be tricky directly, 
+      // but let's try standard joins first as Supabase handles FKs well usually)
+      // Note: DisbursementPage does manual joining because of profile splitting, let's try that approach for safety/consistency
+
+      const { data: purchasesData, error: purchasesError } = await supabase
+        .from('agrovet_purchases')
         .select(`
           *,
-          agrovet_credit_requests(
-            agrovet_products(
-              name
-            ),
-            quantity,
-            unit_price
-          ),
-          farmers:farmer_id (
-            full_name,
-            phone
+          agrovet_inventory(
+            name,
+            unit
           )
         `)
+        .eq('payment_method', 'credit') // Only interested in credit disbursements for tracking
         .order('created_at', { ascending: false })
         .limit(100);
 
-      if (error) throw error;
+      if (purchasesError) throw purchasesError;
+
+      if (!purchasesData || purchasesData.length === 0) {
+        setDisbursements([]);
+        setFilteredDisbursements([]);
+        return;
+      }
+
+      // Fetch farmer profiles manually to avoid complex joins if relations aren't perfect
+      const farmerIds = [...new Set(purchasesData.map(p => p.farmer_id))];
+
+      const { data: farmersData } = await supabase
+        .from('farmers')
+        .select('id, user_id')
+        .in('id', farmerIds);
+
+      const userIds = [...new Set(farmersData?.map(f => f.user_id).filter(Boolean) as string[])];
+      const farmersMap = new Map(farmersData?.map(f => [f.id, f.user_id]));
+
+      const { data: profilesData } = await supabase
+        .from('profiles')
+        .select('id, full_name, phone')
+        .in('id', userIds);
+
+      const profilesMap = new Map(profilesData?.map(p => [p.id, p]));
 
       // Transform data to match our interface
-      const transformedData = (data || []).map(disbursement => {
-        const request = disbursement.agrovet_credit_requests;
-        const product = request?.agrovet_products;
-        
+      const transformedData = purchasesData.map(purchase => {
+        const product = purchase.agrovet_inventory;
+        const userId = farmersMap.get(purchase.farmer_id);
+        const profile = userId ? profilesMap.get(userId) : null;
+
+        // Calculate due date (30 days from creation by default for credit)
+        const createdDate = new Date(purchase.created_at);
+        const dueDate = new Date(createdDate.setDate(createdDate.getDate() + 30)).toISOString();
+
         return {
-          id: disbursement.id,
-          credit_request_id: disbursement.credit_request_id,
-          farmer_id: disbursement.farmer_id,
-          farmer_name: disbursement.farmers?.full_name || 'Unknown Farmer',
-          farmer_phone: disbursement.farmers?.phone || 'No phone',
-          disbursed_by: disbursement.disbursed_by,
-          disbursed_at: disbursement.disbursed_at,
-          total_amount: disbursement.total_amount,
-          credit_used: disbursement.credit_used,
-          net_payment: disbursement.net_payment,
-          credit_transaction_id: disbursement.credit_transaction_id,
-          due_date: disbursement.due_date,
-          status: disbursement.status,
-          collection_payment_ids: disbursement.collection_payment_ids || [],
-          created_at: disbursement.created_at,
+          id: purchase.id,
+          credit_request_id: purchase.credit_transaction_id || '', // approximate mapping
+          farmer_id: purchase.farmer_id,
+          farmer_name: profile?.full_name || 'Unknown Farmer',
+          farmer_phone: profile?.phone || 'No phone',
+          disbursed_by: purchase.purchased_by || 'System',
+          disbursed_at: purchase.created_at,
+          total_amount: purchase.total_amount,
+          credit_used: purchase.total_amount, // For credit purchases, it's all credit
+          net_payment: 0, // Assuming 0 for now until payment tracking is fully linked
+          credit_transaction_id: purchase.credit_transaction_id,
+          due_date: dueDate,
+          status: purchase.payment_status || 'pending_payment', // map payment_status to local status
+          collection_payment_ids: [],
+          created_at: purchase.created_at,
           product_name: product?.name || 'Unknown Product',
-          quantity: request?.quantity || 0,
+          quantity: purchase.quantity || 0,
           unit: product?.unit || 'units'
         };
       });
@@ -160,7 +186,7 @@ const DisbursementStatusTracker = () => {
   };
 
   const getStatusIcon = (status: string) => {
-    switch(status) {
+    switch (status) {
       case 'paid':
         return <CheckCircle className="h-4 w-4" />;
       case 'pending_payment':
@@ -188,7 +214,7 @@ const DisbursementStatusTracker = () => {
     }
 
     const daysUntilDue = getDaysUntilDue(dueDate);
-    
+
     if (daysUntilDue < 0) {
       return <Badge variant="destructive">Overdue by {Math.abs(daysUntilDue)} days</Badge>;
     } else if (daysUntilDue === 0) {
@@ -219,8 +245,8 @@ const DisbursementStatusTracker = () => {
           <h2 className="text-2xl font-bold tracking-tight">Disbursement Status Tracker</h2>
           <p className="text-muted-foreground">Monitor the status of all agrovet product disbursements</p>
         </div>
-        <Button 
-          onClick={handleRefresh} 
+        <Button
+          onClick={handleRefresh}
           variant="outline"
           disabled={refreshing}
         >

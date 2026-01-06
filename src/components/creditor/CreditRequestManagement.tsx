@@ -4,13 +4,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/components/ui/use-toast';
-import { 
-  Search, 
-  CheckCircle, 
-  Clock, 
-  Package, 
-  User, 
-  Phone, 
+import {
+  Search,
+  CheckCircle,
+  Clock,
+  Package,
+  User,
+  Phone,
   AlertCircle,
   CreditCard,
   Loader2
@@ -25,6 +25,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { supabase } from '@/integrations/supabase/client';
+import { CreditRequestService } from '@/services/credit-request-service';
 
 interface CreditRequest {
   id: string;
@@ -119,18 +120,20 @@ const CreditRequestManagement = () => {
   const handleApproveRequest = async (requestId: string) => {
     setProcessingId(requestId);
     try {
-      // Call the stored procedure to process the credit request
-      const { error } = await supabase.rpc('process_agrovet_credit_request', {
-        request_id: requestId,
-        staff_id: (await supabase.auth.getUser()).data.user?.id,
-        action: 'disbursed'
-      });
+      const user = (await supabase.auth.getUser()).data.user;
 
-      if (error) throw error;
+      const result = await CreditRequestService.approveCreditRequest(
+        requestId,
+        user?.id
+      );
+
+      if (!result.success) {
+        throw new Error(result.errorMessage || 'Failed to approve request');
+      }
 
       toast({
         title: "Request Approved",
-        description: "Credit request has been approved and product disbursed.",
+        description: "Credit request has been approved and sent to disbursement.",
       });
 
       // Refresh the list
@@ -151,14 +154,13 @@ const CreditRequestManagement = () => {
   const handleRejectRequest = async (requestId: string) => {
     setProcessingId(requestId);
     try {
-      // Call the stored procedure to reject the credit request
-      const { error } = await supabase.rpc('process_agrovet_credit_request', {
-        request_id: requestId,
-        staff_id: (await supabase.auth.getUser()).data.user?.id,
-        action: 'rejected'
-      });
+      const user = (await supabase.auth.getUser()).data.user;
 
-      if (error) throw error;
+      await CreditRequestService.rejectCreditRequest(
+        requestId,
+        rejectionReason || 'Rejected by staff',
+        user?.id
+      );
 
       toast({
         title: "Request Rejected",
@@ -193,7 +195,7 @@ const CreditRequestManagement = () => {
   });
 
   const getStatusColor = (status: string) => {
-    switch(status) {
+    switch (status) {
       case 'pending': return 'bg-yellow-100 text-yellow-800';
       case 'disbursed': return 'bg-green-100 text-green-800';
       case 'rejected': return 'bg-red-100 text-red-800';
@@ -202,7 +204,7 @@ const CreditRequestManagement = () => {
   };
 
   const getStatusIcon = (status: string) => {
-    switch(status) {
+    switch (status) {
       case 'pending': return <Clock className="w-4 h-4" />;
       case 'disbursed': return <CheckCircle className="w-4 h-4" />;
       case 'rejected': return <AlertCircle className="w-4 h-4" />;
@@ -291,7 +293,7 @@ const CreditRequestManagement = () => {
                       </div>
                       {request.available_credit_at_request !== undefined && (
                         <div className="mt-2 text-sm">
-                          <span className="font-medium">Available Credit:</span> 
+                          <span className="font-medium">Available Credit:</span>
                           <span className={request.available_credit_at_request >= request.total_amount ? 'text-green-600' : 'text-red-600'}>
                             {' '}{formatCurrency(request.available_credit_at_request)}
                           </span>
@@ -302,7 +304,7 @@ const CreditRequestManagement = () => {
 
                   {request.status === 'pending' && (
                     <div className="flex gap-2">
-                      <Button 
+                      <Button
                         onClick={() => setSelectedRequest(request)}
                         variant="outline"
                       >
@@ -425,9 +427,9 @@ const CreditRequestManagement = () => {
                 </Button>
                 <Button
                   onClick={() => handleApproveRequest(selectedRequest.id)}
-                  disabled={processingId === selectedRequest.id || 
-                    (selectedRequest.available_credit_at_request !== undefined && 
-                     selectedRequest.available_credit_at_request < selectedRequest.total_amount)}
+                  disabled={processingId === selectedRequest.id ||
+                    (selectedRequest.available_credit_at_request !== undefined &&
+                      selectedRequest.available_credit_at_request < selectedRequest.total_amount)}
                 >
                   {processingId === selectedRequest.id ? (
                     <>

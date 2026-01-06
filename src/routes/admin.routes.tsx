@@ -192,6 +192,7 @@ export default function AdminRoutes() {
                   <Route path="collections" element={<CollectionsAnalyticsDashboard />} />
                   <Route path="farmer-collections" element={<FarmerCollectionPage />} />
                   <Route path="kyc" element={<KYCAdminDashboard />} />
+                  <Route path="kyc-pending-farmers" element={<KYCPendingFarmersDashboard />} />
                   <Route path="kyc-pending-farmer/:id" element={<KYCPendingFarmerDetails />} />
                   <Route path="staff/invite" element={<StaffInvitePage />} />
                   <Route path="staff/pending" element={<PendingStaffDashboard />} />
