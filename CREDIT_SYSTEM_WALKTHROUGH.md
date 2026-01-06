@@ -43,9 +43,11 @@ This document outlines the verification of the end-to-end credit system, from fa
 
 ### Farmer Flow
 1.  Log in as a Farmer.
-2.  Navigate to "Request Credit".
+2.  Navigate to "Request Credit" / Shop.
 3.  Select a product and submit.
-4.  **Verify**: A new row appears in `credit_requests` with status `pending`.
+4.  **Verify**:
+    *   **Manual Mode**: A new row appears in `credit_requests` with status `pending`.
+    *   **Auto-Approval Mode**: The request is instantly approved. A row appears in `agrovet_purchases` (`pending_collection`) and balance is deducted immediately.
 
 ### Admin/Staff Flow
 1.  Log in as Admin or Staff.

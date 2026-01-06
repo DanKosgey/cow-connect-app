@@ -12,7 +12,8 @@ import {
   Plus,
   AlertCircle,
   CheckCircle,
-  Clock
+  Clock,
+  Settings
 } from "lucide-react";
 import { formatCurrency } from "@/utils/formatters";
 import { Button } from "@/components/ui/button";
@@ -33,10 +34,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
 import RefreshButton from '@/components/ui/RefreshButton';
 import { useCreditManagementData } from '@/hooks/useCreditManagementData';
 import CreditRequestManagement from '@/components/creditor/CreditRequestManagement';
+import CreditSettings from "@/components/admin/CreditSettings";
 
 interface FarmerCreditSummary {
   farmer_id: string;
@@ -159,7 +166,18 @@ const CreditManagement = () => {
             <h1 className="text-3xl font-bold text-gray-900">Credit Management</h1>
             <p className="text-gray-600 mt-2">Manage farmer credit limits and monitor credit usage</p>
           </div>
-          <div className="mt-4 md:mt-0">
+          <div className="mt-4 md:mt-0 flex items-center gap-2">
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="bg-white border-gray-300 shadow-sm">
+                  <Settings className="w-4 h-4 mr-2" />
+                  Settings
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+                <CreditSettings />
+              </DialogContent>
+            </Dialog>
             <RefreshButton
               isRefreshing={loading}
               onRefresh={refetch}

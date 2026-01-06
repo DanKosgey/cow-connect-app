@@ -47,21 +47,27 @@ const DisbursementPage = () => {
     const [statusFilter, setStatusFilter] = useState('all');
 
     useEffect(() => {
-        fetchPendingPurchases();
-    }, []);
+        fetchPurchases();
+    }, [statusFilter]);
 
-    const fetchPendingPurchases = async () => {
+    const fetchPurchases = async () => {
         setLoading(true);
         try {
-            // 1. Fetch purchases with status 'pending_collection'
-            const { data: purchasesData, error: purchasesError } = await supabase
+            // 1. Build dynamic query
+            let query = supabase
                 .from('agrovet_purchases')
                 .select(`
           *,
           agrovet_inventory(name, category, unit)
         `)
-                .eq('status', 'pending_collection')
                 .order('created_at', { ascending: false });
+
+            // Apply filter
+            if (statusFilter !== 'all') {
+                query = query.eq('status', statusFilter);
+            }
+
+            const { data: purchasesData, error: purchasesError } = await query;
 
             if (purchasesError) throw purchasesError;
 
@@ -73,40 +79,27 @@ const DisbursementPage = () => {
             // 2. Extract farmer IDs
             const farmerIds = [...new Set(purchasesData.map(p => p.farmer_id))];
 
-            // 3. Fetch farmers to get user_ids
+            // 3. Fetch farmers to get names and phones directly - this is where the name actually lives!
             const { data: farmersData, error: farmersError } = await supabase
                 .from('farmers')
-                .select('id, user_id')
+                .select('id, full_name, phone_number, user_id')
                 .in('id', farmerIds);
 
             if (farmersError) throw farmersError;
 
-            // 4. Extract user IDs
-            const userIds = [...new Set(farmersData?.map(f => f.user_id).filter(Boolean) as string[])];
-
-            // 5. Fetch profiles to get names and phones
-            const { data: profilesData, error: profilesError } = await supabase
-                .from('profiles')
-                .select('id, full_name, phone')
-                .in('id', userIds);
-
-            if (profilesError) throw profilesError;
-
-            // 6. Map data together
+            // 4. Map data together
             const farmersMap = new Map(farmersData?.map(f => [f.id, f]));
-            const profilesMap = new Map(profilesData?.map(p => [p.id, p]));
 
             const combinedData = purchasesData.map(purchase => {
                 const farmer = farmersMap.get(purchase.farmer_id);
-                const profile = farmer?.user_id ? profilesMap.get(farmer.user_id) : null;
 
                 return {
                     ...purchase,
                     farmers: {
                         id: purchase.farmer_id,
                         profiles: {
-                            full_name: profile?.full_name || 'Unknown Farmer',
-                            phone: profile?.phone || 'No Phone'
+                            full_name: farmer?.full_name || 'Unknown Farmer',
+                            phone: farmer?.phone_number || 'No Phone'
                         }
                     }
                 };
@@ -181,7 +174,7 @@ const DisbursementPage = () => {
                     <h1 className="text-3xl font-bold tracking-tight">Product Disbursement</h1>
                     <p className="text-muted-foreground">Confirm product collection by farmers</p>
                 </div>
-                <Button onClick={fetchPendingPurchases} variant="outline">
+                <Button onClick={fetchPurchases} variant="outline">
                     Refresh List
                 </Button>
             </div>
@@ -261,41 +254,15 @@ const DisbursementPage = () => {
                                                 </div>
                                             </div>
                                         </div>
-                                        <Dialog open={selectedPurchase?.id === purchase.id} onOpenChange={(open) => {
-                                            if (!open) setSelectedPurchase(null);
-                                        }}>
-                                            <DialogTrigger asChild>
-                                                <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                    onClick={() => setSelectedPurchase(purchase)}
-                                                    disabled={processingId === purchase.id}
-                                                >
-                                                    {processingId === purchase.id ? (
-                                                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                                    ) : (
-                                                        <CheckCircle className="h-4 w-4 mr-2" />
-                                                    )}
-                                                    Confirm Collection
-                                                </Button>
-                                            </DialogTrigger>
-                                            <DialogContent>
-                                                <DialogHeader>
-                                                    <DialogTitle>Confirm Product Collection</DialogTitle>
-                                                    <DialogDescription>
-                                                        Are you sure you want to confirm that {purchase.farmers?.profiles?.full_name} has collected their purchase of {purchase.quantity} {purchase.agrovet_inventory?.unit} of {purchase.agrovet_inventory?.name}?
-                                                    </DialogDescription>
-                                                </DialogHeader>
-                                                <DialogFooter>
+                                        {purchase.status === 'pending_collection' && (
+                                            <Dialog open={selectedPurchase?.id === purchase.id} onOpenChange={(open) => {
+                                                if (!open) setSelectedPurchase(null);
+                                            }}>
+                                                <DialogTrigger asChild>
                                                     <Button
                                                         variant="outline"
-                                                        onClick={() => setSelectedPurchase(null)}
-                                                        disabled={processingId === purchase.id}
-                                                    >
-                                                        Cancel
-                                                    </Button>
-                                                    <Button
-                                                        onClick={() => handleConfirmCollection(purchase.id)}
+                                                        size="sm"
+                                                        onClick={() => setSelectedPurchase(purchase)}
                                                         disabled={processingId === purchase.id}
                                                     >
                                                         {processingId === purchase.id ? (
@@ -305,9 +272,37 @@ const DisbursementPage = () => {
                                                         )}
                                                         Confirm Collection
                                                     </Button>
-                                                </DialogFooter>
-                                            </DialogContent>
-                                        </Dialog>
+                                                </DialogTrigger>
+                                                <DialogContent>
+                                                    <DialogHeader>
+                                                        <DialogTitle>Confirm Product Collection</DialogTitle>
+                                                        <DialogDescription>
+                                                            Are you sure you want to confirm that {purchase.farmers?.profiles?.full_name} has collected their purchase of {purchase.quantity} {purchase.agrovet_inventory?.unit} of {purchase.agrovet_inventory?.name}?
+                                                        </DialogDescription>
+                                                    </DialogHeader>
+                                                    <DialogFooter>
+                                                        <Button
+                                                            variant="outline"
+                                                            onClick={() => setSelectedPurchase(null)}
+                                                            disabled={processingId === purchase.id}
+                                                        >
+                                                            Cancel
+                                                        </Button>
+                                                        <Button
+                                                            onClick={() => handleConfirmCollection(purchase.id)}
+                                                            disabled={processingId === purchase.id}
+                                                        >
+                                                            {processingId === purchase.id ? (
+                                                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                                            ) : (
+                                                                <CheckCircle className="h-4 w-4 mr-2" />
+                                                            )}
+                                                            Confirm Collection
+                                                        </Button>
+                                                    </DialogFooter>
+                                                </DialogContent>
+                                            </Dialog>
+                                        )}
                                     </div>
                                 </div>
                             ))}

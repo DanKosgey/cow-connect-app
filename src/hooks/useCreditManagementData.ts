@@ -49,7 +49,8 @@ export const useCreditManagementData = (searchTerm: string, filterStatus: string
           farmers!farmer_credit_profiles_farmer_id_fkey (
             id,
             full_name,
-            phone_number
+            phone_number,
+            email
           )
         `)
         .eq('is_frozen', false);
@@ -58,12 +59,17 @@ export const useCreditManagementData = (searchTerm: string, filterStatus: string
         throw profilesError;
       }
 
-      const creditLimits = (creditProfiles || []) as CreditProfile[];
+      const creditLimits = (creditProfiles || []) as unknown as CreditProfile[];
 
       // For each credit profile, calculate credit information
       const farmerSummaries: FarmerCreditSummary[] = [];
-      
-      for (const profile of creditProfiles || []) {
+
+      for (const rawProfile of creditProfiles || []) {
+        // Handle potential array response for farmers relation
+        // @ts-ignore
+        const farmerData = Array.isArray(rawProfile.farmers) ? rawProfile.farmers[0] : rawProfile.farmers;
+        const profile = rawProfile as any;
+
         try {
           // Get pending payments from approved collections only
           const { data: pendingCollections, error: collectionsError } = await supabase
@@ -78,7 +84,7 @@ export const useCreditManagementData = (searchTerm: string, filterStatus: string
             continue;
           }
 
-          const pendingPayments = pendingCollections?.reduce((sum, collection) => 
+          const pendingPayments = pendingCollections?.reduce((sum, collection) =>
             sum + (collection.total_amount || 0), 0) || 0;
 
           // Calculate credit information
@@ -89,8 +95,8 @@ export const useCreditManagementData = (searchTerm: string, filterStatus: string
 
           farmerSummaries.push({
             farmer_id: profile.farmer_id,
-            farmer_name: profile.farmers?.full_name || 'Unknown Farmer',
-            farmer_phone: profile.farmers?.phone_number || 'No phone',
+            farmer_name: farmerData?.full_name || 'Unknown Farmer',
+            farmer_phone: farmerData?.phone_number || farmerData?.phone || 'No phone',
             credit_limit: creditLimitAmount,
             available_credit: availableCredit,
             credit_used: creditUsed,
@@ -106,7 +112,7 @@ export const useCreditManagementData = (searchTerm: string, filterStatus: string
       let filtered = farmerSummaries;
 
       if (searchTerm) {
-        filtered = filtered.filter(farmer => 
+        filtered = filtered.filter(farmer =>
           farmer.farmer_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
           farmer.farmer_phone.includes(searchTerm)
         );

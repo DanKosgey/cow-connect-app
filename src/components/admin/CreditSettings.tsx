@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { 
+import {
   Settings,
   Save,
   RotateCcw,
@@ -37,18 +37,18 @@ interface CreditSettingsConfig {
     warning_threshold: number;
     critical_threshold: number;
   };
-  
+
   // Agrovet Integration Settings
   agrovet_connection_status: 'connected' | 'disconnected' | 'error';
   credit_enabled_products: string[];
   sync_frequency: 'realtime' | 'hourly' | 'daily';
-  
+
   // Settlement Configuration
   monthly_settlement_date: number;
   settlement_advance_notice_days: number;
   payment_processing_method: 'bank_transfer' | 'mobile_money' | 'other';
   tax_vat_configuration: string;
-  
+
   // Notification Settings
   sms_alerts_enabled: boolean;
   email_alerts_enabled: boolean;
@@ -57,7 +57,7 @@ interface CreditSettingsConfig {
     phone: string;
     email: string;
   }[];
-  
+
   // Security & Compliance
   data_retention_period: number;
   audit_log_retention: number;
@@ -81,18 +81,18 @@ const CreditSettings = () => {
       warning_threshold: 85,
       critical_threshold: 95
     },
-    
+
     // Agrovet Integration Settings
     agrovet_connection_status: 'connected',
     credit_enabled_products: [],
     sync_frequency: 'realtime',
-    
+
     // Settlement Configuration
     monthly_settlement_date: 25,
     settlement_advance_notice_days: 3,
     payment_processing_method: 'mobile_money',
     tax_vat_configuration: '16%',
-    
+
     // Notification Settings
     sms_alerts_enabled: true,
     email_alerts_enabled: true,
@@ -101,28 +101,81 @@ const CreditSettings = () => {
       phone: '+254',
       email: 'admin@example.com'
     }],
-    
+
     // Security & Compliance
     data_retention_period: 3,
     audit_log_retention: 5,
     encryption_enabled: true,
     backup_frequency: 'daily'
   });
-  
+
   const { toast } = useToast();
 
   useEffect(() => {
-    // In a real implementation, this would fetch settings from the database
-    // For now, we'll use the default settings
-    // Handle case when no settings exist by using defaults
-    setLoading(false);
+    const fetchSettings = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('credit_settings')
+          .select('*')
+          .single();
+
+        if (error) {
+          console.error("Error fetching settings:", error);
+          // If no settings found (e.g. empty table), we start with defaults
+          // but usually migration ensures one row exists.
+        }
+
+        if (data) {
+          // Ensure JSON fields are correctly typed/structured if necessary
+          // Data from supabase comes as snake_case like defined in interface
+          setSettings(data as CreditSettingsConfig);
+        }
+      } catch (err) {
+        console.error("Unexpected error fetching settings:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchSettings();
   }, []);
 
   const handleSaveSettings = async () => {
     try {
       setSaving(true);
-      // In a real implementation, this would save settings to the database
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API call
+
+      // Remove any fields that shouldn't be updated directly if any (like id if it was in state separately)
+      // But here settings state matches table columns closely.
+      // We assume there's only one row, so we can update the known singleton or by ID if we had it.
+      // Since we fetched it, we might want to capture ID. 
+      // Let's rely on the singleton nature or fetch ID.
+
+      // Better approach: Since it's a singleton, we can just update the first row, 
+      // or if we have the ID from fetch (which we should add to interface).
+
+      // Let's assume we grabbed the ID in fetch. 
+      // I'll update the interface to include ID temporarily casted.
+      const settingsWithId = settings as CreditSettingsConfig & { id?: string };
+
+      let error;
+      if (settingsWithId.id) {
+        const { error: updateError } = await supabase
+          .from('credit_settings')
+          .update(settings)
+          .eq('id', settingsWithId.id);
+        error = updateError;
+      } else {
+        // Fallback if no ID (shouldn't happen if fetch worked)
+        // Upsert based on a known constant? No, table has UUID PK.
+        // We'll rely on fetch having populated it. 
+        // If generic update is needed without ID:
+        // Update where true (policy allows?) - risky.
+        console.warn("No settings ID found, cannot update.");
+        throw new Error("Settings not loaded correctly.");
+      }
+
+      if (error) throw error;
+
       toast({
         title: "Settings Saved",
         description: "Credit system configuration has been updated successfully",
@@ -154,18 +207,18 @@ const CreditSettings = () => {
         warning_threshold: 85,
         critical_threshold: 95
       },
-      
+
       // Agrovet Integration Settings
       agrovet_connection_status: 'connected',
       credit_enabled_products: [],
       sync_frequency: 'realtime',
-      
+
       // Settlement Configuration
       monthly_settlement_date: 25,
       settlement_advance_notice_days: 3,
       payment_processing_method: 'mobile_money',
       tax_vat_configuration: '16%',
-      
+
       // Notification Settings
       sms_alerts_enabled: true,
       email_alerts_enabled: true,
@@ -174,14 +227,14 @@ const CreditSettings = () => {
         phone: '+254',
         email: 'admin@example.com'
       }],
-      
+
       // Security & Compliance
       data_retention_period: 3,
       audit_log_retention: 5,
       encryption_enabled: true,
       backup_frequency: 'daily'
     });
-    
+
     toast({
       title: "Settings Reset",
       description: "Configuration has been reset to default values",
@@ -208,8 +261,8 @@ const CreditSettings = () => {
 
       {/* Action Buttons */}
       <div className="flex flex-wrap gap-4">
-        <Button 
-          onClick={handleSaveSettings} 
+        <Button
+          onClick={handleSaveSettings}
           disabled={saving}
           className="bg-blue-600 hover:bg-blue-700"
         >
@@ -225,9 +278,9 @@ const CreditSettings = () => {
             </>
           )}
         </Button>
-        
-        <Button 
-          variant="outline" 
+
+        <Button
+          variant="outline"
           onClick={handleResetSettings}
           disabled={saving}
         >
@@ -248,7 +301,7 @@ const CreditSettings = () => {
           <CardContent className="space-y-6">
             <div className="space-y-4">
               <h3 className="font-semibold text-gray-900">Default Credit Percentages</h3>
-              
+
               <div className="space-y-4">
                 <div>
                   <Label htmlFor="newFarmersPercentage">New Farmers (%)</Label>
@@ -267,7 +320,7 @@ const CreditSettings = () => {
                     })}
                   />
                 </div>
-                
+
                 <div>
                   <Label htmlFor="establishedFarmersPercentage">Established Farmers (%)</Label>
                   <Input
@@ -285,7 +338,7 @@ const CreditSettings = () => {
                     })}
                   />
                 </div>
-                
+
                 <div>
                   <Label htmlFor="premiumFarmersPercentage">Premium Farmers (%)</Label>
                   <Input
@@ -305,7 +358,7 @@ const CreditSettings = () => {
                 </div>
               </div>
             </div>
-            
+
             <div className="space-y-4">
               <div>
                 <Label htmlFor="maxCreditCap">Maximum Absolute Credit Cap (KES)</Label>
@@ -320,7 +373,7 @@ const CreditSettings = () => {
                   })}
                 />
               </div>
-              
+
               <div>
                 <Label htmlFor="minPendingThreshold">Minimum Pending Payment Threshold (KES)</Label>
                 <Input
@@ -335,10 +388,10 @@ const CreditSettings = () => {
                 />
               </div>
             </div>
-            
+
             <div className="space-y-4">
               <h3 className="font-semibold text-gray-900">Credit Utilization Warnings</h3>
-              
+
               <div className="space-y-4">
                 <div>
                   <Label htmlFor="warningThreshold">Warning Threshold (%)</Label>
@@ -357,7 +410,7 @@ const CreditSettings = () => {
                     })}
                   />
                 </div>
-                
+
                 <div>
                   <Label htmlFor="criticalThreshold">Critical Threshold (%)</Label>
                   <Input
@@ -393,25 +446,24 @@ const CreditSettings = () => {
               <div>
                 <Label>Connection Status</Label>
                 <div className="flex items-center gap-2 mt-1">
-                  <div className={`w-3 h-3 rounded-full ${
-                    settings.agrovet_connection_status === 'connected' ? 'bg-green-500' :
+                  <div className={`w-3 h-3 rounded-full ${settings.agrovet_connection_status === 'connected' ? 'bg-green-500' :
                     settings.agrovet_connection_status === 'disconnected' ? 'bg-gray-500' :
-                    'bg-red-500'
-                  }`}></div>
+                      'bg-red-500'
+                    }`}></div>
                   <span className="text-sm">
                     {settings.agrovet_connection_status === 'connected' ? 'Connected' :
-                     settings.agrovet_connection_status === 'disconnected' ? 'Disconnected' :
-                     'Error'}
+                      settings.agrovet_connection_status === 'disconnected' ? 'Disconnected' :
+                        'Error'}
                   </span>
                 </div>
               </div>
-              
+
               <div>
                 <Label htmlFor="syncFrequency">Sync Frequency</Label>
-                <Select 
-                  value={settings.sync_frequency} 
-                  onValueChange={(value: 'realtime' | 'hourly' | 'daily') => 
-                    setSettings({...settings, sync_frequency: value})
+                <Select
+                  value={settings.sync_frequency}
+                  onValueChange={(value: 'realtime' | 'hourly' | 'daily') =>
+                    setSettings({ ...settings, sync_frequency: value })
                   }
                 >
                   <SelectTrigger>
@@ -424,7 +476,7 @@ const CreditSettings = () => {
                   </SelectContent>
                 </Select>
               </div>
-              
+
               <div>
                 <Label htmlFor="testConnection">Test Connection</Label>
                 <div className="mt-2">
@@ -449,17 +501,17 @@ const CreditSettings = () => {
             <div className="space-y-4">
               <div>
                 <Label htmlFor="settlementDate">Monthly Settlement Date</Label>
-                <Select 
-                  value={settings.monthly_settlement_date.toString()} 
-                  onValueChange={(value) => 
-                    setSettings({...settings, monthly_settlement_date: Number(value)})
+                <Select
+                  value={settings.monthly_settlement_date.toString()}
+                  onValueChange={(value) =>
+                    setSettings({ ...settings, monthly_settlement_date: Number(value) })
                   }
                 >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {Array.from({length: 31}, (_, i) => i + 1).map(day => (
+                    {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
                       <SelectItem key={day} value={day.toString()}>
                         {day}{day === 1 ? 'st' : day === 2 ? 'nd' : day === 3 ? 'rd' : 'th'} of month
                       </SelectItem>
@@ -467,7 +519,7 @@ const CreditSettings = () => {
                   </SelectContent>
                 </Select>
               </div>
-              
+
               <div>
                 <Label htmlFor="noticeDays">Advance Notice Days</Label>
                 <Input
@@ -482,13 +534,13 @@ const CreditSettings = () => {
                   })}
                 />
               </div>
-              
+
               <div>
                 <Label htmlFor="paymentMethod">Payment Processing Method</Label>
-                <Select 
-                  value={settings.payment_processing_method} 
-                  onValueChange={(value: 'bank_transfer' | 'mobile_money' | 'other') => 
-                    setSettings({...settings, payment_processing_method: value})
+                <Select
+                  value={settings.payment_processing_method}
+                  onValueChange={(value: 'bank_transfer' | 'mobile_money' | 'other') =>
+                    setSettings({ ...settings, payment_processing_method: value })
                   }
                 >
                   <SelectTrigger>
@@ -501,7 +553,7 @@ const CreditSettings = () => {
                   </SelectContent>
                 </Select>
               </div>
-              
+
               <div>
                 <Label htmlFor="taxVat">Tax/VAT Configuration</Label>
                 <Input
@@ -532,23 +584,23 @@ const CreditSettings = () => {
                 <Switch
                   id="smsAlerts"
                   checked={settings.sms_alerts_enabled}
-                  onCheckedChange={(checked) => 
-                    setSettings({...settings, sms_alerts_enabled: checked})
+                  onCheckedChange={(checked) =>
+                    setSettings({ ...settings, sms_alerts_enabled: checked })
                   }
                 />
               </div>
-              
+
               <div className="flex items-center justify-between">
                 <Label htmlFor="emailAlerts">Email Alerts</Label>
                 <Switch
                   id="emailAlerts"
                   checked={settings.email_alerts_enabled}
-                  onCheckedChange={(checked) => 
-                    setSettings({...settings, email_alerts_enabled: checked})
+                  onCheckedChange={(checked) =>
+                    setSettings({ ...settings, email_alerts_enabled: checked })
                   }
                 />
               </div>
-              
+
               <div>
                 <Label>Alert Recipients</Label>
                 <div className="mt-2 space-y-2">
@@ -560,7 +612,7 @@ const CreditSettings = () => {
                         onChange={(e) => {
                           const newRecipients = [...settings.alert_recipients];
                           newRecipients[index].phone = e.target.value;
-                          setSettings({...settings, alert_recipients: newRecipients});
+                          setSettings({ ...settings, alert_recipients: newRecipients });
                         }}
                       />
                       <Input
@@ -569,13 +621,13 @@ const CreditSettings = () => {
                         onChange={(e) => {
                           const newRecipients = [...settings.alert_recipients];
                           newRecipients[index].email = e.target.value;
-                          setSettings({...settings, alert_recipients: newRecipients});
+                          setSettings({ ...settings, alert_recipients: newRecipients });
                         }}
                       />
                     </div>
                   ))}
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     size="sm"
                     onClick={() => setSettings({
                       ...settings,
@@ -615,7 +667,7 @@ const CreditSettings = () => {
                     })}
                   />
                 </div>
-                
+
                 <div>
                   <Label htmlFor="auditRetention">Audit Log Retention (years)</Label>
                   <Input
@@ -631,25 +683,25 @@ const CreditSettings = () => {
                   />
                 </div>
               </div>
-              
+
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <Label htmlFor="encryption">Encryption Enabled</Label>
                   <Switch
                     id="encryption"
                     checked={settings.encryption_enabled}
-                    onCheckedChange={(checked) => 
-                      setSettings({...settings, encryption_enabled: checked})
+                    onCheckedChange={(checked) =>
+                      setSettings({ ...settings, encryption_enabled: checked })
                     }
                   />
                 </div>
-                
+
                 <div>
                   <Label htmlFor="backupFrequency">Backup Frequency</Label>
-                  <Select 
-                    value={settings.backup_frequency} 
-                    onValueChange={(value: 'daily' | 'weekly' | 'custom') => 
-                      setSettings({...settings, backup_frequency: value})
+                  <Select
+                    value={settings.backup_frequency}
+                    onValueChange={(value: 'daily' | 'weekly' | 'custom') =>
+                      setSettings({ ...settings, backup_frequency: value })
                     }
                   >
                     <SelectTrigger>

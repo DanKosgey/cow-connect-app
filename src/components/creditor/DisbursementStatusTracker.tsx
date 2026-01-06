@@ -101,29 +101,20 @@ const DisbursementStatusTracker = () => {
         return;
       }
 
-      // Fetch farmer profiles manually to avoid complex joins if relations aren't perfect
+      // Fetch farmer names directly
       const farmerIds = [...new Set(purchasesData.map(p => p.farmer_id))];
 
       const { data: farmersData } = await supabase
         .from('farmers')
-        .select('id, user_id')
+        .select('id, full_name, phone_number')
         .in('id', farmerIds);
 
-      const userIds = [...new Set(farmersData?.map(f => f.user_id).filter(Boolean) as string[])];
-      const farmersMap = new Map(farmersData?.map(f => [f.id, f.user_id]));
-
-      const { data: profilesData } = await supabase
-        .from('profiles')
-        .select('id, full_name, phone')
-        .in('id', userIds);
-
-      const profilesMap = new Map(profilesData?.map(p => [p.id, p]));
+      const farmersMap = new Map(farmersData?.map(f => [f.id, f]));
 
       // Transform data to match our interface
       const transformedData = purchasesData.map(purchase => {
         const product = purchase.agrovet_inventory;
-        const userId = farmersMap.get(purchase.farmer_id);
-        const profile = userId ? profilesMap.get(userId) : null;
+        const farmer = farmersMap.get(purchase.farmer_id);
 
         // Calculate due date (30 days from creation by default for credit)
         const createdDate = new Date(purchase.created_at);
@@ -133,8 +124,8 @@ const DisbursementStatusTracker = () => {
           id: purchase.id,
           credit_request_id: purchase.credit_transaction_id || '', // approximate mapping
           farmer_id: purchase.farmer_id,
-          farmer_name: profile?.full_name || 'Unknown Farmer',
-          farmer_phone: profile?.phone || 'No phone',
+          farmer_name: farmer?.full_name || 'Unknown Farmer',
+          farmer_phone: farmer?.phone_number || 'No phone',
           disbursed_by: purchase.purchased_by || 'System',
           disbursed_at: purchase.created_at,
           total_amount: purchase.total_amount,

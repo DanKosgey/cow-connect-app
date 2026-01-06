@@ -29,11 +29,58 @@ export class CreditRequestService {
     unitPrice: number,
     packagingOptionId?: string | null
   ): Promise<CreditRequest> {
-    try {
-      const totalAmount = quantity * unitPrice;
+    const totalAmount = quantity * unitPrice;
 
+    // 1. Try Secure RPC (Handles Auto-Approve & Permissions)
+    try {
+      const { data, error } = await supabase.rpc('request_credit_transaction', {
+        p_farmer_id: farmerId,
+        p_product_id: productId,
+        p_quantity: quantity,
+        p_total_amount: totalAmount,
+        p_requested_by: farmerId,
+        p_packaging_option_id: packagingOptionId,
+        p_product_name: productName,
+        p_unit_price: unitPrice
+      });
+
+      if (!error && data) {
+        logger.info(`CreditRequestService - RPC success`, data);
+        return {
+          id: data.request_id,
+          farmer_id: farmerId,
+          product_id: productId,
+          product_name: productName,
+          quantity: quantity,
+          unit_price: unitPrice,
+          total_amount: totalAmount,
+          status: data.status,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        } as CreditRequest;
+      }
+
+      // If function not found (42883), fallback to manual insert
+      if (error && error.code !== '42883') {
+        logger.errorWithContext('CreditRequestService - RPC failed', error);
+        throw error;
+      }
+
+      if (error) {
+        logger.warn('CreditRequestService - RPC not found, falling back to manual insert (No Auto-Approve)');
+      }
+
+    } catch (error: any) {
+      if (error?.code !== '42883') { // rethrow if not "function missing"
+        logger.errorWithContext('CreditRequestService - createCreditRequest RPC error', error);
+        throw error;
+      }
+    }
+
+    // 2. Fallback: Manual Insert (Status always pending, no auto-approve for farmers due to permissions)
+    try {
       // Log the packaging option ID being stored
-      logger.info(`CreditRequestService - creating credit request`, {
+      logger.info(`CreditRequestService - creating credit request (manual)`, {
         farmerId,
         productId,
         quantity,
@@ -52,7 +99,7 @@ export class CreditRequestService {
           unit_price: unitPrice,
           total_amount: totalAmount,
           packaging_option_id: packagingOptionId || null,
-          status: 'pending'
+          status: 'pending' // Manual fallback is always pending
         })
         .select()
         .single();

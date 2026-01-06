@@ -60,7 +60,99 @@ export interface AgrovetPurchase {
   created_at: string;
 }
 
+export interface CreditRequestParams {
+  farmerId: string;
+  itemId: string;
+  quantity: number;
+  totalAmount: number;
+  requestedBy?: string;
+}
+
 export class CreditService {
+  // Request credit for a purchase (Farmer initiates)
+  static async requestCreditPurchase(params: CreditRequestParams): Promise<any> {
+    try {
+      // 1. Check Auto-Approval Setting (Application level check for reliability)
+      const { data: settings } = await supabase
+        .from('system_settings')
+        .select('value')
+        .eq('key', 'credit_config')
+        .single();
+
+      const autoApprove = settings?.value?.auto_approve === true;
+
+      // 2. Check Credit Limit (Fail early if insufficient)
+      const creditInfo = await this.calculateAvailableCredit(params.farmerId);
+      if (creditInfo.availableCredit < params.totalAmount) {
+        throw new Error(`Insufficient credit limit. Available: ${formatCurrency(creditInfo.availableCredit)}`);
+      }
+
+      // 3. Create Credit Request
+      // We explicitly set status based on app check. 
+      // If autoApprove is true, we insert 'approved'. Trigger condition (NEW.status='pending') will be false, so trigger acts as no-op.
+      // This ensures reliability regardless of trigger presence.
+      const { data: requestData, error: requestError } = await supabase
+        .from('credit_requests')
+        .insert({
+          farmer_id: params.farmerId,
+          product_id: params.itemId,
+          quantity: params.quantity,
+          total_amount: params.totalAmount,
+          status: autoApprove ? 'approved' : 'pending',
+          request_date: new Date().toISOString(),
+          processed_at: autoApprove ? new Date().toISOString() : null,
+          processed_by: autoApprove ? 'SYSTEM_AUTO_APPROVE' : null
+        })
+        .select()
+        .single();
+
+      if (requestError) throw requestError;
+
+      // 4. If Auto-Approve, IMMEDIATELY create Purchase & Transaction
+      if (autoApprove) {
+        // Fetch product price since we need unit price for purchase record
+        const { data: product } = await supabase
+          .from('agrovet_inventory')
+          .select('selling_price')
+          .eq('id', params.itemId)
+          .single();
+
+        // Create Purchase
+        const { data: purchaseData, error: purchaseError } = await supabase
+          .from('agrovet_purchases')
+          .insert({
+            farmer_id: params.farmerId,
+            item_id: params.itemId,
+            quantity: params.quantity,
+            unit_price: product?.selling_price || 0,
+            total_amount: params.totalAmount,
+            payment_method: 'credit',
+            status: 'pending_collection', // Send to Creditor
+            purchased_by: params.requestedBy
+          })
+          .select()
+          .single();
+
+        if (purchaseError) throw purchaseError;
+
+        // Use Credit (Transaction)
+        await this.useCreditForPurchase(
+          params.farmerId,
+          purchaseData.id,
+          params.totalAmount,
+          'SYSTEM_AUTO_APPROVE'
+        );
+
+        return { request: requestData, purchase: purchaseData, autoApproved: true };
+      }
+
+      return { request: requestData, autoApproved: false };
+
+    } catch (error) {
+      logger.errorWithContext('CreditService - requestCreditPurchase', error);
+      throw error;
+    }
+  }
   // Approve a credit request
   static async approveCreditRequest(requestId: string, approvedBy?: string): Promise<void> {
     try {
@@ -74,7 +166,7 @@ export class CreditService {
         .select(`
           *,
           farmers:farmer_id (id, full_name),
-          agrovet_products:product_id (id, name, unit_price)
+          agrovet_products:product_id (id, name, unit_price, selling_price)
         `)
         .eq('id', requestId)
         .maybeSingle();
@@ -86,6 +178,33 @@ export class CreditService {
 
       if (!request) {
         throw new Error('Credit request not found');
+      }
+
+      // Check credit limit before approving
+      const creditInfo = await this.calculateAvailableCredit(request.farmer_id);
+      if (creditInfo.availableCredit < request.total_amount) {
+        throw new Error(`Insufficient credit. Available: ${formatCurrency(creditInfo.availableCredit)}, Requested: ${formatCurrency(request.total_amount)}`);
+      }
+
+      // Create Agrovet Purchase record (So Creditor checks it)
+      const { data: purchaseData, error: purchaseError } = await supabase
+        .from('agrovet_purchases')
+        .insert({
+          farmer_id: request.farmer_id,
+          item_id: request.product_id,
+          quantity: request.quantity || 1, // Default to 1 if not specified (legacy requests)
+          unit_price: request.agrovet_products?.unit_price || request.agrovet_products?.selling_price || 0,
+          total_amount: request.total_amount,
+          payment_method: 'credit',
+          status: 'pending_collection',
+          purchased_by: approvedBy
+        })
+        .select()
+        .single();
+
+      if (purchaseError) {
+        logger.errorWithContext('CreditService - creating agrovet purchase on approval', purchaseError);
+        throw purchaseError;
       }
 
       // Update the credit request status
@@ -103,6 +222,20 @@ export class CreditService {
         logger.errorWithContext('CreditService - updating credit request for approval', updateError);
         throw updateError;
       }
+
+      // Create credit transaction (Deduct from Limit)
+      // We use the purchase ID as reference
+      await this.useCreditForPurchase(
+        request.farmer_id,
+        purchaseData.id,
+        request.total_amount,
+        approvedBy
+      );
+
+      // Update purchase with credit transaction ID (Best effort)
+      // Note: useCreditForPurchase returns the transaction, we could link it if needed.
+      // However, useCreditForPurchase logic might differ slightly if we want to separate "Purchase" from "Request Approval".
+      // Actually `useCreditForPurchase` creates the transaction. 
 
       // Send notification to farmer
       try {

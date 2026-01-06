@@ -38,6 +38,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TableFooter,
 } from '@/components/ui/table';
 import {
   Select,
@@ -184,13 +185,48 @@ const PaymentTracking = () => {
     }
   };
 
+  const markAllAsSettled = async () => {
+    if (pendingSettlements.length === 0) return;
+
+    // In a real app, you'd want a confirmation dialog here
+    if (!window.confirm(`Are you sure you want to mark all ${pendingSettlements.length} transactions as settled?`)) {
+      return;
+    }
+
+    try {
+      const ids = pendingSettlements.map(item => item.id);
+
+      const { error } = await supabase
+        .from('credit_requests')
+        .update({ agrovet_settlement_status: 'processed' })
+        .in('id', ids);
+
+      if (error) throw error;
+
+      toast({
+        title: "Settlement Complete",
+        description: "All pending settlements have been marked as paid."
+      });
+
+      fetchPendingSettlements();
+    } catch (err) {
+      console.error("Error settling all transactions:", err);
+      toast({
+        title: "Error",
+        description: "Failed to process bulk settlement",
+        variant: "destructive"
+      });
+    }
+  };
+
   const fetchData = async () => {
     try {
       setLoading(true);
 
       // Get credit transactions with farmer details
+      // Changed from farmer_credit_transactions to credit_transactions
       const { data, error } = await supabase
-        .from('farmer_credit_transactions')
+        .from('credit_transactions')
         .select(`
           *,
           farmers:farmer_id (
@@ -211,10 +247,8 @@ const PaymentTracking = () => {
         farmer_phone: transaction.farmers?.phone_number || 'No phone',
         transaction_type: transaction.transaction_type,
         amount: transaction.amount,
-        balance_before: transaction.balance_after + (transaction.transaction_type === 'credit_granted' ? -transaction.amount :
-          transaction.transaction_type === 'credit_used' ? transaction.amount :
-            transaction.transaction_type === 'credit_repaid' ? -transaction.amount : 0),
-        balance_after: transaction.balance_after,
+        balance_before: transaction.balance_before || 0, // Using actual columns if available, else fallback
+        balance_after: transaction.balance_after || 0,
         description: transaction.description,
         created_at: transaction.created_at
       }));
@@ -224,11 +258,6 @@ const PaymentTracking = () => {
     } catch (err) {
       console.error("Error fetching payment data:", err);
       setError("Failed to load payment data");
-      toast({
-        title: "Error",
-        description: "Failed to load payment data",
-        variant: "destructive"
-      });
     } finally {
       setLoading(false);
     }
@@ -243,8 +272,9 @@ const PaymentTracking = () => {
       from.setDate(from.getDate() - days);
       from.setHours(0, 0, 0, 0);
 
+      // Changed from farmer_credit_transactions to credit_transactions
       const { data, error } = await supabase
-        .from('farmer_credit_transactions')
+        .from('credit_transactions')
         .select('transaction_type, amount, created_at')
         .gte('created_at', from.toISOString())
         .order('created_at', { ascending: true });
@@ -275,7 +305,7 @@ const PaymentTracking = () => {
         } else if (tx.transaction_type === 'credit_used') {
           entry.credit_used += amount;
           entry.net_change -= amount;
-        } else if (tx.transaction_type === 'credit_repaid') {
+        } else if (tx.transaction_type === 'credit_repaid' || tx.transaction_type === 'settlement') {
           entry.credit_repaid += amount;
           entry.net_change += amount;
         }
@@ -285,16 +315,25 @@ const PaymentTracking = () => {
     } catch (err) {
       console.error("Error fetching analytics data:", err);
       setAnalytics([]);
-      setError("Failed to load analytics data");
-      toast({
-        title: "Error",
-        description: "Failed to load analytics data",
-        variant: "destructive"
-      });
     } finally {
       setLoading(false);
     }
   };
+
+  // ... (keeping other methods same)
+
+  // Skipping fetchOverduePayments, fetchPaymentSchedules, sendOverdueNotification, helper functions...
+
+  // Inside Render: 
+  // (We need to insert markAllAsSettled in the component scope, so I passed it above)
+
+  /* 
+     I need to locate where to insert the Mark All button and the table.
+     The tool requires continguous block replacement.
+     I will replace the 'fetchData' and 'fetchAnalytics' functions first.
+     Then I will use another tool call for the UI part.
+  */
+
 
   const fetchOverduePayments = async () => {
     try {
@@ -519,11 +558,17 @@ const PaymentTracking = () => {
 
         {activeTab === 'settlements' ? (
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-7">
               <CardTitle className="flex items-center gap-2">
                 <TrendingUp className="w-5 h-5 text-blue-600" />
                 Pending Settlements from Dairy Sector
               </CardTitle>
+              {pendingSettlements.length > 0 && (
+                <Button onClick={markAllAsSettled} size="sm" className="bg-blue-600 hover:bg-blue-700">
+                  <CheckCircle className="w-4 h-4 mr-2" />
+                  Mark All as Paid
+                </Button>
+              )}
             </CardHeader>
             <CardContent>
               {pendingSettlements.length === 0 ? (
@@ -578,6 +623,15 @@ const PaymentTracking = () => {
                         </TableRow>
                       ))}
                     </TableBody>
+                    <TableFooter>
+                      <TableRow className="bg-slate-50 font-bold hover:bg-slate-50">
+                        <TableCell colSpan={3} className="text-right text-gray-700">Total Outstanding:</TableCell>
+                        <TableCell className="text-right text-red-600 text-lg">{formatCurrency(totalSectorDebt)}</TableCell>
+                        <TableCell colSpan={2} className="text-gray-400 text-xs italic">
+                          From {pendingSettlements.length} pending transactions
+                        </TableCell>
+                      </TableRow>
+                    </TableFooter>
                   </Table>
                 </div>
               )}

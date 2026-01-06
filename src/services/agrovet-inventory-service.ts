@@ -18,6 +18,7 @@ export interface AgrovetProduct {
   reorder_level: number;
   supplier: string;
   cost_price: number;
+  selling_price: number; // Add selling_price property
   is_credit_eligible: boolean;
   image_url?: string;
   image_alt_text?: string;
@@ -70,14 +71,14 @@ export class AgrovetInventoryService {
 
       if (error) {
         console.error('AgrovetInventoryService: Error fetching inventory:', error);
-        
+
         // Check if this is a permissions error
         if (error.code === '42501' || (error.message && error.message.includes('permission denied'))) {
           console.error('AgrovetInventoryService: Permission denied error detected');
           logger.errorWithContext('AgrovetInventoryService - permission denied', error);
           throw new Error('You do not have permission to view the product inventory. Please contact an administrator.');
         }
-        
+
         logger.errorWithContext('AgrovetInventoryService - fetching inventory', error);
         throw error;
       }
@@ -150,7 +151,7 @@ export class AgrovetInventoryService {
       if (item.category_id) {
         insertData.category_id = item.category_id;
       }
-      
+
       // Always include the category name for backward compatibility
       if (item.category) {
         insertData.category = item.category;
@@ -198,7 +199,7 @@ export class AgrovetInventoryService {
           updateData.category = '';
         }
       }
-      
+
       // If category name is provided but category_id is not, we still update the text field
       if (item.category !== undefined && item.category_id === undefined) {
         updateData.category = item.category;

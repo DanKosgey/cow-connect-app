@@ -1,14 +1,14 @@
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { CreditService } from "@/services/credit-service";
-import { 
-  CreditCard, 
-  Users, 
-  Search, 
-  Filter, 
-  Download, 
-  Eye, 
-  Edit, 
+import {
+  CreditCard,
+  Users,
+  Search,
+  Filter,
+  Download,
+  Eye,
+  Edit,
   Plus,
   AlertCircle,
   CheckCircle,
@@ -58,7 +58,7 @@ const CreditManagement = () => {
   const { toast } = useToast();
 
   const { data: creditData, isLoading, isError, error: queryError, refetch } = useCreditManagementData(searchTerm, filterStatus);
-  
+
   const farmers = creditData?.farmers || [];
   const creditLimits = creditData?.creditLimits || [];
   const filteredFarmers = farmers;
@@ -85,12 +85,12 @@ const CreditManagement = () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       await CreditService.grantCreditToFarmer(farmerId, user?.id);
-      
+
       toast({
         title: "Success",
         description: `Credit granted to ${farmerName}`,
       });
-      
+
       // Refresh data
       refetch();
     } catch (error: any) {
@@ -137,9 +137,9 @@ const CreditManagement = () => {
             <p className="text-gray-600 mt-2">Manage farmer credit limits and monitor credit usage</p>
           </div>
           <div className="mt-4 md:mt-0">
-            <RefreshButton 
-              isRefreshing={loading} 
-              onRefresh={refetch} 
+            <RefreshButton
+              isRefreshing={loading}
+              onRefresh={refetch}
               className="bg-white border-gray-300 hover:bg-gray-50 rounded-lg shadow-sm"
             />
           </div>
@@ -191,7 +191,7 @@ const CreditManagement = () => {
                 <CardContent>
                   <p className="text-2xl font-bold text-gray-900">
                     {formatCurrency(
-                      creditLimits.reduce((sum, cl) => sum + cl.max_credit_amount, 0) / 
+                      creditLimits.reduce((sum, cl) => sum + cl.max_credit_amount, 0) /
                       (creditLimits.length || 1)
                     )}
                   </p>
@@ -255,7 +255,7 @@ const CreditManagement = () => {
                       <TableHead>Credit Used</TableHead>
                       <TableHead>Pending Payments</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -272,31 +272,12 @@ const CreditManagement = () => {
                         <TableCell>{formatCurrency(farmer.credit_used || 0)}</TableCell>
                         <TableCell>{formatCurrency(farmer.pending_payments || 0)}</TableCell>
                         <TableCell>
-                          <StatusBadge 
-                            status="active" 
-                            type="default" 
+                          <StatusBadge
+                            status="active"
+                            type="default"
                           />
                         </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleAdjustCreditLimit(farmer.farmer_id, farmer.farmer_name)}
-                            >
-                              <Edit className="h-4 w-4 mr-1" />
-                              Adjust
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleGrantCredit(farmer.farmer_id, farmer.farmer_name)}
-                            >
-                              <Plus className="h-4 w-4 mr-1" />
-                              Grant Credit
-                            </Button>
-                          </div>
-                        </TableCell>
+
                       </TableRow>
                     ))}
                   </TableBody>
