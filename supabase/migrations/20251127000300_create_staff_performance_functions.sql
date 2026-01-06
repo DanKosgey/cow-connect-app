@@ -94,6 +94,9 @@ BEGIN
   END IF;
   
   -- Return the calculated values
+  -- Ensure average variance percentage fits into NUMERIC(5,2) by clamping and rounding
+  v_avg_variance_percentage := ROUND(GREATEST(LEAST(v_avg_variance_percentage, 100.00), -100.00)::numeric, 2);
+
   RETURN QUERY SELECT 
     v_total_approvals,
     v_total_collections,

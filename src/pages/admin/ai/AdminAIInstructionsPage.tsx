@@ -43,7 +43,7 @@ const AdminAIInstructionsPage = () => {
   const saveInstructions = async () => {
     try {
       setSaving(true);
-      
+
       const result = await updateAIInstructions(
         instructions,
         modelName,
@@ -106,11 +106,13 @@ const AdminAIInstructionsPage = () => {
                 onChange={(e) => setModelName(e.target.value)}
                 className="w-full p-2 border rounded-md"
               >
-                <option value="gemini-2.5-flash">Gemini 2.5 Flash (Fast)</option>
-                <option value="gemini-2.5-pro">Gemini 2.5 Pro (More capable)</option>
+                <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recommended - Stable & Fast)</option>
+                <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash Experimental (Fastest)</option>
+                <option value="gemini-2.5-pro">Gemini 2.5 Pro (Most Capable)</option>
+                <option value="gemini-flash-latest">Gemini Flash Latest (Auto-updated)</option>
               </select>
               <p className="text-sm text-muted-foreground">
-                Choose the AI model to use for verification. Flash is faster, Pro is more capable.
+                Choose the AI model for verification. Gemini 2.5 Flash is recommended for production (stable, fast, excellent vision).
               </p>
             </div>
 
@@ -146,7 +148,7 @@ const AdminAIInstructionsPage = () => {
                 placeholder="Enter instructions for the AI model..."
               />
             </div>
-            
+
             <div className="bg-muted p-4 rounded-lg">
               <h3 className="font-medium mb-2">Guidelines:</h3>
               <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
@@ -159,8 +161,8 @@ const AdminAIInstructionsPage = () => {
             </div>
 
             <div className="flex justify-end">
-              <Button 
-                onClick={saveInstructions} 
+              <Button
+                onClick={saveInstructions}
                 disabled={saving}
                 size="lg"
               >

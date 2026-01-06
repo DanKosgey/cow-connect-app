@@ -9,7 +9,7 @@ CREATE OR REPLACE FUNCTION public.batch_approve_collector_collections(
     p_staff_id uuid,
     p_collector_id uuid,
     p_collection_date date,
-    p_default_received_liters numeric DEFAULT NULL
+    p_total_received_liters numeric DEFAULT NULL
 )
 RETURNS TABLE(
     approved_count integer,
@@ -38,8 +38,8 @@ DECLARE
     v_variance_type text;
 BEGIN
     -- Log the input parameters for debugging
-    RAISE LOG 'batch_approve_collector_collections called with: staff_id=%, collector_id=%, collection_date=%, default_received_liters=%', 
-              p_staff_id, p_collector_id, p_collection_date, p_default_received_liters;
+    RAISE LOG 'batch_approve_collector_collections called with: staff_id=%, collector_id=%, collection_date=%, total_received_liters=%', 
+              p_staff_id, p_collector_id, p_collection_date, p_total_received_liters;
     
     -- Validate inputs
     IF p_staff_id IS NULL THEN
@@ -54,8 +54,8 @@ BEGIN
         RAISE EXCEPTION 'Collection date is required. Received NULL value.';
     END IF;
     
-    IF p_default_received_liters IS NOT NULL AND p_default_received_liters < 0 THEN
-        RAISE EXCEPTION 'Default received liters cannot be negative. Received: %', p_default_received_liters;
+    IF p_total_received_liters IS NOT NULL AND p_total_received_liters < 0 THEN
+        RAISE EXCEPTION 'Total received liters cannot be negative. Received: %', p_total_received_liters;
     END IF;
     
     -- Validate that staff ID exists and is a valid staff member
@@ -112,7 +112,7 @@ BEGIN
         
         -- Use default received liters or match collected liters if not provided
         v_collected_liters := v_collection_record.liters;
-        v_received_liters := COALESCE(p_default_received_liters, v_collected_liters);
+        v_received_liters := COALESCE(p_total_received_liters, v_collected_liters);
         
         -- Calculate variance
         v_variance_liters := v_received_liters - v_collected_liters;
@@ -183,16 +183,16 @@ BEGIN
         AND period_end = (DATE_TRUNC('month', p_collection_date) + INTERVAL '1 month - 1 day')::date;
         
         IF FOUND THEN
-            -- Update existing record
+            -- Update existing record (qualify columns to avoid ambiguity with RETURN variables)
             UPDATE public.collector_performance
             SET 
-                total_collections = total_collections + 1,
-                total_liters_collected = total_liters_collected + v_collected_liters,
-                total_liters_received = total_liters_received + v_received_liters,
-                total_variance = total_variance + v_variance_liters,
-                total_penalty_amount = total_penalty_amount + v_penalty_amount,
-                positive_variances = positive_variances + CASE WHEN v_variance_type = 'positive' THEN 1 ELSE 0 END,
-                negative_variances = negative_variances + CASE WHEN v_variance_type = 'negative' THEN 1 ELSE 0 END,
+                total_collections = public.collector_performance.total_collections + 1,
+                total_liters_collected = public.collector_performance.total_liters_collected + v_collected_liters,
+                total_liters_received = public.collector_performance.total_liters_received + v_received_liters,
+                total_variance = public.collector_performance.total_variance + v_variance_liters,
+                total_penalty_amount = public.collector_performance.total_penalty_amount + v_penalty_amount,
+                positive_variances = public.collector_performance.positive_variances + CASE WHEN v_variance_type = 'positive' THEN 1 ELSE 0 END,
+                negative_variances = public.collector_performance.negative_variances + CASE WHEN v_variance_type = 'negative' THEN 1 ELSE 0 END,
                 updated_at = NOW()
             WHERE staff_id = v_collection_record.staff_id
             AND period_start = DATE_TRUNC('month', p_collection_date)::date

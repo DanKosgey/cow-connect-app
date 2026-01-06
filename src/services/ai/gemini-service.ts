@@ -22,12 +22,12 @@ const safetySettings = [
   },
 ];
 
-// Model configuration
+// Model configuration - optimized for speed
 const modelConfig = {
   temperature: 0.1,
   topP: 0.95,
-  topK: 64,
-  maxOutputTokens: 8192,
+  topK: 40,
+  maxOutputTokens: 2048, // Reduced for faster responses
   responseMimeType: "application/json",
 };
 
@@ -76,7 +76,7 @@ export const getLatestAIInstructions = async () => {
 
     return {
       instructions: data?.instructions || '',
-      modelName: data?.model_name || 'gemini-2.5-flash',
+      modelName: data?.model_name || 'gemini-2.0-flash-exp',
       confidenceThreshold: data?.confidence_threshold || 0.8,
     };
   } catch (error) {
@@ -96,7 +96,6 @@ export const getLatestAIInstructions = async () => {
       - Standard milk collection jugs or tanks
       - Any numerical indicators of volume
       - Overall plausibility of the collection
-      
       Be conservative in your estimates. If uncertain, recommend human review.
       `,
       modelName: 'gemini-2.5-flash',
@@ -107,52 +106,53 @@ export const getLatestAIInstructions = async () => {
 
 /**
  * Analyze a milk collection photo to verify liters match the recorded amount
- * @param imageUrl URL of the uploaded photo
+ * @param imageSource URL of the uploaded photo OR a Blob/File object (for faster local processing)
  * @param recordedLiters The liters recorded by the collector
  * @param staffId The staff ID for API key rotation (optional)
  * @returns Analysis result with verification status and confidence
  */
-export const verifyCollectionPhoto = async (imageUrl: string, recordedLiters: number, staffId: string = 'default_staff') => {
+export const verifyCollectionPhoto = async (imageSource: string | Blob, recordedLiters: number, staffId: string = 'default_staff') => {
   try {
     const model = await getModel(staffId);
-    
-    // Download the image
-    const imageResponse = await fetch(imageUrl);
-    const imageBlob = await imageResponse.blob();
-    
-    // Convert blob to base64 using browser-compatible method
-    const base64Image = await blobToBase64(imageBlob);
-    
+
+    let base64Image: string;
+    let mimeType = 'image/jpeg';
+
+    if (imageSource instanceof Blob) {
+      // Direct blob processing - FASTEST PATH
+      base64Image = await blobToBase64(imageSource);
+      mimeType = imageSource.type || 'image/jpeg';
+    } else {
+      // URL download path - SLOWER
+      const imageResponse = await fetch(imageSource);
+      const imageBlob = await imageResponse.blob();
+      base64Image = await blobToBase64(imageBlob);
+      mimeType = imageBlob.type || 'image/jpeg';
+    }
+
     // Get the latest AI instructions from the database
     const aiInstructions = await getLatestAIInstructions();
-    
+
     const prompt = `
     ${aiInstructions.instructions}
     
-    Recorded liters: ${recordedLiters}L
+    Recorded: ${recordedLiters}L
     
-    Please analyze the image and:
-    1. Identify any containers, measuring devices, or indicators of milk volume
-    2. Estimate the total liters of milk shown in the image
-    3. Compare your estimate with the recorded liters
-    4. Provide a confidence score (0.0 to 1.0) for your analysis
-    5. Explain your reasoning
+    Analyze this milk collection photo:
+    1. Estimate total liters shown
+    2. Compare with recorded amount
+    3. Assess confidence (0.0-1.0)
     
-    Respond ONLY with a valid JSON object in this exact format:
+    Return ONLY this JSON (no markdown, no extra text):
     {
       "estimatedLiters": 10.5,
       "matchesRecorded": true,
       "confidence": 0.85,
-      "explanation": "Based on the container size and fill level, this appears to be approximately 10.5 liters of milk.",
+      "explanation": "Brief reason",
       "verificationPassed": true
     }
     
-    CRITICAL: Respond with ONLY the JSON object. No other text, no markdown, no explanations outside the JSON.
-    CRITICAL: Ensure all values are valid JSON types.
-    CRITICAL: Do not wrap the JSON in any other formatting.
-    CRITICAL: The confidence value must be between 0.0 and 1.0.
-    
-    Be conservative in your estimates. If you cannot clearly determine the volume, set verificationPassed to false.
+    Be conservative. If unclear, set verificationPassed to false.
     `;
 
     const result = await model.generateContent([
@@ -160,14 +160,14 @@ export const verifyCollectionPhoto = async (imageUrl: string, recordedLiters: nu
       {
         inlineData: {
           data: base64Image,
-          mimeType: imageBlob.type || 'image/jpeg',
+          mimeType: mimeType,
         },
       },
     ]);
 
     const response = await result.response;
     const text = response.text();
-    
+
     // Parse the JSON response
     try {
       // First try to parse the entire response as JSON
@@ -190,7 +190,7 @@ export const verifyCollectionPhoto = async (imageUrl: string, recordedLiters: nu
           }
         }
       }
-      
+
       return {
         success: true,
         analysis,
@@ -205,7 +205,7 @@ export const verifyCollectionPhoto = async (imageUrl: string, recordedLiters: nu
     }
   } catch (error) {
     console.error('Error verifying collection photo:', error);
-    
+
     // Provide more specific error messages
     let errorMessage = 'Unknown error occurred';
     if (error instanceof Error) {
@@ -217,7 +217,7 @@ export const verifyCollectionPhoto = async (imageUrl: string, recordedLiters: nu
         errorMessage = error.message;
       }
     }
-    
+
     return {
       success: false,
       error: errorMessage,
@@ -251,7 +251,7 @@ export const updateAIInstructions = async (
       // Update existing instructions
       const { error: updateError } = await supabase
         .from('ai_instructions')
-        .update({ 
+        .update({
           instructions,
           model_name: modelName,
           confidence_threshold: confidenceThreshold,
@@ -263,7 +263,7 @@ export const updateAIInstructions = async (
       // Insert new instructions
       const { error: insertError } = await supabase
         .from('ai_instructions')
-        .insert([{ 
+        .insert([{
           instructions,
           model_name: modelName,
           confidence_threshold: confidenceThreshold
@@ -276,9 +276,9 @@ export const updateAIInstructions = async (
     return { success: true };
   } catch (error) {
     console.error('Error updating AI instructions:', error);
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : 'Failed to update AI instructions' 
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to update AI instructions'
     };
   }
 };

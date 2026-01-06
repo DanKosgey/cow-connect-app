@@ -14,13 +14,13 @@ const CACHE_DURATION = 10 * 60 * 1000; // 10 minutes
  */
 function getApiKeysFromEnv(): string[] {
   const apiKeys: string[] = [];
-  
+
   // Check for primary API key (VITE_ prefix for Vercel compatibility)
   const primaryKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.GEMINI_API_KEY;
   if (primaryKey) {
     apiKeys.push(primaryKey);
   }
-  
+
   // Load up to 50 backup API keys from environment variables
   // Check both VITE_ prefixed (for Vercel) and non-prefixed (for local development) versions
   for (let i = 1; i <= 50; i++) {
@@ -30,18 +30,18 @@ function getApiKeysFromEnv(): string[] {
       apiKeys.push(vitePrefixedKey);
       continue;
     }
-    
+
     // Then check non-prefixed version (for local development)
     const nonPrefixedKey = import.meta.env[`GEMINI_API_KEY_${i}`];
     if (nonPrefixedKey) {
       apiKeys.push(nonPrefixedKey);
       continue;
     }
-    
+
     // Stop at the first missing key
     break;
   }
-  
+
   // Debug logging
   console.log('Environment keys checked:');
   console.log('- VITE_GEMINI_API_KEY:', import.meta.env.VITE_GEMINI_API_KEY);
@@ -52,7 +52,7 @@ function getApiKeysFromEnv(): string[] {
   }
   console.log('Total API keys found:', apiKeys.length);
   console.log('API keys:', apiKeys);
-  
+
   return apiKeys;
 }
 
@@ -97,7 +97,7 @@ function cacheModel(cacheKey: string, model: any): void {
     model,
     timestamp: Date.now()
   });
-  
+
   // Periodically clean up expired entries
   if (Math.random() < 0.1) { // 10% chance to clean up
     cleanupModelCache();
@@ -134,59 +134,58 @@ async function testApiKey(model: any): Promise<void> {
 export async function getModelWithRotation(staffId: string) {
   // Get API keys from environment variables
   const apiKeys = getApiKeysFromEnv();
-  
+
   if (apiKeys.length === 0) {
     throw new Error('No API keys configured in environment variables. Please set GEMINI_API_KEY_1 in your .env file.');
   }
-  
+
   // Get current key index
   let currentIndex = getCurrentKeyIndex(staffId);
-  
+
   // Make sure index is within bounds
   if (currentIndex < 1 || currentIndex > apiKeys.length) {
     currentIndex = 1;
   }
-  
+
   let attempts = 0;
   const maxAttempts = apiKeys.length; // Try all available keys maximum
-  
+
   while (attempts < maxAttempts) {
     try {
       const apiKey = apiKeys[currentIndex - 1]; // Array is 0-indexed
-      
+
       if (!apiKey) {
         throw new Error(`No valid API key at index ${currentIndex}`);
       }
-      
+
       // Check if we have a cached model for this key
       const cacheKey = `model_${apiKey}`;
       let model = getCachedModel(cacheKey);
-      
+
       if (!model) {
         // Initialize Google Generative AI
         const genAI = new GoogleGenerativeAI(apiKey);
+        // Use gemini-2.5-flash - stable, fast, supports vision
         model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-        
-        // Test the API key by making a simple request
-        await testApiKey(model);
-        
-        // Cache the validated model
+
+        // Cache the model without testing to reduce latency
+        // The actual request will fail if the key is invalid, triggering rotation then
         cacheModel(cacheKey, model);
       }
-      
+
       // If we get here, the key/model is valid
       return { model, apiKey, currentIndex };
     } catch (error: any) {
       console.error(`Error validating API key at index ${currentIndex}:`, error);
-      
+
       // Check if it's a quota error (429) or invalid key error
-      if (error.message?.includes('429') || 
-          error.message?.includes('quota') || 
-          error.message?.includes('API key not valid') ||
-          error.message?.includes('API_KEY_INVALID') ||
-          error.message?.includes('forbidden') ||
-          error.message?.includes('403')) {
-        
+      if (error.message?.includes('429') ||
+        error.message?.includes('quota') ||
+        error.message?.includes('API key not valid') ||
+        error.message?.includes('API_KEY_INVALID') ||
+        error.message?.includes('forbidden') ||
+        error.message?.includes('403')) {
+
         // Rotate to next key
         currentIndex = (currentIndex % apiKeys.length) + 1;
         setCurrentKeyIndex(staffId, currentIndex);
@@ -195,11 +194,11 @@ export async function getModelWithRotation(staffId: string) {
         await new Promise(resolve => setTimeout(resolve, 100));
         continue;
       }
-      
+
       // For other errors, don't retry
       throw error;
     }
   }
-  
+
   throw new Error('All API keys exhausted or invalid');
 }

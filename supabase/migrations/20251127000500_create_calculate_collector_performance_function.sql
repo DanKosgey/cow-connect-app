@@ -49,7 +49,8 @@ BEGIN
         cs.collection_count::INTEGER as total_collections,
         cs.total_liters as total_liters_collected,
         cs.total_variance,
-        cs.avg_variance_pct as average_variance_percentage,
+        -- Clamp and round avg variance to fit NUMERIC(5,2)
+        ROUND(GREATEST(LEAST(cs.avg_variance_pct, 100.00), -100.00)::numeric, 2) as average_variance_percentage,
         cs.total_penalties as total_penalty_amount,
         cs.positive_vars::INTEGER as positive_variances,
         cs.negative_vars::INTEGER as negative_variances,
