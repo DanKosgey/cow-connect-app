@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { 
-  Smartphone, 
-  Tablet, 
-  Laptop, 
-  Download, 
+import {
+  Smartphone,
+  Tablet,
+  Laptop,
+  Download,
   Bell,
   BarChart3,
   Users,
@@ -141,6 +141,17 @@ export default function AppDownloadPage() {
                   {platform.details}
                 </p>
                 <div className={platform.devicePreview} />
+                {platform.title === 'Mobile App' && (
+                  <div className="mt-6">
+                    <Button
+                      className="w-full bg-green-600 hover:bg-green-700 text-white"
+                      onClick={() => window.open('/app-release.apk', '_blank')}
+                    >
+                      <Download className="mr-2 h-4 w-4" /> Download Android APK
+                    </Button>
+                    <p className="text-xs text-gray-500 mt-2">Latest Version (v1.0.0)</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
           ))}
