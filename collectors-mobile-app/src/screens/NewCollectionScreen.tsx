@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
-    View, Text, TextInput, TouchableOpacity, Image, Alert, ScrollView, StyleSheet, ActivityIndicator, Platform, KeyboardAvoidingView
+    View, Text, TextInput, TouchableOpacity, Image, Alert, ScrollView, StyleSheet, ActivityIndicator, Platform, KeyboardAvoidingView, DeviceEventEmitter
 } from 'react-native';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
@@ -11,7 +11,7 @@ import { collectionSyncService } from '../services/collection.sync.service';
 import { farmerSyncService } from '../services/farmer.sync.service';
 import { useAuth } from '../hooks/useAuth';
 
-export const NewCollectionScreen = ({ navigation }: any) => {
+export const NewCollectionScreen = ({ navigation, route }: any) => {
     const netInfo = useNetInfo();
     const { user } = useAuth();
 
@@ -30,6 +30,7 @@ export const NewCollectionScreen = ({ navigation }: any) => {
     const [locationStatus, setLocationStatus] = useState<'idle' | 'loading' | 'success' | 'error' | 'denied'>('idle');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [recentCollections, setRecentCollections] = useState<any[]>([]);
+    const [recentFarmers, setRecentFarmers] = useState<any[]>([]);
     const [pendingCount, setPendingCount] = useState(0);
     const [isSyncing, setIsSyncing] = useState(false);
     const [farmerCount, setFarmerCount] = useState(0);
@@ -37,14 +38,52 @@ export const NewCollectionScreen = ({ navigation }: any) => {
 
     const isOnline = netInfo.isConnected && netInfo.isInternetReachable;
 
+    // Helper for avatars
+    const getInitials = (name: string) => {
+        if (!name) return '??';
+        return name
+            .split(' ')
+            .map(n => n[0])
+            .join('')
+            .toUpperCase()
+            .substring(0, 2);
+    };
+
+    useEffect(() => {
+        // Handle selection from RecentFarmersScreen
+        if (route.params?.selectedFarmer) {
+            selectFarmer(route.params.selectedFarmer);
+            // Clear params to avoid sticky selection if needed, though mostly harmless here
+            navigation.setParams({ selectedFarmer: undefined });
+        }
+    }, [route.params?.selectedFarmer]);
+
     useEffect(() => {
         initializeScreen();
+
+        // Listen for sync events
+        const subscription = DeviceEventEmitter.addListener('SYNC_COMPLETED', () => {
+            console.log('🔄 [UI - NewCollection] Sync completed, refreshing data...');
+            refreshData();
+        });
+
+        return () => subscription.remove();
     }, []);
 
     const initializeScreen = async () => {
         await requestPermissions();
         await refreshData();
-        // Don't auto-fetch location on mount - user will click button when ready
+
+        // Auto-sync farmers in background to get latest additions
+        if (user?.staff?.id && isOnline) {
+            console.log('[UI] Auto-syncing farmers for new collection...');
+            farmerSyncService.syncAllFarmers(user.staff.id).then(res => {
+                if (res.success) {
+                    console.log('✅ Background farmer sync complete');
+                    refreshData(); // Refresh counts and recent lists
+                }
+            });
+        }
     };
 
     const refreshData = async () => {
@@ -57,7 +96,12 @@ export const NewCollectionScreen = ({ navigation }: any) => {
 
             const fCount = await farmerSyncService.getFarmerCount();
             setFarmerCount(fCount);
-            console.log(`[REFRESH] Pending: ${count}, Farmers: ${fCount}`);
+
+            // Load Recent Farmers
+            const quickFarmers = await collectionLocalService.getRecentFarmers(user.staff.id);
+            setRecentFarmers(quickFarmers);
+
+            console.log(`[REFRESH] Pending: ${count}, Farmers: ${fCount}, Recent: ${quickFarmers.length}`);
         } catch (error) {
             console.error('Failed to refresh data', error);
         }
@@ -104,7 +148,6 @@ export const NewCollectionScreen = ({ navigation }: any) => {
             setLocation(loc.coords);
             setLocationStatus('success');
 
-            // Optional: Notify user if accuracy is low? Balanced is roughly 100m.
         } catch (error) {
             console.warn('[LOCATION] Primary request failed:', error);
 
@@ -141,10 +184,8 @@ export const NewCollectionScreen = ({ navigation }: any) => {
         setSearchQuery(query);
         if (query.length > 1) {
             setIsLoadingFarmers(true);
-            console.log(`[SEARCH] Query: "${query}"`);
             try {
                 const results = await farmerSyncService.searchFarmersLocal(query);
-                console.log(`[SEARCH] Found: ${results.length}`);
                 setFarmers(results);
             } catch (error) {
                 console.error('[SEARCH] Error:', error);
@@ -270,6 +311,7 @@ export const NewCollectionScreen = ({ navigation }: any) => {
 
             await collectionLocalService.createCollectionLocal({
                 farmerId: selectedFarmer.id,
+                farmerName: selectedFarmer.full_name, // Pass name explicitly
                 collectorId: user.staff.id,
                 liters: isCancelled ? 0 : parseFloat(liters),
                 rate: parseFloat(rate),
@@ -415,6 +457,145 @@ export const NewCollectionScreen = ({ navigation }: any) => {
                     )}
                 </View>
 
+                {/* Farmer Information Card */}
+                <View style={[styles.card, { zIndex: 2000, overflow: 'visible' }]}>
+                    <View style={styles.cardHeader}>
+                        <Ionicons name="person" size={22} color="#2196F3" />
+                        <Text style={styles.cardTitle}>Farmer Selection</Text>
+                        <View style={styles.requiredBadge}>
+                            <Text style={styles.requiredText}>*</Text>
+                        </View>
+                    </View>
+
+                    {farmerCount === 0 && (
+                        <TouchableOpacity
+                            style={[styles.downloadFarmersBtn, isSyncing && { opacity: 0.6 }]}
+                            onPress={handleFarmerSync}
+                            disabled={isSyncing || !isOnline}
+                        >
+                            {isSyncing ? (
+                                <ActivityIndicator size="small" color="#2196F3" />
+                            ) : (
+                                <Ionicons name="cloud-download" size={20} color="#2196F3" />
+                            )}
+                            <Text style={styles.downloadFarmersText}>
+                                {isSyncing ? 'Downloading...' : 'Download Farmer DB'}
+                            </Text>
+                        </TouchableOpacity>
+                    )}
+
+                    {selectedFarmer ? (
+                        <View style={styles.selectedFarmerCard}>
+                            <View style={styles.avatarLarge}>
+                                <Text style={styles.avatarTextLarge}>{getInitials(selectedFarmer.full_name)}</Text>
+                            </View>
+                            <View style={styles.selectedFarmerInfo}>
+                                <Text style={styles.selectedFarmerName}>
+                                    {selectedFarmer.full_name}
+                                </Text>
+                                <Text style={styles.selectedFarmerReg}>
+                                    NO: {selectedFarmer.registration_number}
+                                </Text>
+                                <Text style={styles.selectedFarmerPhone}>
+                                    {selectedFarmer.phone || 'No Phone'}
+                                </Text>
+                            </View>
+                            <TouchableOpacity
+                                style={styles.clearFarmerBtn}
+                                onPress={clearFarmerSelection}
+                            >
+                                <Ionicons name="close-circle" size={28} color="#FF5252" />
+                            </TouchableOpacity>
+                        </View>
+                    ) : (
+                        <View>
+                            {/* Search Bar */}
+                            <View style={styles.searchBox}>
+                                <Ionicons name="search" size={20} color="#909090" style={styles.searchIcon} />
+                                <TextInput
+                                    style={styles.searchInput}
+                                    placeholder="Search by name or number..."
+                                    value={searchQuery}
+                                    onChangeText={searchFarmers}
+                                    editable={farmerCount > 0}
+                                    placeholderTextColor="#909090"
+                                />
+                                {isLoadingFarmers && (
+                                    <ActivityIndicator size="small" color="#2196F3" style={{ marginRight: 10 }} />
+                                )}
+                            </View>
+
+                            {/* Search Results Dropdown */}
+                            {farmers.length > 0 && searchQuery.length > 0 && (
+                                <View style={styles.searchResultsContainer}>
+                                    <ScrollView style={{ maxHeight: 220 }} keyboardShouldPersistTaps="handled">
+                                        {farmers.map(f => (
+                                            <TouchableOpacity
+                                                key={f.id}
+                                                style={styles.searchResultItem}
+                                                onPress={() => selectFarmer(f)}
+                                            >
+                                                <View style={styles.avatarSmall}>
+                                                    <Text style={styles.avatarTextSmall}>{getInitials(f.full_name)}</Text>
+                                                </View>
+                                                <View style={{ flex: 1 }}>
+                                                    <Text style={styles.resultName}>{f.full_name}</Text>
+                                                    <Text style={styles.resultMeta}>{f.registration_number}</Text>
+                                                </View>
+                                            </TouchableOpacity>
+                                        ))}
+                                    </ScrollView>
+                                </View>
+                            )}
+
+                            {/* Recent Farmers Section */}
+                            {!searchQuery && recentFarmers.length > 0 && (
+                                <View style={styles.recentFarmersSection}>
+                                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                        <Text style={[styles.sectionLabel, { marginBottom: 0 }]}>Recent Farmers</Text>
+                                        <TouchableOpacity
+                                            onPress={() => navigation.navigate('RecentFarmers')}
+                                            style={{ padding: 4 }}
+                                        >
+                                            <Text style={{ color: '#2196F3', fontSize: 13, fontWeight: '600' }}>See All</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                    <ScrollView
+                                        horizontal
+                                        showsHorizontalScrollIndicator={false}
+                                        contentContainerStyle={{ paddingVertical: 10 }}
+                                    >
+                                        {recentFarmers.map((f, i) => (
+                                            <TouchableOpacity
+                                                key={f.id || i}
+                                                style={styles.recentFarmerCard}
+                                                onPress={() => selectFarmer(f)}
+                                            >
+                                                <View style={styles.avatarMedium}>
+                                                    <Text style={styles.avatarTextMedium}>{getInitials(f.full_name)}</Text>
+                                                </View>
+                                                <Text style={styles.recentFarmerName} numberOfLines={1}>
+                                                    {f.full_name.split(' ')[0]}
+                                                </Text>
+                                                <Text style={styles.recentFarmerId}>
+                                                    {f.registration_number}
+                                                </Text>
+                                            </TouchableOpacity>
+                                        ))}
+                                    </ScrollView>
+                                </View>
+                            )}
+
+                            {/* Empty State / Hint */}
+                            {!searchQuery && recentFarmers.length === 0 && (
+                                <Text style={styles.helperText}>
+                                    Start typing to search for a farmer from the downloaded database.
+                                </Text>
+                            )}
+                        </View>
+                    )}
+                </View>
+
                 {/* Location Card - More Prominent */}
                 <View style={[styles.card, styles.locationCard]}>
                     <View style={styles.cardHeader}>
@@ -482,96 +663,6 @@ export const NewCollectionScreen = ({ navigation }: any) => {
                             {getLocationButtonText()}
                         </Text>
                     </TouchableOpacity>
-                </View>
-
-                {/* Farmer Information Card */}
-                <View style={[styles.card, { zIndex: 2000 }]}>
-                    <View style={styles.cardHeader}>
-                        <Ionicons name="person" size={22} color="#2196F3" />
-                        <Text style={styles.cardTitle}>Farmer Information</Text>
-                        <View style={styles.requiredBadge}>
-                            <Text style={styles.requiredText}>*</Text>
-                        </View>
-                    </View>
-
-                    {farmerCount === 0 && (
-                        <TouchableOpacity
-                            style={[styles.downloadFarmersBtn, isSyncing && { opacity: 0.6 }]}
-                            onPress={handleFarmerSync}
-                            disabled={isSyncing || !isOnline}
-                        >
-                            {isSyncing ? (
-                                <ActivityIndicator size="small" color="#2196F3" />
-                            ) : (
-                                <Ionicons name="cloud-download" size={20} color="#2196F3" />
-                            )}
-                            <Text style={styles.downloadFarmersText}>
-                                {isSyncing
-                                    ? 'Downloading Farmers...'
-                                    : !isOnline
-                                        ? 'Go Online to Download Farmers'
-                                        : 'Download Farmer Database'}
-                            </Text>
-                        </TouchableOpacity>
-                    )}
-
-                    {selectedFarmer ? (
-                        <View style={styles.selectedFarmerCard}>
-                            <View style={styles.selectedFarmerInfo}>
-                                <Text style={styles.selectedFarmerName}>
-                                    {selectedFarmer.full_name}
-                                </Text>
-                                <Text style={styles.selectedFarmerReg}>
-                                    ID: {selectedFarmer.registration_number}
-                                </Text>
-                            </View>
-                            <TouchableOpacity
-                                style={styles.clearFarmerBtn}
-                                onPress={clearFarmerSelection}
-                            >
-                                <Ionicons name="close-circle" size={24} color="#F44336" />
-                            </TouchableOpacity>
-                        </View>
-                    ) : (
-                        <View style={{ zIndex: 3000, position: 'relative' }}>
-                            <Text style={styles.label}>Search Farmer</Text>
-                            <View style={styles.searchContainer}>
-                                <Ionicons name="search" size={20} color="#999" style={styles.searchIcon} />
-                                <TextInput
-                                    style={styles.searchInput}
-                                    placeholder="Type name or registration number..."
-                                    value={searchQuery}
-                                    onChangeText={searchFarmers}
-                                    editable={farmerCount > 0}
-                                />
-                                {isLoadingFarmers && (
-                                    <ActivityIndicator size="small" color="#2196F3" />
-                                )}
-                            </View>
-
-                            {farmers.length > 0 && (
-                                <View style={styles.dropdown}>
-                                    <ScrollView style={{ maxHeight: 200 }}>
-                                        {farmers.map(f => (
-                                            <TouchableOpacity
-                                                key={f.id}
-                                                style={styles.dropdownItem}
-                                                onPress={() => selectFarmer(f)}
-                                            >
-                                                <View>
-                                                    <Text style={styles.dropdownText}>{f.full_name}</Text>
-                                                    <Text style={styles.dropdownSubText}>
-                                                        {f.registration_number}
-                                                    </Text>
-                                                </View>
-                                                <Ionicons name="chevron-forward" size={20} color="#999" />
-                                            </TouchableOpacity>
-                                        ))}
-                                    </ScrollView>
-                                </View>
-                            )}
-                        </View>
-                    )}
                 </View>
 
                 {/* Collection Details Card */}
@@ -718,12 +809,19 @@ export const NewCollectionScreen = ({ navigation }: any) => {
                                             {col.farmer_name || 'Unknown Farmer'}
                                         </Text>
                                         <Text style={styles.recentMeta}>
-                                            {col.collection_id} • {new Date(col.created_at).toLocaleString('en-KE', {
-                                                month: 'short',
-                                                day: 'numeric',
-                                                hour: '2-digit',
-                                                minute: '2-digit'
-                                            })}
+                                            {col.collection_id} • {(() => {
+                                                const isoString = col.created_at.replace(' ', 'T') + 'Z';
+                                                try {
+                                                    return new Date(isoString).toLocaleString('en-KE', {
+                                                        month: 'short',
+                                                        day: 'numeric',
+                                                        hour: '2-digit',
+                                                        minute: '2-digit'
+                                                    });
+                                                } catch (e) {
+                                                    return col.created_at;
+                                                }
+                                            })()}
                                         </Text>
                                     </View>
                                     <View style={{ alignItems: 'flex-end' }}>
@@ -972,6 +1070,7 @@ const styles = StyleSheet.create({
     },
     selectedFarmerInfo: {
         flex: 1,
+        justifyContent: 'center'
     },
     selectedFarmerName: {
         fontSize: 16,
@@ -1259,5 +1358,125 @@ const styles = StyleSheet.create({
         fontSize: 11,
         fontWeight: '700',
         textTransform: 'uppercase',
+    },
+    // NEW STYLES
+    avatarLarge: {
+        width: 50,
+        height: 50,
+        borderRadius: 25,
+        backgroundColor: '#4CAF50',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: 12,
+    },
+    avatarTextLarge: {
+        color: 'white',
+        fontSize: 20,
+        fontWeight: 'bold',
+    },
+    selectedFarmerPhone: {
+        fontSize: 13,
+        color: '#2196F3',
+        marginTop: 2,
+    },
+    searchBox: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: '#DDD',
+        borderRadius: 8,
+        backgroundColor: '#FAFAFA',
+        paddingHorizontal: 12,
+        height: 50,
+    },
+    searchResultsContainer: {
+        position: 'absolute',
+        top: 55,
+        left: 0,
+        right: 0,
+        backgroundColor: 'white',
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#E0E0E0',
+        zIndex: 5000,
+        elevation: 10,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 8,
+    },
+    searchResultItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: '#F0F0F0',
+    },
+    avatarSmall: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: '#E3F2FD',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: 12,
+    },
+    avatarTextSmall: {
+        color: '#2196F3',
+        fontSize: 14,
+        fontWeight: 'bold',
+    },
+    resultName: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: '#333',
+    },
+    resultMeta: {
+        fontSize: 12,
+        color: '#999',
+    },
+    recentFarmersSection: {
+        marginTop: 16,
+    },
+    sectionLabel: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#666',
+        marginBottom: 8,
+    },
+    recentFarmerCard: {
+        width: 100,
+        backgroundColor: '#F5F9FA',
+        borderRadius: 12,
+        padding: 12,
+        alignItems: 'center',
+        marginRight: 10,
+        borderWidth: 1,
+        borderColor: '#E1E8EB',
+    },
+    avatarMedium: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: '#E0F7FA',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 8,
+    },
+    avatarTextMedium: {
+        color: '#006064',
+        fontSize: 18,
+        fontWeight: 'bold',
+    },
+    recentFarmerId: {
+        fontSize: 11,
+        color: '#999',
+    },
+    helperText: {
+        marginTop: 12,
+        fontSize: 13,
+        color: '#999',
+        textAlign: 'center',
+        fontStyle: 'italic',
     },
 });

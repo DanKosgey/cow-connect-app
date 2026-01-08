@@ -85,13 +85,15 @@ export const collectionSyncService = {
         }
 
         // Get staff record
+        // Get staff record using maybeSingle() to avoid 406 errors
         const { data: staffData } = await supabase
             .from('staff')
             .select('id')
             .eq('id', collection.collector_id)
-            .single();
+            .maybeSingle();
 
-        if (!staffData) throw new Error('Staff record not found');
+        // Use fetched ID or fallback to local ID (assuming it's valid)
+        const validStaffId = staffData?.id || collection.collector_id;
 
         // Insert collection
         console.log(`📝 [SYNC] Inserting collection record to Supabase for ${collection.collection_id}...`);
@@ -100,7 +102,7 @@ export const collectionSyncService = {
             .upsert({
                 collection_id: collection.collection_id,
                 farmer_id: collection.farmer_id,
-                staff_id: staffData.id,
+                staff_id: validStaffId,
                 liters: collection.liters,
                 rate_per_liter: collection.rate,
                 total_amount: collection.total_amount,
@@ -150,7 +152,8 @@ export const collectionSyncService = {
 
             if (error) {
                 console.error(`❌ [SYNC] Photo upload error for ${fileName}:`, error);
-                throw error;
+                // Return null so we can still upload the collection record without the photo
+                return null;
             }
 
             console.log(`📸 [SYNC] Photo uploaded successfully: ${fileName}`);

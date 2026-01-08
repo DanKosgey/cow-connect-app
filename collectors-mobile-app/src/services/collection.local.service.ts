@@ -5,6 +5,7 @@ import * as Crypto from 'expo-crypto';
 
 interface CollectionInput {
     farmerId: string;
+    farmerName: string; // Added field
     collectorId: string;
     liters: number;
     rate: number;
@@ -49,13 +50,14 @@ export const collectionLocalService = {
 
             await db.runAsync(
                 `INSERT INTO collections_queue 
-         (local_id, collection_id, farmer_id, collector_id, liters, rate, total_amount,
+         (local_id, collection_id, farmer_id, farmer_name, collector_id, liters, rate, total_amount,
           collection_date, gps_latitude, gps_longitude, notes, photo_local_uri, verification_code, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, 'pending_upload')`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, 'pending_upload')`,
                 [
                     localId,
                     collectionId,
                     input.farmerId,
+                    input.farmerName || 'Unknown', // Save name
                     input.collectorId,
                     input.liters,
                     input.rate,
@@ -95,25 +97,41 @@ export const collectionLocalService = {
     // Get recent collections for display (limit 5)
     async getRecentCollections(collectorId?: string) {
         const db = await getDatabase();
+        // Use COALESCE to prefer the name stored in collection, fallback to joined name
+        const query = `
+            SELECT cq.*, 
+            COALESCE(cq.farmer_name, f.full_name, 'Unknown Farmer') as farmer_name, 
+            f.registration_number
+            FROM collections_queue cq
+            LEFT JOIN farmers_local f ON cq.farmer_id = f.id
+            ${collectorId ? 'WHERE cq.collector_id = ?' : ''}
+            ORDER BY cq.created_at DESC
+            LIMIT 5
+        `;
+
         if (collectorId) {
-            return await db.getAllAsync(
-                `SELECT cq.*, f.full_name as farmer_name, f.registration_number
-             FROM collections_queue cq
-             LEFT JOIN farmers_local f ON cq.farmer_id = f.id
-             WHERE cq.collector_id = ?
-             ORDER BY cq.created_at DESC
-             LIMIT 5`,
-                [collectorId]
-            );
+            return await db.getAllAsync(query, [collectorId]);
         } else {
-            return await db.getAllAsync(
-                `SELECT cq.*, f.full_name as farmer_name, f.registration_number
-             FROM collections_queue cq
-             LEFT JOIN farmers_local f ON cq.farmer_id = f.id
-             ORDER BY cq.created_at DESC
-             LIMIT 5`
-            );
+            return await db.getAllAsync(query);
         }
     },
+
+
+    // Get recent farmers for quick selection
+    async getRecentFarmers(collectorId: string, limit: number = 10) {
+        const db = await getDatabase();
+        // Select distinct farmers from collections, joined with farmer details
+        // Order by most recent collection
+        return await db.getAllAsync(
+            `SELECT DISTINCT f.*, MAX(cq.created_at) as last_interaction
+             FROM collections_queue cq
+             JOIN farmers_local f ON cq.farmer_id = f.id
+             WHERE cq.collector_id = ?
+             GROUP BY f.id
+             ORDER BY last_interaction DESC
+             LIMIT ?`,
+            [collectorId, limit]
+        );
+    }
 };
 

@@ -7,9 +7,16 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { NewCollectionScreen } from './src/screens/NewCollectionScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { DatabaseInspectorScreen } from './src/screens/DatabaseInspectorScreen';
+import { RecentFarmersScreen } from './src/screens/RecentFarmersScreen';
 import { OfflineIndicator } from './src/components/OfflineIndicator';
 import { useBackgroundSync } from './src/hooks/useBackgroundSync';
 import LoginScreen from './src/screens/LoginScreen';
+import { FarmerPerformanceScreen } from './src/screens/FarmerPerformanceScreen';
+import { CollectorPerformanceScreen } from './src/screens/CollectorPerformanceScreen';
+import { CollectorGoalsScreen } from './src/screens/CollectorGoalsScreen';
+import { EarningsReportScreen } from './src/screens/EarningsReportScreen';
+import { FarmersDirectoryScreen } from './src/screens/FarmersDirectoryScreen';
+import { FarmerProfileScreen } from './src/screens/FarmerProfileScreen';
 import { AuthProvider, useAuth } from './src/hooks/useAuth';
 
 const Stack = createNativeStackNavigator();
@@ -19,18 +26,7 @@ function AppContent() {
   const { user, login, isLoading } = useAuth();
   useBackgroundSync();
 
-  // DEMO ONLY: Seed offline credentials for testing
-  React.useEffect(() => {
-    const seedDemo = async () => {
-      try {
-        const { seedDemoCredentials } = await import('./src/utils/seedOfflineCredentials');
-        await seedDemoCredentials();
-      } catch (error) {
-        console.log('Seed skipped:', error);
-      }
-    };
-    seedDemo();
-  }, []);
+
 
   if (isLoading) {
     return (
@@ -67,6 +63,41 @@ function AppContent() {
                 name="DatabaseInspector"
                 component={DatabaseInspectorScreen}
                 options={{ title: '📊 Database Inspector' }}
+              />
+              <Stack.Screen
+                name="RecentFarmers"
+                component={RecentFarmersScreen}
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name="FarmerPerformance"
+                component={FarmerPerformanceScreen}
+                options={{ title: 'Farmer Performance' }}
+              />
+              <Stack.Screen
+                name="CollectorPerformance"
+                component={CollectorPerformanceScreen}
+                options={{ title: 'My Performance' }}
+              />
+              <Stack.Screen
+                name="CollectorGoals"
+                component={CollectorGoalsScreen}
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name="EarningsReport"
+                component={EarningsReportScreen}
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name="FarmersDirectory"
+                component={FarmersDirectoryScreen}
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name="FarmerProfile"
+                component={FarmerProfileScreen}
+                options={{ headerShown: false, presentation: 'modal' }}
               />
             </>
           )}

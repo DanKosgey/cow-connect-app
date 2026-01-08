@@ -134,18 +134,42 @@ const initDatabase = async (database: SQLite.SQLiteDatabase) => {
       );
     `);
 
+    // --- MIGRATION CHECK ---
+    // Check if farmers_local needs upgrade (if phone_number is missing)
+    try {
+      const check = await database.getAllAsync("PRAGMA table_info(farmers_local)");
+      const hasPhoneCol = check.some((col: any) => col.name === 'phone_number');
+
+      if (check.length > 0 && !hasPhoneCol) {
+        console.log('⚠️ [DB] Old schema detected. Recreating farmers_local table...');
+        await database.execAsync('DROP TABLE IF EXISTS farmers_local');
+      }
+    } catch (e) {
+      console.log('[DB] Migration check failed (safe to ignore if first run)', e);
+    }
+
     await database.execAsync(`
       CREATE TABLE IF NOT EXISTS farmers_local (
         id TEXT PRIMARY KEY,
+        user_id TEXT,
         full_name TEXT NOT NULL,
-        phone TEXT,
+        phone_number TEXT,
         email TEXT,
-        registration_number TEXT UNIQUE,
+        registration_number TEXT,
         national_id TEXT,
         kyc_status TEXT DEFAULT 'pending',
-        farm_address TEXT,
-        farm_location_lat REAL,
-        farm_location_lng REAL,
+        registration_completed INTEGER DEFAULT 0,
+        physical_address TEXT,
+        farm_location TEXT,
+        gps_latitude REAL,
+        gps_longitude REAL,
+        gender TEXT,
+        number_of_cows INTEGER,
+        feeding_type TEXT,
+        bank_account_name TEXT,
+        bank_account_number TEXT,
+        bank_name TEXT,
+        bank_branch TEXT,
         total_collections INTEGER DEFAULT 0,
         total_liters REAL DEFAULT 0,
         avg_quality_score REAL,
@@ -157,11 +181,25 @@ const initDatabase = async (database: SQLite.SQLiteDatabase) => {
       );
     `);
 
+    // --- MIGRATION CHECK: collections_queue farmer_name ---
+    try {
+      const checkQueue = await database.getAllAsync("PRAGMA table_info(collections_queue)");
+      const hasFarmerName = checkQueue.some((col: any) => col.name === 'farmer_name');
+
+      if (checkQueue.length > 0 && !hasFarmerName) {
+        console.log('⚠️ [DB] Adding farmer_name to collections_queue...');
+        await database.execAsync('ALTER TABLE collections_queue ADD COLUMN farmer_name TEXT');
+      }
+    } catch (e) {
+      console.log('[DB] Queue migration check failed', e);
+    }
+
     await database.execAsync(`
       CREATE TABLE IF NOT EXISTS collections_queue (
         local_id TEXT PRIMARY KEY,
         collection_id TEXT,
         farmer_id TEXT NOT NULL,
+        farmer_name TEXT,
         collector_id TEXT NOT NULL,
         liters REAL NOT NULL,
         rate REAL NOT NULL,

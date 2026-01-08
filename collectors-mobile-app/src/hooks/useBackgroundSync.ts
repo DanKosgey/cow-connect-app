@@ -4,20 +4,34 @@ import NetInfo from '@react-native-community/netinfo';
 import { farmerSyncService } from '../services/farmer.sync.service';
 import { collectionSyncService } from '../services/collection.sync.service';
 
+import { DeviceEventEmitter } from 'react-native';
+
 export const useBackgroundSync = () => {
+    // Shared lock to prevent concurrent syncs
+    let isSyncing = false;
+
     useEffect(() => {
+        console.log('[SYNC] Initializing background sync listener...');
         let syncInterval: NodeJS.Timeout;
 
         const unsubscribe = NetInfo.addEventListener(async (state) => {
-            if (state.isConnected && state.isInternetReachable) {
-                // Trigger immediate sync when coming online
+            console.log(`[SYNC] Network State Change: Connected=${state.isConnected}, Reachable=${state.isInternetReachable}`);
+
+            // Trigger if connected (even if reachability is pending/unknown)
+            if (state.isConnected) {
+                console.log('[SYNC] Connection detected! Attempting instant sync...');
                 await performSync();
 
-                // Set up periodic sync every 5 minutes
-                syncInterval = setInterval(performSync, 5 * 60 * 1000);
+                // Set up periodic sync every 2 minutes while connected
+                if (!syncInterval) {
+                    syncInterval = setInterval(performSync, 2 * 60 * 1000);
+                }
             } else {
-                // Clear interval when offline
-                if (syncInterval) clearInterval(syncInterval);
+                console.log('[SYNC] Offline. Pausing auto-sync.');
+                if (syncInterval) {
+                    clearInterval(syncInterval);
+                    syncInterval = undefined as any;
+                }
             }
         });
 
@@ -28,14 +42,32 @@ export const useBackgroundSync = () => {
     }, []);
 
     const performSync = async () => {
+        if (isSyncing) {
+            console.log('[SYNC] Sync already in progress, skipping...');
+            return;
+        }
+
+        isSyncing = true;
+        console.log('[SYNC] Starting sync process...');
+
         try {
             // Upload pending collections first
-            await collectionSyncService.uploadPendingCollections();
+            const collectionResults = await collectionSyncService.uploadPendingCollections();
+            console.log('[SYNC] Pending collections upload result:', collectionResults);
 
             // Then sync farmer updates
             await farmerSyncService.syncFarmerUpdates();
+            console.log('[SYNC] Farmers sync completed');
+
+            // Emit event if anything was processed
+            if (collectionResults.success > 0 || collectionResults.failed > 0) {
+                console.log('[SYNC] Emitting SYNC_COMPLETED event');
+                DeviceEventEmitter.emit('SYNC_COMPLETED');
+            }
         } catch (error) {
-            console.error('Background sync failed:', error);
+            console.error('[SYNC] Background sync failed:', error);
+        } finally {
+            isSyncing = false;
         }
     };
 };

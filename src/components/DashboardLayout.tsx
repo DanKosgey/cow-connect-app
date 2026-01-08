@@ -526,26 +526,30 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
           </div>
 
           <div className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => navigate('/download-app')}
-              className="hidden lg:flex items-center gap-2 text-muted-foreground hover:text-primary hover:bg-primary/5 transition-all rounded-full px-4 border border-transparent hover:border-primary/10"
-              title="Download Mobile & Desktop Apps"
-            >
-              <Smartphone className="h-4 w-4" />
-              <span>Get App</span>
-            </Button>
+            {userRole === 'collector' && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => window.open('https://expo.dev/artifacts/eas/4nbMyA9odj7hWrc84RznAj.apk', '_blank')}
+                  className="hidden lg:flex items-center gap-2 text-muted-foreground hover:text-primary hover:bg-primary/5 transition-all rounded-full px-4 border border-transparent hover:border-primary/10"
+                  title="Download Collector Mobile App"
+                >
+                  <DownloadIcon className="h-4 w-4" />
+                  <span>Download App</span>
+                </Button>
 
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => navigate('/download-app')}
-              className="lg:hidden w-10 h-10 rounded-full bg-muted/50 hover:bg-primary/10 hover:text-primary transition-colors"
-              title="Download Mobile & Desktop Apps"
-            >
-              <Smartphone className="h-5 w-5" />
-            </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => window.open('https://expo.dev/artifacts/eas/4nbMyA9odj7hWrc84RznAj.apk', '_blank')}
+                  className="lg:hidden w-10 h-10 rounded-full bg-muted/50 hover:bg-primary/10 hover:text-primary transition-colors"
+                  title="Download Collector Mobile App"
+                >
+                  <DownloadIcon className="h-5 w-5" />
+                </Button>
+              </>
+            )}
           </div>
         </div>
         <div className="p-4 md:p-6">
