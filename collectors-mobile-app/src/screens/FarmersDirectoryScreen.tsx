@@ -28,7 +28,7 @@ interface Farmer {
 }
 
 const FarmerCard = ({ farmer }: { farmer: Farmer }) => {
-    const initials = farmer.full_name.substring(0, 2).toUpperCase();
+    const initials = (farmer.full_name || 'Unknown').substring(0, 2).toUpperCase();
     const hasPhone = farmer.phone_number && farmer.phone_number.trim() !== '';
 
     const handleCall = () => {
@@ -54,7 +54,7 @@ const FarmerCard = ({ farmer }: { farmer: Farmer }) => {
                     <Text style={styles.avatarTextLarge}>{initials}</Text>
                 </View>
                 <View style={styles.farmerInfo}>
-                    <Text style={styles.farmerName}>{farmer.full_name}</Text>
+                    <Text style={styles.farmerName}>{farmer.full_name || 'Unknown Farmer'}</Text>
                     {farmer.registration_number && (
                         <Text style={styles.regNumber}>#{farmer.registration_number}</Text>
                     )}
@@ -188,7 +188,7 @@ export const FarmersDirectoryScreen = ({ navigation }: any) => {
         if (searchQuery.trim() !== '') {
             const query = searchQuery.toLowerCase();
             filtered = filtered.filter(f =>
-                f.full_name.toLowerCase().includes(query) ||
+                (f.full_name && f.full_name.toLowerCase().includes(query)) ||
                 (f.phone_number && f.phone_number.includes(query)) ||
                 (f.registration_number && f.registration_number.toLowerCase().includes(query))
             );

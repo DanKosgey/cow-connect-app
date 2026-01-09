@@ -58,7 +58,7 @@ export default function LoginScreen() {
                 <ScrollView contentContainerStyle={styles.scrollContent}>
                     <View style={styles.header}>
                         <View style={styles.iconContainer}>
-                            <Ionicons name="lock-closed" size={32} color="#0EA5E9" />
+                            <Ionicons name="leaf" size={40} color="#16A34A" />
                         </View>
                         <Text style={styles.title}>DAIRY FARMERS OF TRANS-NZOIA</Text>
                         <Text style={styles.subtitle}>Sign in to your account</Text>
@@ -130,7 +130,7 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#F3F4F6', // bg-gray-100 equivalent
+        backgroundColor: '#F0FDF4', // Green-50 equivalent
     },
     keyboardView: {
         flex: 1,
@@ -147,89 +147,96 @@ const styles = StyleSheet.create({
         width: '100%',
     },
     iconContainer: {
-        width: 64,
-        height: 64,
-        backgroundColor: '#E0F2FE', // light blue
-        borderRadius: 16,
+        width: 80,
+        height: 80,
+        backgroundColor: '#DCFCE7', // Green-100
+        borderRadius: 20,
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: 16,
+        marginBottom: 20,
+        borderWidth: 1,
+        borderColor: '#BBF7D0', // Green-200
         ...Platform.select({
             web: {
-                boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)',
+                boxShadow: '0px 4px 6px -1px rgba(22, 163, 74, 0.1), 0px 2px 4px -1px rgba(22, 163, 74, 0.06)',
             },
             default: {
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.1,
-                shadowRadius: 4,
-                elevation: 3,
+                shadowColor: '#16A34A',
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.15,
+                shadowRadius: 8,
+                elevation: 4,
             },
         }),
     },
     title: {
         fontSize: 24,
-        fontWeight: 'bold',
-        color: '#111827',
+        fontWeight: '800',
+        color: '#14532D', // Green-900
         textAlign: 'center',
         marginBottom: 8,
+        letterSpacing: -0.5,
     },
     subtitle: {
         fontSize: 16,
-        color: '#6B7280',
+        color: '#166534', // Green-800
         textAlign: 'center',
+        opacity: 0.8,
     },
     card: {
         backgroundColor: '#FFFFFF',
-        borderRadius: 16,
+        borderRadius: 24,
         padding: 24,
         width: '100%',
         maxWidth: 400,
+        borderWidth: 1,
+        borderColor: '#E5E7EB',
         ...Platform.select({
             web: {
-                boxShadow: '0px 4px 12px rgba(0, 0, 0, 0.1)',
+                boxShadow: '0px 10px 15px -3px rgba(0, 0, 0, 0.05), 0px 4px 6px -2px rgba(0, 0, 0, 0.025)',
             },
             default: {
                 shadowColor: '#000',
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: 0.1,
-                shadowRadius: 12,
+                shadowOffset: { width: 0, height: 10 },
+                shadowOpacity: 0.05,
+                shadowRadius: 15,
                 elevation: 5,
             },
         }),
     },
     cardTitle: {
-        fontSize: 20,
-        fontWeight: '600',
-        color: '#111827',
+        fontSize: 22,
+        fontWeight: '700',
+        color: '#1F2937',
         textAlign: 'center',
-        marginBottom: 4,
+        marginBottom: 6,
     },
     cardDescription: {
         fontSize: 14,
         color: '#6B7280',
         textAlign: 'center',
-        marginBottom: 24,
+        marginBottom: 32,
     },
     form: {
         width: '100%',
     },
     inputGroup: {
-        marginBottom: 16,
+        marginBottom: 20,
     },
     label: {
         fontSize: 14,
-        fontWeight: '500',
+        fontWeight: '600',
         color: '#374151',
-        marginBottom: 6,
+        marginBottom: 8,
+        marginLeft: 4,
     },
     input: {
         backgroundColor: '#F9FAFB',
-        borderWidth: 1,
+        borderWidth: 1.5,
         borderColor: '#E5E7EB',
-        borderRadius: 8,
-        paddingHorizontal: 12,
-        paddingVertical: 10,
+        borderRadius: 12,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
         fontSize: 16,
         color: '#111827',
     },
@@ -237,33 +244,47 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         backgroundColor: '#F9FAFB',
-        borderWidth: 1,
+        borderWidth: 1.5,
         borderColor: '#E5E7EB',
-        borderRadius: 8,
+        borderRadius: 12,
     },
     passwordInput: {
         flex: 1,
-        paddingHorizontal: 12,
-        paddingVertical: 10,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
         fontSize: 16,
         color: '#111827',
     },
     eyeIcon: {
-        padding: 10,
+        padding: 12,
     },
     button: {
-        backgroundColor: '#0EA5E9', // Primary blue
-        borderRadius: 8,
-        paddingVertical: 12,
+        backgroundColor: '#16A34A', // Green-600
+        borderRadius: 12,
+        paddingVertical: 14,
         alignItems: 'center',
-        marginTop: 8,
+        marginTop: 12,
+        ...Platform.select({
+            web: {
+                boxShadow: '0px 4px 6px -1px rgba(22, 163, 74, 0.4), 0px 2px 4px -1px rgba(22, 163, 74, 0.2)',
+            },
+            default: {
+                shadowColor: '#16A34A',
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.3,
+                shadowRadius: 6,
+                elevation: 4,
+            },
+        }),
     },
     buttonDisabled: {
-        backgroundColor: '#93C5FD',
+        backgroundColor: '#86EFAC', // Green-300
+        shadowOpacity: 0,
+        elevation: 0,
     },
     buttonText: {
         color: '#FFFFFF',
         fontSize: 16,
-        fontWeight: '600',
+        fontWeight: '700',
     },
 });

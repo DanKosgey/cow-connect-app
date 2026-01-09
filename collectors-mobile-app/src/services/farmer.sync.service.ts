@@ -4,7 +4,16 @@ import { getDatabase } from './database';
 
 export const farmerSyncService = {
     // Initial full sync
+    // Flag to track sync status
+    isSyncing: false,
+
+    // Initial full sync
     async syncAllFarmers(collectorId: string) {
+        if (this.isSyncing) {
+            console.log('🔄 [SYNC] Farmer sync already in progress, skipping...');
+            return { success: true, count: 0, skipped: true };
+        }
+        this.isSyncing = true;
         const db = await getDatabase();
         console.log('🔄 [SYNC] Starting full farmer sync...');
 
@@ -29,72 +38,68 @@ export const farmerSyncService = {
 
                 if (!farmers || farmers.length === 0) return;
 
-                const statement = await db.prepareAsync(`
-                    INSERT INTO farmers_local (
-                        id, 
-                        user_id,
-                        full_name, 
-                        phone_number, 
-                        email, 
-                        registration_number, 
-                        national_id, 
-                        kyc_status,
-                        registration_completed,
-                        physical_address,
-                        farm_location,
-                        gps_latitude,
-                        gps_longitude,
-                        gender,
-                        number_of_cows,
-                        feeding_type,
-                        bank_account_name,
-                        bank_account_number,
-                        bank_name,
-                        bank_branch,
-                        created_at, 
-                        updated_at, 
-                        synced_at
-                    ) VALUES (
-                        $id, $user_id, $full_name, $phone_number, $email, $registration_number, 
-                        $national_id, $kyc_status, $registration_completed, $physical_address, 
-                        $farm_location, $gps_latitude, $gps_longitude, $gender, $number_of_cows, 
-                        $feeding_type, $bank_account_name, $bank_account_number, $bank_name, 
-                        $bank_branch, $created_at, $updated_at, CURRENT_TIMESTAMP
-                    )
-                `);
 
+
+                // For web compatibility or simpler SQLite usage, we'll loop and insert directly
+                // simpler than managing prepared statements across platforms in this mock/shim
                 for (const farmer of farmers) {
                     try {
-                        await statement.executeAsync({
-                            $id: farmer.id,
-                            $user_id: farmer.user_id,
-                            $full_name: farmer.full_name,
-                            $phone_number: farmer.phone_number || farmer.phone, // Handle potential schema differences
-                            $email: farmer.email,
-                            $registration_number: farmer.registration_number,
-                            $national_id: farmer.national_id,
-                            $kyc_status: farmer.kyc_status,
-                            $registration_completed: farmer.registration_completed ? 1 : 0,
-                            $physical_address: farmer.physical_address || farmer.address,
-                            $farm_location: farmer.farm_location,
-                            $gps_latitude: farmer.gps_latitude,
-                            $gps_longitude: farmer.gps_longitude,
-                            $gender: farmer.gender,
-                            $number_of_cows: farmer.number_of_cows,
-                            $feeding_type: farmer.feeding_type,
-                            $bank_account_name: farmer.bank_account_name,
-                            $bank_account_number: farmer.bank_account_number,
-                            $bank_name: farmer.bank_name,
-                            $bank_branch: farmer.bank_branch,
-                            $created_at: farmer.created_at,
-                            $updated_at: farmer.updated_at
-                        });
+                        await db.runAsync(`
+                            INSERT INTO farmers_local (
+                                id, 
+                                user_id,
+                                full_name, 
+                                phone_number, 
+                                email, 
+                                registration_number, 
+                                national_id, 
+                                kyc_status,
+                                registration_completed,
+                                address,
+                                physical_address,
+                                farm_location,
+                                gps_latitude,
+                                gps_longitude,
+                                gender,
+                                number_of_cows,
+                                feeding_type,
+                                bank_account_name,
+                                bank_account_number,
+                                bank_name,
+                                bank_branch,
+                                created_at, 
+                                updated_at, 
+                                synced_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                        `, [
+                            farmer.id,
+                            farmer.user_id,
+                            farmer.full_name,
+                            farmer.phone_number || farmer.phone,
+                            farmer.email,
+                            farmer.registration_number,
+                            farmer.national_id,
+                            farmer.kyc_status,
+                            farmer.registration_completed ? 1 : 0,
+                            farmer.address,
+                            farmer.physical_address || farmer.address,
+                            farmer.farm_location,
+                            farmer.gps_latitude,
+                            farmer.gps_longitude,
+                            farmer.gender,
+                            farmer.number_of_cows,
+                            farmer.feeding_type,
+                            farmer.bank_account_name,
+                            farmer.bank_account_number,
+                            farmer.bank_name,
+                            farmer.bank_branch,
+                            farmer.created_at,
+                            farmer.updated_at
+                        ]);
                     } catch (e) {
                         console.error(`[SYNC] Failed to insert farmer ${farmer.full_name}:`, e);
                     }
                 }
-
-                await statement.finalizeAsync();
 
                 // Update sync metadata
                 await db.runAsync(

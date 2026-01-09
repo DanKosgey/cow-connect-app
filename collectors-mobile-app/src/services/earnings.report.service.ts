@@ -1,5 +1,5 @@
-
 import { getDatabase } from './database';
+import { collectorRateService } from './collector.rate.service';
 
 export interface EarningsReportData {
     period: 'today' | 'week' | 'month' | 'custom';
@@ -43,6 +43,9 @@ export const earningsReportService = {
     ): Promise<EarningsReportData> {
         const db = await getDatabase();
 
+        // Fetch current active rate
+        const currentRate = await collectorRateService.getCurrentRate();
+
         // Fetch all collections in range
         const collections = await db.getAllAsync(`
             SELECT 
@@ -61,11 +64,11 @@ export const earningsReportService = {
         `, [collectorId, startDate.toISOString(), endDate.toISOString()]);
 
         // Calculate totals
-        const totalEarnings = collections.reduce((sum: number, c: any) => sum + (c.total_amount || 0), 0);
         const totalLiters = collections.reduce((sum: number, c: any) => sum + (c.liters || 0), 0);
+        // Use current rate for total earnings
+        const totalEarnings = totalLiters * currentRate;
         const uniqueFarmers = new Set(collections.map((c: any) => c.farmer_id)).size;
-        const weightedRateSum = collections.reduce((sum: number, c: any) => sum + (c.rate * c.liters), 0);
-        const averageRate = totalLiters > 0 ? (weightedRateSum / totalLiters) : 0;
+        const averageRate = currentRate;
 
         // Daily breakdown
         const dailyMap: { [key: string]: any } = {};
@@ -81,11 +84,15 @@ export const earningsReportService = {
                     rateSum: 0
                 };
             }
-            dailyMap[dateKey].earnings += c.total_amount;
+            // Use current rate
+            dailyMap[dateKey].earnings += (c.liters * currentRate);
             dailyMap[dateKey].liters += c.liters;
             dailyMap[dateKey].collections += 1;
             dailyMap[dateKey].farmers.add(c.farmer_id);
-            dailyMap[dateKey].rateSum += (c.rate * c.liters);
+            // Track avg rate as current rate for display consistency? 
+            // Or historical? 
+            // If we want "earnings based on dynamic rate", let's just use currentRate everywhere for money.
+            dailyMap[dateKey].rateSum += (currentRate * c.liters);
         });
 
         const breakdown = Object.values(dailyMap).map((d: any) => ({
@@ -94,7 +101,7 @@ export const earningsReportService = {
             liters: d.liters,
             collections: d.collections,
             farmers: d.farmers.size,
-            avgRate: d.liters > 0 ? (d.rateSum / d.liters) : 0
+            avgRate: currentRate
         }));
 
         // Top farmers
@@ -110,7 +117,8 @@ export const earningsReportService = {
                 };
             }
             farmerMap[c.farmer_id].totalLiters += c.liters;
-            farmerMap[c.farmer_id].totalEarnings += c.total_amount;
+            // Use current rate
+            farmerMap[c.farmer_id].totalEarnings += (c.liters * currentRate);
             farmerMap[c.farmer_id].collections += 1;
         });
 
@@ -122,7 +130,11 @@ export const earningsReportService = {
             .sort((a: any, b: any) => b.totalEarnings - a.totalEarnings)
             .slice(0, 10);
 
-        // Rate history
+        // Rate history - this is tricky. If we are enforcing a single rate, "Rate History" is boring.
+        // But maybe we still want to show what the "recorded" rate was? 
+        // Let's keep the ORIGINAL logic for Rate History so the user can see "Oh, I collected this when rate was X".
+        // BUT the earnings in Rate History will differ from Total Earnings.
+        // I will update Rate History to show calculate earnings based on the rate IN HISTORY.
         const rateMap: { [key: number]: any } = {};
         collections.forEach((c: any) => {
             const rate = c.rate;

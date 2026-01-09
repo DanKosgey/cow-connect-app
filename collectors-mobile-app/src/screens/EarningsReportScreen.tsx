@@ -189,7 +189,7 @@ Generated via Cow Connect App
     if (loading) {
         return (
             <View style={styles.center}>
-                <ActivityIndicator size="large" color="#0EA5E9" />
+                <ActivityIndicator size="large" color="#16A34A" />
                 <Text style={styles.loadingText}>Generating report...</Text>
             </View>
         );
@@ -206,7 +206,7 @@ Generated via Cow Connect App
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Earnings Report</Text>
                 <TouchableOpacity onPress={handleShare} style={styles.shareBtn}>
-                    <Ionicons name="share-outline" size={24} color="#0EA5E9" />
+                    <Ionicons name="share-outline" size={24} color="#16A34A" />
                 </TouchableOpacity>
             </View>
 
@@ -355,7 +355,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     periodTabActive: {
-        backgroundColor: '#0EA5E9',
+        backgroundColor: '#16A34A', // Green-600
         elevation: 2,
     },
     periodTabText: {
@@ -542,7 +542,7 @@ const styles = StyleSheet.create({
     rateValue: {
         fontSize: 18,
         fontWeight: '800',
-        color: '#0EA5E9',
+        color: '#16A34A', // Green-600
         marginBottom: 4,
     },
     ratePeriod: {

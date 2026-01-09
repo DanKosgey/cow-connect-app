@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { collectionLocalService } from '../services/collection.local.service';
 import { collectionSyncService } from '../services/collection.sync.service';
 import { farmerSyncService } from '../services/farmer.sync.service';
+import { collectorRateService } from '../services/collector.rate.service';
 import { useAuth } from '../hooks/useAuth';
 
 export const NewCollectionScreen = ({ navigation, route }: any) => {
@@ -20,7 +21,7 @@ export const NewCollectionScreen = ({ navigation, route }: any) => {
     const [farmers, setFarmers] = useState<any[]>([]);
     const [selectedFarmer, setSelectedFarmer] = useState<any>(null);
     const [liters, setLiters] = useState('');
-    const [rate, setRate] = useState('48.78');
+    const [rate, setRate] = useState('0.00'); // Initialize with 0
     const [notes, setNotes] = useState('');
     const [photoUri, setPhotoUri] = useState<string | null>(null);
     const [isCancelled, setIsCancelled] = useState(false);
@@ -72,6 +73,11 @@ export const NewCollectionScreen = ({ navigation, route }: any) => {
 
     const initializeScreen = async () => {
         await requestPermissions();
+
+        // Fetch current rate
+        const currentRate = await collectorRateService.getCurrentRate();
+        setRate(currentRate.toFixed(2));
+
         await refreshData();
 
         // Auto-sync farmers in background to get latest additions
@@ -494,7 +500,7 @@ export const NewCollectionScreen = ({ navigation, route }: any) => {
                                     {selectedFarmer.full_name}
                                 </Text>
                                 <Text style={styles.selectedFarmerReg}>
-                                    NO: {selectedFarmer.registration_number}
+                                    NO: {selectedFarmer.registration_number || 'Not Assigned'}
                                 </Text>
                                 <Text style={styles.selectedFarmerPhone}>
                                     {selectedFarmer.phone || 'No Phone'}
@@ -540,7 +546,7 @@ export const NewCollectionScreen = ({ navigation, route }: any) => {
                                                 </View>
                                                 <View style={{ flex: 1 }}>
                                                     <Text style={styles.resultName}>{f.full_name}</Text>
-                                                    <Text style={styles.resultMeta}>{f.registration_number}</Text>
+                                                    <Text style={styles.resultMeta}>{f.registration_number || 'No ID'}</Text>
                                                 </View>
                                             </TouchableOpacity>
                                         ))}
@@ -578,7 +584,7 @@ export const NewCollectionScreen = ({ navigation, route }: any) => {
                                                     {f.full_name.split(' ')[0]}
                                                 </Text>
                                                 <Text style={styles.recentFarmerId}>
-                                                    {f.registration_number}
+                                                    {f.registration_number || 'No ID'}
                                                 </Text>
                                             </TouchableOpacity>
                                         ))}
@@ -684,11 +690,11 @@ export const NewCollectionScreen = ({ navigation, route }: any) => {
 
                     <Text style={styles.label}>Rate per Liter (KSh)</Text>
                     <TextInput
-                        style={styles.input}
+                        style={[styles.input, styles.inputDisabled]}
                         placeholder="Rate"
                         keyboardType="decimal-pad"
                         value={rate}
-                        onChangeText={setRate}
+                        editable={false}
                     />
 
                     {/* Cancel Collection Toggle */}
@@ -859,7 +865,7 @@ export const NewCollectionScreen = ({ navigation, route }: any) => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#F5F7FA',
+        backgroundColor: '#F0FDF4', // Green-50, was #F5F7FA
     },
     header: {
         flexDirection: 'row',
@@ -875,11 +881,11 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontSize: 24,
         fontWeight: 'bold',
-        color: '#1A1A1A',
+        color: '#14532D', // Green-900
     },
     headerSubtitle: {
         fontSize: 14,
-        color: '#666',
+        color: '#166534', // Green-800
         marginTop: 4,
     },
     backBtn: {
@@ -894,7 +900,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: '#FF9800',
+        backgroundColor: '#F59E0B',
         paddingVertical: 10,
         paddingHorizontal: 16,
         gap: 8,
@@ -932,13 +938,13 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     requiredBadge: {
-        backgroundColor: '#FFEBEE',
+        backgroundColor: '#DCFCE7',
         paddingHorizontal: 8,
         paddingVertical: 4,
         borderRadius: 12,
     },
     requiredText: {
-        color: '#F44336',
+        color: '#16A34A',
         fontSize: 12,
         fontWeight: 'bold',
     },
@@ -970,7 +976,7 @@ const styles = StyleSheet.create({
         marginHorizontal: 16,
     },
     syncBtn: {
-        backgroundColor: '#2196F3',
+        backgroundColor: '#16A34A',
         paddingVertical: 12,
         borderRadius: 8,
         flexDirection: 'row',
@@ -979,7 +985,7 @@ const styles = StyleSheet.create({
         gap: 8,
     },
     syncBtnDisabled: {
-        backgroundColor: '#BBDEFB',
+        backgroundColor: '#94A3B8',
         opacity: 0.6,
     },
     syncBtnText: {
@@ -989,7 +995,7 @@ const styles = StyleSheet.create({
     },
     locationCard: {
         borderLeftWidth: 4,
-        borderLeftColor: '#4CAF50',
+        borderLeftColor: '#16A34A',
     },
     locationInfoContainer: {
         backgroundColor: '#F1F8F4',
@@ -1020,7 +1026,7 @@ const styles = StyleSheet.create({
         lineHeight: 20,
     },
     getLocationBtn: {
-        backgroundColor: '#2196F3',
+        backgroundColor: '#16A34A',
         paddingVertical: 14,
         borderRadius: 8,
         flexDirection: 'row',
@@ -1062,11 +1068,11 @@ const styles = StyleSheet.create({
     selectedFarmerCard: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#E8F5E9',
+        backgroundColor: '#F0FDF4',
         borderRadius: 8,
         padding: 12,
         borderWidth: 1,
-        borderColor: '#4CAF50',
+        borderColor: '#86EFAC',
     },
     selectedFarmerInfo: {
         flex: 1,
@@ -1160,17 +1166,17 @@ const styles = StyleSheet.create({
     checkboxContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#FFF3E0',
+        backgroundColor: '#FEF2F2',
         padding: 12,
         borderRadius: 8,
         borderWidth: 1,
-        borderColor: '#FFB74D',
+        borderColor: '#FECACA',
     },
     checkbox: {
         width: 24,
         height: 24,
         borderWidth: 2,
-        borderColor: '#FF9800',
+        borderColor: '#EF4444',
         borderRadius: 6,
         marginRight: 12,
         alignItems: 'center',
@@ -1178,19 +1184,19 @@ const styles = StyleSheet.create({
         backgroundColor: 'white',
     },
     checkboxChecked: {
-        backgroundColor: '#FF9800',
-        borderColor: '#FF9800',
+        backgroundColor: '#EF4444',
+        borderColor: '#EF4444',
     },
     checkboxLabel: {
         fontSize: 14,
-        color: '#F57C00',
+        color: '#B91C1C',
         fontWeight: '600',
         flex: 1,
     },
     summaryCard: {
-        backgroundColor: '#F9FBF9',
+        backgroundColor: '#ECFDF5',
         borderLeftWidth: 4,
-        borderLeftColor: '#4CAF50',
+        borderLeftColor: '#16A34A',
     },
     summaryRow: {
         flexDirection: 'row',
@@ -1219,11 +1225,11 @@ const styles = StyleSheet.create({
     totalValue: {
         fontSize: 20,
         fontWeight: '800',
-        color: '#4CAF50',
+        color: '#16A34A',
     },
     uploadBox: {
         borderWidth: 2,
-        borderColor: '#9C27B0',
+        borderColor: '#8B5CF6',
         borderStyle: 'dashed',
         borderRadius: 12,
         padding: 32,
@@ -1261,7 +1267,7 @@ const styles = StyleSheet.create({
         padding: 2,
     },
     submitBtn: {
-        backgroundColor: '#4CAF50',
+        backgroundColor: '#16A34A',
         paddingVertical: 16,
         borderRadius: 12,
         flexDirection: 'row',
@@ -1270,7 +1276,7 @@ const styles = StyleSheet.create({
         marginHorizontal: 16,
         marginTop: 24,
         gap: 10,
-        shadowColor: '#4CAF50',
+        shadowColor: '#16A34A',
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 8,
@@ -1330,7 +1336,7 @@ const styles = StyleSheet.create({
     recentAmount: {
         fontSize: 16,
         fontWeight: '700',
-        color: '#4CAF50',
+        color: '#16A34A',
     },
     recentLiters: {
         fontSize: 13,
@@ -1348,10 +1354,10 @@ const styles = StyleSheet.create({
         gap: 5,
     },
     statusBadgeSuccess: {
-        backgroundColor: '#4CAF50',
+        backgroundColor: '#16A34A',
     },
     statusBadgePending: {
-        backgroundColor: '#FF9800',
+        backgroundColor: '#F59E0B',
     },
     statusText: {
         color: 'white',
@@ -1364,7 +1370,7 @@ const styles = StyleSheet.create({
         width: 50,
         height: 50,
         borderRadius: 25,
-        backgroundColor: '#4CAF50',
+        backgroundColor: '#16A34A',
         alignItems: 'center',
         justifyContent: 'center',
         marginRight: 12,

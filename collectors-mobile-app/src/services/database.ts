@@ -159,6 +159,7 @@ const initDatabase = async (database: SQLite.SQLiteDatabase) => {
         national_id TEXT,
         kyc_status TEXT DEFAULT 'pending',
         registration_completed INTEGER DEFAULT 0,
+        address TEXT, -- Alias for physical_address if needed, or remove if strictly mapping remote
         physical_address TEXT,
         farm_location TEXT,
         gps_latitude REAL,
@@ -180,6 +181,18 @@ const initDatabase = async (database: SQLite.SQLiteDatabase) => {
         is_deleted INTEGER DEFAULT 0
       );
     `);
+
+    // Auto-migration to ensure new columns exist if table already exists
+    try {
+      const cols = await database.getAllAsync("PRAGMA table_info(farmers_local)");
+      const colNames = cols.map((c: any) => c.name);
+      if (!colNames.includes('address')) {
+        await database.execAsync('ALTER TABLE farmers_local ADD COLUMN address TEXT');
+      }
+      // Add other potential missing columns here if schema evolves
+    } catch (e) {
+      console.log('[DB] Column check failed', e);
+    }
 
     // --- MIGRATION CHECK: collections_queue farmer_name ---
     try {

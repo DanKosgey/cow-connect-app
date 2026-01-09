@@ -1,5 +1,5 @@
-
 import { getDatabase } from './database';
+import { collectorRateService } from './collector.rate.service';
 
 export interface CollectorPerformanceMetrics {
     period: 'today' | 'week' | 'month';
@@ -35,6 +35,9 @@ export const collectorPerformanceService = {
     }> {
         const db = await getDatabase();
 
+        // Fetch current active rate
+        const currentRate = await collectorRateService.getCurrentRate();
+
         // Fetch User Goal
         let dailyTarget = 200; // Default
         try {
@@ -62,7 +65,7 @@ export const collectorPerformanceService = {
         const startToday = new Date(now); startToday.setHours(0, 0, 0, 0);
         const endToday = new Date(now); endToday.setHours(23, 59, 59, 999);
         const todayData = await getRawData(startToday, endToday);
-        const todayMetrics = this.calculateMetrics(todayData, 'today');
+        const todayMetrics = this.calculateMetrics(todayData, 'today', currentRate);
         todayMetrics.dailyTarget = dailyTarget;
 
         // ... rest of logic (This Week)
@@ -80,16 +83,16 @@ export const collectorPerformanceService = {
         endLastWeek.setSeconds(endLastWeek.getSeconds() - 1); // Just before this week start
 
         const lastWeekData = await getRawData(startLastWeek, endLastWeek);
-        const lastWeekMetrics = this.calculateMetrics(lastWeekData, 'week');
+        const lastWeekMetrics = this.calculateMetrics(lastWeekData, 'week', currentRate);
 
-        const weekMetrics = this.calculateMetrics(weekData, 'week');
+        const weekMetrics = this.calculateMetrics(weekData, 'week', currentRate);
         weekMetrics.comparison = this.calculateComparison(weekMetrics, lastWeekMetrics);
 
 
         // --- This Month ---
         const startMonth = new Date(now.getFullYear(), now.getMonth(), 1);
         const monthData = await getRawData(startMonth, endToday);
-        const monthMetrics = this.calculateMetrics(monthData, 'month');
+        const monthMetrics = this.calculateMetrics(monthData, 'month', currentRate);
 
         // Projection
         const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
@@ -116,7 +119,7 @@ export const collectorPerformanceService = {
         const startChart = new Date(now);
         startChart.setDate(now.getDate() - 30);
         const chartRawData = await getRawData(startChart, endToday);
-        const chartData = this.processChartData(chartRawData);
+        const chartData = this.processChartData(chartRawData, currentRate);
 
 
         // --- Dynamic Insight ---
@@ -139,13 +142,12 @@ export const collectorPerformanceService = {
         };
     },
 
-    calculateMetrics(data: any[], period: 'today' | 'week' | 'month'): CollectorPerformanceMetrics {
+    calculateMetrics(data: any[], period: 'today' | 'week' | 'month', currentRate: number): CollectorPerformanceMetrics {
         const totalLiters = data.reduce((sum, item) => sum + (item.liters || 0), 0);
-        const totalEarnings = data.reduce((sum, item) => sum + (item.total_amount || 0), 0);
+        // Use current rate for earnings calculation as requested
+        const totalEarnings = totalLiters * currentRate;
         const uniqueFarmers = new Set(data.map((item: any) => item.farmer_id)).size;
 
-        const weightedRateSum = data.reduce((sum, item) => sum + (item.rate * item.liters), 0);
-        const averageRate = totalLiters > 0 ? (weightedRateSum / totalLiters) : 0;
         const uniqueDates = new Set(data.map((item: any) => item.created_at.split('T')[0])).size;
 
         return {
@@ -155,7 +157,7 @@ export const collectorPerformanceService = {
             totalCollections: data.length,
             uniqueFarmers,
             avgLitersPerFarmer: uniqueFarmers > 0 ? (totalLiters / uniqueFarmers) : 0,
-            averageRate,
+            averageRate: currentRate,
             daysActive: uniqueDates
         };
     },
@@ -173,7 +175,7 @@ export const collectorPerformanceService = {
         };
     },
 
-    processChartData(data: any[]) {
+    processChartData(data: any[], currentRate: number) {
         const groupByDate: { [key: string]: any } = {};
         data.forEach((item: any) => {
             const dateStr = item.created_at.split('T')[0];
@@ -181,7 +183,8 @@ export const collectorPerformanceService = {
                 groupByDate[dateStr] = { date: dateStr, liters: 0, earnings: 0, farmers: new Set() };
             }
             groupByDate[dateStr].liters += item.liters;
-            groupByDate[dateStr].earnings += item.total_amount;
+            // Use current rate
+            groupByDate[dateStr].earnings += (item.liters * currentRate);
             groupByDate[dateStr].farmers.add(item.farmer_id);
         });
 

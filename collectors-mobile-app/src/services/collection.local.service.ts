@@ -120,15 +120,18 @@ export const collectionLocalService = {
     // Get recent farmers for quick selection
     async getRecentFarmers(collectorId: string, limit: number = 10) {
         const db = await getDatabase();
-        // Select distinct farmers from collections, joined with farmer details
-        // Order by most recent collection
+        // Select all approved farmers, prioritizing those with recent collections
+        // Use LEFT JOIN to include farmers without collections
         return await db.getAllAsync(
-            `SELECT DISTINCT f.*, MAX(cq.created_at) as last_interaction
-             FROM collections_queue cq
-             JOIN farmers_local f ON cq.farmer_id = f.id
-             WHERE cq.collector_id = ?
+            `SELECT f.*, MAX(cq.created_at) as last_interaction
+             FROM farmers_local f
+             LEFT JOIN collections_queue cq ON cq.farmer_id = f.id AND cq.collector_id = ?
+             WHERE f.kyc_status = 'approved'
              GROUP BY f.id
-             ORDER BY last_interaction DESC
+             ORDER BY 
+                CASE WHEN last_interaction IS NULL THEN 1 ELSE 0 END,
+                last_interaction DESC,
+                f.full_name ASC
              LIMIT ?`,
             [collectorId, limit]
         );

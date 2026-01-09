@@ -1,10 +1,11 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, RefreshControl, DeviceEventEmitter } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, RefreshControl, DeviceEventEmitter, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { collectionLocalService } from '../services/collection.local.service';
 import { farmerSyncService } from '../services/farmer.sync.service';
+import { collectorRateService } from '../services/collector.rate.service';
 import { useAuth } from '../hooks/useAuth';
 
 // Clean Summary Card
@@ -84,6 +85,11 @@ export const HomeScreen = ({ navigation }: any) => {
         // We still run this in background on mount for speed, 
         // but we trigger a reload after it finishes.
         syncFarmers().then(() => loadData());
+
+        // Sync rates
+        collectorRateService.init().then(() => {
+            collectorRateService.syncRates();
+        });
     }, []);
 
     const loadData = async () => {
@@ -134,6 +140,27 @@ export const HomeScreen = ({ navigation }: any) => {
         return 'Good Evening';
     };
 
+    const handleLogout = () => {
+        Alert.alert(
+            'Logout',
+            'Are you sure you want to logout?',
+            [
+                {
+                    text: 'Cancel',
+                    style: 'cancel',
+                },
+                {
+                    text: 'Logout',
+                    style: 'destructive',
+                    onPress: async () => {
+                        await logout();
+                    },
+                },
+            ],
+            { cancelable: true }
+        );
+    };
+
     return (
         <View style={styles.container}>
             {/* Clean Header */}
@@ -142,7 +169,9 @@ export const HomeScreen = ({ navigation }: any) => {
                     <Text style={styles.greeting}>{getGreeting()}</Text>
                     <Text style={styles.userName}>{user?.staff?.full_name || 'Collector'}</Text>
                 </View>
-
+                <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
+                    <Ionicons name="log-out-outline" size={24} color="#DC2626" />
+                </TouchableOpacity>
             </View>
 
             {/* Summary Cards */}
@@ -198,7 +227,7 @@ export const HomeScreen = ({ navigation }: any) => {
             {/* Bottom Navigation */}
             <View style={styles.bottomNav}>
                 <TouchableOpacity style={styles.navItem} onPress={() => { }}>
-                    <Ionicons name="home" size={24} color="#0EA5E9" />
+                    <Ionicons name="home" size={24} color="#16A34A" />
                     <Text style={[styles.navLabel, styles.navLabelActive]}>Home</Text>
                 </TouchableOpacity>
 
@@ -233,7 +262,7 @@ export const HomeScreen = ({ navigation }: any) => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#F8FAFC',
+        backgroundColor: '#F0FDF4', // Green-50, was F8FAFC
     },
     header: {
         flexDirection: 'row',
@@ -252,11 +281,18 @@ const styles = StyleSheet.create({
     userName: {
         fontSize: 24,
         fontWeight: '800',
-        color: '#1E293B',
+        color: '#14532D', // Green-900
         marginTop: 2,
     },
     profileBtn: {
         padding: 4,
+    },
+    logoutBtn: {
+        padding: 8,
+        borderRadius: 12,
+        backgroundColor: '#FEE2E2', // Red-100
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     summaryContainer: {
         flexDirection: 'row',
@@ -311,7 +347,7 @@ const styles = StyleSheet.create({
     },
     seeAll: {
         fontSize: 14,
-        color: '#0EA5E9',
+        color: '#16A34A', // Green
         fontWeight: '600',
     },
     listContent: {
@@ -335,7 +371,7 @@ const styles = StyleSheet.create({
         width: 48,
         height: 48,
         borderRadius: 24,
-        backgroundColor: '#E0F2FE',
+        backgroundColor: '#DCFCE7', // Green-100
         justifyContent: 'center',
         alignItems: 'center',
         marginRight: 12,
@@ -343,7 +379,7 @@ const styles = StyleSheet.create({
     avatarText: {
         fontSize: 16,
         fontWeight: '700',
-        color: '#0EA5E9',
+        color: '#16A34A', // Green-600
     },
     collectionInfo: {
         flex: 1,
@@ -366,7 +402,7 @@ const styles = StyleSheet.create({
     amount: {
         fontSize: 17,
         fontWeight: '800',
-        color: '#10B981',
+        color: '#16A34A', // Green-600
     },
     emptyState: {
         alignItems: 'center',
@@ -391,11 +427,11 @@ const styles = StyleSheet.create({
         width: 64,
         height: 64,
         borderRadius: 32,
-        backgroundColor: '#0EA5E9',
+        backgroundColor: '#16A34A', // Green-600
         justifyContent: 'center',
         alignItems: 'center',
         elevation: 8,
-        shadowColor: '#0EA5E9',
+        shadowColor: '#16A34A',
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 12,
@@ -428,6 +464,6 @@ const styles = StyleSheet.create({
         color: '#94A3B8',
     },
     navLabelActive: {
-        color: '#0EA5E9',
+        color: '#16A34A', // Green
     },
 });

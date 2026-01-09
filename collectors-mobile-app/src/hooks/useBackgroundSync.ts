@@ -6,9 +6,10 @@ import { collectionSyncService } from '../services/collection.sync.service';
 
 import { DeviceEventEmitter } from 'react-native';
 
+// Shared lock to prevent concurrent syncs
+let isSyncing = false;
+
 export const useBackgroundSync = () => {
-    // Shared lock to prevent concurrent syncs
-    let isSyncing = false;
 
     useEffect(() => {
         console.log('[SYNC] Initializing background sync listener...');

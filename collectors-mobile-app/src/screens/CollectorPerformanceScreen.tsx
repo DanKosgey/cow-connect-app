@@ -10,6 +10,7 @@ import {
     Dimensions
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LineChart } from 'react-native-chart-kit';
 import { useAuth } from '../hooks/useAuth';
 import { collectorPerformanceService, CollectorPerformanceMetrics } from '../services/collector.performance.service';
 import { useFocusEffect } from '@react-navigation/native';
@@ -37,25 +38,7 @@ const StatCard = ({ title, amount, subtext, badge, color, showProgress, progress
     </View>
 );
 
-const ChartBar = ({ label, value, maxValue, color, onPress, isSelected }: any) => {
-    const heightPercentage = maxValue > 0 ? (value / maxValue) * 100 : 0;
 
-    return (
-        <TouchableOpacity style={styles.barContainer} onPress={onPress}>
-            <View style={[
-                styles.bar,
-                {
-                    height: Math.max(heightPercentage, 4) * 1.5, // Scale factor
-                    backgroundColor: isSelected ? color : '#E2E8F0',
-                    maxHeight: 120
-                }
-            ]} />
-            <Text style={[styles.barLabel, isSelected && { fontWeight: 'bold', color: '#1E293B' }]}>
-                {label}
-            </Text>
-        </TouchableOpacity>
-    );
-};
 
 export const CollectorPerformanceScreen = ({ navigation }: any) => {
     const { user } = useAuth();
@@ -188,17 +171,41 @@ export const CollectorPerformanceScreen = ({ navigation }: any) => {
 
                 {metrics.chartData.length > 0 ? (
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chartScroll}>
-                        {metrics.chartData.map((d: any, i: number) => (
-                            <ChartBar
-                                key={i}
-                                label={d.label}
-                                value={chartMode === 'earnings' ? d.earnings : d.liters}
-                                maxValue={maxChartValue}
-                                color={chartMode === 'earnings' ? '#0EA5E9' : '#8B5CF6'}
-                                isSelected={selectedDay?.date === d.date}
-                                onPress={() => setSelectedDay(d)}
-                            />
-                        ))}
+                        {/* Assuming the user intended to replace ChartBar with LineChart or add it */}
+                        {/* The provided edit seems to be for a LineChart component configuration */}
+                        <LineChart
+                            data={{
+                                labels: metrics.chartData.map((d: any) => d.label),
+                                datasets: [
+                                    {
+                                        data: metrics.chartData.map((d: any) => chartMode === 'earnings' ? d.earnings : d.liters)
+                                    }
+                                ]
+                            }}
+                            width={SCREEN_WIDTH * 1.5} // Adjust width as needed for horizontal scroll
+                            height={220}
+                            chartConfig={{
+                                backgroundColor: '#ffffff',
+                                backgroundGradientFrom: '#ffffff',
+                                backgroundGradientTo: '#ffffff',
+                                decimalPlaces: 0, // optional, defaults to 2dp
+                                color: (opacity = 1) => `rgba(22, 163, 74, ${opacity})`, // Green-600
+                                labelColor: (opacity = 1) => `rgba(100, 116, 139, ${opacity})`,
+                                style: {
+                                    borderRadius: 16
+                                },
+                                propsForDots: {
+                                    r: "6",
+                                    strokeWidth: "2",
+                                    stroke: "#16A34A"
+                                }
+                            }}
+                            bezier
+                            style={{
+                                marginVertical: 8,
+                                borderRadius: 16
+                            }}
+                        />
                     </ScrollView>
                 ) : (
                     <View style={{ height: 100, alignItems: 'center', justifyContent: 'center' }}>
@@ -390,80 +397,85 @@ const styles = StyleSheet.create({
         height: '100%',
         borderRadius: 3,
     },
-    // Section
-    sectionContainer: {
+    trendText: {
+        fontSize: 10,
+        fontWeight: '700',
+        color: '#16A34A', // Green-600
+        marginLeft: 2,
+    },
+    chartContainer: {
+        margin: 20,
+        marginTop: 0,
         backgroundColor: '#fff',
-        marginHorizontal: 20,
-        marginBottom: 20,
-        borderRadius: 20,
+        borderRadius: 16,
         padding: 20,
         elevation: 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
+    },
+    chartTitle: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#1E293B',
+        marginBottom: 20,
+    },
+    chart: {
+        borderRadius: 16,
+        marginVertical: 8,
+    },
+
+    // Restored & Themed Styles
+    sectionContainer: {
+        marginTop: 24,
+        paddingHorizontal: 20,
     },
     sectionHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 20,
+        marginBottom: 16,
     },
     sectionTitle: {
         fontSize: 18,
         fontWeight: '700',
-        color: '#1E293B',
+        color: '#14532D', // Green-900
     },
     toggleContainer: {
         flexDirection: 'row',
-        backgroundColor: '#F1F5F9',
-        borderRadius: 12,
-        padding: 3,
+        backgroundColor: '#DCFCE7', // Green-100
+        borderRadius: 8,
+        padding: 4,
     },
     toggleBtn: {
         paddingHorizontal: 12,
         paddingVertical: 6,
-        borderRadius: 10,
+        borderRadius: 6,
     },
     toggleBtnActive: {
-        backgroundColor: '#fff',
-        shadowColor: '#000',
-        shadowOpacity: 0.1,
-        shadowRadius: 2,
-        elevation: 1,
+        backgroundColor: '#16A34A', // Green-600
     },
     toggleText: {
         fontSize: 12,
         fontWeight: '600',
-        color: '#64748B',
+        color: '#15803D', // Green-700
     },
     toggleTextActive: {
-        color: '#1E293B',
+        color: '#fff',
     },
-    // Chart
     chartScroll: {
-        height: 150,
-    },
-    barContainer: {
-        alignItems: 'center',
-        justifyContent: 'flex-end',
-        width: 30,
-        marginRight: 10,
-    },
-    bar: {
-        width: 12,
-        borderRadius: 6,
-        backgroundColor: '#E2E8F0',
-        marginBottom: 8,
-    },
-    barLabel: {
-        fontSize: 10,
-        color: '#94A3B8',
+        overflow: 'visible',
     },
     detailBox: {
+        marginTop: 16,
+        backgroundColor: '#F0FDF4',
+        borderRadius: 12,
+        padding: 16,
         flexDirection: 'row',
         justifyContent: 'space-between',
-        alignItems: 'center',
-        marginTop: 20,
-        backgroundColor: '#F8FAFC',
-        padding: 16,
-        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#DCFCE7',
     },
     detailDate: {
         fontSize: 12,
@@ -473,33 +485,43 @@ const styles = StyleSheet.create({
     detailMain: {
         fontSize: 20,
         fontWeight: '700',
-        color: '#1E293B',
+        color: '#16A34A',
     },
     detailLabel: {
         fontSize: 12,
-        color: '#94A3B8',
+        color: '#64748B',
     },
-    // Health
     healthRow: {
         flexDirection: 'row',
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 20,
         justifyContent: 'space-between',
-        marginBottom: 20,
+        alignItems: 'center',
+        elevation: 2,
+        shadowColor: '#64748B',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
     },
     healthItem: {
-        flex: 1,
         alignItems: 'center',
+        flex: 1,
     },
     divider: {
         width: 1,
-        height: '80%',
-        backgroundColor: '#F1F5F9',
+        height: 24,
+        backgroundColor: '#E2E8F0',
     },
-    healthLabel: {
+    healthLabel: { // Overrides previous definition if duplicate, or merge? 
+        // Previous definition was: color: '#DCFCE7', fontSize: 14...
+        // The one used in JSX is for the Row.
         fontSize: 12,
-        color: '#94A3B8',
-        marginBottom: 6,
+        color: '#64748B',
+        marginBottom: 4,
+        fontWeight: '500',
     },
-    healthValue: {
+    healthValue: { // Overrides
         fontSize: 16,
         fontWeight: '700',
         color: '#1E293B',
@@ -507,11 +529,12 @@ const styles = StyleSheet.create({
     alertBox: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#FFFBEB',
+        backgroundColor: '#FFFBEB', // Amber-50 (Insight/Alert usually yellow/orange)
+        borderRadius: 12,
         padding: 16,
-        borderRadius: 16,
+        marginTop: 20,
         borderWidth: 1,
-        borderColor: '#FEF3C7',
+        borderColor: '#FCD34D',
     },
     alertTitle: {
         fontSize: 14,
@@ -520,37 +543,41 @@ const styles = StyleSheet.create({
         marginBottom: 2,
     },
     alertText: {
-        fontSize: 12,
+        fontSize: 13,
         color: '#B45309',
-        lineHeight: 16,
+        lineHeight: 18,
     },
-    // Actions
     actionGrid: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
+        gap: 12,
         paddingHorizontal: 20,
+        marginTop: 24,
     },
     actionBtn: {
         flex: 1,
         backgroundColor: '#fff',
-        borderRadius: 16,
         padding: 16,
+        borderRadius: 16,
         alignItems: 'center',
-        marginHorizontal: 6,
         elevation: 2,
+        shadowColor: '#64748B',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
     },
     iconCircle: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
+        width: 40,
+        height: 40,
+        borderRadius: 20,
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: 10,
+        marginBottom: 8,
     },
     actionText: {
         fontSize: 12,
         fontWeight: '600',
-        color: '#334155',
+        color: '#475569',
         textAlign: 'center',
+        lineHeight: 16,
     },
 });
