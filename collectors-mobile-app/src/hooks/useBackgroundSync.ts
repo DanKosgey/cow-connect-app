@@ -3,6 +3,8 @@ import { useEffect } from 'react';
 import NetInfo from '@react-native-community/netinfo';
 import { farmerSyncService } from '../services/farmer.sync.service';
 import { collectionSyncService } from '../services/collection.sync.service';
+import { collectorRateService } from '../services/collector.rate.service';
+import { milkRateService } from '../services/milk.rate.service';
 
 import { DeviceEventEmitter } from 'react-native';
 
@@ -20,8 +22,14 @@ export const useBackgroundSync = () => {
 
             // Trigger if connected (even if reachability is pending/unknown)
             if (state.isConnected) {
-                console.log('[SYNC] Connection detected! Attempting instant sync...');
-                await performSync();
+                // SCALABILITY: Add random jitter (2s-15s) to prevent "Thundering Herd" of 100+ collectors
+                const jitterMs = Math.floor(Math.random() * 13000) + 2000;
+                console.log(`[SYNC] Connection detected! Scheduling sync in ${jitterMs}ms...`);
+
+                // Use setTimeout to delay the initial sync
+                setTimeout(async () => {
+                    await performSync();
+                }, jitterMs);
 
                 // Set up periodic sync every 2 minutes while connected
                 if (!syncInterval) {
@@ -59,6 +67,11 @@ export const useBackgroundSync = () => {
             // Then sync farmer updates
             await farmerSyncService.syncFarmerUpdates();
             console.log('[SYNC] Farmers sync completed');
+
+            // Sync rates (both collector and milk rates)
+            await collectorRateService.syncRates();
+            await milkRateService.syncRates();
+            console.log('[SYNC] Rates sync completed');
 
             // Emit event if anything was processed
             if (collectionResults.success > 0 || collectionResults.failed > 0) {

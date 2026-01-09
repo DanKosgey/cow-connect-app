@@ -1,201 +1,292 @@
 import { getDatabase } from './database';
 import { collectorRateService } from './collector.rate.service';
 
-export interface CollectorPerformanceMetrics {
-    period: 'today' | 'week' | 'month';
-    totalEarnings: number;
-    totalLiters: number;
-    totalCollections: number;
-    uniqueFarmers: number;
-    avgLitersPerFarmer: number;
-    averageRate: number;
-    daysActive: number;
-    projectedEarnings?: number;
-    comparison?: {
-        earningsChange: number; // Percentage
-        litersChange: number;   // Percentage
-        isPositive: boolean;
+export interface ChartPoint {
+    label: string;
+    date: string;
+    earnings: number;
+    liters: number; // Added back
+    farmers: number; // Unique farmers served count
+    collections: number; // Frequency count
+}
+
+export interface RefinedPerformanceMetrics {
+    overview: {
+        totalEarnings: number;
+        totalLiters: number;
+        activeFarmers: number;
+        totalCollections: number;
+        efficiency: number; // Liters per collection average
     };
-    health?: {
-        effectiveness: 'High' | 'Medium' | 'Low';
-        consistency: number; // 0-100
+    today: {
+        earnings: number;
+        liters: number;
+        farmers: number;
+        collections: number;
     };
-    dailyTarget?: number;
+    thisMonth: {
+        earnings: number;
+        liters: number;
+        farmers: number;
+        collections: number;
+        daysActive: number;
+    };
+    trends: {
+        week: ChartPoint[]; // Last 7 days daily
+        month: ChartPoint[]; // Last 30 days daily
+        year: ChartPoint[]; // Last 12 months monthly
+    };
+    insights: {
+        busiestTime: string;
+        topFarmerName: string;
+        growthRate: number; // % change in earnings vs last period
+    };
+    ath: {
+        value: number;
+        date: string;
+        type: 'Earnings' | 'Liters';
+    };
 }
 
 export const collectorPerformanceService = {
 
-    async getPerformanceMetrics(collectorId: string): Promise<{
-        today: CollectorPerformanceMetrics;
-        week: CollectorPerformanceMetrics;
-        month: CollectorPerformanceMetrics;
-        chartData: any[];
-        insight: string;
-        dailyTarget: number;
-    }> {
+    async getPerformanceMetrics(collectorId: string): Promise<RefinedPerformanceMetrics> {
         const db = await getDatabase();
-
-        // Fetch current active rate
         const currentRate = await collectorRateService.getCurrentRate();
-
-        // Fetch User Goal
-        let dailyTarget = 200; // Default
-        try {
-            const goalSetting = await db.getFirstAsync('SELECT value FROM app_settings WHERE key = "goal_dailyLiterTarget"') as any;
-            if (goalSetting && goalSetting.value) {
-                dailyTarget = parseFloat(goalSetting.value);
-            }
-        } catch (e) {
-            // Ignore, use default
-        }
-
         const now = new Date();
 
-        // --- Helper: Get Data ---
-        const getRawData = async (start: Date, end: Date) => {
-            return await db.getAllAsync(`
-                SELECT liters, rate, total_amount, created_at, farmer_id
-                FROM collections_queue
-                WHERE collector_id = ? AND created_at >= ? AND created_at <= ?
-                ORDER BY created_at ASC
-            `, [collectorId, start.toISOString(), end.toISOString()]);
+        // 1. Fetch All Data for processing
+        const allData = await db.getAllAsync(`
+            SELECT 
+                cq.liters, 
+                cq.created_at, 
+                cq.farmer_id,
+                COALESCE(cq.farmer_name, f.full_name, 'Unknown') as farmer_name
+            FROM collections_queue cq
+            LEFT JOIN farmers_local f ON cq.farmer_id = f.id
+            WHERE cq.collector_id = ? 
+            ORDER BY cq.created_at ASC
+        `, [collectorId]);
+
+        // 2. Overview Calculations
+        const totalLiters = allData.reduce((sum: number, item: any) => sum + item.liters, 0);
+        const totalEarnings = totalLiters * currentRate;
+        const totalCollections = allData.length;
+        const uniqueFarmers = new Set(allData.map((item: any) => item.farmer_id)).size;
+        const efficiency = totalCollections > 0 ? totalLiters / totalCollections : 0;
+
+        // Helper for specific ranges
+        const getMetricsForRange = (start: Date, end: Date) => {
+            const items = allData.filter((d: any) => {
+                const date = new Date(d.created_at);
+                return date >= start && date <= end;
+            });
+            const l = items.reduce((sum: number, i: any) => sum + i.liters, 0);
+            return {
+                liters: l,
+                earnings: l * currentRate,
+                farmers: new Set(items.map((i: any) => i.farmer_id)).size,
+                collections: items.length,
+                daysActive: new Set(items.map((i: any) => i.created_at.split('T')[0])).size
+            };
         };
 
-        // --- Today ---
+        // Today's Metrics
         const startToday = new Date(now); startToday.setHours(0, 0, 0, 0);
         const endToday = new Date(now); endToday.setHours(23, 59, 59, 999);
-        const todayData = await getRawData(startToday, endToday);
-        const todayMetrics = this.calculateMetrics(todayData, 'today', currentRate);
-        todayMetrics.dailyTarget = dailyTarget;
+        const todayMetrics = getMetricsForRange(startToday, endToday);
 
-        // ... rest of logic (This Week)
-        // actually user asked for "This Week", let's use actual week start (Sunday)
-        const startWeek = new Date(now);
-        startWeek.setDate(now.getDate() - now.getDay()); // Go back to Sunday
-        startWeek.setHours(0, 0, 0, 0);
+        // This Month's Metrics (1st to now)
+        const startCurrentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const thisMonthMetrics = getMetricsForRange(startCurrentMonth, endToday);
 
-        const weekData = await getRawData(startWeek, endToday);
+        // 3. Trend Processing
+        const processTrend = (startDate: Date, endDate: Date, interval: 'day' | 'week' | 'month'): ChartPoint[] => {
+            const points: { [key: string]: ChartPoint } = {};
+            const rangeData = allData.filter((d: any) => {
+                const date = new Date(d.created_at);
+                return date >= startDate && date <= endDate;
+            });
 
-        // --- Last Week (for comparison) ---
-        const startLastWeek = new Date(startWeek);
-        startLastWeek.setDate(startLastWeek.getDate() - 7);
-        const endLastWeek = new Date(startWeek);
-        endLastWeek.setSeconds(endLastWeek.getSeconds() - 1); // Just before this week start
+            // Iterate through every expected point in range to ensure continuity
+            const current = new Date(startDate);
+            // Safety break to prevent infinite loops if dates are messed up
+            let loops = 0;
+            const MAX_LOOPS = 50;
 
-        const lastWeekData = await getRawData(startLastWeek, endLastWeek);
-        const lastWeekMetrics = this.calculateMetrics(lastWeekData, 'week', currentRate);
+            while (current <= endDate && loops < MAX_LOOPS) {
+                loops++;
 
-        const weekMetrics = this.calculateMetrics(weekData, 'week', currentRate);
-        weekMetrics.comparison = this.calculateComparison(weekMetrics, lastWeekMetrics);
+                let key = '';
+                let label = '';
+                const year = current.getFullYear();
 
+                if (interval === 'month') {
+                    key = `${year}-${current.getMonth()}`;
+                    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+                    label = monthNames[current.getMonth()];
+                } else if (interval === 'week') {
+                    // Key by Week Start Date
+                    // Format: YYYY-Www? No, just use date string of start of week
+                    const month = String(current.getMonth() + 1).padStart(2, '0');
+                    const day = String(current.getDate()).padStart(2, '0');
+                    key = `${year}-${month}-${day}`;
+                    label = `${current.getDate()}/${current.getMonth() + 1}`;
+                } else {
+                    // Day
+                    const month = String(current.getMonth() + 1).padStart(2, '0');
+                    const day = String(current.getDate()).padStart(2, '0');
+                    key = `${year}-${month}-${day}`;
+                    label = `${current.getDate()}/${current.getMonth() + 1}`;
+                }
 
-        // --- This Month ---
-        const startMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        const monthData = await getRawData(startMonth, endToday);
-        const monthMetrics = this.calculateMetrics(monthData, 'month', currentRate);
+                points[key] = {
+                    label,
+                    date: current.toISOString(),
+                    earnings: 0,
+                    liters: 0,
+                    farmers: 0,
+                    collections: 0
+                };
 
-        // Projection
-        const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-        const dayOfMonth = now.getDate();
-        if (dayOfMonth > 0) {
-            const dailyAvg = monthMetrics.totalEarnings / dayOfMonth;
-            monthMetrics.projectedEarnings = dailyAvg * daysInMonth;
-        }
-
-        // --- Health & Consistency ---
-        // Consistency: Active days vs elapsed days in month
-        const consistency = Math.round((monthMetrics.daysActive / dayOfMonth) * 100);
-        // Effectiveness: Avg Liters per Collection (or per Farmer)
-        // Heuristic: >15L combined avg is High, 10-15 Medium, <10 Low
-        const effectivenessVal = monthMetrics.avgLitersPerFarmer;
-        let effectiveness: 'High' | 'Medium' | 'Low' = 'Medium';
-        if (effectivenessVal >= 15) effectiveness = 'High';
-        else if (effectivenessVal < 8) effectiveness = 'Low';
-
-        monthMetrics.health = { consistency, effectiveness };
-
-
-        // --- Chart Data (Last 30 Days) ---
-        const startChart = new Date(now);
-        startChart.setDate(now.getDate() - 30);
-        const chartRawData = await getRawData(startChart, endToday);
-        const chartData = this.processChartData(chartRawData, currentRate);
-
-
-        // --- Dynamic Insight ---
-        let insight = "Keep up the consistent work!";
-        if (weekMetrics.comparison?.isPositive && weekMetrics.comparison.earningsChange > 20) {
-            insight = `Great job! Your earnings are up ${weekMetrics.comparison.earningsChange}% compared to last week.`;
-        } else if (weekMetrics.comparison && !weekMetrics.comparison.isPositive) {
-            insight = `Earnings down ${Math.abs(weekMetrics.comparison.earningsChange)}% vs last week. Check "Farmers" screen for declining volumes.`;
-        } else if (todayMetrics.totalLiters > (monthMetrics.totalLiters / monthMetrics.daysActive) * 1.2) {
-            insight = "Excellent! You collected 20% more today than your monthly average.";
-        }
-
-        return {
-            today: todayMetrics,
-            week: weekMetrics,
-            month: monthMetrics,
-            chartData,
-            insight,
-            dailyTarget
-        };
-    },
-
-    calculateMetrics(data: any[], period: 'today' | 'week' | 'month', currentRate: number): CollectorPerformanceMetrics {
-        const totalLiters = data.reduce((sum, item) => sum + (item.liters || 0), 0);
-        // Use current rate for earnings calculation as requested
-        const totalEarnings = totalLiters * currentRate;
-        const uniqueFarmers = new Set(data.map((item: any) => item.farmer_id)).size;
-
-        const uniqueDates = new Set(data.map((item: any) => item.created_at.split('T')[0])).size;
-
-        return {
-            period,
-            totalEarnings,
-            totalLiters,
-            totalCollections: data.length,
-            uniqueFarmers,
-            avgLitersPerFarmer: uniqueFarmers > 0 ? (totalLiters / uniqueFarmers) : 0,
-            averageRate: currentRate,
-            daysActive: uniqueDates
-        };
-    },
-
-    calculateComparison(current: CollectorPerformanceMetrics, previous: CollectorPerformanceMetrics) {
-        if (previous.totalEarnings === 0) return { earningsChange: 100, litersChange: 100, isPositive: true };
-
-        const change = ((current.totalEarnings - previous.totalEarnings) / previous.totalEarnings) * 100;
-        const litersChange = ((current.totalLiters - previous.totalLiters) / previous.totalLiters) * 100;
-
-        return {
-            earningsChange: Math.round(change),
-            litersChange: Math.round(litersChange),
-            isPositive: change >= 0
-        };
-    },
-
-    processChartData(data: any[], currentRate: number) {
-        const groupByDate: { [key: string]: any } = {};
-        data.forEach((item: any) => {
-            const dateStr = item.created_at.split('T')[0];
-            if (!groupByDate[dateStr]) {
-                groupByDate[dateStr] = { date: dateStr, liters: 0, earnings: 0, farmers: new Set() };
+                // Increment
+                if (interval === 'month') current.setMonth(current.getMonth() + 1);
+                else if (interval === 'week') current.setDate(current.getDate() + 7);
+                else current.setDate(current.getDate() + 1);
             }
-            groupByDate[dateStr].liters += item.liters;
-            // Use current rate
-            groupByDate[dateStr].earnings += (item.liters * currentRate);
-            groupByDate[dateStr].farmers.add(item.farmer_id);
+
+            // Populate Data
+            // Generic Bucket Logic:
+            const buckets = Object.values(points).map(p => ({
+                ...p,
+                startDate: new Date(p.date),
+                endDate: new Date(p.date)
+            }));
+
+            // Set end dates
+            buckets.forEach(b => {
+                if (interval === 'day') b.endDate.setDate(b.startDate.getDate() + 1);
+                if (interval === 'week') b.endDate.setDate(b.startDate.getDate() + 7);
+                if (interval === 'month') b.endDate.setMonth(b.startDate.getMonth() + 1);
+            });
+
+            rangeData.forEach((item: any) => {
+                const itemDate = new Date(item.created_at);
+                // Find bucket
+                const bucket = buckets.find(b => itemDate >= b.startDate && itemDate < b.endDate);
+                if (bucket) {
+                    bucket.earnings += (item.liters * currentRate);
+                    bucket.liters += item.liters;
+                    bucket.collections += 1;
+                }
+            });
+
+            // Farmers count (needs re-loop or separate pass? Can do in finding bucket)
+            buckets.forEach(bucket => {
+                const binItems = rangeData.filter((d: any) => {
+                    const dDate = new Date(d.created_at);
+                    return dDate >= bucket.startDate && dDate < bucket.endDate;
+                });
+                bucket.farmers = new Set(binItems.map((b: any) => b.farmer_id)).size;
+            });
+
+            return buckets; // Returns ChartPoint[] directly
+        };
+
+
+        // Week: Last 7 Days
+        const startWeek = new Date(now); startWeek.setDate(now.getDate() - 6); startWeek.setHours(0, 0, 0, 0);
+        const weekTrend = processTrend(startWeek, endToday, 'day');
+
+        // Month: Last 4 Weeks (28 Days) - Aggregated Weekly
+        const startMonth = new Date(now); startMonth.setDate(now.getDate() - 27); startMonth.setHours(0, 0, 0, 0);
+        // Align startMonth to something? No, passing 'week' interval will create 4 buckets of 7 days
+        const monthTrend = processTrend(startMonth, endToday, 'week');
+
+        // Year: Last 12 Months
+        const startYear = new Date(now); startYear.setMonth(now.getMonth() - 11); startYear.setDate(1); startYear.setHours(0, 0, 0, 0);
+        const yearTrend = processTrend(startYear, endToday, 'month');
+
+        // 4. Insights
+        // Busiest Time (Morning/Afternoon/Evening)
+        const timeSlots = { Morning: 0, Afternoon: 0, Evening: 0 };
+        allData.forEach((d: any) => {
+            const hour = new Date(d.created_at).getHours();
+            if (hour >= 5 && hour < 12) timeSlots.Morning++;
+            else if (hour >= 12 && hour < 17) timeSlots.Afternoon++;
+            else timeSlots.Evening++;
+        });
+        const busiestEntry = Object.entries(timeSlots).reduce((a, b) => a[1] > b[1] ? a : b);
+        const busiestTime = busiestEntry[1] > 0 ? busiestEntry[0] : 'None';
+
+        // Top Farmer
+        const farmerMap: { [key: string]: number } = {};
+        allData.forEach((d: any) => {
+            // Using Name as ID might be risky if duplicates, but farmer_name comes from join
+            const name = d.farmer_name;
+            farmerMap[name] = (farmerMap[name] || 0) + d.liters;
+        });
+        const topFarmerName = Object.entries(farmerMap).length > 0
+            ? Object.entries(farmerMap).reduce((a, b) => a[1] > b[1] ? a : b)[0]
+            : 'None';
+
+        // 5. ATH
+        let athValue = 0;
+        let athDate = now.toISOString();
+        // Calculate daily sums
+        const dailySums: { [key: string]: number } = {};
+        allData.forEach((d: any) => {
+            const date = new Date(d.created_at);
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const k = `${year}-${month}-${day}`;
+
+            dailySums[k] = (dailySums[k] || 0) + (d.liters * currentRate);
+        });
+        Object.entries(dailySums).forEach(([date, val]) => {
+            if (val > athValue) {
+                athValue = val;
+                athDate = date;
+            }
         });
 
-        // Ensure last 7 days exist at least with 0 if empty? 
-        // For now just show active days
-        return Object.values(groupByDate).map((d: any) => ({
-            label: `${new Date(d.date).getDate()}/${new Date(d.date).getMonth() + 1}`,
-            date: d.date,
-            liters: d.liters,
-            earnings: d.earnings,
-            farmers: d.farmers.size
-        })).sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        return {
+            overview: {
+                totalEarnings,
+                totalLiters,
+                activeFarmers: uniqueFarmers,
+                totalCollections,
+                efficiency
+            },
+            today: {
+                earnings: todayMetrics.earnings,
+                liters: todayMetrics.liters,
+                farmers: todayMetrics.farmers,
+                collections: todayMetrics.collections
+            },
+            thisMonth: {
+                earnings: thisMonthMetrics.earnings,
+                liters: thisMonthMetrics.liters,
+                farmers: thisMonthMetrics.farmers,
+                collections: thisMonthMetrics.collections,
+                daysActive: thisMonthMetrics.daysActive
+            },
+            trends: {
+                week: weekTrend,
+                month: monthTrend,
+                year: yearTrend
+            },
+            insights: {
+                busiestTime,
+                topFarmerName,
+                growthRate: 0 // Placeholder or calculate diff
+            },
+            ath: {
+                value: athValue,
+                date: athDate,
+                type: 'Earnings'
+            }
+        };
     }
 };

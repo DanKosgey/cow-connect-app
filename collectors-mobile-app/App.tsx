@@ -17,6 +17,7 @@ import { CollectorGoalsScreen } from './src/screens/CollectorGoalsScreen';
 import { EarningsReportScreen } from './src/screens/EarningsReportScreen';
 import { FarmersDirectoryScreen } from './src/screens/FarmersDirectoryScreen';
 import { FarmerProfileScreen } from './src/screens/FarmerProfileScreen';
+import { CollectionHistoryScreen } from './src/screens/CollectionHistoryScreen';
 import { AuthProvider, useAuth } from './src/hooks/useAuth';
 
 const Stack = createNativeStackNavigator();
@@ -98,6 +99,11 @@ function AppContent() {
                 name="FarmerProfile"
                 component={FarmerProfileScreen}
                 options={{ headerShown: false, presentation: 'modal' }}
+              />
+              <Stack.Screen
+                name="CollectionHistory"
+                component={CollectionHistoryScreen}
+                options={{ headerShown: false }}
               />
             </>
           )}

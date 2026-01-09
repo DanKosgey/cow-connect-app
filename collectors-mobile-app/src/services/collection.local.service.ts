@@ -135,6 +135,22 @@ export const collectionLocalService = {
              LIMIT ?`,
             [collectorId, limit]
         );
+    },
+
+    // Get all collections for history screen (Paginated)
+    async getAllHistory(collectorId: string, limit: number = 50, offset: number = 0) {
+        const db = await getDatabase();
+        const query = `
+            SELECT cq.*, 
+            COALESCE(cq.farmer_name, f.full_name, 'Unknown Farmer') as farmer_name,
+            f.registration_number
+            FROM collections_queue cq
+            LEFT JOIN farmers_local f ON cq.farmer_id = f.id
+            WHERE cq.collector_id = ?
+            ORDER BY cq.created_at DESC
+            LIMIT ? OFFSET ?
+        `;
+        return await db.getAllAsync(query, [collectorId, limit, offset]);
     }
 };
 

@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
@@ -12,15 +11,18 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { LineChart } from 'react-native-chart-kit';
 import { useAuth } from '../hooks/useAuth';
-import { collectorPerformanceService, CollectorPerformanceMetrics } from '../services/collector.performance.service';
+import { collectorPerformanceService, RefinedPerformanceMetrics, ChartPoint } from '../services/collector.performance.service';
 import { useFocusEffect } from '@react-navigation/native';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
-const StatCard = ({ title, amount, subtext, badge, color, showProgress, progressValue }: any) => (
+const StatCard = ({ title, amount, subtext, badge, color, showProgress, progressValue, icon }: any) => (
     <View style={styles.card}>
         <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>{title}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                {icon && <Ionicons name={icon} size={18} color={color} />}
+                <Text style={styles.cardTitle}>{title}</Text>
+            </View>
             {badge && (
                 <View style={[styles.badge, { backgroundColor: color + '20' }]}>
                     <Text style={[styles.badgeText, { color: color }]}>{badge}</Text>
@@ -38,14 +40,13 @@ const StatCard = ({ title, amount, subtext, badge, color, showProgress, progress
     </View>
 );
 
-
-
 export const CollectorPerformanceScreen = ({ navigation }: any) => {
     const { user } = useAuth();
     const [loading, setLoading] = useState(true);
-    const [metrics, setMetrics] = useState<any>(null);
-    const [chartMode, setChartMode] = useState<'earnings' | 'liters'>('earnings');
-    const [selectedDay, setSelectedDay] = useState<any>(null);
+    const [metrics, setMetrics] = useState<RefinedPerformanceMetrics | null>(null);
+    const [chartMode, setChartMode] = useState<'earnings' | 'farmers' | 'collections'>('earnings');
+    const [period, setPeriod] = useState<'week' | 'month' | 'year'>('week');
+    const [selectedPoint, setSelectedPoint] = useState<ChartPoint | null>(null);
 
     const loadData = async () => {
         if (!user?.staff?.id) return;
@@ -53,9 +54,8 @@ export const CollectorPerformanceScreen = ({ navigation }: any) => {
         try {
             const data = await collectorPerformanceService.getPerformanceMetrics(user.staff.id);
             setMetrics(data);
-            if (data.chartData?.length > 0) {
-                // Select last day by default
-                setSelectedDay(data.chartData[data.chartData.length - 1]);
+            if (data.trends.week.length > 0) {
+                setSelectedPoint(data.trends.week[data.trends.week.length - 1]);
             }
         } catch (e) {
             console.error(e);
@@ -72,36 +72,52 @@ export const CollectorPerformanceScreen = ({ navigation }: any) => {
 
     if (loading) {
         return (
-            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+            <View style={styles.loadingContainer}>
                 <ActivityIndicator size="large" color="#0EA5E9" />
-                <Text style={{ marginTop: 10, color: '#64748B' }}>Gathering earnings data...</Text>
+                <Text style={styles.loadingText}>Analyzing performance...</Text>
             </View>
         );
     }
 
     if (!metrics) return null;
 
-    const maxChartValue = metrics.chartData.reduce((max: number, item: any) =>
-        Math.max(max, chartMode === 'earnings' ? item.earnings : item.liters), 0);
+    // Chart Data Preparation
+    const activeTrend = metrics.trends[period];
+    const chartLabels = activeTrend.map(d => d.label);
+    const chartValues = activeTrend.map(d => {
+        if (chartMode === 'farmers') return d.farmers;
+        if (chartMode === 'collections') return d.collections;
+        return d.earnings;
+    });
 
-    // Formatting helpers
     const formatCurrency = (val: number) => `KES ${val.toLocaleString()}`;
 
-    // Dynamic strings
-    const weekComparisonText = metrics.week.comparison
-        ? `${metrics.week.comparison.isPositive ? '+' : ''}${metrics.week.comparison.earningsChange}% vs Last`
-        : 'vs Last Week';
+    // Dynamic Trend Coloring
+    const getTrendColor = () => {
+        if (chartValues.length < 2) return '#0EA5E9'; // Default Blue
 
-    // Dynamic progress (e.g., target 200L daily)
-    const dailyTarget = metrics.dailyTarget || 200;
-    const dailyProgress = Math.min((metrics.today.totalLiters / dailyTarget) * 100, 100);
+        const start = chartValues[0];
+        const end = chartValues[chartValues.length - 1];
+
+        if (start === 0 && end === 0) return '#64748B'; // Gray for no activity
+        if (end > start) return '#10B981'; // Green for Increase
+        if (end < start) return '#EF4444'; // Red for Decrease
+        return '#F59E0B'; // Orange for Neutral/Equal
+    };
+
+    const trendColor = getTrendColor();
 
     return (
         <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
             {/* Header */}
             <View style={styles.header}>
-                <Text style={styles.greeting}>Performance Dashboard</Text>
-                <Text style={styles.date}>{new Date().toDateString()}</Text>
+                <View>
+                    <Text style={styles.greeting}>Performance Dashboard</Text>
+                    <Text style={styles.date}>Insights & Analytics</Text>
+                </View>
+                <TouchableOpacity onPress={loadData} style={styles.refreshBtn}>
+                    <Ionicons name="refresh" size={20} color="#64748B" />
+                </TouchableOpacity>
             </View>
 
             {/* Hero Cards Scroll */}
@@ -110,41 +126,54 @@ export const CollectorPerformanceScreen = ({ navigation }: any) => {
                 pagingEnabled
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.cardsScroll}
-                snapToInterval={SCREEN_WIDTH - 40}
+                snapToInterval={SCREEN_WIDTH - 32}
                 decelerationRate="fast"
             >
-                {/* Today */}
+                {/* Total Earnings */}
                 <View style={styles.cardContainer}>
                     <StatCard
-                        title="TODAY'S EARNINGS"
-                        amount={formatCurrency(metrics.today.totalEarnings)}
-                        subtext={`${metrics.today.totalLiters.toFixed(1)}L from ${metrics.today.uniqueFarmers} farmers`}
-                        badge="Today"
+                        title="TOTAL EARNINGS"
+                        amount={formatCurrency(metrics.overview.totalEarnings)}
+                        subtext={`${metrics.overview.totalLiters.toFixed(0)} Liters Collected`}
+                        badge="Lifetime"
                         color="#0EA5E9" // Blue
-                        showProgress={true}
-                        progressValue={`${dailyProgress}%`}
+                        icon="cash-outline"
                     />
                 </View>
 
-                {/* Week */}
+                {/* Active Farmers */}
                 <View style={styles.cardContainer}>
                     <StatCard
-                        title="THIS WEEK"
-                        amount={formatCurrency(metrics.week.totalEarnings)}
-                        subtext={`${metrics.week.totalLiters.toFixed(1)}L • ${metrics.week.daysActive} days active`}
-                        badge={weekComparisonText}
+                        title="ACTIVE FARMERS"
+                        amount={metrics.overview.activeFarmers.toString()}
+                        subtext="Unique farmers served"
+                        badge="Network"
                         color="#10B981" // Green
+                        icon="people-outline"
                     />
                 </View>
 
-                {/* Month */}
+                {/* Efficiency/Collections */}
                 <View style={styles.cardContainer}>
                     <StatCard
-                        title="THIS MONTH"
-                        amount={formatCurrency(metrics.month.totalEarnings)}
-                        subtext={`Projected: ${formatCurrency(metrics.month.projectedEarnings || 0)}`}
-                        badge="On Track"
+                        title="COLLECTIONS"
+                        amount={metrics.overview.totalCollections.toString()}
+                        subtext={`${metrics.overview.efficiency.toFixed(1)}L per collection avg`}
+                        badge="Efficiency"
                         color="#8B5CF6" // Purple
+                        icon="analytics-outline"
+                    />
+                </View>
+
+                {/* ATH Card */}
+                <View style={styles.cardContainer}>
+                    <StatCard
+                        title="ALL TIME HIGH"
+                        amount={formatCurrency(metrics.ath.value)}
+                        subtext={`Record set on ${new Date(metrics.ath.date).toDateString()}`}
+                        badge="ATH"
+                        color="#F59E0B" // Amber
+                        icon="trophy-outline"
                     />
                 </View>
             </ScrollView>
@@ -152,162 +181,127 @@ export const CollectorPerformanceScreen = ({ navigation }: any) => {
             {/* Chart Section */}
             <View style={styles.sectionContainer}>
                 <View style={styles.sectionHeader}>
-                    <Text style={styles.sectionTitle}>Performance Trend</Text>
-                    <View style={styles.toggleContainer}>
-                        <TouchableOpacity
-                            style={[styles.toggleBtn, chartMode === 'earnings' && styles.toggleBtnActive]}
-                            onPress={() => setChartMode('earnings')}
-                        >
-                            <Text style={[styles.toggleText, chartMode === 'earnings' && styles.toggleTextActive]}>KES</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={[styles.toggleBtn, chartMode === 'liters' && styles.toggleBtnActive]}
-                            onPress={() => setChartMode('liters')}
-                        >
-                            <Text style={[styles.toggleText, chartMode === 'liters' && styles.toggleTextActive]}>Liters</Text>
-                        </TouchableOpacity>
-                    </View>
+                    <Text style={styles.sectionTitle}>Trends</Text>
                 </View>
 
-                {metrics.chartData.length > 0 ? (
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chartScroll}>
-                        {/* Assuming the user intended to replace ChartBar with LineChart or add it */}
-                        {/* The provided edit seems to be for a LineChart component configuration */}
+                {/* Metric Toggles */}
+                <View style={styles.metricToggles}>
+                    {(['earnings', 'farmers', 'collections'] as const).map((m) => (
+                        <TouchableOpacity
+                            key={m}
+                            style={[styles.metricToggle, chartMode === m && styles.metricToggleActive]}
+                            onPress={() => setChartMode(m)}
+                        >
+                            <Text style={[styles.metricText, chartMode === m && styles.metricTextActive]}>
+                                {m.charAt(0).toUpperCase() + m.slice(1)}
+                            </Text>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+
+                {/* Time Period Tabs */}
+                <View style={styles.periodTabs}>
+                    {(['week', 'month', 'year'] as const).map((p) => (
+                        <TouchableOpacity
+                            key={p}
+                            style={[styles.periodTab, period === p && styles.periodTabActive]}
+                            onPress={() => setPeriod(p)}
+                        >
+                            <Text style={[styles.periodText, period === p && styles.periodTextActive]}>
+                                {p.charAt(0).toUpperCase() + p.slice(1)}
+                            </Text>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+
+                {activeTrend.length > 0 ? (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                         <LineChart
                             data={{
-                                labels: metrics.chartData.map((d: any) => d.label),
-                                datasets: [
-                                    {
-                                        data: metrics.chartData.map((d: any) => chartMode === 'earnings' ? d.earnings : d.liters)
-                                    }
-                                ]
+                                labels: chartLabels,
+                                datasets: [{ data: chartValues }]
                             }}
-                            width={SCREEN_WIDTH * 1.5} // Adjust width as needed for horizontal scroll
+                            width={Math.max(SCREEN_WIDTH - 40, chartLabels.length * 50)}
                             height={220}
+                            yAxisLabel={chartMode === 'earnings' ? 'K' : ''}
+                            yAxisInterval={1}
                             chartConfig={{
                                 backgroundColor: '#ffffff',
                                 backgroundGradientFrom: '#ffffff',
                                 backgroundGradientTo: '#ffffff',
-                                decimalPlaces: 0, // optional, defaults to 2dp
-                                color: (opacity = 1) => `rgba(22, 163, 74, ${opacity})`, // Green-600
-                                labelColor: (opacity = 1) => `rgba(100, 116, 139, ${opacity})`,
-                                style: {
-                                    borderRadius: 16
+                                decimalPlaces: 0,
+                                color: (opacity = 1) => {
+                                    // Parse hex color to rgb for opacity
+                                    const hex = trendColor.replace('#', '');
+                                    const r = parseInt(hex.substring(0, 2), 16);
+                                    const g = parseInt(hex.substring(2, 4), 16);
+                                    const b = parseInt(hex.substring(4, 6), 16);
+                                    return `rgba(${r}, ${g}, ${b}, ${opacity})`;
                                 },
-                                propsForDots: {
-                                    r: "6",
-                                    strokeWidth: "2",
-                                    stroke: "#16A34A"
-                                }
+                                labelColor: (opacity = 1) => `rgba(100, 116, 139, ${opacity})`,
+                                style: { borderRadius: 16 },
+                                propsForDots: { r: "4", strokeWidth: "2", stroke: "#fff" }
                             }}
                             bezier
-                            style={{
-                                marginVertical: 8,
-                                borderRadius: 16
-                            }}
+                            style={{ marginVertical: 8, borderRadius: 16 }}
+                            onDataPointClick={({ index }) => setSelectedPoint(activeTrend[index])}
                         />
                     </ScrollView>
-                ) : (
-                    <View style={{ height: 100, alignItems: 'center', justifyContent: 'center' }}>
-                        <Text style={{ color: '#94A3B8' }}>No data for charts yet</Text>
+                ) : ( // ...
+                    <View style={styles.emptyChart}>
+                        <Text style={{ color: '#94A3B8' }}>No data available for this period</Text>
                     </View>
                 )}
 
-                {/* Selected Day Details */}
-                {selectedDay && (
+                {/* Selected Point Detail */}
+                {selectedPoint && (
                     <View style={styles.detailBox}>
-                        <View>
-                            <Text style={styles.detailDate}>{new Date(selectedDay.date).toDateString()}</Text>
-                            <Text style={styles.detailMain}>
-                                {chartMode === 'earnings'
-                                    ? formatCurrency(selectedDay.earnings)
-                                    : `${selectedDay.liters.toFixed(1)} L`}
-                            </Text>
-                        </View>
-                        <View style={{ alignItems: 'flex-end' }}>
-                            <Text style={styles.detailLabel}>{selectedDay.farmers} farmers collected</Text>
-                            <Text style={styles.detailLabel}>
-                                {chartMode === 'earnings' ? 'Approx earnings' : 'Total Volume'}
-                            </Text>
+                        <Text style={styles.detailDate}>{new Date(selectedPoint.date).toDateString()}</Text>
+                        <View style={styles.detailRow}>
+                            <View style={styles.detailItem}>
+                                <Text style={styles.detailLabel}>Earnings</Text>
+                                <Text style={styles.detailValue}>{formatCurrency(selectedPoint.earnings)}</Text>
+                            </View>
+                            <View style={styles.detailItem}>
+                                <Text style={styles.detailLabel}>Farmers</Text>
+                                <Text style={styles.detailValue}>{selectedPoint.farmers}</Text>
+                            </View>
+                            <View style={styles.detailItem}>
+                                <Text style={styles.detailLabel}>Collections</Text>
+                                <Text style={styles.detailValue}>{selectedPoint.collections}</Text>
+                            </View>
                         </View>
                     </View>
                 )}
             </View>
 
-            {/* Health Indicator */}
+            {/* Insights Board */}
             <View style={styles.sectionContainer}>
-                <Text style={styles.sectionTitle}>Performance Health</Text>
+                <Text style={styles.sectionTitle}>Key Insights</Text>
 
-                <View style={styles.healthRow}>
-                    <View style={styles.healthItem}>
-                        <Text style={styles.healthLabel}>Avg/Farmer</Text>
-                        <Text style={styles.healthValue}>
-                            {metrics.month.avgLitersPerFarmer.toFixed(1)}L
-                        </Text>
+                <View style={styles.insightCard}>
+                    <View style={styles.insightIconBg}>
+                        <Ionicons name="time" size={24} color="#F59E0B" />
                     </View>
-                    <View style={styles.divider} />
-                    <View style={styles.healthItem}>
-                        <Text style={styles.healthLabel}>Consistency</Text>
-                        <Text style={styles.healthValue}>
-                            {metrics.month.health?.consistency || 0}%
-                        </Text>
-                    </View>
-                    <View style={styles.divider} />
-                    <View style={styles.healthItem}>
-                        <Text style={styles.healthLabel}>Effectiveness</Text>
-                        <Text style={[styles.healthValue, { color: metrics.month.health?.effectiveness === 'High' ? '#10B981' : metrics.month.health?.effectiveness === 'Low' ? '#EF4444' : '#F59E0B' }]}>
-                            {metrics.month.health?.effectiveness || 'Medium'}
+                    <View style={styles.insightContent}>
+                        <Text style={styles.insightTitle}>Busiest Time</Text>
+                        <Text style={styles.insightDesc}>
+                            Most of your collections happen in the <Text style={{ fontWeight: '700', color: '#1E293B' }}>{metrics.insights.busiestTime}</Text>.
                         </Text>
                     </View>
                 </View>
 
-                {/* Alert/Insight */}
-                <TouchableOpacity
-                    style={styles.alertBox}
-                    onPress={() => navigation.navigate('FarmerPerformance')}
-                >
-                    <Ionicons name="bulb" size={24} color="#F59E0B" />
-                    <View style={{ flex: 1, marginLeft: 12 }}>
-                        <Text style={styles.alertTitle}>Performance Insight</Text>
-                        <Text style={styles.alertText}>
-                            {metrics.insight}
+                <View style={styles.insightCard}>
+                    <View style={[styles.insightIconBg, { backgroundColor: '#DBEAFE' }]}>
+                        <Ionicons name="star" size={24} color="#2563EB" />
+                    </View>
+                    <View style={styles.insightContent}>
+                        <Text style={styles.insightTitle}>Top Farmer</Text>
+                        <Text style={styles.insightDesc}>
+                            <Text style={{ fontWeight: '700', color: '#1E293B' }}>{metrics.insights.topFarmerName}</Text> contributes the most to your volume.
                         </Text>
                     </View>
-                    <Ionicons name="chevron-forward" size={20} color="#94A3B8" />
-                </TouchableOpacity>
-            </View>
-
-            {/* Action Buttons */}
-            <View style={styles.actionGrid}>
-                <TouchableOpacity
-                    style={styles.actionBtn}
-                    onPress={() => navigation.navigate('FarmerPerformance')}
-                >
-                    <View style={[styles.iconCircle, { backgroundColor: '#FEE2E2' }]}>
-                        <Ionicons name="search" size={22} color="#EF4444" />
-                    </View>
-                    <Text style={styles.actionText}>Investigate{"\n"}Declines</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                    style={styles.actionBtn}
-                    onPress={() => navigation.navigate('CollectorGoals')}
-                >
-                    <View style={[styles.iconCircle, { backgroundColor: '#E0F2FE' }]}>
-                        <Ionicons name="trophy" size={22} color="#0EA5E9" />
-                    </View>
-                    <Text style={styles.actionText}>View{"\n"}Goals</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                    style={styles.actionBtn}
-                    onPress={() => navigation.navigate('EarningsReport')}
-                >
-                    <View style={[styles.iconCircle, { backgroundColor: '#F3E8FF' }]}>
-                        <Ionicons name="document-text" size={22} color="#8B5CF6" />
-                    </View>
-                    <Text style={styles.actionText}>Earnings{"\n"}Report</Text>
-                </TouchableOpacity>
+                </View>
             </View>
 
             <View style={{ height: 40 }} />
@@ -320,10 +314,24 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: '#F8FAFC',
     },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    loadingText: {
+        marginTop: 10,
+        color: '#64748B',
+    },
     header: {
         padding: 20,
         paddingTop: 60,
         backgroundColor: '#fff',
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        borderBottomWidth: 1,
+        borderBottomColor: '#F1F5F9',
     },
     greeting: {
         fontSize: 24,
@@ -331,48 +339,54 @@ const styles = StyleSheet.create({
         color: '#1E293B',
     },
     date: {
-        color: '#64748B',
         fontSize: 14,
+        color: '#64748B',
         marginTop: 4,
     },
-    // Cards
+    refreshBtn: {
+        padding: 8,
+        backgroundColor: '#F1F5F9',
+        borderRadius: 50,
+    },
     cardsScroll: {
-        paddingLeft: 20,
+        paddingHorizontal: 20,
         paddingVertical: 20,
     },
     cardContainer: {
-        width: SCREEN_WIDTH - 60,
-        marginRight: 15,
+        width: SCREEN_WIDTH - 40,
+        marginRight: 10,
     },
     card: {
         backgroundColor: '#fff',
-        borderRadius: 20,
         padding: 20,
-        elevation: 4,
-        shadowColor: '#64748B',
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.1,
+        borderRadius: 20,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.05,
         shadowRadius: 12,
+        elevation: 3,
+        borderWidth: 1,
+        borderColor: '#F1F5F9',
     },
     cardHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        alignItems: 'flex-start',
-        marginBottom: 10,
+        alignItems: 'center',
+        marginBottom: 16,
     },
     cardTitle: {
         fontSize: 12,
         fontWeight: '700',
         color: '#94A3B8',
-        letterSpacing: 0.5,
+        letterSpacing: 1,
     },
     badge: {
-        paddingHorizontal: 8,
+        paddingHorizontal: 10,
         paddingVertical: 4,
-        borderRadius: 8,
+        borderRadius: 12,
     },
     badgeText: {
-        fontSize: 11,
+        fontSize: 10,
         fontWeight: '700',
     },
     mainValue: {
@@ -397,39 +411,18 @@ const styles = StyleSheet.create({
         height: '100%',
         borderRadius: 3,
     },
-    trendText: {
-        fontSize: 10,
-        fontWeight: '700',
-        color: '#16A34A', // Green-600
-        marginLeft: 2,
-    },
-    chartContainer: {
-        margin: 20,
-        marginTop: 0,
-        backgroundColor: '#fff',
-        borderRadius: 16,
+    sectionContainer: {
         padding: 20,
-        elevation: 2,
+        backgroundColor: '#fff',
+        marginTop: 8,
+        marginHorizontal: 16,
+        borderRadius: 24,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.05,
-        shadowRadius: 8,
-    },
-    chartTitle: {
-        fontSize: 18,
-        fontWeight: '700',
-        color: '#1E293B',
-        marginBottom: 20,
-    },
-    chart: {
-        borderRadius: 16,
-        marginVertical: 8,
-    },
-
-    // Restored & Themed Styles
-    sectionContainer: {
-        marginTop: 24,
-        paddingHorizontal: 20,
+        shadowOpacity: 0.04,
+        shadowRadius: 12,
+        elevation: 2,
+        marginBottom: 16,
     },
     sectionHeader: {
         flexDirection: 'row',
@@ -440,144 +433,128 @@ const styles = StyleSheet.create({
     sectionTitle: {
         fontSize: 18,
         fontWeight: '700',
-        color: '#14532D', // Green-900
-    },
-    toggleContainer: {
-        flexDirection: 'row',
-        backgroundColor: '#DCFCE7', // Green-100
-        borderRadius: 8,
-        padding: 4,
-    },
-    toggleBtn: {
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 6,
-    },
-    toggleBtnActive: {
-        backgroundColor: '#16A34A', // Green-600
-    },
-    toggleText: {
-        fontSize: 12,
-        fontWeight: '600',
-        color: '#15803D', // Green-700
-    },
-    toggleTextActive: {
-        color: '#fff',
+        color: '#1E293B',
     },
     chartScroll: {
-        overflow: 'visible',
+        marginTop: 16,
+    },
+    emptyChart: {
+        height: 200,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    metricToggles: {
+        flexDirection: 'row',
+        marginBottom: 12,
+        gap: 8,
+    },
+    metricToggle: {
+        paddingVertical: 6,
+        paddingHorizontal: 12,
+        borderRadius: 20,
+        backgroundColor: '#F1F5F9',
+        borderWidth: 1,
+        borderColor: 'transparent',
+    },
+    metricToggleActive: {
+        backgroundColor: '#F0F9FF',
+        borderColor: '#BAE6FD',
+    },
+    metricText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#64748B',
+    },
+    metricTextActive: {
+        color: '#0284C7',
+    },
+    periodTabs: {
+        flexDirection: 'row',
+        marginBottom: 16,
+        backgroundColor: '#F8FAFC',
+        borderRadius: 12,
+        padding: 4,
+    },
+    periodTab: {
+        flex: 1,
+        paddingVertical: 8,
+        alignItems: 'center',
+        borderRadius: 8,
+    },
+    periodTabActive: {
+        backgroundColor: '#fff',
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+    },
+    periodText: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#64748B',
+    },
+    periodTextActive: {
+        color: '#0F172A',
     },
     detailBox: {
         marginTop: 16,
-        backgroundColor: '#F0FDF4',
-        borderRadius: 12,
         padding: 16,
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        borderWidth: 1,
-        borderColor: '#DCFCE7',
+        backgroundColor: '#F8FAFC',
+        borderRadius: 12,
     },
     detailDate: {
-        fontSize: 12,
-        color: '#64748B',
-        marginBottom: 4,
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#475569',
+        marginBottom: 12,
     },
-    detailMain: {
-        fontSize: 20,
-        fontWeight: '700',
-        color: '#16A34A',
+    detailRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+    },
+    detailItem: {
+        alignItems: 'center',
     },
     detailLabel: {
-        fontSize: 12,
-        color: '#64748B',
-    },
-    healthRow: {
-        flexDirection: 'row',
-        backgroundColor: '#fff',
-        borderRadius: 16,
-        padding: 20,
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        elevation: 2,
-        shadowColor: '#64748B',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.05,
-        shadowRadius: 8,
-    },
-    healthItem: {
-        alignItems: 'center',
-        flex: 1,
-    },
-    divider: {
-        width: 1,
-        height: 24,
-        backgroundColor: '#E2E8F0',
-    },
-    healthLabel: { // Overrides previous definition if duplicate, or merge? 
-        // Previous definition was: color: '#DCFCE7', fontSize: 14...
-        // The one used in JSX is for the Row.
-        fontSize: 12,
-        color: '#64748B',
+        fontSize: 11,
+        color: '#94A3B8',
         marginBottom: 4,
-        fontWeight: '500',
     },
-    healthValue: { // Overrides
-        fontSize: 16,
+    detailValue: {
+        fontSize: 14,
         fontWeight: '700',
         color: '#1E293B',
     },
-    alertBox: {
+    insightCard: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#FFFBEB', // Amber-50 (Insight/Alert usually yellow/orange)
-        borderRadius: 12,
         padding: 16,
-        marginTop: 20,
-        borderWidth: 1,
-        borderColor: '#FCD34D',
-    },
-    alertTitle: {
-        fontSize: 14,
-        fontWeight: '700',
-        color: '#B45309',
-        marginBottom: 2,
-    },
-    alertText: {
-        fontSize: 13,
-        color: '#B45309',
-        lineHeight: 18,
-    },
-    actionGrid: {
-        flexDirection: 'row',
-        gap: 12,
-        paddingHorizontal: 20,
-        marginTop: 24,
-    },
-    actionBtn: {
-        flex: 1,
-        backgroundColor: '#fff',
-        padding: 16,
+        backgroundColor: '#F8FAFC',
         borderRadius: 16,
-        alignItems: 'center',
-        elevation: 2,
-        shadowColor: '#64748B',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.05,
-        shadowRadius: 8,
+        marginBottom: 12,
     },
-    iconCircle: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
+    insightIconBg: {
+        width: 48,
+        height: 48,
+        borderRadius: 24,
+        backgroundColor: '#FEF3C7',
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: 8,
+        marginRight: 16,
     },
-    actionText: {
-        fontSize: 12,
-        fontWeight: '600',
-        color: '#475569',
-        textAlign: 'center',
-        lineHeight: 16,
+    insightContent: {
+        flex: 1,
+    },
+    insightTitle: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#1E293B',
+        marginBottom: 4,
+    },
+    insightDesc: {
+        fontSize: 13,
+        color: '#64748B',
+        lineHeight: 18,
     },
 });

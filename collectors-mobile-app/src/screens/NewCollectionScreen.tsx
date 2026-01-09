@@ -10,6 +10,7 @@ import { collectionLocalService } from '../services/collection.local.service';
 import { collectionSyncService } from '../services/collection.sync.service';
 import { farmerSyncService } from '../services/farmer.sync.service';
 import { collectorRateService } from '../services/collector.rate.service';
+import { milkRateService } from '../services/milk.rate.service';
 import { useAuth } from '../hooks/useAuth';
 
 export const NewCollectionScreen = ({ navigation, route }: any) => {
@@ -21,7 +22,8 @@ export const NewCollectionScreen = ({ navigation, route }: any) => {
     const [farmers, setFarmers] = useState<any[]>([]);
     const [selectedFarmer, setSelectedFarmer] = useState<any>(null);
     const [liters, setLiters] = useState('');
-    const [rate, setRate] = useState('0.00'); // Initialize with 0
+    const [collectorRate, setCollectorRate] = useState('0.00'); // Collector earnings per liter
+    const [milkRate, setMilkRate] = useState('0.00'); // Farmer earnings per liter (saved to DB)
     const [notes, setNotes] = useState('');
     const [photoUri, setPhotoUri] = useState<string | null>(null);
     const [isCancelled, setIsCancelled] = useState(false);
@@ -74,9 +76,12 @@ export const NewCollectionScreen = ({ navigation, route }: any) => {
     const initializeScreen = async () => {
         await requestPermissions();
 
-        // Fetch current rate
-        const currentRate = await collectorRateService.getCurrentRate();
-        setRate(currentRate.toFixed(2));
+        // Fetch both rates
+        const currentCollectorRate = await collectorRateService.getCurrentRate();
+        setCollectorRate(currentCollectorRate.toFixed(2));
+
+        const currentMilkRate = await milkRateService.getCurrentRate();
+        setMilkRate(currentMilkRate.toFixed(2));
 
         await refreshData();
 
@@ -320,7 +325,7 @@ export const NewCollectionScreen = ({ navigation, route }: any) => {
                 farmerName: selectedFarmer.full_name, // Pass name explicitly
                 collectorId: user.staff.id,
                 liters: isCancelled ? 0 : parseFloat(liters),
-                rate: parseFloat(rate),
+                rate: parseFloat(milkRate), // Use milk rate (farmer rate) for database
                 gpsLatitude: location.latitude,
                 gpsLongitude: location.longitude,
                 notes: isCancelled ? `[CANCELLED] ${notes}` : notes,
@@ -358,7 +363,8 @@ export const NewCollectionScreen = ({ navigation, route }: any) => {
         setLocation(null);
     };
 
-    const totalAmount = isCancelled ? 0 : (parseFloat(liters || '0') * parseFloat(rate || '0'));
+    const collectorEarnings = isCancelled ? 0 : (parseFloat(liters || '0') * parseFloat(collectorRate || '0'));
+    const farmerEarnings = isCancelled ? 0 : (parseFloat(liters || '0') * parseFloat(milkRate || '0'));
 
     const getLocationButtonColor = () => {
         switch (locationStatus) {
@@ -693,7 +699,7 @@ export const NewCollectionScreen = ({ navigation, route }: any) => {
                         style={[styles.input, styles.inputDisabled]}
                         placeholder="Rate"
                         keyboardType="decimal-pad"
-                        value={rate}
+                        value={collectorRate}
                         editable={false}
                     />
 
@@ -715,7 +721,7 @@ export const NewCollectionScreen = ({ navigation, route }: any) => {
                 <View style={[styles.card, styles.summaryCard]}>
                     <View style={styles.cardHeader}>
                         <Ionicons name="cash" size={22} color="#4CAF50" />
-                        <Text style={styles.cardTitle}>Payment Summary</Text>
+                        <Text style={styles.cardTitle}>Earnings Summary</Text>
                     </View>
 
                     <View style={styles.summaryRow}>
@@ -725,14 +731,14 @@ export const NewCollectionScreen = ({ navigation, route }: any) => {
                         </Text>
                     </View>
                     <View style={styles.summaryRow}>
-                        <Text style={styles.summaryLabel}>Rate per liter:</Text>
-                        <Text style={styles.summaryValue}>KSh {rate}</Text>
+                        <Text style={styles.summaryLabel}>Your Rate:</Text>
+                        <Text style={styles.summaryValue}>KSh {collectorRate}/L</Text>
                     </View>
                     <View style={styles.divider} />
                     <View style={styles.summaryRow}>
-                        <Text style={styles.totalLabel}>Total Amount:</Text>
-                        <Text style={[styles.totalValue, isCancelled && { color: '#999' }]}>
-                            KSh {totalAmount.toFixed(2)}
+                        <Text style={styles.totalLabel}>Your Earnings:</Text>
+                        <Text style={[styles.totalValue, { color: '#16A34A' }, isCancelled && { color: '#999' }]}>
+                            KSh {collectorEarnings.toFixed(2)}
                         </Text>
                     </View>
                 </View>
@@ -832,7 +838,7 @@ export const NewCollectionScreen = ({ navigation, route }: any) => {
                                     </View>
                                     <View style={{ alignItems: 'flex-end' }}>
                                         <Text style={styles.recentAmount}>
-                                            KSh {col.total_amount?.toFixed(0) || '0'}
+                                            KSh {((col.liters || 0) * parseFloat(collectorRate || '0')).toFixed(0)}
                                         </Text>
                                         <Text style={styles.recentLiters}>{col.liters}L</Text>
                                     </View>

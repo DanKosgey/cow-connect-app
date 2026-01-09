@@ -6,6 +6,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { collectionLocalService } from '../services/collection.local.service';
 import { farmerSyncService } from '../services/farmer.sync.service';
 import { collectorRateService } from '../services/collector.rate.service';
+import { milkRateService } from '../services/milk.rate.service';
 import { useAuth } from '../hooks/useAuth';
 
 // Clean Summary Card
@@ -21,7 +22,7 @@ const SummaryCard = ({ title, value, color, icon }: any) => (
 
 // Collection Item with Avatar
 // Collection Item with Avatar
-const CollectionItem = ({ item }: any) => {
+const CollectionItem = ({ item, rate }: any) => {
     const initials = (item.farmer_name || 'U').substring(0, 2).toUpperCase();
 
     // Fix: Parse SQLite UTC string "YYYY-MM-DD HH:MM:SS" as UTC
@@ -41,6 +42,8 @@ const CollectionItem = ({ item }: any) => {
     };
 
     const time = formatTime(item.created_at);
+    // Use the passed collector rate for earnings display
+    const earnings = item.liters * (rate || 0);
 
     return (
         <View style={styles.collectionCard}>
@@ -52,7 +55,7 @@ const CollectionItem = ({ item }: any) => {
                 <Text style={styles.collectionDetails}>{item.liters}L • {time}</Text>
             </View>
             <View style={styles.collectionRight}>
-                <Text style={styles.amount}>KSH {(item.liters * item.rate).toFixed(0)}</Text>
+                <Text style={styles.amount}>KSH {earnings.toFixed(0)}</Text>
                 {item.status === 'uploaded' && (
                     <Ionicons name="checkmark-circle" size={16} color="#10B981" />
                 )}
@@ -67,6 +70,7 @@ export const HomeScreen = ({ navigation }: any) => {
     const [todayTotal, setTodayTotal] = useState(0);
     const [recentCollections, setRecentCollections] = useState<any[]>([]);
     const [refreshing, setRefreshing] = useState(false);
+    const [collectorRate, setCollectorRate] = useState(0);
 
     const syncFarmers = async () => {
         if (!user?.staff?.id) return;
@@ -86,9 +90,15 @@ export const HomeScreen = ({ navigation }: any) => {
         // but we trigger a reload after it finishes.
         syncFarmers().then(() => loadData());
 
-        // Sync rates
-        collectorRateService.init().then(() => {
-            collectorRateService.syncRates();
+        // Sync rates (both collector and milk rates)
+        // Sync rates (both collector and milk rates)
+        collectorRateService.init().then(async () => {
+            await collectorRateService.syncRates();
+            const rate = await collectorRateService.getCurrentRate();
+            setCollectorRate(rate);
+        });
+        milkRateService.init().then(() => {
+            milkRateService.syncRates();
         });
     }, []);
 
@@ -166,12 +176,29 @@ export const HomeScreen = ({ navigation }: any) => {
             {/* Clean Header */}
             <View style={styles.header}>
                 <View>
-                    <Text style={styles.greeting}>{getGreeting()}</Text>
+                    <Text style={styles.greeting}>{getGreeting()},</Text>
                     <Text style={styles.userName}>{user?.staff?.full_name || 'Collector'}</Text>
                 </View>
-                <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
-                    <Ionicons name="log-out-outline" size={24} color="#DC2626" />
-                </TouchableOpacity>
+                <View style={{ flexDirection: 'row', gap: 12 }}>
+                    {/* Add History/Upload Button */}
+                    <TouchableOpacity
+                        style={styles.profileBtn}
+                        onPress={() => navigation.navigate('CollectionHistory')}
+                    >
+                        <View>
+                            <Ionicons name="cloud-upload-outline" size={24} color="#1E293B" />
+                            {pendingCount > 0 && (
+                                <View style={styles.badge}>
+                                    <Text style={styles.badgeText}>{pendingCount > 99 ? '99+' : pendingCount}</Text>
+                                </View>
+                            )}
+                        </View>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity style={styles.profileBtn} onPress={logout}>
+                        <Ionicons name="log-out-outline" size={24} color="#1E293B" />
+                    </TouchableOpacity>
+                </View>
             </View>
 
             {/* Summary Cards */}
@@ -201,7 +228,7 @@ export const HomeScreen = ({ navigation }: any) => {
             {/* Collections List */}
             <FlatList
                 data={recentCollections}
-                renderItem={({ item }) => <CollectionItem item={item} />}
+                renderItem={({ item }) => <CollectionItem item={item} rate={collectorRate} />}
                 keyExtractor={(item) => item.local_id}
                 contentContainerStyle={styles.listContent}
                 refreshControl={
@@ -283,9 +310,6 @@ const styles = StyleSheet.create({
         fontWeight: '800',
         color: '#14532D', // Green-900
         marginTop: 2,
-    },
-    profileBtn: {
-        padding: 4,
     },
     logoutBtn: {
         padding: 8,
@@ -435,6 +459,33 @@ const styles = StyleSheet.create({
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 12,
+    },
+    profileBtn: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: '#F1F5F9',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    badge: {
+        position: 'absolute',
+        top: -4,
+        right: -4,
+        backgroundColor: '#DC2626',
+        borderRadius: 10,
+        minWidth: 18,
+        height: 18,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1.5,
+        borderColor: '#FFF',
+        paddingHorizontal: 4,
+    },
+    badgeText: {
+        color: '#FFF',
+        fontSize: 10,
+        fontWeight: 'bold',
     },
     bottomNav: {
         position: 'absolute',

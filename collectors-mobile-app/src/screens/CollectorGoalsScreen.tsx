@@ -185,11 +185,11 @@ export const CollectorGoalsScreen = ({ navigation }: any) => {
     }
 
     // Calculate daily progress (today vs daily target)
-    const todayLiters = performance?.today?.totalLiters || 0;
-    const todayFarmers = performance?.today?.uniqueFarmers || 0;
+    const todayLiters = performance?.today?.liters || 0;
+    const todayFarmers = performance?.today?.farmers || 0;
 
     // Monthly progress
-    const monthEarnings = performance?.month?.totalEarnings || 0;
+    const monthEarnings = performance?.thisMonth?.earnings || 0;
 
     return (
         <KeyboardAvoidingView
@@ -226,7 +226,7 @@ export const CollectorGoalsScreen = ({ navigation }: any) => {
                                 <View style={styles.overviewStatItem}>
                                     <Ionicons name="trending-up" size={16} color="#10B981" />
                                     <Text style={styles.overviewStatText}>
-                                        {performance?.month?.daysActive || 0} active days
+                                        {performance?.thisMonth?.daysActive || 0} active days
                                     </Text>
                                 </View>
                             </View>

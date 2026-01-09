@@ -26,48 +26,91 @@ const atob = (input: string) => {
 
 
 export const collectionSyncService = {
-    // Upload pending collections
+    // Upload pending collections (BATCHED)
     async uploadPendingCollections() {
         const db = await getDatabase();
 
-        // cast to any[] or specific type
+        // 1. Auth Check
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user || !user.id) {
+            console.warn('⚠️ [SYNC] No authenticated user found. Skipping upload.');
+            return { success: 0, failed: 0, errors: [] };
+        }
+
+        // 1b. Resolve Staff ID (Fix for FK Error)
+        const { data: staff } = await supabase
+            .from('staff')
+            .select('id')
+            .eq('user_id', user.id)
+            .single();
+
+        if (!staff || !staff.id) {
+            console.error('❌ [SYNC] Critical: Authenticated user is not linked to a Staff profile.');
+            return { success: 0, failed: 1, errors: [{ error: 'User has no staff profile' }] };
+        }
+
+        // 2. Fetch Pending
         const pending: any[] = await db.getAllAsync(
             "SELECT * FROM collections_queue WHERE status = 'pending_upload' ORDER BY created_at ASC"
         );
 
-        console.log(`🚀 [SYNC] Found ${pending.length} pending collections to upload`);
+        if (pending.length === 0) return { success: 0, failed: 0, errors: [] };
+        console.log(`🚀 [SYNC] Found ${pending.length} pending collections. Staff ID: ${staff.id}`);
 
-        const results = {
-            success: 0,
-            failed: 0,
-            errors: [] as any[],
-        };
+        const results = { success: 0, failed: 0, errors: [] as any[] };
+        const BATCH_SIZE = 50; // Supabase batch limit suggestion
 
-        for (const collection of pending) {
-            console.log(`🔄 [SYNC] Processing collection ${collection.collection_id} (Local ID: ${collection.local_id})`);
+        // Process in chunks of 50 to avoid payload limits
+        for (let i = 0; i < pending.length; i += BATCH_SIZE) {
+            const batch = pending.slice(i, i + BATCH_SIZE);
+            console.log(`📦 [SYNC] Processing batch ${i / BATCH_SIZE + 1} (${batch.length} items)...`);
+
             try {
-                await this.uploadSingleCollection(collection);
-                results.success++;
+                // Step A: Parallel Photo Uploads (Limit concurrency to 3)
+                // Note: We use user.id for Storage paths (bucket/uid/...)
+                const collectionsWithPhotos = await this.uploadPhotosConcurrent(batch, user.id);
 
-                // Mark as uploaded
-                console.log(`✅ [SYNC] Collection ${collection.collection_id} uploaded successfully`);
-                await db.runAsync(
-                    `UPDATE collections_queue 
-           SET status = 'uploaded', uploaded_at = CURRENT_TIMESTAMP 
-           WHERE local_id = ?`,
-                    [collection.local_id]
-                );
+                // Step B: Prepare Supabase Payloads
+                const serverPayloads = collectionsWithPhotos.map(c => ({
+                    collection_id: c.collection_id,
+                    farmer_id: c.farmer_id,
+                    staff_id: staff.id, // FIX: Use the resolved Staff ID, not User ID
+                    liters: c.liters,
+                    rate_per_liter: c.rate,
+                    total_amount: c.total_amount,
+                    collection_date: c.collection_date,
+                    gps_latitude: c.gps_latitude,
+                    gps_longitude: c.gps_longitude,
+                    notes: c.notes,
+                    photo_url: c.photo_url || null, // Updated from upload step
+                    verification_code: c.verification_code,
+                    status: 'Collected',
+                    created_at: c.created_at,
+                }));
+
+                // Step C: Bulk Upsert to Supabase
+                const { error } = await supabase
+                    .from('collections')
+                    .upsert(serverPayloads, { onConflict: 'collection_id' });
+
+                if (error) throw error;
+
+                // Step D: Bulk Local Update & Cleanup
+                await this.finalizeBatch(db, batch);
+
+                results.success += batch.length;
+                console.log(`✅ [SYNC] Batch ${i / BATCH_SIZE + 1} completed successfully.`);
+
             } catch (error: any) {
-                console.error(`❌ [SYNC] Failed to upload collection ${collection.collection_id}:`, error);
-                results.failed++;
-                results.errors.push({ collectionId: collection.collection_id, error });
+                console.error(`❌ [SYNC] Batch failed:`, error);
+                results.failed += batch.length;
+                results.errors.push({ batchIndex: i, error });
 
-                // Increment retry count
+                // Update retry counts for this batch
+                const localIds = batch.map(c => `'${c.local_id}'`).join(',');
                 await db.runAsync(
-                    `UPDATE collections_queue 
-           SET retry_count = retry_count + 1, error_message = ? 
-           WHERE local_id = ?`,
-                    [error.message, collection.local_id]
+                    `UPDATE collections_queue SET retry_count = retry_count + 1, error_message = ? WHERE local_id IN (${localIds})`,
+                    [error.message]
                 );
             }
         }
@@ -75,107 +118,88 @@ export const collectionSyncService = {
         return results;
     },
 
-    // Upload single collection
-    async uploadSingleCollection(collection: any) {
-        let photoUrl = null;
+    // Helper: Upload Photos with Concurrency Limit
+    async uploadPhotosConcurrent(collections: any[], userId: string) {
+        // We will mutate the collection objects to add 'photo_url'
+        const queue = [...collections];
+        const CONCURRENCY = 3;
+        const results = [];
 
-        // Upload photo first if exists
-        if (collection.photo_local_uri && !collection.photo_uploaded) {
-            photoUrl = await this.uploadPhoto(collection);
-        }
+        const worker = async () => {
+            while (queue.length > 0) {
+                const item = queue.shift();
+                if (!item) break;
 
-        // Get staff record
-        // Get staff record using maybeSingle() to avoid 406 errors
-        const { data: staffData } = await supabase
-            .from('staff')
-            .select('id')
-            .eq('id', collection.collector_id)
-            .maybeSingle();
+                if (item.photo_local_uri && !item.photo_uploaded) {
+                    try {
+                        item.photo_url = await this.uploadPhoto(item, userId);
+                    } catch (e) {
+                        console.warn(`⚠️ [SYNC] Photo upload failed for ${item.collection_id}, proceeding without photo.`);
+                        item.photo_url = null; // Proceed without photo rather than failing batch
+                    }
+                }
+                results.push(item);
+            }
+        };
 
-        // Use fetched ID or fallback to local ID (assuming it's valid)
-        const validStaffId = staffData?.id || collection.collector_id;
-
-        // Insert collection
-        console.log(`📝 [SYNC] Inserting collection record to Supabase for ${collection.collection_id}...`);
-        const { data, error } = await supabase
-            .from('collections')
-            .upsert({
-                collection_id: collection.collection_id,
-                farmer_id: collection.farmer_id,
-                staff_id: validStaffId,
-                liters: collection.liters,
-                rate_per_liter: collection.rate,
-                total_amount: collection.total_amount,
-                collection_date: collection.collection_date,
-                gps_latitude: collection.gps_latitude,
-                gps_longitude: collection.gps_longitude,
-                notes: collection.notes,
-                photo_url: photoUrl,
-                verification_code: collection.verification_code,
-                status: 'Collected',
-                created_at: collection.created_at,
-            }, { onConflict: 'collection_id' })
-            .select()
-            .single();
-
-        if (error) {
-            console.error(`❌ [SYNC] Supabase Insert Error:`, error);
-            throw error;
-        }
-
-        console.log(`✨ [SYNC] Inserted record ID:`, data.id);
-
-        return data;
+        const workers = Array(Math.min(collections.length, CONCURRENCY)).fill(null).map(() => worker());
+        await Promise.all(workers);
+        return collections;
     },
 
-    // Upload photo to Supabase Storage
-    async uploadPhoto(collection: any) {
-        if (!collection.photo_local_uri) return null;
+    // Helper: Bulk Local Update & Delete Photos
+    async finalizeBatch(db: any, batch: any[]) {
+        const localIds = batch.map(c => `'${c.local_id}'`).join(',');
 
-        try {
-            // Read file as base64
-            const base64 = await FileSystem.readAsStringAsync(collection.photo_local_uri, {
-                encoding: FileSystem.EncodingType.Base64,
+        // 1. Mark as uploaded
+        await db.runAsync(
+            `UPDATE collections_queue 
+             SET status = 'uploaded', uploaded_at = CURRENT_TIMESTAMP 
+             WHERE local_id IN (${localIds})`
+        );
+
+        // 2. Delete local photos
+        const deletePromises = batch
+            .filter(c => c.photo_local_uri)
+            .map(async (c) => {
+                try {
+                    const info = await FileSystem.getInfoAsync(c.photo_local_uri);
+                    if (info.exists) {
+                        await FileSystem.deleteAsync(c.photo_local_uri);
+                    }
+                } catch (e) {
+                    console.warn(`⚠️ [SYNC] Failed to delete local photo ${c.photo_local_uri}`);
+                }
             });
 
-            const fileName = `${collection.collection_id}.jpg`;
-            const filePath = `public/collection-photos/${collection.collector_id}/${fileName}`;
+        await Promise.all(deletePromises);
+    },
 
-            // Upload to Supabase Storage
-            // Use helper decode function to convert base64 to Uint8Array
-            const { data, error } = await supabase.storage
-                .from('milk-collections')
-                .upload(filePath, decode(base64), {
-                    contentType: 'image/jpeg',
-                    upsert: true,
-                });
+    // Upload Single Photo (Unchanged logic, just separated)
+    async uploadPhoto(collection: any, userId: string) {
+        if (!collection.photo_local_uri) return null;
 
-            if (error) {
-                console.error(`❌ [SYNC] Photo upload error for ${fileName}:`, error);
-                // Return null so we can still upload the collection record without the photo
-                return null;
-            }
+        // Read file as base64
+        const base64 = await FileSystem.readAsStringAsync(collection.photo_local_uri, {
+            encoding: FileSystem.EncodingType.Base64,
+        });
 
-            console.log(`📸 [SYNC] Photo uploaded successfully: ${fileName}`);
+        const fileName = `${collection.collection_id}.jpg`;
+        const filePath = `${userId}/${fileName}`;
 
-            // Get public URL
-            const { data: urlData } = supabase.storage
-                .from('milk-collections')
-                .getPublicUrl(filePath);
+        // Upload
+        const { error } = await supabase.storage
+            .from('milk-collections')
+            .upload(filePath, decode(base64), {
+                contentType: 'image/jpeg',
+                upsert: true,
+            });
 
-            // Mark photo as uploaded
-            const db = await getDatabase();
-            await db.runAsync(
-                'UPDATE collections_queue SET photo_uploaded = 1 WHERE local_id = ?',
-                [collection.local_id]
-            );
+        if (error) throw error;
 
-            return urlData.publicUrl;
-        } catch (error) {
-            console.error('Photo upload failed:', error);
-            // Don't fail the entire collection if photo upload fails
-            return null;
-        }
+        // Get URL
+        const { data } = supabase.storage.from('milk-collections').getPublicUrl(filePath);
+        return data.publicUrl;
     },
 };
 
