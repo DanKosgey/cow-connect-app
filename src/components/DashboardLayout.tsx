@@ -357,7 +357,7 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => window.open('https://expo.dev/artifacts/eas/6eawhKjkgLLzV3hC6BtLsn.apk', '_blank')}
+              onClick={() => window.open('https://expo.dev/artifacts/eas/bKzkVw7ZirTJ1AdYgbm1Vz.apk', '_blank')}
               className="w-10 h-10 rounded-full bg-muted/50 hover:bg-primary/10 hover:text-primary transition-colors"
               title="Download Collector Mobile App"
             >
@@ -541,7 +541,7 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => window.open('https://expo.dev/artifacts/eas/6eawhKjkgLLzV3hC6BtLsn.apk', '_blank')}
+                  onClick={() => window.open('https://expo.dev/artifacts/eas/bKzkVw7ZirTJ1AdYgbm1Vz.apk', '_blank')}
                   className="hidden lg:flex items-center gap-2 text-muted-foreground hover:text-primary hover:bg-primary/5 transition-all rounded-full px-4 border border-transparent hover:border-primary/10"
                   title="Download Collector Mobile App"
                 >
@@ -552,7 +552,7 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => window.open('https://expo.dev/artifacts/eas/6eawhKjkgLLzV3hC6BtLsn.apk', '_blank')}
+                  onClick={() => window.open('https://expo.dev/artifacts/eas/bKzkVw7ZirTJ1AdYgbm1Vz.apk', '_blank')}
                   className="lg:hidden w-10 h-10 rounded-full bg-muted/50 hover:bg-primary/10 hover:text-primary transition-colors"
                   title="Download Collector Mobile App"
                 >

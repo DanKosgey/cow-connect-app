@@ -85,12 +85,12 @@ export const NewCollectionScreen = ({ navigation, route }: any) => {
 
         await refreshData();
 
-        // Auto-sync farmers in background to get latest additions
+        // Auto-sync farmers in background (INCREMENTAL ONLY)
         if (user?.staff?.id && isOnline) {
-            console.log('[UI] Auto-syncing farmers for new collection...');
-            farmerSyncService.syncAllFarmers(user.staff.id).then(res => {
-                if (res.success) {
-                    console.log('✅ Background farmer sync complete');
+            console.log('[UI] Auto-syncing updated farmers...');
+            farmerSyncService.syncFarmerUpdates().then(res => {
+                if (res.success && res.count > 0) {
+                    console.log(`✅ Background sync added ${res.count} new/updated farmers`);
                     refreshData(); // Refresh counts and recent lists
                 }
             });
@@ -269,6 +269,7 @@ export const NewCollectionScreen = ({ navigation, route }: any) => {
         }
     };
 
+    // Manual Refresh Button (Force Full Download)
     const handleFarmerSync = async () => {
         if (!isOnline) {
             Alert.alert('Offline', 'You need an internet connection to download farmers.');
@@ -277,13 +278,10 @@ export const NewCollectionScreen = ({ navigation, route }: any) => {
 
         setIsSyncing(true);
         try {
-            if (user?.staff?.id) {
-                const result = await farmerSyncService.syncAllFarmers(user.staff.id);
-                Alert.alert('Success', `Downloaded ${result.count} farmers.`);
-                await refreshData();
-            } else {
-                Alert.alert('Error', 'User ID missing. Please log in again.');
-            }
+            // Explicitly force full refresh
+            const result = await farmerSyncService.forceRefreshFarmers();
+            Alert.alert('Success', `Database refreshed. Total farmers: ${result.count}`);
+            await refreshData();
         } catch (error: any) {
             Alert.alert('Download Error', error.message || 'Failed to download farmers');
         } finally {
@@ -472,11 +470,25 @@ export const NewCollectionScreen = ({ navigation, route }: any) => {
                 {/* Farmer Information Card */}
                 <View style={[styles.card, { zIndex: 2000, overflow: 'visible' }]}>
                     <View style={styles.cardHeader}>
-                        <Ionicons name="person" size={22} color="#2196F3" />
-                        <Text style={styles.cardTitle}>Farmer Selection</Text>
-                        <View style={styles.requiredBadge}>
-                            <Text style={styles.requiredText}>*</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                            <Ionicons name="person" size={22} color="#2196F3" />
+                            <Text style={[styles.cardTitle, { marginLeft: 8 }]}>Farmer Selection</Text>
+                            <View style={styles.requiredBadge}>
+                                <Text style={styles.requiredText}>*</Text>
+                            </View>
                         </View>
+
+                        <TouchableOpacity
+                            onPress={handleFarmerSync}
+                            disabled={isSyncing || !isOnline}
+                            style={{ padding: 4 }}
+                        >
+                            {isSyncing ? (
+                                <ActivityIndicator size="small" color="#2196F3" />
+                            ) : (
+                                <Ionicons name="refresh" size={20} color={isOnline ? "#2196F3" : "#ccc"} />
+                            )}
+                        </TouchableOpacity>
                     </View>
 
                     {farmerCount === 0 && (
@@ -491,7 +503,7 @@ export const NewCollectionScreen = ({ navigation, route }: any) => {
                                 <Ionicons name="cloud-download" size={20} color="#2196F3" />
                             )}
                             <Text style={styles.downloadFarmersText}>
-                                {isSyncing ? 'Downloading...' : 'Download Farmer DB'}
+                                {isSyncing ? 'Downloading Database...' : 'Download Farmer DB'}
                             </Text>
                         </TouchableOpacity>
                     )}

@@ -9,9 +9,9 @@ interface ProtectedRouteProps {
   requiredRole?: UserRole;
 }
 
-export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ 
-  children, 
-  requiredRole 
+export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
+  children,
+  requiredRole
 }) => {
   const { isAuthenticated, isLoading, isSessionRefreshing, userRole, hasRole, refreshSession } = useAuth();
   const location = useLocation();
@@ -22,8 +22,8 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   const loginPath = '/login';
   const dashboardPaths: Record<UserRole, string> = {
     [UserRole.ADMIN]: '/admin/dashboard',
-    [UserRole.COLLECTOR]: '/collector/dashboard',
-    [UserRole.STAFF]: '/staff/dashboard',
+    [UserRole.COLLECTOR]: '/collector-only/dashboard',
+    [UserRole.STAFF]: '/staff-only/dashboard',
     [UserRole.FARMER]: '/farmer/dashboard',
     [UserRole.CREDITOR]: '/creditor/dashboard'
   };
@@ -36,12 +36,12 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
       if (now - lastCheckRef.current < 30000) {
         return;
       }
-      
+
       if (!isLoading && !isSessionRefreshing && !isCheckingSession && isAuthenticated) {
         // Additional check to ensure we don't call refresh too frequently
         setIsCheckingSession(true);
         lastCheckRef.current = now;
-        
+
         try {
           // Only attempt refresh if the session is close to expiring
           // Supabase handles automatic token refresh, so we don't need to force it
@@ -65,10 +65,10 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   // If not authenticated, redirect to login
   if (!isAuthenticated) {
     return (
-      <Navigate 
-        to={loginPath} 
-        state={{ from: location }} 
-        replace 
+      <Navigate
+        to={loginPath}
+        state={{ from: location }}
+        replace
       />
     );
   }
@@ -78,9 +78,9 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     // Redirect to user's own dashboard
     const userDashboard = userRole ? dashboardPaths[userRole] : '/';
     return (
-      <Navigate 
-        to={userDashboard} 
-        replace 
+      <Navigate
+        to={userDashboard}
+        replace
       />
     );
   }

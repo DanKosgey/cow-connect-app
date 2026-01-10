@@ -16,25 +16,25 @@ interface EnhancedProtectedRouteProps {
 /**
  * Enhanced Protected Route with improved session management and error handling
  */
-export const EnhancedProtectedRoute: React.FC<EnhancedProtectedRouteProps> = ({ 
-  children, 
+export const EnhancedProtectedRoute: React.FC<EnhancedProtectedRouteProps> = ({
+  children,
   requiredRole,
   fallbackRedirect
 }) => {
-  const { 
-    isAuthenticated, 
-    isLoading, 
-    isSessionRefreshing, 
-    userRole, 
+  const {
+    isAuthenticated,
+    isLoading,
+    isSessionRefreshing,
+    userRole,
     hasRole,
-    refreshSession 
+    refreshSession
   } = useAuth();
-  
+
   const { validateSession } = useSessionManager({
     refreshInterval: 20 * 60 * 1000, // 20 minutes
     enableAutoRefresh: true
   });
-  
+
   const location = useLocation();
   const [isCheckingAuth, setIsCheckingAuth] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -43,8 +43,8 @@ export const EnhancedProtectedRoute: React.FC<EnhancedProtectedRouteProps> = ({
   const loginPath = '/login';
   const dashboardPaths: Record<UserRole, string> = {
     [UserRole.ADMIN]: '/admin/dashboard',
-    [UserRole.COLLECTOR]: '/collector/dashboard',
-    [UserRole.STAFF]: '/staff/dashboard',
+    [UserRole.COLLECTOR]: '/collector-only/dashboard',
+    [UserRole.STAFF]: '/staff-only/dashboard',
     [UserRole.FARMER]: '/farmer/dashboard',
     [UserRole.CREDITOR]: '/creditor/dashboard'
   };
@@ -65,7 +65,7 @@ export const EnhancedProtectedRoute: React.FC<EnhancedProtectedRouteProps> = ({
 
       // Validate session
       const isValid = await validateSession();
-      
+
       if (!isValid) {
         logger.warn('Session validation failed during auth check');
         setAuthError('Your session has expired. Please sign in again.');
@@ -88,7 +88,7 @@ export const EnhancedProtectedRoute: React.FC<EnhancedProtectedRouteProps> = ({
     } catch (error) {
       const parsedError = handleAuthError(error);
       setAuthError(parsedError.message);
-      
+
       // If session expired, redirect to login
       if (isSessionExpiredError(error)) {
         logger.info('Session expired, redirecting to login');
@@ -98,12 +98,12 @@ export const EnhancedProtectedRoute: React.FC<EnhancedProtectedRouteProps> = ({
       setIsCheckingAuth(false);
     }
   }, [
-    isAuthenticated, 
-    isLoading, 
-    isSessionRefreshing, 
-    isCheckingAuth, 
-    requiredRole, 
-    hasRole, 
+    isAuthenticated,
+    isLoading,
+    isSessionRefreshing,
+    isCheckingAuth,
+    requiredRole,
+    hasRole,
     validateSession
   ]);
 
@@ -133,22 +133,22 @@ export const EnhancedProtectedRoute: React.FC<EnhancedProtectedRouteProps> = ({
     // For session expiration, automatically redirect
     if (authError.includes('session has expired')) {
       return (
-        <Navigate 
-          to={loginPath} 
-          state={{ from: location, error: authError }} 
-          replace 
+        <Navigate
+          to={loginPath}
+          state={{ from: location, error: authError }}
+          replace
         />
       );
     }
-    
+
     // For role-based access denied, redirect to user's dashboard or fallback
     if (authError.includes('Access denied')) {
       const fallbackUrl = fallbackRedirect || (userRole ? dashboardPaths[userRole] : '/');
       return (
-        <Navigate 
-          to={fallbackUrl} 
-          state={{ error: authError }} 
-          replace 
+        <Navigate
+          to={fallbackUrl}
+          state={{ error: authError }}
+          replace
         />
       );
     }
@@ -157,10 +157,10 @@ export const EnhancedProtectedRoute: React.FC<EnhancedProtectedRouteProps> = ({
   // If not authenticated, redirect to login
   if (!isAuthenticated) {
     return (
-      <Navigate 
-        to={loginPath} 
-        state={{ from: location }} 
-        replace 
+      <Navigate
+        to={loginPath}
+        state={{ from: location }}
+        replace
       />
     );
   }
@@ -169,10 +169,10 @@ export const EnhancedProtectedRoute: React.FC<EnhancedProtectedRouteProps> = ({
   if (requiredRole && !hasRole(requiredRole)) {
     const fallbackUrl = fallbackRedirect || (userRole ? dashboardPaths[userRole] : '/');
     return (
-      <Navigate 
-        to={fallbackUrl} 
-        state={{ error: 'Access denied. Insufficient permissions.' }} 
-        replace 
+      <Navigate
+        to={fallbackUrl}
+        state={{ error: 'Access denied. Insufficient permissions.' }}
+        replace
       />
     );
   }
